@@ -1,5 +1,5 @@
 import { Box, Dialog, Typography } from "@mui/material";
-import { PortableIdentity } from "@web5/agent";
+import { PortableIdentity } from "@enbox/agent";
 import React, { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useIdentities } from "./Context";

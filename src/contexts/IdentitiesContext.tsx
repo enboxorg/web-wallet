@@ -1,13 +1,13 @@
 import React, { createContext, useCallback, useEffect, useState } from "react";
-import { BearerIdentity, DwnPermissionGrant, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, Web5Agent } from "@web5/agent";
+import { BearerIdentity, DwnPermissionGrant, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, Web5Agent } from "@enbox/agent";
 
 import Web5Helper from "@/lib/Web5Helper";
 import ProfileProtocol, { profileDefinition } from "@/lib/ProfileProtocol";
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
-import { Convert } from "@web5/common";
-import { PermissionGrant, Record } from "@web5/api";
+import { Convert } from "@enbox/common";
+import { PermissionGrant, Record } from "@enbox/api";
 
 const loadProfileFromBearerIdentity = (agent: Web5Agent) => async (identity: BearerIdentity): Promise<Identity> => {
   const profileProtocol = ProfileProtocol(identity.did.uri, agent);

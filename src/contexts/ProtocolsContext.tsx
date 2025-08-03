@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useState } from "react";
 import { useAgent } from "./Context";
-import { DwnProtocolDefinition } from "@web5/agent";
+import { DwnProtocolDefinition } from "@enbox/agent";
 import Web5Helper from "@/lib/Web5Helper";
 
 interface ProtocolContextProps {
