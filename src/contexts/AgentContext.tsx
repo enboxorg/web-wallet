@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useEffect, useState } from "react";
 
 import { AppProvider } from "@toolpad/core";
 
-import { Web5UserAgent } from "@enbox/agent";
+import { Web5UserAgent } from "@enbox/user-agent";
 
 import Loader from "@/components/Loader";
 import LoadAgent from "@/components/LoadAgent";
