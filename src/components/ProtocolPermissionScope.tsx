@@ -1,6 +1,6 @@
 import { Lock, Public, SyncAlt } from "@mui/icons-material";
 import { Box, Chip, ListItem, ListItemIcon, ListItemText } from "@mui/material";
-import { DwnPermissionScope, DwnProtocolDefinition } from "@web5/agent";
+import { DwnPermissionScope, DwnProtocolDefinition } from "@enbox/agent";
 
 const ProtocolPermissionScope:React.FC<{ definition: DwnProtocolDefinition, scopes: DwnPermissionScope[] }> = ({ definition, scopes }) => {
   const formatScopes = (scopes: DwnPermissionScope[]) => {

@@ -4,9 +4,9 @@ import Grid from '@mui/material/Grid2';
 import { SocialData } from '@/lib/types';
 import { ContentCopy, Person2Outlined, QrCode2 } from '@mui/icons-material';
 import { QRCodeCanvas } from 'qrcode.react';
-import { Convert } from '@web5/common';
+import { Convert } from '@enbox/common';
 import { profileDefinition } from '@/lib/ProfileProtocol';
-import { DwnProtocolDefinition } from '@web5/agent';
+import { DwnProtocolDefinition } from '@enbox/agent';
 import ProtocolItem from '../ProtocolItem';
 
 interface Props {

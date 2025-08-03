@@ -1,6 +1,6 @@
 import { Lock, Public } from "@mui/icons-material"
 import { ListItem, ListItemIcon, ListItemText } from "@mui/material"
-import { DwnProtocolDefinition } from "@web5/agent"
+import { DwnProtocolDefinition } from "@enbox/agent"
 
 const ProtocolItem: React.FC<{
   definition: DwnProtocolDefinition

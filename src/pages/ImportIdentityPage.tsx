@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState }  from 'react';
 import { useNavigate } from 'react-router-dom';
-import { PortableIdentity } from '@web5/agent';
+import { PortableIdentity } from '@enbox/agent';
 
 import { PageContainer } from '@toolpad/core';
 import { Box, Button, CircularProgress } from '@mui/material';

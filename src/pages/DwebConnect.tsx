@@ -1,7 +1,7 @@
 import { useAgent } from '@/contexts/Context';
 import { toastError } from '@/lib/utils';
-import { ConnectPermissionRequest, DwnInterface, DwnProtocolDefinition, Oidc, Web5Agent } from '@web5/agent';
-import { DidJwk } from '@web5/dids';
+import { ConnectPermissionRequest, DwnInterface, DwnProtocolDefinition, Oidc, Web5Agent } from '@enbox/agent';
+import { DidJwk } from '@enbox/dids';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Typography, CircularProgress, AppBar, Toolbar } from '@mui/material';
 import ConnectRequest from '@/components/ConnectRequest';

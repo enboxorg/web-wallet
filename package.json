@@ -1,12 +1,14 @@
 {
-  "name": "dweb-wallet",
+  "name": "@enbox/dweb-wallet",
   "version": "0.0.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "predeploy": "pnpm build",
+    "deploy": "gh-pages -d dist"
   },
   "dependencies": {
     "@emotion/react": "^11.13.3",
@@ -17,13 +19,13 @@
     "@radix-ui/react-checkbox": "^1.1.1",
     "@radix-ui/react-slot": "^1.1.0",
     "@toolpad/core": "^0.7.0",
-    "@web5/agent": "0.8.1",
-    "@web5/api": "0.0.0-next-05e5b64-20241022171741",
-    "@web5/browser": "^0.0.3",
-    "@web5/common": "^1.1.0",
-    "@web5/crypto": "^1.0.6",
-    "@web5/dids": "^1.2.0",
-    "@web5/user-agent": "^0.7.1",
+    "@enbox/agent": "^0.0.2",
+    "@enbox/api": "^0.0.2",
+    "@enbox/browser": "^0.0.2",
+    "@enbox/common": "^0.0.2",
+    "@enbox/crypto": "^0.0.2",
+    "@enbox/dids": "^0.0.2",
+    "@enbox/user-agent": "^0.0.2",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.1",
     "lucide-react": "^0.435.0",
@@ -60,6 +62,7 @@
     "typescript-eslint": "^8.0.1",
     "vite": "^5.4.1",
     "vite-plugin-node-stdlib-browser": "^0.2.1",
-    "vite-plugin-polyfills": "^0.0.0"
+    "vite-plugin-polyfills": "^0.0.0",
+    "gh-pages": "^6.1.1"
   }
 }

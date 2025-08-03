@@ -4,8 +4,8 @@ import { truncateDid } from "@/lib/utils";
 import { FileOpen, FlashOff, FlashOn, NoPhotography } from "@mui/icons-material";
 import { Box, Button, CircularProgress, FormControl, IconButton, InputLabel, MenuItem, Select, Typography } from "@mui/material";
 import { PageContainer, useNotifications } from "@toolpad/core"
-import { Oidc, Web5ConnectAuthRequest } from "@web5/agent";
-import { CryptoUtils } from "@web5/crypto";
+import { Oidc, Web5ConnectAuthRequest } from "@enbox/agent";
+import { CryptoUtils } from "@enbox/crypto";
 import Scanner from 'qr-scanner';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";

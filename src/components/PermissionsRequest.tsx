@@ -1,6 +1,6 @@
 import React from "react";
 import { Divider, List } from "@mui/material";
-import { ConnectPermissionRequest } from "@web5/agent";
+import { ConnectPermissionRequest } from "@enbox/agent";
 import ProtocolPermissionScope from "./ProtocolPermissionScope";
 
 const PermissionRequest: React.FC<{ permissions: ConnectPermissionRequest[] }> = ({ permissions }) => {

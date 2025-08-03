@@ -1,11 +1,11 @@
-import { DwnProtocolDefinition, Web5Agent } from "@web5/agent";
+import { DwnProtocolDefinition, Web5Agent } from "@enbox/agent";
 
 import Web5Helper from "./Web5Helper";
 import { SocialData } from "./types";
 
 export const profileDefinition: DwnProtocolDefinition = {
   published: true,
-  protocol: "https://areweweb5yet.com/protocols/profile",
+  protocol: "https://enbox.org/protocols/profile",
   types: {
     name: {
       dataFormats: ['application/json']

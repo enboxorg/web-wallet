@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { List, ListItem, Typography } from "@mui/material";
-import { PermissionGrant } from "@web5/api";
+import { PermissionGrant } from "@enbox/api";
 import { truncateDid } from "@/lib/utils";
-import { DwnPermissionGrant, DwnProtocolDefinition } from "@web5/agent";
+import { DwnPermissionGrant, DwnProtocolDefinition } from "@enbox/agent";
 import { useAgent } from "@/contexts/Context";
 import ProtocolPermissionScope from "./ProtocolPermissionScope";
 

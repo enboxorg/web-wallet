@@ -1,6 +1,6 @@
-import { Web5, Record as DwnRecord } from '@web5/api';
-import { DwnProtocolDefinition, Web5Agent } from '@web5/agent';
-import { canonicalize } from '@web5/crypto';
+import { Web5, Record as DwnRecord } from '@enbox/api';
+import { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
+import { canonicalize } from '@enbox/crypto';
 
 const Web5Helper = (didUri: string, agent: Web5Agent) => {
   const web5 = new Web5({ agent, connectedDid: didUri });

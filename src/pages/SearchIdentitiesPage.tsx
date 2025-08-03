@@ -1,10 +1,10 @@
 import PublicIdentityCard from '@/components/identity/PublicIdentityCard';
 import { TextField } from '@mui/material';
-import { Did } from '@web5/dids';
+import { Did } from '@enbox/dids';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { PageContainer } from '@toolpad/core';
-import { Convert } from '@web5/common';
+import { Convert } from '@enbox/common';
 import { profileDefinition } from '@/lib/ProfileProtocol';
 import { SocialData } from '@/lib/types';
 import { truncateDid } from '@/lib/utils';

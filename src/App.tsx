@@ -2,7 +2,7 @@ import { AgentProvider } from '@/contexts/AgentContext';
 import { IdentitiesProvider } from '@/contexts/IdentitiesContext';
 import { BackupSeedProvider } from '@/contexts/BackupSeedContext';
 
-import { activatePolyfills } from '@web5/browser';
+import { activatePolyfills } from '@enbox/browser';
 import { useEffect } from 'react';
 import Dashboard from './layoutes/Dshboard';
 import { ProtocolsProvider } from './contexts/ProtocolsContext';

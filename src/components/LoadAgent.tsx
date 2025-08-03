@@ -2,7 +2,7 @@ import { useBackupSeed } from '@/contexts/Context';
 import LockIcon from '@mui/icons-material/Lock';
 import { Box, Button, Container, Paper, TextField, Typography } from "@mui/material";
 import Grid from '@mui/material/Grid2';
-import { Web5UserAgent } from '@web5/user-agent';
+import { Web5UserAgent } from '@enbox/user-agent';
 import { useCallback, useEffect, useState } from 'react';
 import PinInput from './PinInput';
 
@@ -17,7 +17,7 @@ const LoadAgent:React.FC<{
 
   const [pin, setPin] = useState(['', '', '', '']);
   const [invalidPin, setInvalidPin] = useState(false);
-  const [dwnEndpoint, setDwnEndpoint] = useState('https://dwn.tbddev.org/latest');
+  const [dwnEndpoint, setDwnEndpoint] = useState('https://dwn.enbox.org/latest');
 
   useEffect(() => {
     if (initialized && pin.length === 4 && pin.every(digit => digit !== '')) {

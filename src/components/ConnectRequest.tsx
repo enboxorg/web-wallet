@@ -3,7 +3,7 @@ import { Box, Button, Typography } from "@mui/material"
 import PublicIdentityCard from "./identity/PublicIdentityCard"
 import PermissionRequest from "./PermissionsRequest"
 import { Check as CheckIcon, Close as CloseIcon } from '@mui/icons-material';
-import { ConnectPermissionRequest } from "@web5/agent";
+import { ConnectPermissionRequest } from "@enbox/agent";
 import IdentitySelector from './IdentitySelector';
 
 const ConnectRequest: React.FC<{

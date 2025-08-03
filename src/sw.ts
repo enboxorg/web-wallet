@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { activatePolyfills } from "@web5/browser";
+import { activatePolyfills } from "@enbox/browser";
 
 import {
   cleanupOutdatedCaches,
@@ -31,7 +31,7 @@ registerRoute(
   new NavigationRoute(createHandlerBoundToURL("index.html"), { allowlist })
 );
 
-// Activate Web5 Service Worker Polyfills
+// Activate Enbox Service Worker Polyfills
 activatePolyfills({
   onCacheCheck() {
     return {
