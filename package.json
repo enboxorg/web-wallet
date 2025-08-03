@@ -6,9 +6,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "predeploy": "pnpm build",
-    "deploy": "gh-pages -d dist"
+    "preview": "vite preview"
   },
   "dependencies": {
     "@emotion/react": "^11.13.3",
@@ -62,7 +60,6 @@
     "typescript-eslint": "^8.0.1",
     "vite": "^5.4.1",
     "vite-plugin-node-stdlib-browser": "^0.2.1",
-    "vite-plugin-polyfills": "^0.0.0",
-    "gh-pages": "^6.1.1"
+    "vite-plugin-polyfills": "^0.0.0"
   }
 }
