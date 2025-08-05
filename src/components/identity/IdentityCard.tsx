@@ -61,12 +61,13 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
         display: 'flex',
         flexDirection: compact ? 'row' : 'column',
         alignItems: compact ? 'center' : 'stretch',
-        height: compact ? 80 : 220,
+        height: compact ? 80 : { xs: 200, sm: 220, md: 240 },
         width: '100%',
-        maxWidth: compact ? 'none' : 550,
+        maxWidth: compact ? 'none' : '100%',
         overflow: 'hidden',
         borderRadius: 2,
         position: 'relative',
+        transition: 'all 0.3s ease-in-out',
       }}
     >
       {!compact && (
@@ -99,16 +100,24 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
                 mb: 0.5, 
                 textShadow: '0 2px 4px rgba(0,0,0,0.8)',
                 fontWeight: 600,
+                fontSize: { xs: '1.1rem', sm: '1.25rem' },
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                maxWidth: '100%',
               }}>
                 {social.displayName}
               </Typography>
             )}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: '100%' }}>
               <Typography variant="caption" sx={{ 
                 color: 'rgba(255,255,255,0.8)', 
                 textShadow: '0 1px 3px rgba(0,0,0,0.8)',
                 fontFamily: 'monospace',
-                fontSize: '0.75rem',
+                fontSize: { xs: '0.7rem', sm: '0.75rem' },
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                flexGrow: 1,
               }}>
                 {truncateDid(identity.didUri, 30)}
               </Typography>
@@ -147,8 +156,8 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
               position: 'absolute',
               top: 16,
               left: 16,
-              width: 64,
-              height: 64,
+              width: { xs: 56, sm: 64 },
+              height: { xs: 56, sm: 64 },
               border: '3px solid',
               borderColor: alpha('#ffffff', 0.2),
               boxShadow: '0 4px 12px rgba(0,0,0,0.3)',

@@ -44,11 +44,12 @@ const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => 
     <GlassCard
       sx={{ 
         width: '100%',
-        maxWidth: 550,
-        height: 300,
+        maxWidth: '100%',
+        height: { xs: 240, sm: 280, md: 320 },
         borderRadius: 2,
         position: 'relative',
         mx: 'auto',
+        transition: 'all 0.3s ease-in-out',
       }}
     >
       <Box sx={{ position: 'relative', height: '100%', width: '100%' }}>
@@ -69,18 +70,18 @@ const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => 
         <Box
           sx={{
             position: 'absolute',
-            bottom: 24,
-            left: 24,
-            right: 24,
+            bottom: { xs: 16, sm: 20, md: 24 },
+            left: { xs: 16, sm: 20, md: 24 },
+            right: { xs: 16, sm: 20, md: 24 },
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: { xs: 2, sm: 3 } }}>
             <Avatar 
               src={avatarUrl} 
               alt={social?.displayName || 'user'}
               sx={{ 
-                width: 80,
-                height: 80,
+                width: { xs: 64, sm: 72, md: 80 },
+                height: { xs: 64, sm: 72, md: 80 },
                 border: '3px solid',
                 borderColor: alpha('#ffffff', 0.2),
                 boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
@@ -98,6 +99,10 @@ const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => 
                   mb: 0.5, 
                   textShadow: '0 2px 4px rgba(0,0,0,0.8)',
                   fontWeight: 600,
+                  fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem' },
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
                 }}>
                   {social.displayName}
                 </Typography>
@@ -107,6 +112,12 @@ const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => 
                   color: 'rgba(255,255,255,0.8)', 
                   mb: 1,
                   textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                  fontSize: { xs: '0.8rem', sm: '0.875rem' },
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
                 }}>
                   {social.tagline}
                 </Typography>

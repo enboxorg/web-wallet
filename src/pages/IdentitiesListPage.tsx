@@ -62,15 +62,30 @@ const IdentitiesListPage: React.FC = () => {
           </Box>
         </Fade>
       ) : (
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3, md: 4 }} sx={{ justifyContent: { xs: 'center', sm: 'flex-start' } }}>
           {identities.map((identity, index) => (
             <Fade in timeout={300 + index * 100} key={identity.didUri}>
-              <Grid item xs={12} sm={6} md={4}>
-                <IdentityCard
-                  identity={identity}
-                  onClick={() => navigate(`/identity/${identity.didUri}`)}
-                  compact={false}
-                />
+              <Grid 
+                item 
+                xs={12} 
+                sm={6} 
+                md={6} 
+                lg={4}
+                sx={{
+                  display: 'flex',
+                  justifyContent: { xs: 'center', sm: 'flex-start' },
+                }}
+              >
+                <Box sx={{
+                  width: '100%',
+                  maxWidth: { xs: 400, sm: '100%' },
+                }}>
+                  <IdentityCard
+                    identity={identity}
+                    onClick={() => navigate(`/identity/${identity.didUri}`)}
+                    compact={false}
+                  />
+                </Box>
               </Grid>
             </Fade>
           ))}

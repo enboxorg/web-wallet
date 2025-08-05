@@ -151,16 +151,27 @@ const SearchIdentitiesPage: React.FC = () => {
             <Typography variant="h6" sx={{ mb: 3, color: 'text.secondary', fontWeight: 500 }}>
               Search Result
             </Typography>
-            <PublicIdentityCard
-              identity={{
-                didUri: did,
-                profile: {
-                  heroUrl,
-                  avatarUrl,
-                  social
-                }
-              }}
-            />
+            <Box sx={{
+              display: 'flex',
+              justifyContent: 'center',
+              width: '100%',
+            }}>
+              <Box sx={{
+                width: '100%',
+                maxWidth: { xs: 400, sm: 600, md: 700 },
+              }}>
+                <PublicIdentityCard
+                  identity={{
+                    didUri: did,
+                    profile: {
+                      heroUrl,
+                      avatarUrl,
+                      social
+                    }
+                  }}
+                />
+              </Box>
+            </Box>
           </Box>
         </Fade>
       )}
