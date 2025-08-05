@@ -4,16 +4,17 @@
 
 @layer base {
   :root {
-    --bg-primary: #1a1a1a;
-    --bg-secondary: #252525;
-    --bg-tertiary: #2a2a2a;
-    --bg-elevated: #303030;
-    --surface-primary: #2a2a2a;
-    --surface-secondary: #333333;
-    --border-primary: #404040;
-    --text-primary: #f5f5f7;
-    --text-secondary: #a1a1a6;
-    --accent-blue: #0a84ff;
+    --bg-primary: #0a0a0b;
+    --bg-secondary: #18181b;
+    --bg-tertiary: #27272a;
+    --bg-elevated: #3f3f46;
+    --surface-primary: #27272a;
+    --surface-secondary: #3f3f46;
+    --border-primary: #3f3f46;
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --accent-purple: #8b5cf6;
+    --accent-violet: #7c3aed;
   }
 
   * {
@@ -54,16 +55,22 @@
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2);
   }
 
-  /* MacOS-style button */
-  .macos-button {
-    @apply px-4 py-2 rounded-lg bg-dark-accent-blue text-white font-medium 
-           hover:bg-dark-accent-blue/90 active:scale-[0.98] transition-all duration-150
-           focus:outline-none focus:ring-2 focus:ring-dark-accent-blue/50 focus:ring-offset-2
+  /* Purple gradient button */
+  .gradient-button {
+    @apply px-4 py-2 rounded-lg bg-gradient-purple text-white font-medium 
+           hover:shadow-[0_0_20px_rgba(139,92,246,0.4)] active:scale-[0.98] 
+           transition-all duration-150 focus:outline-none focus:ring-2 
+           focus:ring-dark-accent-purple/50 focus:ring-offset-2
            focus:ring-offset-dark-bg-primary;
   }
 
   /* Subtle hover effect */
   .hover-glow {
-    @apply hover:shadow-[0_0_20px_rgba(10,132,255,0.3)] transition-shadow duration-300;
+    @apply hover:shadow-[0_0_20px_rgba(139,92,246,0.3)] transition-shadow duration-300;
+  }
+
+  /* Purple accent border */
+  .accent-border {
+    @apply border-l-4 border-dark-accent-purple;
   }
 }

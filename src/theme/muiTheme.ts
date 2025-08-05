@@ -4,35 +4,35 @@ export const darkTheme = createTheme({
   palette: {
     mode: 'dark',
     primary: {
-      main: '#0a84ff',
-      light: '#409cff',
-      dark: '#0761c3',
+      main: '#8b5cf6', // Purple
+      light: '#a78bfa',
+      dark: '#7c3aed',
     },
     secondary: {
-      main: '#5e5ce6',
-      light: '#8381ff',
-      dark: '#3938b3',
+      main: '#ec4899', // Pink
+      light: '#f472b6',
+      dark: '#db2777',
     },
     background: {
-      default: '#1a1a1a',
-      paper: '#252525',
+      default: '#0a0a0b',
+      paper: '#18181b',
     },
     text: {
-      primary: '#f5f5f7',
-      secondary: '#a1a1a6',
+      primary: '#fafafa',
+      secondary: '#a1a1aa',
     },
-    divider: '#404040',
+    divider: '#3f3f46',
     error: {
-      main: '#ff453a',
+      main: '#ef4444',
     },
     warning: {
-      main: '#ffd60a',
+      main: '#f59e0b',
     },
     success: {
-      main: '#32d74b',
+      main: '#10b981',
     },
     info: {
-      main: '#5e5ce6',
+      main: '#6366f1',
     },
   },
   typography: {
@@ -89,14 +89,14 @@ export const darkTheme = createTheme({
             width: '8px',
           },
           '&::-webkit-scrollbar-track': {
-            background: '#252525',
+            background: '#18181b',
             borderRadius: '4px',
           },
           '&::-webkit-scrollbar-thumb': {
-            backgroundColor: '#404040',
+            backgroundColor: '#3f3f46',
             borderRadius: '4px',
             '&:hover': {
-              backgroundColor: '#4a4a4a',
+              backgroundColor: '#52525b',
             },
           },
         },
@@ -106,23 +106,23 @@ export const darkTheme = createTheme({
       styleOverrides: {
         root: {
           backgroundImage: 'none',
-          backgroundColor: alpha('#2a2a2a', 0.8),
+          backgroundColor: alpha('#27272a', 0.8),
           backdropFilter: 'blur(20px)',
           border: '1px solid',
-          borderColor: '#404040',
+          borderColor: alpha('#3f3f46', 0.5),
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          backgroundColor: alpha('#2a2a2a', 0.8),
+          backgroundColor: alpha('#27272a', 0.6),
           backdropFilter: 'blur(20px)',
           border: '1px solid',
-          borderColor: '#404040',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.3), 0 2px 4px -1px rgba(0, 0, 0, 0.2)',
+          borderColor: alpha('#3f3f46', 0.3),
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3)',
           '&:hover': {
-            boxShadow: '0 8px 12px -2px rgba(0, 0, 0, 0.4), 0 4px 8px -2px rgba(0, 0, 0, 0.3)',
+            boxShadow: '0 8px 12px -2px rgba(0, 0, 0, 0.5), 0 4px 8px -2px rgba(0, 0, 0, 0.4)',
           },
         },
       },
@@ -139,15 +139,17 @@ export const darkTheme = createTheme({
         },
         contained: {
           boxShadow: 'none',
+          background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
           '&:hover': {
-            boxShadow: '0 0 20px rgba(10, 132, 255, 0.3)',
+            boxShadow: '0 0 20px rgba(139, 92, 246, 0.4)',
+            background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)',
           },
         },
         outlined: {
-          borderColor: '#404040',
+          borderColor: alpha('#8b5cf6', 0.5),
           '&:hover': {
-            borderColor: '#5a5a5a',
-            backgroundColor: alpha('#ffffff', 0.05),
+            borderColor: '#8b5cf6',
+            backgroundColor: alpha('#8b5cf6', 0.08),
           },
         },
       },
@@ -156,15 +158,15 @@ export const darkTheme = createTheme({
       styleOverrides: {
         root: {
           '& .MuiOutlinedInput-root': {
-            backgroundColor: alpha('#1a1a1a', 0.5),
+            backgroundColor: alpha('#18181b', 0.5),
             '& fieldset': {
-              borderColor: '#404040',
+              borderColor: alpha('#3f3f46', 0.5),
             },
             '&:hover fieldset': {
-              borderColor: '#5a5a5a',
+              borderColor: alpha('#52525b', 0.8),
             },
             '&.Mui-focused fieldset': {
-              borderColor: '#0a84ff',
+              borderColor: '#8b5cf6',
             },
           },
         },
@@ -173,9 +175,10 @@ export const darkTheme = createTheme({
     MuiAppBar: {
       styleOverrides: {
         root: {
-          backgroundColor: alpha('#1a1a1a', 0.8),
+          backgroundColor: alpha('#0a0a0b', 0.8),
           backdropFilter: 'blur(20px)',
-          borderBottom: '1px solid #404040',
+          borderBottom: '1px solid',
+          borderColor: alpha('#3f3f46', 0.3),
           boxShadow: 'none',
         },
       },
@@ -183,22 +186,27 @@ export const darkTheme = createTheme({
     MuiDrawer: {
       styleOverrides: {
         paper: {
-          backgroundColor: alpha('#252525', 0.95),
+          backgroundColor: alpha('#18181b', 0.95),
           backdropFilter: 'blur(20px)',
-          borderRight: '1px solid #404040',
+          borderRight: '1px solid',
+          borderColor: alpha('#3f3f46', 0.3),
+          boxShadow: '4px 0 24px rgba(0, 0, 0, 0.4)',
         },
       },
     },
     MuiListItem: {
       styleOverrides: {
         root: {
+          borderRadius: '8px',
+          marginBottom: '4px',
           '&:hover': {
-            backgroundColor: alpha('#ffffff', 0.05),
+            backgroundColor: alpha('#8b5cf6', 0.08),
           },
           '&.Mui-selected': {
-            backgroundColor: alpha('#0a84ff', 0.15),
+            backgroundColor: alpha('#8b5cf6', 0.15),
+            borderLeft: '3px solid #8b5cf6',
             '&:hover': {
-              backgroundColor: alpha('#0a84ff', 0.2),
+              backgroundColor: alpha('#8b5cf6', 0.2),
             },
           },
         },
@@ -207,25 +215,28 @@ export const darkTheme = createTheme({
     MuiChip: {
       styleOverrides: {
         root: {
-          backgroundColor: alpha('#404040', 0.5),
+          backgroundColor: alpha('#3f3f46', 0.5),
           backdropFilter: 'blur(10px)',
-          border: '1px solid #4a4a4a',
+          border: '1px solid',
+          borderColor: alpha('#52525b', 0.5),
         },
       },
     },
     MuiAvatar: {
       styleOverrides: {
         root: {
-          border: '2px solid #404040',
+          border: '2px solid',
+          borderColor: alpha('#8b5cf6', 0.3),
         },
       },
     },
     MuiTooltip: {
       styleOverrides: {
         tooltip: {
-          backgroundColor: alpha('#1a1a1a', 0.95),
+          backgroundColor: alpha('#18181b', 0.95),
           backdropFilter: 'blur(10px)',
-          border: '1px solid #404040',
+          border: '1px solid',
+          borderColor: alpha('#3f3f46', 0.5),
           fontSize: '0.75rem',
         },
       },

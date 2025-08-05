@@ -8,37 +8,42 @@ export default {
   theme: {
     extend: {
       colors: {
-        // MacOS-inspired dark mode colors
+        // Purple-themed dark mode colors
         dark: {
           bg: {
-            primary: '#1a1a1a',
-            secondary: '#252525',
-            tertiary: '#2a2a2a',
-            elevated: '#303030',
+            primary: '#0a0a0b',
+            secondary: '#18181b',
+            tertiary: '#27272a',
+            elevated: '#3f3f46',
           },
           surface: {
-            primary: '#2a2a2a',
-            secondary: '#333333',
-            tertiary: '#3a3a3a',
+            primary: '#27272a',
+            secondary: '#3f3f46',
+            tertiary: '#52525b',
           },
           border: {
-            primary: '#404040',
-            secondary: '#4a4a4a',
+            primary: '#3f3f46',
+            secondary: '#52525b',
           },
           text: {
-            primary: '#f5f5f7',
-            secondary: '#a1a1a6',
-            tertiary: '#86868b',
+            primary: '#fafafa',
+            secondary: '#a1a1aa',
+            tertiary: '#71717a',
           },
           accent: {
-            blue: '#0a84ff',
-            green: '#32d74b',
-            red: '#ff453a',
-            yellow: '#ffd60a',
-            purple: '#bf5af2',
-            indigo: '#5e5ce6',
+            purple: '#8b5cf6',
+            violet: '#7c3aed',
+            indigo: '#6366f1',
+            pink: '#ec4899',
+            fuchsia: '#d946ef',
+            blue: '#3b82f6',
           }
         },
+      },
+      backgroundImage: {
+        'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
+        'gradient-purple': 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+        'gradient-pink': 'linear-gradient(135deg, #ec4899 0%, #db2777 100%)',
       },
       backdropBlur: {
         xs: '2px',
@@ -47,6 +52,7 @@ export default {
         'fade-in': 'fadeIn 0.2s ease-in-out',
         'slide-up': 'slideUp 0.3s ease-out',
         'glow': 'glow 2s ease-in-out infinite',
+        'pulse-glow': 'pulseGlow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
       },
       keyframes: {
         fadeIn: {
@@ -60,6 +66,16 @@ export default {
         glow: {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0.6' },
+        },
+        pulseGlow: {
+          '0%, 100%': { 
+            opacity: '1',
+            boxShadow: '0 0 20px rgba(139, 92, 246, 0.5)',
+          },
+          '50%': { 
+            opacity: '0.8',
+            boxShadow: '0 0 30px rgba(139, 92, 246, 0.8)',
+          },
         }
       },
       fontFamily: {

@@ -56,8 +56,8 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
       sx={{ 
         mb: 2,
         cursor: 'pointer',
-        bgcolor: selected ? alpha('#0a84ff', 0.1) : undefined,
-        borderColor: selected ? alpha('#0a84ff', 0.5) : undefined,
+        bgcolor: selected ? alpha('#8b5cf6', 0.1) : undefined,
+        borderColor: selected ? alpha('#8b5cf6', 0.5) : undefined,
         display: 'flex',
         flexDirection: compact ? 'row' : 'column',
         alignItems: compact ? 'center' : 'stretch',
@@ -162,7 +162,7 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
                 position: 'absolute',
                 top: 16,
                 right: 16,
-                bgcolor: '#0a84ff',
+                bgcolor: '#8b5cf6',
                 borderRadius: '50%',
                 p: 0.5,
                 display: 'flex',
@@ -216,7 +216,7 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
           {selected && (
             <Box
               sx={{
-                bgcolor: '#0a84ff',
+                bgcolor: '#8b5cf6',
                 borderRadius: '50%',
                 p: 0.5,
                 display: 'flex',

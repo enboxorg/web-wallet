@@ -30,10 +30,10 @@ export default defineConfig({
                 config: true,
             },
             manifest: {
-                name: "DWeb Wallet",
-                short_name: "DWW",
-                description: "A Decentralized Web Wallet Reference",
-                theme_color: "#ffec19",
+                name: "Enbox",
+                short_name: "Enbox",
+                description: "Your Digital Identity Wallet",
+                theme_color: "#8b5cf6",
             },
             injectManifest: {
                 maximumFileSizeToCacheInBytes: 5000000,
