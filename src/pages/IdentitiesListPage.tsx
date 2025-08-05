@@ -1,7 +1,6 @@
 import React  from 'react';
 import IdentityCard from '@/components/identity/IdentityCard';
 import { useIdentities } from '@/contexts/Context';
-import { PageContainer } from '@toolpad/core';
 import { useNavigate } from 'react-router-dom';
 import { Box, Button, Typography, Fade, Grid } from '@mui/material';
 import { PersonAddAlt } from '@mui/icons-material';
@@ -11,15 +10,10 @@ const IdentitiesListPage: React.FC = () => {
   const navigate = useNavigate();
 
   return (
-    <PageContainer 
-      title="My Identities"
-      sx={{ 
-        background: 'transparent',
-        '.MuiContainer-root': {
-          maxWidth: '1200px',
-        }
-      }}
-    >
+    <Box sx={{ maxWidth: 1200, mx: 'auto' }}>
+      <Typography variant="h4" sx={{ mb: 4, fontWeight: 600 }}>
+        My Identities
+      </Typography>
       {identities.length === 0 ? (
         <Fade in timeout={500}>
           <Box sx={{
@@ -82,7 +76,7 @@ const IdentitiesListPage: React.FC = () => {
           ))}
         </Grid>
       )}
-    </PageContainer>
+    </Box>
   );
 }
 

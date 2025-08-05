@@ -3,7 +3,6 @@ import { TextField, Box, Typography, InputAdornment, Fade, alpha } from '@mui/ma
 import { Did } from '@enbox/dids';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { PageContainer } from '@toolpad/core';
 import { Convert } from '@enbox/common';
 import { profileDefinition } from '@/lib/ProfileProtocol';
 import { SocialData } from '@/lib/types';
@@ -103,15 +102,10 @@ const SearchIdentitiesPage: React.FC = () => {
   };
 
   return (
-    <PageContainer 
-      title={title}
-      sx={{ 
-        background: 'transparent',
-        '.MuiContainer-root': {
-          maxWidth: '900px',
-        }
-      }}
-    >
+    <Box sx={{ maxWidth: 900, mx: 'auto' }}>
+      <Typography variant="h4" sx={{ mb: 4, fontWeight: 600 }}>
+        {title}
+      </Typography>
       <Box sx={{ mb: 4 }}>
         <form onSubmit={handleSearch}>
           <TextField
@@ -182,7 +176,7 @@ const SearchIdentitiesPage: React.FC = () => {
           </Typography>
         </Box>
       )}
-    </PageContainer>
+    </Box>
   );
 }
 
