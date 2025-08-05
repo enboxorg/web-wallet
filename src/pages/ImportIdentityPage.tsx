@@ -8,6 +8,10 @@ import { Box, Button, CircularProgress } from '@mui/material';
 import PublicIdentityCard from '@/components/identity/PublicIdentityCard';
 import { useAgent, useDragIdentities, useIdentities } from '@/contexts/Context';
 import { CheckCircle, HighlightOff } from '@mui/icons-material';
+import { Convert } from '@enbox/common';
+import { profileDefinition } from '@/lib/ProfileProtocol';
+
+const profileProtocolB64 = Convert.string(profileDefinition.protocol).toBase64Url();
 
 type ImportStatus = 'pending' | 'success' | 'error';
 
@@ -104,13 +108,21 @@ const ImportIdentityPage: React.FC = () => {
       />
     </Button>
     {identities.map((identity) => {
-      return <PublicIdentityCard
-        compact={true}
-        key={identity.metadata.uri}
-        did={identity.metadata.uri}
-        slot={identitySlot(identity.metadata.uri)}
-        sx={{ mb: 2, maxWidth: 650, alignItems: 'center' }}
-      />
+      return <Box key={identity.metadata.uri} sx={{ position: 'relative', mb: 2 }}>
+        <PublicIdentityCard
+          identity={{
+            didUri: identity.metadata.uri,
+            profile: {
+              heroUrl: `https://dweb/${identity.metadata.uri}/read/protocols/${profileProtocolB64}/hero`,
+              avatarUrl: `https://dweb/${identity.metadata.uri}/read/protocols/${profileProtocolB64}/avatar`,
+              social: undefined
+            }
+          }}
+        />
+        <Box sx={{ position: 'absolute', right: 16, top: 16 }}>
+          {identitySlot(identity.metadata.uri)}
+        </Box>
+      </Box>
    })}
    {canImport && (
       <Box sx={{ display: 'flex', flexDirection: 'row', justifyContent: 'center', mt: 2 }}>

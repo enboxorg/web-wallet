@@ -14,8 +14,7 @@ import { Download, LockIcon } from "lucide-react";
 import { ThemeProvider } from '@mui/material/styles';
 import { darkTheme } from '@/theme/muiTheme';
 import { useEffect, useMemo } from "react";
-import { Route, Routes, useLocation, useNavigate } from "react-router-dom"
-import LogoutPage from "@/pages/LogoutPage";
+import { Route, Routes, useLocation, useNavigate } from "react-router-dom";
 
 const Dashboard:React.FC = () => {
   const navigate = useNavigate();

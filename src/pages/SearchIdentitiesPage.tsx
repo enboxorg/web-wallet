@@ -79,9 +79,23 @@ const SearchIdentitiesPage: React.FC = () => {
     const trimmedDid = didInput.trim();
     if (trimmedDid.length > 0) {
       try {
-        await Did.resolve(trimmedDid);
-        setDid(trimmedDid);
-        navigate(path);
+        const parsedDid = Did.parse(trimmedDid);
+        if (parsedDid) {
+          const didResolution = await fetch(`https://dweb/${parsedDid.uri}`);
+          if (didResolution.ok) {
+            const didResolutionData = await didResolution.json();
+            if (didResolutionData.didDocument) {
+              setDid(parsedDid.uri);
+              navigate(`/search/${parsedDid.uri}`);
+            } else {
+              console.error('DID document not found');
+            }
+          } else {
+            console.error('Failed to resolve DID');
+          }
+        } else {
+          console.error('Invalid DID format');
+        }
       } catch (error) {
         console.error('Error resolving DID:', error);
       }
