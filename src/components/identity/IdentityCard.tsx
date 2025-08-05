@@ -17,6 +17,20 @@ const BannerOverlay = styled(Box)(({ theme }) => ({
   left: 0,
   right: 0,
   bottom: 0,
+  background: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%)',
+}));
+
+const GlassCard = styled(Card)(({ theme }) => ({
+  backgroundColor: alpha(theme.palette.background.paper, 0.6),
+  backdropFilter: 'blur(20px)',
+  border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+  transition: 'all 0.3s ease-in-out',
+  '&:hover': {
+    backgroundColor: alpha(theme.palette.background.paper, 0.7),
+    borderColor: alpha(theme.palette.primary.main, 0.3),
+    transform: 'translateY(-2px)',
+    boxShadow: `0 8px 32px ${alpha(theme.palette.common.black, 0.4)}`,
+  },
 }));
 
 const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected = false, compact = false }) => {
@@ -36,21 +50,23 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
   };
 
   return (
-    <Card
+    <GlassCard
       onClick={onClick}
       raised={selected}
       sx={{ 
-        mb: 1,
+        mb: 2,
         cursor: 'pointer',
-        bgcolor: selected ? 'action.selected' : 'background.paper',
+        bgcolor: selected ? alpha('#0a84ff', 0.1) : undefined,
+        borderColor: selected ? alpha('#0a84ff', 0.5) : undefined,
         display: 'flex',
         flexDirection: compact ? 'row' : 'column',
         alignItems: compact ? 'center' : 'stretch',
-        height: compact ? 72 : 200,
-        width: compact ? '100%' : '100%',
+        height: compact ? 80 : 220,
+        width: '100%',
         maxWidth: compact ? 'none' : 550,
         overflow: 'hidden',
         borderRadius: 2,
+        position: 'relative',
       }}
     >
       {!compact && (
@@ -78,12 +94,22 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
             }}
           >
             {social?.displayName && (
-              <Typography variant="body2" sx={{ color: 'common.white', mb: 0.5, textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
+              <Typography variant="h6" sx={{ 
+                color: 'common.white', 
+                mb: 0.5, 
+                textShadow: '0 2px 4px rgba(0,0,0,0.8)',
+                fontWeight: 600,
+              }}>
                 {social.displayName}
               </Typography>
             )}
-            <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <Typography variant="caption" sx={{ color: 'common.white', textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography variant="caption" sx={{ 
+                color: 'rgba(255,255,255,0.8)', 
+                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                fontFamily: 'monospace',
+                fontSize: '0.75rem',
+              }}>
                 {truncateDid(identity.didUri, 30)}
               </Typography>
               <ClickAwayListener onClickAway={handleTooltipClose}>
@@ -93,7 +119,21 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
                   placement="top"
                   onClose={handleTooltipClose}
                 >
-                  <Box component="span" sx={{ ml: 0.5, cursor: 'pointer' }}>
+                  <Box 
+                    component="span" 
+                    sx={{ 
+                      display: 'flex',
+                      alignItems: 'center',
+                      cursor: 'pointer',
+                      p: 0.5,
+                      borderRadius: 1,
+                      bgcolor: alpha('#ffffff', 0.1),
+                      backdropFilter: 'blur(10px)',
+                      '&:hover': {
+                        bgcolor: alpha('#ffffff', 0.2),
+                      }
+                    }}
+                  >
                     <CopyIcon size={14} color="white" onClick={handleCopyDid} />
                   </Box>
                 </Tooltip>
@@ -109,20 +149,29 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
               left: 16,
               width: 64,
               height: 64,
+              border: '3px solid',
+              borderColor: alpha('#ffffff', 0.2),
+              boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
             }}
           >
             {social?.displayName?.charAt(0).toUpperCase() || 'U'}
           </Avatar>
           {selected && (
-            <CheckCircle 
-              size={24}
-              style={{
+            <Box
+              sx={{
                 position: 'absolute',
                 top: 16,
                 right: 16,
+                bgcolor: '#0a84ff',
                 borderRadius: '50%',
+                p: 0.5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
-            />
+            >
+              <CheckCircle size={20} color="white" />
+            </Box>
           )}
         </Box>
       )}
@@ -132,7 +181,8 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
           alignItems: 'center',
           width: '100%',
           height: '100%',
-          px: 2,
+          px: 2.5,
+          py: 2,
         }}>
           <Avatar 
             src={identity.profile.avatarUrl} 
@@ -141,22 +191,46 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
               width: 48, 
               height: 48, 
               mr: 2,
+              border: '2px solid',
+              borderColor: alpha('#ffffff', 0.1),
             }}
           >
             {social?.displayName?.charAt(0).toUpperCase() || 'U'}
           </Avatar>
           <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
-            <Typography variant="subtitle1" noWrap>
-              {social?.displayName || ''}
+            <Typography variant="subtitle1" noWrap sx={{ fontWeight: 600 }}>
+              {social?.displayName || 'Unnamed Identity'}
             </Typography>
-            <Typography variant="caption" noWrap sx={{ color: 'text.secondary' }}>
-              {truncateDid(identity.didUri, 20)}
+            <Typography 
+              variant="caption" 
+              noWrap 
+              sx={{ 
+                color: 'text.secondary',
+                fontFamily: 'monospace',
+                fontSize: '0.75rem',
+              }}
+            >
+              {truncateDid(identity.didUri, 30)}
             </Typography>
           </Box>
-          {selected && <CheckCircle size={20} style={{ marginLeft: 8 }} />}
+          {selected && (
+            <Box
+              sx={{
+                bgcolor: '#0a84ff',
+                borderRadius: '50%',
+                p: 0.5,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                ml: 2,
+              }}
+            >
+              <CheckCircle size={18} color="white" />
+            </Box>
+          )}
         </Box>
       )}
-    </Card>
+    </GlassCard>
   );
 };
 

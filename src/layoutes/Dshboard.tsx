@@ -8,11 +8,14 @@ import IdentityDetailsPage from "@/pages/IdentityDetailsPage";
 import ImportIdentityPage from "@/pages/ImportIdentityPage";
 import SearchIdentitiesPage from "@/pages/SearchIdentitiesPage";
 import { CameraAltOutlined, PeopleOutline, PersonAddAlt, SearchOutlined } from "@mui/icons-material";
-import { Box, Container, Typography } from "@mui/material";
+import { Box, Container, Typography, CssBaseline } from "@mui/material";
 import { AppProvider, DashboardLayout, Navigation, NotificationsProvider, } from "@toolpad/core"
 import { Download, LockIcon } from "lucide-react";
+import { ThemeProvider } from '@mui/material/styles';
+import { darkTheme } from '@/theme/muiTheme';
 import { useEffect, useMemo } from "react";
 import { Route, Routes, useLocation, useNavigate } from "react-router-dom"
+import LogoutPage from "@/pages/LogoutPage";
 
 const Dashboard:React.FC = () => {
   const navigate = useNavigate();
@@ -64,15 +67,20 @@ const Dashboard:React.FC = () => {
   }]
 
   return (
-    <AppProvider
-      branding={{
-        title: 'DWeb Wallet',
-        logo: <Box sx={{ mr: 2 }}><img src="/logo.png" alt="DWeb Wallet" /></Box>
-      }}
-      router={router}
-      navigation={navigation}
-    >
-      <DragOverIdentitiesProvider>
+    <ThemeProvider theme={darkTheme}>
+      <CssBaseline />
+      <AppProvider
+        branding={{
+          title: 'DWeb Wallet',
+          logo: <Box sx={{ mr: 2, display: 'flex', alignItems: 'center' }}>
+            <img src="/logo.png" alt="DWeb Wallet" style={{ height: '32px', width: 'auto' }} />
+          </Box>
+        }}
+        router={router}
+        navigation={navigation}
+        theme={darkTheme}
+      >
+        <DragOverIdentitiesProvider>
           <NotificationsProvider>
             <Routes>
               <Route index element={<DashboardLayout>
@@ -105,8 +113,9 @@ const Dashboard:React.FC = () => {
               <Route path="/dweb-connect" element={<DWebConnect />} />
             </Routes>
           </NotificationsProvider>
-      </DragOverIdentitiesProvider>
-    </AppProvider>
+        </DragOverIdentitiesProvider>
+      </AppProvider>
+    </ThemeProvider>
   )
 }
 

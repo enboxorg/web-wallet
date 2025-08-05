@@ -1,5 +1,5 @@
 import PublicIdentityCard from '@/components/identity/PublicIdentityCard';
-import { TextField } from '@mui/material';
+import { TextField, Box, Typography, InputAdornment, Fade, alpha } from '@mui/material';
 import { Did } from '@enbox/dids';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -8,6 +8,7 @@ import { Convert } from '@enbox/common';
 import { profileDefinition } from '@/lib/ProfileProtocol';
 import { SocialData } from '@/lib/types';
 import { truncateDid } from '@/lib/utils';
+import { Search } from '@mui/icons-material';
 
 const profileProtocolB64 = Convert.string(profileDefinition.protocol).toBase64Url();
 
@@ -71,17 +72,104 @@ const SearchIdentitiesPage: React.FC = () => {
     setDid('');
   }
 
-  return (<PageContainer title={title} breadcrumbs={breadCrumbs}>
-    <TextField
-      fullWidth
-      label="Search for a DID"
-      placeholder="did:web:example.com"
-      name="did"
-      value={didInput}
-      onChange={handleInputChange}
-    />
-    {did && <PublicIdentityCard did={did} social={social} />}
-  </PageContainer>)
+  const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setDid('');
+    setSocial(undefined);
+    const trimmedDid = didInput.trim();
+    if (trimmedDid.length > 0) {
+      try {
+        await Did.resolve(trimmedDid);
+        setDid(trimmedDid);
+        navigate(path);
+      } catch (error) {
+        console.error('Error resolving DID:', error);
+      }
+    }
+  };
+
+  return (
+    <PageContainer 
+      title={title}
+      sx={{ 
+        background: 'transparent',
+        '.MuiContainer-root': {
+          maxWidth: '900px',
+        }
+      }}
+    >
+      <Box sx={{ mb: 4 }}>
+        <form onSubmit={handleSearch}>
+          <TextField
+            fullWidth
+            placeholder="Enter a DID to search (e.g., did:dht:...)"
+            value={didInput}
+            onChange={(e) => setDidInput(e.target.value)}
+            variant="outlined"
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start">
+                  <Search sx={{ color: 'text.secondary' }} />
+                </InputAdornment>
+              ),
+              sx: {
+                bgcolor: alpha('#ffffff', 0.03),
+                backdropFilter: 'blur(20px)',
+                borderRadius: 2,
+                '& fieldset': {
+                  borderColor: alpha('#ffffff', 0.1),
+                },
+                '&:hover fieldset': {
+                  borderColor: alpha('#ffffff', 0.2),
+                },
+                '&.Mui-focused fieldset': {
+                  borderColor: 'primary.main',
+                },
+              }
+            }}
+            sx={{
+              '& .MuiInputBase-input': {
+                fontSize: '1rem',
+                py: 1.5,
+              }
+            }}
+          />
+        </form>
+      </Box>
+      
+      {did && (
+        <Fade in timeout={500}>
+          <Box>
+            <Typography variant="h6" sx={{ mb: 3, color: 'text.secondary', fontWeight: 500 }}>
+              Search Result
+            </Typography>
+            <PublicIdentityCard
+              identity={{
+                didUri: did,
+                profile: {
+                  heroUrl,
+                  avatarUrl,
+                  social
+                }
+              }}
+            />
+          </Box>
+        </Fade>
+      )}
+      
+      {!did && didInput && (
+        <Box sx={{ 
+          textAlign: 'center', 
+          mt: 8,
+          color: 'text.secondary',
+        }}>
+          <Typography variant="body1">
+            Enter a valid DID to search for identities
+          </Typography>
+        </Box>
+      )}
+    </PageContainer>
+  );
 }
 
 export default SearchIdentitiesPage;
