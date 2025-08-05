@@ -104,53 +104,39 @@ const navigation:Navigation =[
       <CssBaseline />
       <AppProvider
         branding={{
-          title: 'Enbox',
           logo: (
             <Box sx={{ 
               display: 'flex', 
               alignItems: 'center',
-              gap: 1.5,
-              px: 1,
+              gap: 1,
             }}>
               <Box sx={{
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 48,
-                height: 48,
-                borderRadius: '12px',
+                width: 40,
+                height: 40,
+                borderRadius: '10px',
                 background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(124, 58, 237, 0.1) 100%)',
                 border: '1px solid',
                 borderColor: alpha('#8b5cf6', 0.2),
               }}>
-                <EnboxLogo size={32} />
+                <EnboxLogo size={28} />
               </Box>
-              <Box>
-                <Typography 
-                  variant="h6" 
-                  sx={{ 
-                    fontWeight: 700,
-                    background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
-                    backgroundClip: 'text',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    letterSpacing: '-0.02em',
-                  }}
-                >
-                  Enbox
-                </Typography>
-                <Typography 
-                  variant="caption" 
-                  sx={{ 
-                    color: 'text.secondary',
-                    fontSize: '0.65rem',
-                    letterSpacing: '0.05em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Identity Wallet
-                </Typography>
-              </Box>
+              <Typography 
+                variant="h6" 
+                sx={{ 
+                  fontWeight: 700,
+                  background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)',
+                  backgroundClip: 'text',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  letterSpacing: '-0.02em',
+                  fontSize: '1.25rem',
+                }}
+              >
+                Enbox
+              </Typography>
             </Box>
           ),
         }}
@@ -158,12 +144,70 @@ const navigation:Navigation =[
         navigation={navigation}
         theme={darkTheme}
         sx={{
-          '& .MuiDrawer-paper': {
-            backgroundColor: alpha('#0a0a0b', 0.95),
-            backdropFilter: 'blur(20px)',
-            borderRight: '1px solid',
-            borderColor: alpha('#3f3f46', 0.2),
+          // Drawer styling
+          '& .MuiDrawer-root': {
+            '& .MuiDrawer-paper': {
+              backgroundColor: alpha('#0a0a0b', 0.95),
+              backdropFilter: 'blur(20px)',
+              borderRight: '1px solid',
+              borderColor: alpha('#3f3f46', 0.2),
+              transition: 'width 225ms cubic-bezier(0.4, 0, 0.6, 1) 0ms',
+              overflowX: 'hidden',
+            },
           },
+          // Header/AppBar styling - Position logo at left
+          '& .MuiAppBar-root': {
+            backgroundColor: alpha('#0a0a0b', 0.8),
+            backdropFilter: 'blur(20px)',
+            borderBottom: '1px solid',
+            borderColor: alpha('#3f3f46', 0.2),
+            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
+            '& .MuiToolbar-root': {
+              paddingLeft: '16px !important',
+              paddingRight: '16px !important',
+              display: 'flex',
+              alignItems: 'center',
+              '& > :first-child': {
+                order: 2,  // Move hamburger to second position
+                marginLeft: '16px',
+                marginRight: 0,
+                color: 'text.secondary',
+                '&:hover': {
+                  backgroundColor: alpha('#8b5cf6', 0.08),
+                  color: '#8b5cf6',
+                },
+              },
+              '& > :nth-child(2)': {
+                order: 1,  // Move logo to first position
+                marginLeft: 0,
+                marginRight: 'auto',
+              },
+            },
+          },
+          // Fix for content margin transitions
+          '& main': {
+            marginLeft: 0,
+            width: '100%',
+            flexGrow: 1,
+            padding: 0,
+            '& .MuiContainer-root': {
+              transition: 'none',
+              maxWidth: '100%',
+              paddingLeft: '24px',
+              paddingRight: '24px',
+              '@media (min-width: 600px)': {
+                paddingLeft: '32px',
+                paddingRight: '32px',
+              },
+            },
+          },
+          // Ensure smooth transitions when drawer state changes
+          '& .MuiDrawer-docked': {
+            '& .MuiDrawer-paper': {
+              position: 'relative',
+            },
+          },
+          // Sidebar list items
           '& .MuiListItem-root': {
             mx: 1,
             my: 0.5,
@@ -181,6 +225,7 @@ const navigation:Navigation =[
               },
             },
           },
+          // Sidebar headers
           '& .MuiListSubheader-root': {
             backgroundColor: 'transparent',
             color: 'text.secondary',
@@ -190,13 +235,6 @@ const navigation:Navigation =[
             textTransform: 'uppercase',
             mt: 2,
             mb: 1,
-          },
-          '& .MuiAppBar-root': {
-            backgroundColor: alpha('#0a0a0b', 0.8),
-            backdropFilter: 'blur(20px)',
-            borderBottom: '1px solid',
-            borderColor: alpha('#3f3f46', 0.2),
-            boxShadow: '0 4px 24px rgba(0, 0, 0, 0.4)',
           },
         }}
       >
