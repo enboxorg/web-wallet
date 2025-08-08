@@ -5,6 +5,7 @@ import Grid from '@mui/material/Grid2';
 import { Web5UserAgent } from '@enbox/user-agent';
 import { useCallback, useEffect, useState } from 'react';
 import PinInput from './PinInput';
+import EnboxLogo from './EnboxLogo';
 
 const LoadAgent:React.FC<{
   agent: Web5UserAgent | undefined;
@@ -19,13 +20,13 @@ const LoadAgent:React.FC<{
   const [invalidPin, setInvalidPin] = useState(false);
   const [dwnEndpoint, setDwnEndpoint] = useState('https://dwn.enbox.org/latest');
 
+  // Auto-submit in both modes when 4 digits are present
   useEffect(() => {
-    if (initialized && pin.length === 4 && pin.every(digit => digit !== '')) {
+    if (pin.length === 4 && pin.every(digit => digit !== '')) {
       const pinString = pin.join('');
       handleAgentSetup(pinString);
     }
-
-  }, [ pin, initialized ]);
+  }, [ pin ]);
 
   const handleAgentSetup = useCallback(async (password: string) => {
    if (agent && !initialized && password) {
@@ -64,63 +65,81 @@ const LoadAgent:React.FC<{
     return handleAgentSetup(pinString);
   }, [ pin ]);
 
-  return <Container maxWidth="sm">
+  return (
     <Box
-      display="flex"
-      flexDirection="column"
-      alignItems="center"
-      justifyContent="center"
-      minHeight="100vh"
       sx={{
-        animation: invalidPin ? 'shake 0.2s' : 'none',
-        '@keyframes shake': {
-          '0%': { transform: 'translateX(0)' },
-          '25%': { transform: 'translateX(-5px)' },
-          '50%': { transform: 'translateX(5px)' },
-          '75%': { transform: 'translateX(-5px)' },
-          '100%': { transform: 'translateX(0)' },
-        },
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'radial-gradient(1200px 600px at 20% 10%, rgba(139,92,246,0.20), transparent 60%), radial-gradient(1000px 500px at 80% 80%, rgba(236,72,153,0.18), transparent 60%), linear-gradient(180deg, #0a0a0b 0%, #0a0a0b 100%)',
+        p: 2,
       }}
     >
-      <Paper elevation={3} sx={{ p: 4, width: '100%', maxWidth: 400, textAlign: 'center' }}>
-        <LockIcon sx={{ fontSize: 48, color: 'primary.main', mb: 2 }} />
-        <Typography variant="h4" gutterBottom>
-          { initialized ? "Unlock Agent" : "Setup Agent" }
-        </Typography>
-        <Typography variant="body1" sx={{ mb: 4 }}>
-          Enter your 4-digit PIN to { initialized ? "unlock" : "setup" }
-        </Typography>
-        <form autoComplete="off" onSubmit={handleUnlock}>
-          <PinInput initialPin={pin} onPinChange={(updatedPin) => setPin(updatedPin)} />
-
-          <Box sx={{ display: 'block' }} m={2}>
-            <Typography variant="body2" color="error" minHeight={"1.5em"}>
-              {invalidPin && 'Invalid PIN. Please try again.'}
+      <Container maxWidth="sm" disableGutters>
+        <Box
+          display="flex"
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          sx={{
+            animation: invalidPin ? 'shake 0.28s ease-in-out' : 'none',
+            '@keyframes shake': {
+              '0%': { transform: 'translateX(0)' },
+              '20%': { transform: 'translateX(-6px)' },
+              '40%': { transform: 'translateX(6px)' },
+              '60%': { transform: 'translateX(-4px)' },
+              '80%': { transform: 'translateX(4px)' },
+              '100%': { transform: 'translateX(0)' },
+            },
+          }}
+        >
+          <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, width: '100%', maxWidth: 440, textAlign: 'center' }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
+              <EnboxLogo size={48} />
+            </Box>
+            <Typography variant="h4" gutterBottom>
+              { initialized ? "Unlock Wallet" : "Set up Wallet" }
             </Typography>
-          </Box>
+            <Typography variant="body1" sx={{ mb: 3 }} color="text.secondary">
+              Enter your 4-digit PIN to { initialized ? "continue" : "get started" }
+            </Typography>
+            <form autoComplete="off" onSubmit={handleUnlock}>
+              <PinInput initialPin={pin} onPinChange={(updatedPin) => setPin(updatedPin)} />
 
-          {!initialized && <Grid container spacing={2} justifyContent="center" sx={{ my: 4 }}>
-            <TextField
-              label="DWN Endpoint"
-              value={dwnEndpoint}
-              onChange={(e) => setDwnEndpoint(e.target.value)}
-              fullWidth
-            />
-          </Grid>}
-          <Button
-            type="submit"
-            variant="contained"
-            color="primary"
-            fullWidth
-            size="large"
-            disabled={pin.some(digit => digit === '')}
-          >
-            { initialized ? "Unlock" : "Setup" }
-          </Button>
-        </form>
-      </Paper>
+              <Box sx={{ display: 'block' }} m={2}>
+                <Typography variant="body2" color="error" minHeight={"1.5em"}>
+                  {invalidPin && 'Invalid PIN. Please try again.'}
+                </Typography>
+              </Box>
+
+              {!initialized && <Grid container spacing={2} justifyContent="center" sx={{ my: 2 }}>
+                <TextField
+                  label="DWN Endpoint"
+                  value={dwnEndpoint}
+                  onChange={(e) => setDwnEndpoint(e.target.value)}
+                  fullWidth
+                />
+              </Grid>}
+              <Button
+                type="submit"
+                variant="contained"
+                color="primary"
+                fullWidth
+                size="large"
+                disabled={pin.some(digit => digit === '')}
+              >
+                { initialized ? "Unlock" : "Continue" }
+              </Button>
+            </form>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
+              Tip: You can paste your 4-digit PIN
+            </Typography>
+          </Paper>
+        </Box>
+      </Container>
     </Box>
-  </Container>
+  );
 }
 
 export default LoadAgent;
