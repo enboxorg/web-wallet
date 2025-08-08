@@ -28,7 +28,7 @@ const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange }) => {
 
     // Move focus to the next input
     if (value && digitIndex < initialPin.length - 1) {
-      const nextInput = document.getElementById(`pin-${digitIndex + 1}`);
+      const nextInput = document.getElementById(`pin-${digitIndex + 1}`) as HTMLInputElement | null;
       nextInput?.focus();
     }
 
@@ -37,13 +37,31 @@ const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange }) => {
 
   const onDigitInputKeyDown = (digitIndex: number) => (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Backspace" && !pin[digitIndex] && digitIndex > 0) {
-      const prevInput = document.getElementById(`pin-${digitIndex - 1}`);
+      const prevInput = document.getElementById(`pin-${digitIndex - 1}`) as HTMLInputElement | null;
       prevInput?.focus();
     }
   };
 
+  const onPaste = (event: React.ClipboardEvent<HTMLDivElement>) => {
+    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, pin.length);
+    if (!pasted) return;
+    event.preventDefault();
+
+    const newPin = [...pin];
+    for (let i = 0; i < pasted.length; i++) {
+      newPin[i] = pasted[i];
+    }
+
+    setPin(newPin);
+    onPinChange(newPin);
+
+    const lastIndex = Math.min(pasted.length - 1, pin.length - 1);
+    const focusEl = document.getElementById(`pin-${lastIndex}`) as HTMLInputElement | null;
+    focusEl?.focus();
+  };
+
   return (
-    <Grid container spacing={2} justifyContent="center">
+    <Grid container spacing={2} justifyContent="center" onPaste={onPaste}>
       {pin.map((digit, digitIndex) => (
         <Grid key={digitIndex}>
           <TextField
@@ -53,17 +71,25 @@ const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange }) => {
             onChange={onDigitInputChange(digitIndex)}
             onKeyDown={onDigitInputKeyDown(digitIndex)}
             sx={{
-              width: 60,
-              height: 60,
-              '& .MuiInputBase-input': {
-                textAlign: 'center', // Center the text
+              width: 72,
+              height: 72,
+              '& .MuiOutlinedInput-root': {
+                borderRadius: 2,
+                fontSize: '1.5rem',
+                '& input': {
+                  textAlign: 'center',
+                  padding: 0,
+                },
+                '& fieldset': {
+                  transition: 'border-color 0.2s ease',
+                },
               },
             }}
             inputRef={digitIndex === 0 ? firstInputRef : undefined}
             slotProps={{
               htmlInput: {
                 inputMode: 'numeric',
-                maxLength: 1, // ensures only 1 digit
+                maxLength: 1,
               }
             }}
           />

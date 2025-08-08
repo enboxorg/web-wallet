@@ -110,6 +110,7 @@ export const darkTheme = createTheme({
           backdropFilter: 'blur(20px)',
           border: '1px solid',
           borderColor: alpha('#3f3f46', 0.5),
+          boxShadow: '0 10px 40px rgba(0,0,0,0.35), 0 0 0 1px rgba(139,92,246,0.06)',
         },
       },
     },

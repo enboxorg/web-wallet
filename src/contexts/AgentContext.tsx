@@ -6,6 +6,9 @@ import { Web5UserAgent } from "@enbox/user-agent";
 
 import Loader from "@/components/Loader";
 import LoadAgent from "@/components/LoadAgent";
+import { ThemeProvider } from '@mui/material/styles';
+import { CssBaseline } from '@mui/material';
+import { darkTheme } from '@/theme/muiTheme';
 
 /** The amount of time of inactivity before the wallet is locked */
 const LOCK_TIMEOUT = 10 * 60 * 1000;
@@ -154,15 +157,18 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
         agent: web5Agent,
       }}
     >
-      {(initialized && unlocked && web5Agent) ? children : <AppProvider>
-        {(isInitializing || isConnecting) && <Loader message={isInitializing ? "Initializing Agent..." : "Connecting..."} /> ||
-        <LoadAgent
-          agent={web5Agent}
-          initialized={initialized}
-          unlock={unlock}
-          initialize={initialize}
-        />}
-      </AppProvider>}
+      {(initialized && unlocked && web5Agent) ? children : <ThemeProvider theme={darkTheme}>
+        <CssBaseline />
+        <AppProvider>
+          {(isInitializing || isConnecting) && <Loader message={isInitializing ? "Initializing Agent..." : "Connecting..."} /> ||
+          <LoadAgent
+            agent={web5Agent}
+            initialized={initialized}
+            unlock={unlock}
+            initialize={initialize}
+          />}
+        </AppProvider>
+      </ThemeProvider>}
     </AgentContext.Provider>
   );
 };
