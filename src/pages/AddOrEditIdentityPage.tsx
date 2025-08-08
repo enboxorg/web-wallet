@@ -2,19 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useIdentities } from '@/contexts/Context';
 import {
   Button,
-  TextField,
   Box,
-  Avatar,
-  Typography,
   CircularProgress,
-  IconButton,
 } from '@mui/material';
 import Grid from '@mui/material/Grid2'; // Updated import for Grid2
-import { PlusIcon } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Identity } from '@/lib/types';
 import { PageContainer } from '@toolpad/core';
 import ListInput from '@/components/ListInput';
+import FormSection from '@/components/ui/FormSection';
+import GlassyTextField from '@/components/ui/GlassyTextField';
+import AvatarUpload from '@/components/ui/AvatarUpload';
+import BannerUpload from '@/components/ui/BannerUpload';
+import FormActions from '@/components/ui/FormActions';
+import StyledButton from '@/components/ui/StyledButton';
 
 const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) => {
   const { didUri } = useParams();
@@ -186,144 +187,121 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
         ) : (
           <Grid container spacing={3}>
             <Grid size={12}>
-              <TextField
-                fullWidth
-                label="Persona"
-                name="persona"
-                value={formData.persona}
-                onChange={handleInputChange}
-                placeholder="Social, Professional, Gaming, etc."
-                required
-              />
-            </Grid>
-            <Grid size={12} sx={{ display: 'flex', alignItems: 'center' }}>
-              <Box position="relative" mr={2} sx={{ width: 60, height: 60 }}>
-                <Avatar
-                  src={avatarPreview || undefined}
-                  sx={{ width: 60, height: 60 }}
-                />
-                <IconButton
-                  component="label"
-                  sx={{
-                    position: 'absolute',
-                    right: 10,
-                    bottom: 10,
-                    opacity: 0.5,
-                    backgroundColor: 'background.paper',
-                    '&:hover': { backgroundColor: 'background.default' },
-                  }}
-                >
-                  <PlusIcon />
-                  <input
-                    type="file"
-                    hidden
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    width={20}
-                    name="avatar"
-                  />
-                </IconButton>
-              </Box>
-              <TextField
-                fullWidth
-                label="Display Name"
-                name="displayName"
-                value={formData.displayName}
-                onChange={handleInputChange}
-                placeholder="Display Name"
-                required
-              />
-            </Grid>
-            {bannerPreview && (
-              <Grid size={12} >
-                <Box display="flex" flexDirection="column" alignItems="left">
-                  <Typography variant="subtitle2">Banner Preview:</Typography>
-                  <Box
-                    sx={{
-                      width: '100%',
-                      borderRadius: 2,
-                      overflow: 'hidden',
-                      border: '1px solid',
-                      borderColor: 'divider',
-                    }}
-                  >
-                    <img 
-                      src={bannerPreview} 
-                      alt="Banner preview" 
-                      style={{ width: '100%', height: 'auto', maxHeight: 200, objectFit: 'cover' }} 
+              <FormSection title="Profile" description="Set how this identity appears across apps.">
+                <Grid container spacing={2} alignItems="center">
+                  <Grid>
+                    <AvatarUpload
+                      src={avatarPreview}
+                      onChange={(file) => {
+                        setFormData({ ...formData, avatar: file });
+                        const reader = new FileReader();
+                        reader.onloadend = () => setAvatarPreview(reader.result as string);
+                        reader.readAsDataURL(file);
+                      }}
+                      size={72}
                     />
-                  </Box>
-                </Box>
-              </Grid>
-            )}
-            <Grid size={12}>
-              {<Box display="flex" alignItems="center">
-                <Button
-                  variant="outlined"
-                  component="label"
-                  onClick={handleClearBanner}
-                >
-                  {bannerPreview ? 'Clear Banner' : 'Upload Banner'}
-                  <input
-                    type="file"
-                    hidden
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    name="banner"
+                  </Grid>
+                  <Grid sx={{ flex: 1 }}>
+                    <GlassyTextField
+                      fullWidth
+                      label="Persona"
+                      name="persona"
+                      value={formData.persona}
+                      onChange={handleInputChange}
+                      placeholder="Social, Professional, Gaming, etc."
+                      required
+                    />
+                  </Grid>
+                </Grid>
+                <Box sx={{ mt: 2 }}>
+                  <GlassyTextField
+                    fullWidth
+                    label="Display Name"
+                    name="displayName"
+                    value={formData.displayName}
+                    onChange={handleInputChange}
+                    placeholder="Display Name"
+                    required
                   />
-                </Button>
-              </Box>}
+                </Box>
+              </FormSection>
             </Grid>
+
             <Grid size={12}>
-              <TextField
-                fullWidth
-                label="Tagline"
-                name="tagline"
-                value={formData.tagline}
-                onChange={handleInputChange}
-              />
+              <FormSection title="Banner" description="An optional cover image for profile surfaces.">
+                <BannerUpload
+                  src={bannerPreview}
+                  onChange={(file) => {
+                    setFormData({ ...formData, banner: file });
+                    const reader = new FileReader();
+                    reader.onloadend = () => setBannerPreview(reader.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                  onClear={() => handleClearBanner({ preventDefault: () => {} } as any)}
+                />
+              </FormSection>
             </Grid>
+
             <Grid size={12}>
-              <TextField
-                fullWidth
-                label="Bio"
-                name="bio"
-                value={formData.bio}
-                onChange={handleInputChange}
-                multiline
-                rows={4}
-              />
+              <FormSection title="About" description="Tell others a bit more about this identity.">
+                <Box sx={{ mb: 2 }}>
+                  <GlassyTextField
+                    fullWidth
+                    label="Tagline"
+                    name="tagline"
+                    value={formData.tagline}
+                    onChange={handleInputChange}
+                  />
+                </Box>
+                <GlassyTextField
+                  fullWidth
+                  label="Bio"
+                  name="bio"
+                  value={formData.bio}
+                  onChange={handleInputChange}
+                  multiline
+                  rows={4}
+                />
+              </FormSection>
             </Grid>
-            <ListInput
-              label={"DWN Endpoint"}
-              value={formData.dwnEndpoints}
+
+            <Grid size={12}>
+              <FormSection title="Decentralized Web Node" description="Where your data is stored and synced.">
+                <ListInput
+                  label={'DWN Endpoint'}
+                  value={formData.dwnEndpoints}
                               defaultValue={'https://dwn.enbox.org/latest'}
-                placeholder='https://dwn.enbox.org/latest'
-              onChange={(value) => {
-                setFormData({ ...formData, dwnEndpoints: value });
-              }}
-            />
-            <Box mt={4}>
-              <Button
-                type="submit"
-                disabled={loading || submitDisabled}
-                variant="contained"
-                color="primary"
-                size="large"
-              >
-                {isEdit ? 'Update Identity' : 'Add Identity'}
-              </Button>
-              {isEdit && (
-                <Button
-                  variant="outlined"
+                  placeholder='https://dwn.enbox.org/latest'
+                  onChange={(value) => {
+                    setFormData({ ...formData, dwnEndpoints: value });
+                  }}
+                />
+              </FormSection>
+            </Grid>
+
+            <Grid size={12}>
+              <FormActions>
+                <StyledButton
+                  type="submit"
+                  disabled={loading || submitDisabled}
+                  variant="contained"
+                  color="primary"
                   size="large"
-                  sx={{ ml: 2 }}
-                  onClick={() => navigate(`/identity/${selectedIdentity.didUri}`)}
                 >
-                  Cancel
-                </Button>
-              )}
-            </Box>
+                  {isEdit ? 'Update Identity' : 'Create Identity'}
+                </StyledButton>
+                {isEdit && (
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    sx={{ ml: 0 }}
+                    onClick={() => navigate(`/identity/${selectedIdentity.didUri}`)}
+                  >
+                    Cancel
+                  </Button>
+                )}
+              </FormActions>
+            </Grid>
           </Grid>
         )}
       </form>

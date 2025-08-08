@@ -1,11 +1,13 @@
 import { useBackupSeed } from '@/contexts/Context';
 import LockIcon from '@mui/icons-material/Lock';
-import { Box, Button, Container, Paper, TextField, Typography } from "@mui/material";
+import { Box, Button, Container, Paper, TextField, Typography, alpha } from "@mui/material";
 import Grid from '@mui/material/Grid2';
 import { Web5UserAgent } from '@enbox/user-agent';
 import { useCallback, useEffect, useState } from 'react';
 import PinInput from './PinInput';
 import EnboxLogo from './EnboxLogo';
+import StyledButton from './ui/StyledButton';
+import GlassyTextField from './ui/GlassyTextField';
 
 const LoadAgent:React.FC<{
   agent: Web5UserAgent | undefined;
@@ -94,7 +96,7 @@ const LoadAgent:React.FC<{
             },
           }}
         >
-          <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, width: '100%', maxWidth: 440, textAlign: 'center' }}>
+          <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, width: '100%', maxWidth: 460, textAlign: 'center', borderRadius: 3 }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
               <EnboxLogo size={48} />
             </Box>
@@ -105,23 +107,23 @@ const LoadAgent:React.FC<{
               Enter your 4-digit PIN to { initialized ? "continue" : "get started" }
             </Typography>
             <form autoComplete="off" onSubmit={handleUnlock}>
-              <PinInput initialPin={pin} onPinChange={(updatedPin) => setPin(updatedPin)} />
+              <PinInput initialPin={pin} onPinChange={(updatedPin) => setPin(updatedPin)} error={invalidPin} />
 
               <Box sx={{ display: 'block' }} m={2}>
-                <Typography variant="body2" color="error" minHeight={"1.5em"}>
-                  {invalidPin && 'Invalid PIN. Please try again.'}
+                <Typography variant="body2" color={invalidPin ? 'error' : 'text.secondary'} minHeight={"1.5em"}>
+                  {invalidPin ? 'Invalid PIN. Please try again.' : ' '}
                 </Typography>
               </Box>
 
               {!initialized && <Grid container spacing={2} justifyContent="center" sx={{ my: 2 }}>
-                <TextField
+                <GlassyTextField
                   label="DWN Endpoint"
                   value={dwnEndpoint}
                   onChange={(e) => setDwnEndpoint(e.target.value)}
                   fullWidth
                 />
               </Grid>}
-              <Button
+              <StyledButton
                 type="submit"
                 variant="contained"
                 color="primary"
@@ -130,7 +132,7 @@ const LoadAgent:React.FC<{
                 disabled={pin.some(digit => digit === '')}
               >
                 { initialized ? "Unlock" : "Continue" }
-              </Button>
+              </StyledButton>
             </form>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
               Tip: You can paste your 4-digit PIN

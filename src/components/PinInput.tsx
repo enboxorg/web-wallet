@@ -6,9 +6,10 @@ import { useState } from 'react';
 interface PinInputProps {
   initialPin: string[];
   onPinChange: (updatedPin: string[]) => void;
+  error?: boolean;
 }
 
-const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange }) => {
+const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange, error = false }) => {
   const [pin, setPin] = useState(initialPin);
   const firstInputRef = createRef<HTMLInputElement>();
 
@@ -70,6 +71,7 @@ const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange }) => {
             value={digit}
             onChange={onDigitInputChange(digitIndex)}
             onKeyDown={onDigitInputKeyDown(digitIndex)}
+            error={error}
             sx={{
               width: 72,
               height: 72,
