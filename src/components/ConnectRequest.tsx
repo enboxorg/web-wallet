@@ -1,10 +1,24 @@
-import React, { useState } from 'react';
-import { Box, Button, Typography } from "@mui/material"
-import PublicIdentityCard from "./identity/PublicIdentityCard"
-import PermissionRequest from "./PermissionsRequest"
+import React, { ReactNode, useState } from 'react';
+import { Typography, Box, Button } from '@mui/material';
 import { Check as CheckIcon, Close as CloseIcon } from '@mui/icons-material';
-import { ConnectPermissionRequest } from "@enbox/agent";
+import PublicIdentityCard from './identity/PublicIdentityCard';
 import IdentitySelector from './IdentitySelector';
+import PermissionRequest from './PermissionsRequest';
+import { useNavigate } from 'react-router-dom';
+import { Convert } from '@enbox/common';
+import { profileDefinition } from '@/lib/ProfileProtocol';
+import { ConnectPermissionRequest } from '@enbox/agent';
+
+const profileProtocolB64 = Convert.string(profileDefinition.protocol).toBase64Url();
+
+export interface ConnectRequestProps {
+  did?: string;
+  origin?: string;
+  icon?: string;
+  permissions: ConnectPermissionRequest[];
+  handleApprove: (did: string) => void;
+  handleDeny: () => void;
+}
 
 const ConnectRequest: React.FC<{
   did?: string;
@@ -13,7 +27,7 @@ const ConnectRequest: React.FC<{
   handleApprove: (selectedDid: string) => void;
   handleDeny: () => void;
   [key: string]: any;
-}> = ({ origin, did, permissions, handleApprove, handleDeny, ...props }) => {
+}> = ({ did, origin, permissions, handleApprove, handleDeny, ...props }) => {
   const [ selectedDid, setSelectedDid ] = useState<string>(did || '');
 
   return <Box 
@@ -36,7 +50,16 @@ const ConnectRequest: React.FC<{
       is requesting permissions from
     </Typography>
     <Box sx={{ mb: 4, mt: 2 }}>
-      {selectedDid && <PublicIdentityCard did={selectedDid} compact={true} />}
+      {selectedDid && <PublicIdentityCard 
+        identity={{
+          didUri: selectedDid,
+          profile: {
+            heroUrl: `https://dweb/${selectedDid}/read/protocols/${profileProtocolB64}/hero`,
+            avatarUrl: `https://dweb/${selectedDid}/read/protocols/${profileProtocolB64}/avatar`,
+            social: undefined // We don't have the social data here
+          }
+        }}
+      />}
       {!selectedDid && <Typography variant="subtitle2" color="text.secondary">Select an identity to approve the request</Typography>}
     </Box>
     {!did && <IdentitySelector value={selectedDid} onChange={setSelectedDid} sx={{ px: 5, width: '100%', mb: 2 }} />}
