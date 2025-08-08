@@ -1,10 +1,9 @@
 import { useBackupSeed } from '@/contexts/Context';
-import LockIcon from '@mui/icons-material/Lock';
-import { Box, Button, Container, Paper, TextField, Typography } from "@mui/material";
-import Grid from '@mui/material/Grid2';
 import { Web5UserAgent } from '@enbox/user-agent';
 import { useCallback, useEffect, useState } from 'react';
-import PinInput from './PinInput';
+import CyberPinInput from './ui/CyberPinInput';
+import FormInput from './ui/FormInput';
+import FormButton from './ui/FormButton';
 import EnboxLogo from './EnboxLogo';
 
 const LoadAgent:React.FC<{
@@ -66,79 +65,115 @@ const LoadAgent:React.FC<{
   }, [ pin ]);
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'radial-gradient(1200px 600px at 20% 10%, rgba(139,92,246,0.20), transparent 60%), radial-gradient(1000px 500px at 80% 80%, rgba(236,72,153,0.18), transparent 60%), linear-gradient(180deg, #0a0a0b 0%, #0a0a0b 100%)',
-        p: 2,
-      }}
-    >
-      <Container maxWidth="sm" disableGutters>
-        <Box
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          sx={{
-            animation: invalidPin ? 'shake 0.28s ease-in-out' : 'none',
-            '@keyframes shake': {
-              '0%': { transform: 'translateX(0)' },
-              '20%': { transform: 'translateX(-6px)' },
-              '40%': { transform: 'translateX(6px)' },
-              '60%': { transform: 'translateX(-4px)' },
-              '80%': { transform: 'translateX(4px)' },
-              '100%': { transform: 'translateX(0)' },
-            },
+    <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+      {/* Dynamic Background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-dark-bg-primary via-dark-bg-secondary to-dark-bg-primary">
+        {/* Animated Background Elements */}
+        <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-dark-accent-purple/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-dark-accent-pink/8 rounded-full blur-3xl animate-glow" />
+        <div className="absolute top-3/4 left-3/4 w-64 h-64 bg-dark-accent-violet/6 rounded-full blur-2xl" />
+        
+        {/* Grid Pattern Overlay */}
+        <div 
+          className="absolute inset-0 opacity-[0.02]"
+          style={{
+            backgroundImage: `
+              linear-gradient(rgba(139, 92, 246, 0.1) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(139, 92, 246, 0.1) 1px, transparent 1px)
+            `,
+            backgroundSize: '50px 50px'
           }}
-        >
-          <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, width: '100%', maxWidth: 440, textAlign: 'center' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
-              <EnboxLogo size={48} />
-            </Box>
-            <Typography variant="h4" gutterBottom>
-              { initialized ? "Unlock Wallet" : "Set up Wallet" }
-            </Typography>
-            <Typography variant="body1" sx={{ mb: 3 }} color="text.secondary">
-              Enter your 4-digit PIN to { initialized ? "continue" : "get started" }
-            </Typography>
-            <form autoComplete="off" onSubmit={handleUnlock}>
-              <PinInput initialPin={pin} onPinChange={(updatedPin) => setPin(updatedPin)} />
+        />
+      </div>
 
-              <Box sx={{ display: 'block' }} m={2}>
-                <Typography variant="body2" color="error" minHeight={"1.5em"}>
-                  {invalidPin && 'Invalid PIN. Please try again.'}
-                </Typography>
-              </Box>
+      <div className={`relative w-full max-w-lg mx-auto ${invalidPin ? 'animate-bounce' : ''}`}>
+        {/* Main Container */}
+        <div className="bg-dark-surface-primary/60 backdrop-blur-xl border border-dark-border-primary/50 rounded-2xl p-8 shadow-2xl">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <div className="flex justify-center mb-4">
+              <div className="relative">
+                <EnboxLogo size={64} />
+                <div className="absolute inset-0 bg-dark-accent-purple/20 rounded-full blur-xl animate-pulse" />
+              </div>
+            </div>
+            
+            <h1 className="text-3xl font-bold text-dark-text-primary mb-2 bg-gradient-to-r from-dark-accent-purple to-dark-accent-pink bg-clip-text text-transparent">
+              {initialized ? "Unlock Wallet" : "Set up Wallet"}
+            </h1>
+            
+            <p className="text-dark-text-secondary text-lg">
+              Enter your 4-digit PIN to {initialized ? "continue" : "get started"}
+            </p>
+          </div>
 
-              {!initialized && <Grid container spacing={2} justifyContent="center" sx={{ my: 2 }}>
-                <TextField
+          <form autoComplete="off" onSubmit={handleUnlock} className="space-y-6">
+            {/* PIN Input */}
+            <div className="space-y-4">
+              <CyberPinInput 
+                initialPin={pin} 
+                onPinChange={(updatedPin) => setPin(updatedPin)}
+                variant="glass"
+                size="lg"
+                error={invalidPin}
+                className="justify-center"
+              />
+              
+              {/* Error Message */}
+              <div className="text-center min-h-[1.5rem]">
+                {invalidPin && (
+                  <p className="text-red-400 text-sm flex items-center justify-center gap-2">
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                    </svg>
+                    Invalid PIN. Please try again.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* DWN Endpoint for Setup */}
+            {!initialized && (
+              <div className="space-y-4">
+                <FormInput
                   label="DWN Endpoint"
                   value={dwnEndpoint}
                   onChange={(e) => setDwnEndpoint(e.target.value)}
-                  fullWidth
+                  variant="glass"
+                  placeholder="https://dwn.enbox.org/latest"
                 />
-              </Grid>}
-              <Button
-                type="submit"
-                variant="contained"
-                color="primary"
-                fullWidth
-                size="large"
-                disabled={pin.some(digit => digit === '')}
-              >
-                { initialized ? "Unlock" : "Continue" }
-              </Button>
-            </form>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
-              Tip: You can paste your 4-digit PIN
-            </Typography>
-          </Paper>
-        </Box>
-      </Container>
-    </Box>
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <FormButton
+              type="submit"
+              variant="primary"
+              size="lg"
+              disabled={pin.some(digit => digit === '')}
+              className="w-full"
+              icon={
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={initialized ? "M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" : "M13 10V3L4 14h7v7l9-11h-7z"} />
+                </svg>
+              }
+            >
+              {initialized ? "Unlock" : "Continue"}
+            </FormButton>
+          </form>
+
+          {/* Footer Tip */}
+          <div className="text-center mt-6">
+            <p className="text-dark-text-tertiary text-sm">
+              💡 Tip: You can paste your 4-digit PIN
+            </p>
+          </div>
+        </div>
+
+        {/* Ambient Light Effects */}
+        <div className="absolute -inset-4 bg-gradient-to-r from-dark-accent-purple/5 via-transparent to-dark-accent-pink/5 rounded-3xl blur-2xl -z-10" />
+      </div>
+    </div>
   );
 }
 
