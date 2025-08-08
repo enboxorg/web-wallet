@@ -1,11 +1,165 @@
 import { useBackupSeed } from '@/contexts/Context';
-import LockIcon from '@mui/icons-material/Lock';
-import { Box, Button, Container, Paper, TextField, Typography } from "@mui/material";
+import { Box, Button, Container, Paper, Typography, alpha, styled } from "@mui/material";
 import Grid from '@mui/material/Grid2';
 import { Web5UserAgent } from '@enbox/user-agent';
 import { useCallback, useEffect, useState } from 'react';
-import PinInput from './PinInput';
 import EnboxLogo from './EnboxLogo';
+import { CyberPinInput, CyberTextField } from './forms';
+import { keyframes } from '@mui/system';
+import { Shield, Lock, Unlock } from 'lucide-react';
+
+// Animations
+const fadeIn = keyframes`
+  0% {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+`;
+
+const glowPulse = keyframes`
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.3), 0 0 40px rgba(139, 92, 246, 0.1);
+  }
+  50% {
+    box-shadow: 0 0 30px rgba(139, 92, 246, 0.5), 0 0 60px rgba(139, 92, 246, 0.2);
+  }
+`;
+
+const backgroundShift = keyframes`
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+`;
+
+// Styled components
+const StyledContainer = styled(Box)(({ theme }) => ({
+  minHeight: '100vh',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  position: 'relative',
+  overflow: 'hidden',
+  background: '#0a0a0b',
+  
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: `radial-gradient(circle at 20% 80%, ${alpha('#8b5cf6', 0.15)} 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, ${alpha('#ec4899', 0.15)} 0%, transparent 50%),
+                radial-gradient(circle at 40% 40%, ${alpha('#6366f1', 0.1)} 0%, transparent 50%)`,
+    animation: `${backgroundShift} 20s ease infinite`,
+    backgroundSize: '200% 200%',
+  },
+  
+  '&::after': {
+    content: '""',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%239C92AC" fill-opacity="0.03"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E")',
+    opacity: 0.5,
+  },
+}));
+
+const StyledPaper = styled(Paper)(({ theme }) => ({
+  padding: theme.spacing(5),
+  width: '100%',
+  maxWidth: 480,
+  textAlign: 'center',
+  backgroundColor: alpha('#18181b', 0.8),
+  backdropFilter: 'blur(20px)',
+  border: '1px solid',
+  borderColor: alpha('#8b5cf6', 0.2),
+  boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(139, 92, 246, 0.1)',
+  borderRadius: '16px',
+  position: 'relative',
+  animation: `${fadeIn} 0.6s ease-out, ${glowPulse} 4s ease-in-out infinite`,
+  
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: -1,
+    left: -1,
+    right: -1,
+    bottom: -1,
+    background: `linear-gradient(45deg, ${alpha('#8b5cf6', 0.3)}, ${alpha('#ec4899', 0.3)}, ${alpha('#8b5cf6', 0.3)})`,
+    borderRadius: '16px',
+    opacity: 0,
+    transition: 'opacity 0.3s ease',
+    zIndex: -1,
+  },
+  
+  '&:hover::before': {
+    opacity: 1,
+  },
+}));
+
+const IconWrapper = styled(Box)(({ theme }) => ({
+  width: 80,
+  height: 80,
+  borderRadius: '50%',
+  backgroundColor: alpha('#8b5cf6', 0.1),
+  border: '2px solid',
+  borderColor: alpha('#8b5cf6', 0.3),
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  margin: '0 auto',
+  marginBottom: theme.spacing(3),
+  position: 'relative',
+  
+  '&::before': {
+    content: '""',
+    position: 'absolute',
+    top: -10,
+    left: -10,
+    right: -10,
+    bottom: -10,
+    borderRadius: '50%',
+    background: `radial-gradient(circle, ${alpha('#8b5cf6', 0.2)} 0%, transparent 70%)`,
+    animation: `${glowPulse} 3s ease-in-out infinite`,
+  },
+}));
+
+const StyledButton = styled(Button)(({ theme }) => ({
+  background: `linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)`,
+  color: '#fff',
+  padding: '12px 32px',
+  fontSize: '1rem',
+  fontWeight: 600,
+  borderRadius: '10px',
+  textTransform: 'none',
+  boxShadow: '0 4px 15px rgba(139, 92, 246, 0.4)',
+  transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+  
+  '&:hover': {
+    background: `linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)`,
+    boxShadow: '0 6px 20px rgba(139, 92, 246, 0.6)',
+    transform: 'translateY(-2px)',
+  },
+  
+  '&:active': {
+    transform: 'translateY(0)',
+  },
+  
+  '&:disabled': {
+    background: alpha('#8b5cf6', 0.3),
+    boxShadow: 'none',
+  },
+}));
 
 const LoadAgent:React.FC<{
   agent: Web5UserAgent | undefined;
@@ -20,14 +174,6 @@ const LoadAgent:React.FC<{
   const [invalidPin, setInvalidPin] = useState(false);
   const [dwnEndpoint, setDwnEndpoint] = useState('https://dwn.enbox.org/latest');
 
-  // Auto-submit in both modes when 4 digits are present
-  useEffect(() => {
-    if (pin.length === 4 && pin.every(digit => digit !== '')) {
-      const pinString = pin.join('');
-      handleAgentSetup(pinString);
-    }
-  }, [ pin ]);
-
   const handleAgentSetup = useCallback(async (password: string) => {
    if (agent && !initialized && password) {
       try {
@@ -36,52 +182,37 @@ const LoadAgent:React.FC<{
           setBackupSeed(recoveryPhrase);
         }
       } finally {
-        // reset the password and auto submit regardless of the result
         setPin(['', '', '', '']);
       }
     } else if (initialized && password) {
-
       try {
         await unlock(password);
         setInvalidPin(false);
       } catch (error) {
         setInvalidPin(true);
-
         setTimeout(() => {
-          // remove the error message after 1.5 seconds
           setInvalidPin(false);
         }, 1500);
-
       } finally {
-        // reset the password and auto submit regardless of the result
         setPin(['', '', '', '']);
       }
     }
   }, [ agent, initialized, dwnEndpoint ]);
 
-  const handleUnlock =  useCallback(async (e: React.FormEvent) => {
+  const handlePinComplete = useCallback((pinString: string) => {
+    handleAgentSetup(pinString);
+  }, [handleAgentSetup]);
+
+  const handleUnlock = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const pinString = pin.join('');
     return handleAgentSetup(pinString);
-  }, [ pin ]);
+  }, [ pin, handleAgentSetup ]);
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'radial-gradient(1200px 600px at 20% 10%, rgba(139,92,246,0.20), transparent 60%), radial-gradient(1000px 500px at 80% 80%, rgba(236,72,153,0.18), transparent 60%), linear-gradient(180deg, #0a0a0b 0%, #0a0a0b 100%)',
-        p: 2,
-      }}
-    >
+    <StyledContainer>
       <Container maxWidth="sm" disableGutters>
         <Box
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
           sx={{
             animation: invalidPin ? 'shake 0.28s ease-in-out' : 'none',
             '@keyframes shake': {
@@ -94,51 +225,111 @@ const LoadAgent:React.FC<{
             },
           }}
         >
-          <Paper elevation={3} sx={{ p: { xs: 3, sm: 4 }, width: '100%', maxWidth: 440, textAlign: 'center' }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', mb: 2 }}>
-              <EnboxLogo size={48} />
+          <StyledPaper elevation={0}>
+            <IconWrapper>
+              {initialized ? (
+                <Lock size={40} style={{ color: '#8b5cf6' }} />
+              ) : (
+                <Shield size={40} style={{ color: '#8b5cf6' }} />
+              )}
+            </IconWrapper>
+            
+            <Box sx={{ mb: 1 }}>
+              <EnboxLogo size={32} />
             </Box>
-            <Typography variant="h4" gutterBottom>
-              { initialized ? "Unlock Wallet" : "Set up Wallet" }
+            
+            <Typography 
+              variant="h4" 
+              gutterBottom 
+              sx={{ 
+                fontWeight: 700,
+                background: `linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)`,
+                backgroundClip: 'text',
+                WebkitBackgroundClip: 'text',
+                WebkitTextFillColor: 'transparent',
+                mb: 1
+              }}
+            >
+              { initialized ? "Welcome Back" : "Initialize Wallet" }
             </Typography>
-            <Typography variant="body1" sx={{ mb: 3 }} color="text.secondary">
-              Enter your 4-digit PIN to { initialized ? "continue" : "get started" }
+            
+            <Typography 
+              variant="body1" 
+              sx={{ 
+                mb: 4, 
+                color: 'text.secondary',
+                fontSize: '0.95rem'
+              }}
+            >
+              { initialized ? "Enter your PIN to unlock your wallet" : "Set up your secure PIN to get started" }
             </Typography>
+            
             <form autoComplete="off" onSubmit={handleUnlock}>
-              <PinInput initialPin={pin} onPinChange={(updatedPin) => setPin(updatedPin)} />
-
-              <Box sx={{ display: 'block' }} m={2}>
-                <Typography variant="body2" color="error" minHeight={"1.5em"}>
-                  {invalidPin && 'Invalid PIN. Please try again.'}
-                </Typography>
+              <Box mb={3}>
+                <CyberPinInput 
+                  value={pin}
+                  onChange={setPin}
+                  onComplete={handlePinComplete}
+                  error={invalidPin}
+                  autoFocus
+                />
               </Box>
 
-              {!initialized && <Grid container spacing={2} justifyContent="center" sx={{ my: 2 }}>
-                <TextField
-                  label="DWN Endpoint"
-                  value={dwnEndpoint}
-                  onChange={(e) => setDwnEndpoint(e.target.value)}
-                  fullWidth
-                />
-              </Grid>}
-              <Button
+              <Box sx={{ display: 'block', minHeight: '24px' }} mb={2}>
+                {invalidPin && (
+                  <Typography 
+                    variant="body2" 
+                    color="error"
+                    sx={{
+                      animation: `${fadeIn} 0.3s ease-out`,
+                      textShadow: '0 0 5px rgba(239, 68, 68, 0.3)',
+                    }}
+                  >
+                    Invalid PIN. Please try again.
+                  </Typography>
+                )}
+              </Box>
+
+              {!initialized && (
+                <Box mb={3}>
+                  <CyberTextField
+                    label="DWN Endpoint"
+                    value={dwnEndpoint}
+                    onChange={(e) => setDwnEndpoint(e.target.value)}
+                    fullWidth
+                    size="medium"
+                    helperText="Decentralized Web Node endpoint for data storage"
+                  />
+                </Box>
+              )}
+              
+              <StyledButton
                 type="submit"
                 variant="contained"
-                color="primary"
                 fullWidth
                 size="large"
                 disabled={pin.some(digit => digit === '')}
+                startIcon={initialized ? <Unlock size={20} /> : <Shield size={20} />}
               >
-                { initialized ? "Unlock" : "Continue" }
-              </Button>
+                { initialized ? "Unlock Wallet" : "Initialize Wallet" }
+              </StyledButton>
             </form>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
-              Tip: You can paste your 4-digit PIN
+            
+            <Typography 
+              variant="caption" 
+              color="text.secondary" 
+              sx={{ 
+                display: 'block', 
+                mt: 3,
+                opacity: 0.7 
+              }}
+            >
+              💡 Tip: You can paste your 4-digit PIN
             </Typography>
-          </Paper>
+          </StyledPaper>
         </Box>
       </Container>
-    </Box>
+    </StyledContainer>
   );
 }
 
