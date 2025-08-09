@@ -112,6 +112,19 @@ const IdentityDetailsPage: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Track wrapper resize/position changes (e.g., sidenav open/close)
+  useEffect(() => {
+    if (!heroWrapperRef.current) return;
+    const el = heroWrapperRef.current;
+    const observer = new ResizeObserver(() => {
+      const rect = el.getBoundingClientRect();
+      setPinnedLeft(rect.left);
+      setPinnedWidth(rect.width);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const headerOpacity = useMemo(() => {
     const o = 1 - parallax / 400;
     return Math.max(0.6, Math.min(1, o));
@@ -286,6 +299,7 @@ const IdentityDetailsPage: React.FC = () => {
                 transform: isPinned ? 'none' : undefined,
                 zIndex: isPinned ? 1000 : 'auto',
                 width: isPinned ? `${pinnedWidth}px` : undefined,
+                transition: isPinned ? 'left 220ms ease, width 220ms ease' : undefined,
               }}
             >
               <Box ref={heroRef} sx={{ position: 'relative', height: `${currentHeroHeight}px`, transition: 'height 320ms cubic-bezier(0.22, 0.61, 0.36, 1)' }}>
