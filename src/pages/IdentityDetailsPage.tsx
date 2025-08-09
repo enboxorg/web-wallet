@@ -16,6 +16,7 @@ import {
   Tabs,
   Tab,
   Chip,
+  Fade,
 } from '@mui/material';
 import {
   Edit, Delete, GetApp, ContentCopy, QrCode2,
@@ -32,8 +33,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ProtocolItem from '@/components/ProtocolItem';
 import PermissionsList from '@/components/PermissionsList';
-import { CSSTransition } from 'react-transition-group';
-
 // Subtle gradient overlay for hero banner
 const BannerOverlay = styled(Box)(({ theme }) => ({
   position: 'absolute',
@@ -82,6 +81,11 @@ const IdentityDetailsPage: React.FC = () => {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  const headerOpacity = useMemo(() => {
+    const o = 1 - parallax / 400;
+    return Math.max(0.6, Math.min(1, o));
+  }, [parallax]);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -255,6 +259,7 @@ const IdentityDetailsPage: React.FC = () => {
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
+                          opacity: headerOpacity,
                         }}
                       >
                         {social.displayName} ({selectedIdentity.persona})
@@ -263,7 +268,7 @@ const IdentityDetailsPage: React.FC = () => {
                     {social?.tagline && (
                       <Typography
                         variant="body2"
-                        sx={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}
+                        sx={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(0,0,0,0.8)', opacity: headerOpacity }}
                       >
                         {social.tagline}
                       </Typography>
@@ -445,7 +450,7 @@ const IdentityDetailsPage: React.FC = () => {
               </Tabs>
 
               {/* Overview */}
-              <CSSTransition in={tabValue === 0} timeout={200} classNames="fade" unmountOnExit>
+              <Fade in={tabValue === 0} timeout={250} mountOnEnter unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   {social?.bio && (
                     <Box sx={{ mb: 2.5 }}>
@@ -497,10 +502,10 @@ const IdentityDetailsPage: React.FC = () => {
                     </Box>
                   )}
                 </Box>
-              </CSSTransition>
+              </Fade>
 
               {/* Protocols */}
-              <CSSTransition in={tabValue === 1} timeout={200} classNames="fade" unmountOnExit>
+              <Fade in={tabValue === 1} timeout={250} mountOnEnter unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <List>
                     {protocols.map((definition) => (
@@ -508,10 +513,10 @@ const IdentityDetailsPage: React.FC = () => {
                     ))}
                   </List>
                 </Box>
-              </CSSTransition>
+              </Fade>
 
               {/* Wallets */}
-              <CSSTransition in={tabValue === 2} timeout={200} classNames="fade" unmountOnExit>
+              <Fade in={tabValue === 2} timeout={250} mountOnEnter unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <List>
                     {wallets.map((wallet, index) => (
@@ -521,24 +526,24 @@ const IdentityDetailsPage: React.FC = () => {
                     ))}
                   </List>
                 </Box>
-              </CSSTransition>
+              </Fade>
 
               {/* Permissions */}
-              <CSSTransition in={tabValue === 3} timeout={200} classNames="fade" unmountOnExit>
+              <Fade in={tabValue === 3} timeout={250} mountOnEnter unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <PermissionsList permissions={permissions} protocols={protocols} />
                 </Box>
-              </CSSTransition>
+              </Fade>
 
               {/* Activity */}
-              <CSSTransition in={tabValue === 4} timeout={200} classNames="fade" unmountOnExit>
+              <Fade in={tabValue === 4} timeout={250} mountOnEnter unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <Box sx={{ textAlign: 'center', color: 'text.secondary', py: 6 }}>
                     <Typography variant="h6" sx={{ mb: 1 }}>No recent activity</Typography>
                     <Typography variant="body2">When this identity interacts with apps and protocols, updates will appear here.</Typography>
                   </Box>
                 </Box>
-              </CSSTransition>
+              </Fade>
             </GlassSection>
           </Box>
 
