@@ -13,11 +13,19 @@ import {
   Button,
   ClickAwayListener,
   alpha,
+  Tabs,
+  Tab,
+  Chip,
 } from '@mui/material';
 import {
   Edit, Delete, GetApp, ContentCopy, QrCode2,
   Language, MoreVert,
   Person2Outlined,
+  Share as ShareIcon,
+  Link as LinkIcon,
+  Hub as HubIcon,
+  AccountBalanceWallet as WalletIcon,
+  ShieldOutlined as ShieldIcon,
 } from '@mui/icons-material';
 import { PageContainer } from '@toolpad/core';
 import { useEffect, useMemo, useState } from 'react';
@@ -54,6 +62,7 @@ const IdentityDetailsPage: React.FC = () => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copyTooltipOpen, setCopyTooltipOpen] = useState(false);
   const [copyTooltipText, setCopyTooltipText] = useState('Copy DID');
+  const [tabValue, setTabValue] = useState(0);
 
   useEffect(() => {
     if (didUri !== selectedIdentity?.didUri) {
@@ -125,13 +134,37 @@ const IdentityDetailsPage: React.FC = () => {
     return selectedIdentity ? [{ title: 'Identities', path: '/identities' }, { title: selectedIdentity.persona, path: `/identity/${didUri}` }] : [];
   }, [selectedIdentity, didUri]);
 
+  const apps = useMemo(() => {
+    return selectedIdentity?.profile.social?.apps || {};
+  }, [selectedIdentity]);
+
+  const handleShare = async () => {
+    if (!selectedIdentity) return;
+    const url = `${window.location.origin}/identity/${selectedIdentity.didUri}`;
+    const title = selectedIdentity.profile.social?.displayName || selectedIdentity.persona;
+    const text = `Check out ${title} on DWeb Wallet`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title, text, url });
+      } else {
+        await navigator.clipboard.writeText(url);
+        setCopyTooltipText('Link copied!');
+        setCopyTooltipOpen(true);
+        setTimeout(() => {
+          setCopyTooltipText('Copy DID');
+          setCopyTooltipOpen(false);
+        }, 1500);
+      }
+    } catch {}
+  };
+
   return (
     <PageContainer title={title} breadcrumbs={breadCrumbs}>
       {selectedIdentity && (
         <Box sx={{ pb: 4 }}>
           {/* Hero Header */}
           <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
-            <GlassSection elevation={0} sx={{ mb: 4, p: 0, overflow: 'hidden' }}>
+            <GlassSection elevation={0} sx={{ mb: 3, p: 0, overflow: 'hidden' }}>
               <Box sx={{ position: 'relative', height: { xs: 220, sm: 260, md: 300 } }}>
                 <Box
                   component="img"
@@ -202,6 +235,11 @@ const IdentityDetailsPage: React.FC = () => {
                   <IconButton onClick={handleMenuOpen} sx={{ color: 'common.white' }}>
                     <MoreVert />
                   </IconButton>
+                  <Tooltip title="Share profile">
+                    <IconButton onClick={handleShare} sx={{ color: 'common.white' }}>
+                      <ShareIcon />
+                    </IconButton>
+                  </Tooltip>
                   <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
                     <MenuItem onClick={() => { handleMenuClose(); navigate(`/identity/edit/${selectedIdentity.didUri}`); }}>
                       <ListItemIcon>
@@ -226,7 +264,7 @@ const IdentityDetailsPage: React.FC = () => {
                 </Box>
               </Box>
 
-              {/* Info chips under header */}
+              {/* Info and quick actions under header */}
               <Box sx={{ p: { xs: 2, sm: 3 } }}>
                 <Grid container spacing={2} alignItems="center">
                   <Grid size={12}>
@@ -266,6 +304,11 @@ const IdentityDetailsPage: React.FC = () => {
                           <QrCode2 fontSize="small" />
                         </IconButton>
                       </Tooltip>
+                      <Tooltip title="Copy link">
+                        <IconButton size="small" onClick={handleShare}>
+                          <LinkIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
                     </Box>
                   </Grid>
                   {dwnEndpoints.length > 0 && (
@@ -297,44 +340,140 @@ const IdentityDetailsPage: React.FC = () => {
             </GlassSection>
           </Box>
 
-          {/* Main Sections */}
+          {/* Stats Row */}
+          <Box sx={{ maxWidth: 1200, margin: '0 auto', mb: 3 }}>
+            <Grid container spacing={2}>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <GlassSection elevation={0} sx={{ p: 2.25 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <Box sx={{ bgcolor: alpha('#8b5cf6', 0.15), color: '#8b5cf6', borderRadius: 1.25, p: 0.75 }}>
+                      <HubIcon />
+                    </Box>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body2" color="text.secondary">Protocols</Typography>
+                      <Typography variant="h6">{protocols.length}</Typography>
+                    </Box>
+                  </Box>
+                </GlassSection>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <GlassSection elevation={0} sx={{ p: 2.25 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <Box sx={{ bgcolor: alpha('#22c55e', 0.15), color: '#22c55e', borderRadius: 1.25, p: 0.75 }}>
+                      <WalletIcon />
+                    </Box>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body2" color="text.secondary">Wallets</Typography>
+                      <Typography variant="h6">{wallets.length}</Typography>
+                    </Box>
+                  </Box>
+                </GlassSection>
+              </Grid>
+              <Grid size={{ xs: 12, sm: 4 }}>
+                <GlassSection elevation={0} sx={{ p: 2.25 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+                    <Box sx={{ bgcolor: alpha('#f59e0b', 0.15), color: '#f59e0b', borderRadius: 1.25, p: 0.75 }}>
+                      <ShieldIcon />
+                    </Box>
+                    <Box sx={{ flexGrow: 1 }}>
+                      <Typography variant="body2" color="text.secondary">Permissions</Typography>
+                      <Typography variant="h6">{permissions.length}</Typography>
+                    </Box>
+                  </Box>
+                </GlassSection>
+              </Grid>
+            </Grid>
+          </Box>
+
+          {/* Tabbed Content */}
           <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
-            <Grid container spacing={3}>
-              {/* About section (bio) */}
-              {social?.bio && (
-                <Grid size={12}>
-                  <GlassSection elevation={0} sx={{ p: 3 }}>
-                    <Typography variant="h6" gutterBottom>
-                      About
-                    </Typography>
-                    <Divider sx={{ mb: 2 }} />
-                    <Typography variant="body2">{social.bio}</Typography>
-                  </GlassSection>
-                </Grid>
+            <GlassSection elevation={0} sx={{ p: 0 }}>
+              <Tabs
+                value={tabValue}
+                onChange={(_, v) => setTabValue(v)}
+                variant="scrollable"
+                scrollButtons="auto"
+                sx={{
+                  px: { xs: 1, sm: 2 },
+                  borderBottom: `1px solid ${alpha('#ffffff', 0.1)}`,
+                  '& .MuiTab-root': { textTransform: 'none', fontWeight: 600, minHeight: 48 },
+                }}
+              >
+                <Tab label="Overview" />
+                <Tab label={`Protocols (${protocols.length})`} />
+                <Tab label={`Wallets (${wallets.length})`} />
+                <Tab label={`Permissions (${permissions.length})`} />
+              </Tabs>
+
+              {/* Overview */}
+              {tabValue === 0 && (
+                <Box sx={{ p: { xs: 2, sm: 3 } }}>
+                  {social?.bio && (
+                    <Box sx={{ mb: 2.5 }}>
+                      <Typography variant="h6" gutterBottom>About</Typography>
+                      <Typography variant="body2">{social.bio}</Typography>
+                    </Box>
+                  )}
+
+                  {dwnEndpoints.length > 0 && (
+                    <Box sx={{ mb: 2.5 }}>
+                      <Typography variant="h6" gutterBottom>DWN Endpoints</Typography>
+                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        {dwnEndpoints.map((endpoint) => (
+                          <Chip key={endpoint} icon={<Language />} label={endpoint} variant="outlined" />
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+
+                  {Object.keys(apps).length > 0 && (
+                    <Box>
+                      <Typography variant="h6" gutterBottom>Apps</Typography>
+                      <Grid container spacing={2}>
+                        {Object.entries(apps).map(([name, url]) => (
+                          <Grid size={{ xs: 12, sm: 6, md: 4 }} key={name}>
+                            <GlassSection elevation={0} sx={{ p: 1.5 }}>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                <Box
+                                  component="img"
+                                  src={`https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${encodeURIComponent(url)}&size=64`}
+                                  alt={`${name} icon`}
+                                  sx={{ width: 28, height: 28, borderRadius: 1 }}
+                                />
+                                <Box sx={{ overflow: 'hidden' }}>
+                                  <Typography variant="subtitle2" noWrap>{name}</Typography>
+                                  <Typography variant="caption" color="text.secondary" noWrap>{url}</Typography>
+                                </Box>
+                                <Box sx={{ flexGrow: 1 }} />
+                                <Tooltip title="Open">
+                                  <IconButton size="small" onClick={() => window.open(url, '_blank') }>
+                                    <LinkIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </GlassSection>
+                          </Grid>
+                        ))}
+                      </Grid>
+                    </Box>
+                  )}
+                </Box>
               )}
 
-              {/* Protocols section */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <GlassSection elevation={0} sx={{ p: 3, height: '100%' }}>
-                  <Typography variant="h6" gutterBottom>
-                    Protocols
-                  </Typography>
-                  <Divider sx={{ mb: 2 }} />
+              {/* Protocols */}
+              {tabValue === 1 && (
+                <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <List>
                     {protocols.map((definition) => (
                       <ProtocolItem key={definition.protocol} definition={definition} />
                     ))}
                   </List>
-                </GlassSection>
-              </Grid>
+                </Box>
+              )}
 
-              {/* Wallets section */}
-              <Grid size={{ xs: 12, md: 6 }}>
-                <GlassSection elevation={0} sx={{ p: 3, height: '100%' }}>
-                  <Typography variant="h6" gutterBottom>
-                    Wallets
-                  </Typography>
-                  <Divider sx={{ mb: 2 }} />
+              {/* Wallets */}
+              {tabValue === 2 && (
+                <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <List>
                     {wallets.map((wallet, index) => (
                       <ListItem key={index}>
@@ -342,20 +481,16 @@ const IdentityDetailsPage: React.FC = () => {
                       </ListItem>
                     ))}
                   </List>
-                </GlassSection>
-              </Grid>
+                </Box>
+              )}
 
-              {/* Permissions section */}
-              <Grid size={12}>
-                <GlassSection elevation={0} sx={{ p: 3 }}>
-                  <Typography variant="h6" gutterBottom>
-                    Permissions
-                  </Typography>
-                  <Divider sx={{ mb: 2 }} />
+              {/* Permissions */}
+              {tabValue === 3 && (
+                <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <PermissionsList permissions={permissions} protocols={protocols} />
-                </GlassSection>
-              </Grid>
-            </Grid>
+                </Box>
+              )}
+            </GlassSection>
           </Box>
 
           {/* Dialogs */}
