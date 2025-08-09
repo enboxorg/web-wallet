@@ -67,10 +67,17 @@ const IdentityDetailsPage: React.FC = () => {
   const [parallax, setParallax] = useState(0);
   const isStuck = parallax > 8;
   const smallUp = useMediaQuery('(min-width:600px)');
+  const mdUp = useMediaQuery('(min-width:900px)');
   const toolbarHeight = smallUp ? 64 : 56;
   const heroRef = useRef<HTMLDivElement | null>(null);
   const [isPinned, setIsPinned] = useState(false);
   const [heroHeight, setHeroHeight] = useState(0);
+  const expandedHeroHeight = mdUp ? 300 : smallUp ? 260 : 220;
+  const collapsedHeroHeight = mdUp ? 64 : smallUp ? 60 : 56;
+  const currentHeroHeight = isPinned ? collapsedHeroHeight : expandedHeroHeight;
+  const avatarSizeExpanded = mdUp ? 112 : smallUp ? 96 : 80;
+  const avatarSizeCollapsed = mdUp ? 48 : smallUp ? 44 : 40;
+  const avatarSize = isPinned ? avatarSizeCollapsed : avatarSizeExpanded;
 
   useEffect(() => {
     if (didUri !== selectedIdentity?.didUri) {
@@ -270,7 +277,7 @@ const IdentityDetailsPage: React.FC = () => {
                 backdropFilter: isStuck ? 'blur(26px)' : undefined,
               }}
             >
-              <Box sx={{ position: 'relative', height: { xs: 220, sm: 260, md: 300 } }}>
+              <Box sx={{ position: 'relative', height: `${currentHeroHeight}px`, transition: 'height 0.2s ease' }}>
                 <Box
                   component="img"
                   src={selectedIdentity.profile.heroUrl}
@@ -282,7 +289,7 @@ const IdentityDetailsPage: React.FC = () => {
                     width: '100%',
                     height: '100%',
                     objectFit: 'cover',
-                    transform: `translateY(${parallax * 0.15}px) scale(${1 + parallax * 0.0005})`,
+                    transform: isPinned ? 'none' : `translateY(${parallax * 0.15}px) scale(${1 + parallax * 0.0005})`,
                     transition: 'transform 0.05s linear',
                     willChange: 'transform',
                   }}
@@ -306,8 +313,8 @@ const IdentityDetailsPage: React.FC = () => {
                       position: 'absolute',
                       left: 16,
                       bottom: 16,
-                      width: { xs: 88, sm: 104, md: 120 },
-                      height: { xs: 88, sm: 104, md: 120 },
+                      width: avatarSize + 8,
+                      height: avatarSize + 8,
                       borderRadius: '9999px',
                       backgroundColor: alpha('#000000', 0.2),
                       backdropFilter: 'blur(12px)',
@@ -323,13 +330,14 @@ const IdentityDetailsPage: React.FC = () => {
                       e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect fill="%234a4a4a" width="80" height="80"/%3E%3C/svg%3E';
                     }}
                     sx={{
-                      width: { xs: 80, sm: 96, md: 112 },
-                      height: { xs: 80, sm: 96, md: 112 },
+                      width: avatarSize,
+                      height: avatarSize,
                       border: '3px solid',
                       borderColor: alpha('#ffffff', 0.2),
                       boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
                       position: 'relative',
                       zIndex: 1,
+                      transition: 'width 0.2s ease, height 0.2s ease',
                     }}
                   >
                     {social?.displayName?.charAt(0).toUpperCase() || 'U'}
@@ -338,7 +346,7 @@ const IdentityDetailsPage: React.FC = () => {
                   <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
                     {social?.displayName && (
                       <Typography
-                        variant="h5"
+                        variant={isPinned ? 'subtitle1' : 'h5'}
                         sx={{
                           color: 'common.white',
                           textShadow: '0 2px 4px rgba(0,0,0,0.8)',
@@ -348,12 +356,13 @@ const IdentityDetailsPage: React.FC = () => {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           opacity: headerOpacity,
+                          transition: 'all 0.2s ease',
                         }}
                       >
                         {social.displayName} ({selectedIdentity.persona})
                       </Typography>
                     )}
-                    {social?.tagline && (
+                    {!isPinned && social?.tagline && (
                       <Typography
                         variant="body2"
                         sx={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(0,0,0,0.8)', opacity: headerOpacity }}
@@ -394,83 +403,85 @@ const IdentityDetailsPage: React.FC = () => {
                   </Menu>
                 </Box>
               </Box>
-
-              {/* Info and quick actions under header */}
-              <Box sx={{ p: { xs: 2, sm: 3 } }}>
-                <Grid container spacing={2} alignItems="center">
-                  <Grid size={12}>
-                    <Box
-                      sx={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 1,
-                        flexWrap: 'wrap',
-                        bgcolor: alpha('#ffffff', 0.03),
-                        border: `1px solid ${alpha('#ffffff', 0.1)}`,
-                        borderRadius: 1.5,
-                        px: 1.5,
-                        py: 1,
-                      }}
-                    >
-                      <Person2Outlined sx={{ color: 'text.secondary' }} />
-                      <Typography variant="body2" sx={{ mr: 1 }}>
-                        {selectedIdentity.didUri}
-                      </Typography>
-                      <ClickAwayListener onClickAway={handleTooltipClose}>
-                        <Tooltip
-                          title={copyTooltipText}
-                          open={copyTooltipOpen}
-                          onClose={handleTooltipClose}
-                          disableFocusListener
-                          disableHoverListener
-                          disableTouchListener
-                        >
-                          <IconButton size="small" onClick={handleCopyDid}>
-                            <ContentCopy fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                      </ClickAwayListener>
-                      <Tooltip title="Show QR Code">
-                        <IconButton size="small" onClick={() => setShowQrCode(true)}>
-                          <QrCode2 fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Copy link">
-                        <IconButton size="small" onClick={handleShare}>
-                          <LinkIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </Grid>
-                  {dwnEndpoints.length > 0 && (
-                    <Grid size={12}>
-                      <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-                        {dwnEndpoints.map((endpoint) => (
-                          <Box
-                            key={endpoint}
-                            sx={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: 0.5,
-                              bgcolor: alpha('#ffffff', 0.03),
-                              border: `1px solid ${alpha('#ffffff', 0.1)}`,
-                              borderRadius: 1.5,
-                              px: 1.25,
-                              py: 0.75,
-                            }}
-                          >
-                            <Language sx={{ color: 'text.secondary' }} />
-                            <Typography variant="body2">{endpoint}</Typography>
-                          </Box>
-                        ))}
-                      </Box>
-                    </Grid>
-                  )}
-                </Grid>
-              </Box>
             </GlassSection>
           </Box>
           {isPinned && <Box sx={{ height: heroHeight, mb: 3 }} />}
+
+          {/* Info and quick actions (separate, scrolls under the compact header) */}
+          <Box sx={{ maxWidth: 1200, margin: '0 auto', mb: 3 }}>
+            <GlassSection elevation={0} sx={{ p: { xs: 2, sm: 3 } }}>
+              <Grid container spacing={2} alignItems="center">
+                <Grid size={12}>
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 1,
+                      flexWrap: 'wrap',
+                      bgcolor: alpha('#ffffff', 0.03),
+                      border: `1px solid ${alpha('#ffffff', 0.1)}`,
+                      borderRadius: 1.5,
+                      px: 1.5,
+                      py: 1,
+                    }}
+                  >
+                    <Person2Outlined sx={{ color: 'text.secondary' }} />
+                    <Typography variant="body2" sx={{ mr: 1 }}>
+                      {selectedIdentity.didUri}
+                    </Typography>
+                    <ClickAwayListener onClickAway={handleTooltipClose}>
+                      <Tooltip
+                        title={copyTooltipText}
+                        open={copyTooltipOpen}
+                        onClose={handleTooltipClose}
+                        disableFocusListener
+                        disableHoverListener
+                        disableTouchListener
+                      >
+                        <IconButton size="small" onClick={handleCopyDid}>
+                          <ContentCopy fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </ClickAwayListener>
+                    <Tooltip title="Show QR Code">
+                      <IconButton size="small" onClick={() => setShowQrCode(true)}>
+                        <QrCode2 fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Copy link">
+                      <IconButton size="small" onClick={handleShare}>
+                        <LinkIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Grid>
+                {dwnEndpoints.length > 0 && (
+                  <Grid size={12}>
+                    <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+                      {dwnEndpoints.map((endpoint) => (
+                        <Box
+                          key={endpoint}
+                          sx={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 0.5,
+                            bgcolor: alpha('#ffffff', 0.03),
+                            border: `1px solid ${alpha('#ffffff', 0.1)}`,
+                            borderRadius: 1.5,
+                            px: 1.25,
+                            py: 0.75,
+                          }}
+                        >
+                          <Language sx={{ color: 'text.secondary' }} />
+                          <Typography variant="body2">{endpoint}</Typography>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Grid>
+                )}
+              </Grid>
+            </GlassSection>
+          </Box>
 
           {/* Stats Row */}
           <Box sx={{ maxWidth: 1200, margin: '0 auto', mb: 3 }}>
