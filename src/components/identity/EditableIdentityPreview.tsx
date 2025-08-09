@@ -1,5 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
-import { Box, Card, Typography, styled, alpha, IconButton, TextField, Chip, Tooltip } from '@mui/material';
+import { Box, Card, Typography, styled, alpha, IconButton, TextField, Chip, Tooltip, Divider } from '@mui/material';
 import AvatarUpload from '@/components/ui/AvatarUpload';
 import { ImagePlus } from 'lucide-react';
 
@@ -32,11 +32,11 @@ const BannerOverlay = styled(Box)(({ theme }) => ({
 }));
 
 const GlassCard = styled(Card)(({ theme }) => ({
-  backgroundColor: alpha(theme.palette.background.paper, 0.6),
-  backdropFilter: 'blur(20px)',
-  border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-  transition: 'all 0.3s ease-in-out',
-  overflow: 'hidden',
+  backgroundColor: alpha(theme.palette.background.paper, 0.0),
+  backdropFilter: 'none',
+  border: 'none',
+  boxShadow: 'none',
+  overflow: 'visible',
 }));
 
 const OverlayTextField = styled(TextField)(({ theme }) => ({
@@ -64,13 +64,13 @@ const EditableIdentityPreview: React.FC<EditableIdentityPreviewProps> = ({ value
 
   return (
     <Box>
-      <GlassCard sx={{ width: '100%', maxWidth: '100%', height: { xs: 260, sm: 300, md: 340 }, borderRadius: 2, position: 'relative' }}>
-        <Box sx={{ position: 'relative', height: '100%', width: '100%' }}>
+      <GlassCard>
+        <Box sx={{ position: 'relative', borderRadius: 2, overflow: 'hidden' }}>
           <Box
             component="img"
             src={heroUrl}
             alt="Banner"
-            sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            sx={{ width: '100%', height: { xs: 260, sm: 300, md: 340 }, objectFit: 'cover' }}
           />
           <BannerOverlay />
 
@@ -159,20 +159,20 @@ const EditableIdentityPreview: React.FC<EditableIdentityPreviewProps> = ({ value
             </Box>
           </Box>
         </Box>
-      </GlassCard>
 
-      {/* Bio editor beneath the card for readability */}
-      <Box sx={{ mt: 2 }}>
-        <TextField
-          label="Bio"
-          value={values.bio}
-          onChange={(e) => onChange({ bio: e.target.value })}
-          fullWidth
-          multiline
-          rows={4}
-          helperText={max?.bio ? `${values.bio.length}/${max.bio}` : undefined}
-        />
-      </Box>
+        {/* Body content under the banner within the card */}
+        <Box sx={{ mt: 2 }}>
+          <TextField
+            label="Bio"
+            value={values.bio}
+            onChange={(e) => onChange({ bio: e.target.value })}
+            fullWidth
+            multiline
+            rows={4}
+            helperText={max?.bio ? `${values.bio.length}/${max.bio}` : undefined}
+          />
+        </Box>
+      </GlassCard>
     </Box>
   );
 };

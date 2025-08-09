@@ -8,9 +8,11 @@ interface Props {
   value: string[];
   onChange: (value: string[]) => void;
   defaultValue?: string;
+  headerTitle?: string;
+  headerDescription?: string;
 }
 
-const ListInput:React.FC<Props> = ({ label, value, onChange, defaultValue, placeholder }) => {
+const ListInput:React.FC<Props> = ({ label, value, onChange, defaultValue, placeholder, headerTitle, headerDescription }) => {
   const [ inputValue, setInputValue ] = useState<string>(defaultValue || '');
   const [ addItem, setAddItem ] = useState(false);
 
@@ -39,6 +41,20 @@ const ListInput:React.FC<Props> = ({ label, value, onChange, defaultValue, place
         mb: 1,
       }}
     >
+      {(headerTitle || headerDescription) && (
+        <Grid size={12} sx={{ mb: 1 }}>
+          {headerTitle && (
+            <Typography variant="h6" sx={{ mb: 0.5 }}>
+              {headerTitle}
+            </Typography>
+          )}
+          {headerDescription && (
+            <Typography variant="body2" color="text.secondary">
+              {headerDescription}
+            </Typography>
+          )}
+        </Grid>
+      )}
       {value.length > 0 && value.map((item) =>
         <Chip
           sx={{ ml: 1, mb: 1 }}

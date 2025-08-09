@@ -4,6 +4,8 @@ import {
   Button,
   Box,
   CircularProgress,
+  Paper,
+  Slide,
 } from '@mui/material';
 import Grid from '@mui/material/Grid2'; // Updated import for Grid2
 import { useNavigate, useParams } from 'react-router-dom';
@@ -152,60 +154,65 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
             <CircularProgress />
           </Box>
         ) : (
-          <Grid container spacing={3}>
-            <Grid size={{ xs: 12, md: 8 }}>
-              <FormSection title="Preview & Edit" description="Edit your identity directly on the preview.">
-                <EditableIdentityPreview
-                  values={{
-                    didUri: selectedIdentity?.didUri || 'did:example:new',
-                    displayName: formData.displayName,
-                    tagline: formData.tagline,
-                    bio: formData.bio,
-                    persona: formData.persona,
-                    avatarSrc: avatarPreview,
-                    bannerSrc: bannerPreview,
-                  }}
-                  onChange={(partial) => setFormData({ ...formData, ...partial })}
-                  onAvatarChange={(file) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setAvatarPreview(reader.result as string);
-                    reader.readAsDataURL(file);
-                    setFormData({ ...formData, avatar: file });
-                  }}
-                  onBannerChange={(file) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => setBannerPreview(reader.result as string);
-                    reader.readAsDataURL(file);
-                    setFormData({ ...formData, banner: file });
-                  }}
-                  max={MAXS}
-                />
-              </FormSection>
-            </Grid>
+          <>
+            <Grid container spacing={3}>
+              <Grid size={{ xs: 12, md: 8 }}>
+                {/* Borderless preview area */}
+                <Box>
+                  <EditableIdentityPreview
+                    values={{
+                      didUri: selectedIdentity?.didUri || 'did:example:new',
+                      displayName: formData.displayName,
+                      tagline: formData.tagline,
+                      bio: formData.bio,
+                      persona: formData.persona,
+                      avatarSrc: avatarPreview,
+                      bannerSrc: bannerPreview,
+                    }}
+                    onChange={(partial) => setFormData({ ...formData, ...partial })}
+                    onAvatarChange={(file) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => setAvatarPreview(reader.result as string);
+                      reader.readAsDataURL(file);
+                      setFormData({ ...formData, avatar: file });
+                    }}
+                    onBannerChange={(file) => {
+                      const reader = new FileReader();
+                      reader.onloadend = () => setBannerPreview(reader.result as string);
+                      reader.readAsDataURL(file);
+                      setFormData({ ...formData, banner: file });
+                    }}
+                    max={MAXS}
+                  />
+                </Box>
+              </Grid>
 
-            <Grid size={{ xs: 12, md: 4 }}>
-              <FormSection title="Persona" description="A short label for the context of this identity.">
-                <GlassyTextField
-                  fullWidth
-                  label="Persona"
-                  name="persona"
-                  value={formData.persona}
-                  onChange={(e) => setFormData({ ...formData, persona: e.target.value })}
-                  placeholder="Social, Professional, Gaming, etc."
-                />
-              </FormSection>
-
-              <FormSection title="Decentralized Web Node" description="One or more endpoints where your data is stored and synced.">
+              <Grid size={{ xs: 12, md: 4 }}>
+                {/* DWN without nested box - title/description integrated */}
                 <ListInput
+                  headerTitle="Decentralized Web Node"
+                  headerDescription="Endpoints where your data is stored and synced."
                   label={'DWN Endpoint'}
                   value={formData.dwnEndpoints}
                   defaultValue={'https://dwn.enbox.org/latest'}
                   placeholder='https://dwn.enbox.org/latest'
                   onChange={(value) => setFormData({ ...formData, dwnEndpoints: value })}
                 />
-              </FormSection>
+              </Grid>
+            </Grid>
 
-              <FormActions>
+            {/* Fixed bottom action bar */}
+            <Slide in mountOnEnter unmountOnExit direction="up">
+              <Paper elevation={8} sx={{ position: 'fixed', left: 0, right: 0, bottom: 0, p: 2, display: 'flex', justifyContent: 'center', gap: 2, backdropFilter: 'blur(10px)' }}>
+                {isEdit && (
+                  <Button
+                    variant="outlined"
+                    size="large"
+                    onClick={() => navigate(`/identity/${selectedIdentity.didUri}`)}
+                  >
+                    Cancel
+                  </Button>
+                )}
                 <StyledButton
                   type="submit"
                   disabled={loading || submitDisabled}
@@ -213,21 +220,12 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
                   color="primary"
                   size="large"
                 >
-                  {isEdit ? 'Update Identity' : 'Create Identity'}
+                  {isEdit ? 'Save Changes' : 'Create Identity'}
                 </StyledButton>
-                {isEdit && (
-                  <Button
-                    variant="outlined"
-                    size="large"
-                    sx={{ ml: 0 }}
-                    onClick={() => navigate(`/identity/${selectedIdentity.didUri}`)}
-                  >
-                    Cancel
-                  </Button>
-                )}
-              </FormActions>
-            </Grid>
-          </Grid>
+              </Paper>
+            </Slide>
+            <Box sx={{ height: 80 }} />
+          </>
         )}
       </form>
     </PageContainer>
