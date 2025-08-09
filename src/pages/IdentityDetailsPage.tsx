@@ -175,6 +175,56 @@ const IdentityDetailsPage: React.FC = () => {
     } catch {}
   };
 
+  // Dummy activity feed to create scrollable content
+  type ActivityKind = 'protocol' | 'wallet' | 'permission' | 'app';
+  const dummyActivities = useMemo(() => {
+    const kinds: ActivityKind[] = ['protocol', 'wallet', 'permission', 'app'];
+    const items = Array.from({ length: 36 }).map((_, index) => {
+      const kind = kinds[index % kinds.length];
+      const timestamp = new Date(Date.now() - index * 1000 * 60 * 37);
+      const did = selectedIdentity?.didUri || 'did:example:123';
+
+      if (kind === 'protocol') {
+        return {
+          kind,
+          title: 'Protocol synced',
+          description: `Synchronized profile protocol for ${did}`,
+          timestamp,
+        } as const;
+      }
+      if (kind === 'wallet') {
+        return {
+          kind,
+          title: 'Wallet connected',
+          description: 'Connected new web wallet endpoint',
+          timestamp,
+        } as const;
+      }
+      if (kind === 'permission') {
+        return {
+          kind,
+          title: 'Permission granted',
+          description: 'Approved request to read profile social data',
+          timestamp,
+        } as const;
+      }
+      return {
+        kind,
+        title: 'App connected',
+        description: 'New app linked to this identity',
+        timestamp,
+      } as const;
+    });
+    return items;
+  }, [selectedIdentity]);
+
+  const activityIcon = (kind: ActivityKind) => {
+    if (kind === 'protocol') return <HubIcon />;
+    if (kind === 'wallet') return <WalletIcon />;
+    if (kind === 'permission') return <ShieldIcon />;
+    return <LinkIcon />;
+  };
+
   return (
     <PageContainer title={title} breadcrumbs={breadCrumbs}>
       {selectedIdentity && (
@@ -538,9 +588,38 @@ const IdentityDetailsPage: React.FC = () => {
               {/* Activity */}
               <Fade in={tabValue === 4} timeout={250} mountOnEnter unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
-                  <Box sx={{ textAlign: 'center', color: 'text.secondary', py: 6 }}>
-                    <Typography variant="h6" sx={{ mb: 1 }}>No recent activity</Typography>
-                    <Typography variant="body2">When this identity interacts with apps and protocols, updates will appear here.</Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+                    {dummyActivities.map((item, idx) => (
+                      <GlassSection key={idx} elevation={0} sx={{ p: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Box sx={{
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            width: 36, height: 36, borderRadius: 1.25,
+                            bgcolor: item.kind === 'protocol' ? alpha('#8b5cf6', 0.15)
+                                   : item.kind === 'wallet' ? alpha('#22c55e', 0.15)
+                                   : item.kind === 'permission' ? alpha('#f59e0b', 0.15)
+                                   : alpha('#38bdf8', 0.15),
+                            color: item.kind === 'protocol' ? '#8b5cf6'
+                                 : item.kind === 'wallet' ? '#22c55e'
+                                 : item.kind === 'permission' ? '#f59e0b'
+                                 : '#38bdf8',
+                          }}>
+                            {activityIcon(item.kind)}
+                          </Box>
+                          <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                            <Typography variant="subtitle1" sx={{ fontWeight: 600 }} noWrap>
+                              {item.title}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" noWrap>
+                              {item.description}
+                            </Typography>
+                          </Box>
+                          <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                            {item.timestamp.toLocaleString()}
+                          </Typography>
+                        </Box>
+                      </GlassSection>
+                    ))}
                   </Box>
                 </Box>
               </Fade>
