@@ -81,6 +81,24 @@ const IdentityDetailsPage: React.FC = () => {
   const avatarSizeExpanded = mdUp ? 112 : smallUp ? 96 : 80;
   const avatarSizeCollapsed = mdUp ? 48 : smallUp ? 44 : 40;
   const avatarSize = isPinned ? avatarSizeCollapsed : avatarSizeExpanded;
+  const containerMaxWidth = 1200;
+
+  // Compute left/width to align the fixed header with the true content area (main container + centered max width)
+  const measurePinnedAnchor = () => {
+    const mainEl = document.querySelector('main');
+    if (mainEl) {
+      const mainRect = (mainEl as HTMLElement).getBoundingClientRect();
+      const width = Math.min(mainRect.width, containerMaxWidth);
+      const left = mainRect.left + (mainRect.width - width) / 2;
+      setPinnedLeft(left);
+      setPinnedWidth(width);
+    } else if (heroWrapperRef.current) {
+      // Fallback to hero wrapper
+      const rect = heroWrapperRef.current.getBoundingClientRect();
+      setPinnedLeft(rect.left);
+      setPinnedWidth(rect.width);
+    }
+  };
 
   useEffect(() => {
     if (didUri !== selectedIdentity?.didUri) {
@@ -98,8 +116,7 @@ const IdentityDetailsPage: React.FC = () => {
         const rect = heroWrapperRef.current.getBoundingClientRect();
         const shouldPin = rect.top <= toolbarHeight;
         setIsPinned(shouldPin);
-        setPinnedLeft(rect.left);
-        setPinnedWidth(rect.width);
+        measurePinnedAnchor();
       }
       if (heroRef.current) {
         setHeroHeight(heroRef.current.getBoundingClientRect().height);
@@ -112,18 +129,36 @@ const IdentityDetailsPage: React.FC = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Track wrapper resize/position changes (e.g., sidenav open/close)
+  // Observe the main content container for width/position changes (drawer open/close)
   useEffect(() => {
-    if (!heroWrapperRef.current) return;
-    const el = heroWrapperRef.current;
+    const mainEl = document.querySelector('main') as HTMLElement | null;
+    if (!mainEl) return;
     const observer = new ResizeObserver(() => {
-      const rect = el.getBoundingClientRect();
-      setPinnedLeft(rect.left);
-      setPinnedWidth(rect.width);
+      measurePinnedAnchor();
     });
-    observer.observe(el);
+    observer.observe(mainEl);
+    // Initial align
+    measurePinnedAnchor();
     return () => observer.disconnect();
   }, []);
+
+  // While pinned, continuously re-measure position to follow layout transitions (e.g., sidenav toggles)
+  useEffect(() => {
+    let rafId: number;
+    let lastTs = 0;
+    const tick = (ts: number) => {
+      if (!isPinned) return;
+      if (ts - lastTs > 80) {
+        measurePinnedAnchor();
+        lastTs = ts;
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+    if (isPinned) {
+      rafId = requestAnimationFrame(tick);
+    }
+    return () => cancelAnimationFrame(rafId);
+  }, [isPinned]);
 
   const headerOpacity = useMemo(() => {
     const o = 1 - parallax / 400;
