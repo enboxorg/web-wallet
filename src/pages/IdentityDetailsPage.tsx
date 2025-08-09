@@ -19,7 +19,7 @@ import {
   Person2Outlined,
 } from '@mui/icons-material';
 import { PageContainer } from "@toolpad/core";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import ProtocolItem from '@/components/ProtocolItem';
 import PermissionsList from '@/components/PermissionsList';
@@ -35,6 +35,9 @@ const IdentityDetailsPage: React.FC = () => {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [copyTooltipOpen, setCopyTooltipOpen] = useState(false);
   const [copyTooltipText, setCopyTooltipText] = useState("Copy DID");
+  const [condensed, setCondensed] = useState(false);
+
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   const BannerOverlay = styled(Box)(({ theme }) => ({
     position: 'absolute',
@@ -51,6 +54,16 @@ const IdentityDetailsPage: React.FC = () => {
     }
   }, [didUri, selectedIdentity, selectIdentity]);
 
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setCondensed(!entry.isIntersecting),
+      { root: null, threshold: 0.01 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [sentinelRef]);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -112,114 +125,162 @@ const IdentityDetailsPage: React.FC = () => {
 
   return <PageContainer breadcrumbs={breadCrumbs} sx={{ pt: 0 }}>
     {selectedIdentity && (
-      <Box sx={{ pb: 4, mt: -1 }}>
-        <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
-          <Paper elevation={3} sx={{ mb: 3, mt: 0 }}>
-            <Box sx={{ position: 'relative', height: 260 }}>
-              <Box
-                component="img"
-                src={selectedIdentity.profile.heroUrl}
-                alt={`${social?.displayName || 'user'}'s banner`}
-                sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-              <BannerOverlay />
-              <Box sx={{ position: 'absolute', bottom: 10, left: 16, right: 16, display: 'flex', alignItems: 'flex-end' }}>
-                <Avatar
-                  src={selectedIdentity.profile.avatarUrl}
-                  alt={social?.displayName || 'user'}
-                  sx={{ width: 120, height: 120, border: `4px solid`, mr: 2 }}
-                >
-                  {social?.displayName?.charAt(0).toUpperCase() || 'U'}
-                </Avatar>
-                <Box sx={{ flexGrow: 1 }}>
-                  {social?.displayName && (
-                    <Typography variant="subtitle1" sx={{ color: 'common.white', textShadow: '0 2px 6px rgba(0,0,0,0.85)', fontWeight: 700 }}>
-                      {social.displayName} ({selectedIdentity.persona})
-                    </Typography>
-                  )}
-                </Box>
-                <IconButton onClick={handleMenuOpen} sx={{ color: 'common.white' }}>
-                  <MoreVert />
-                </IconButton>
-                <Menu
-                  anchorEl={anchorEl}
-                  open={Boolean(anchorEl)}
-                  onClose={handleMenuClose}
-                >
-                  <MenuItem onClick={() => { handleMenuClose(); navigate(`/identity/edit/${selectedIdentity.didUri}`); }}>
-                    <ListItemIcon><Edit fontSize="small" /></ListItemIcon>
-                    <ListItemText>Edit Identity</ListItemText>
-                  </MenuItem>
-                  <MenuItem onClick={() => setBackupDialogOpen(true)}>
-                    <ListItemIcon><GetApp fontSize="small" /></ListItemIcon>
-                    <ListItemText>Backup Identity</ListItemText>
-                  </MenuItem>
-                  <Divider />
-                  <MenuItem onClick={() => setConfirmDelete(true)}>
-                    <ListItemIcon><Delete fontSize="small" /></ListItemIcon>
-                    <ListItemText>Delete Identity</ListItemText>
-                  </MenuItem>
-                </Menu>
-              </Box>
+      <>
+        {/* Sticky condensed header */}
+        <Paper
+          elevation={3}
+          sx={{
+            position: 'sticky',
+            top: 0,
+            zIndex: (theme) => theme.zIndex.appBar,
+            transition: 'opacity 200ms ease, transform 200ms ease',
+            opacity: condensed ? 1 : 0,
+            transform: condensed ? 'translateY(0)' : 'translateY(-8px)',
+            pointerEvents: condensed ? 'auto' : 'none',
+            px: 2,
+            py: 1,
+            borderRadius: 0,
+            bgcolor: (theme) => theme.palette.background.paper,
+            borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, maxWidth: 1200, mx: 'auto' }}>
+            <Avatar src={selectedIdentity.profile.avatarUrl} sx={{ width: 36, height: 36 }}>
+              {social?.displayName?.charAt(0).toUpperCase() || 'U'}
+            </Avatar>
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <Typography variant="subtitle1" noWrap>
+                {social?.displayName || 'Unnamed'} ({selectedIdentity.persona})
+              </Typography>
             </Box>
-            <Box sx={{ p: 3, pt: 2 }}>
-              <Typography variant="body1" gutterBottom>{social?.tagline}</Typography>
-              <Divider sx={{ my: 2 }} />
-              <Grid container spacing={2}>
-                <Grid size={12}>
-                  <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                    <Person2Outlined sx={{ mr: 1 }} />
-                    <Typography variant="body2" sx={{ mr: 1 }}>
-                      {selectedIdentity.didUri}
-                    </Typography>
-                    <ClickAwayListener onClickAway={handleTooltipClose}>
-                      <Tooltip
-                        title={copyTooltipText}
-                        open={copyTooltipOpen}
-                        onClose={handleTooltipClose}
-                        disableFocusListener
-                        disableHoverListener
-                        disableTouchListener
-                      >
-                        <IconButton size="small" onClick={handleCopyDid}>
-                          <ContentCopy fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </ClickAwayListener>
-                    <Tooltip title="Show QR Code">
-                      <IconButton size="small" onClick={() => setShowQrCode(true)}>
-                        <QrCode2 fontSize="small" />
+            <Tooltip title={copyTooltipText} open={copyTooltipOpen} onClose={handleTooltipClose} disableFocusListener disableHoverListener disableTouchListener>
+              <IconButton size="small" onClick={handleCopyDid}>
+                <ContentCopy fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <IconButton size="small" onClick={handleMenuOpen}>
+              <MoreVert />
+            </IconButton>
+          </Box>
+        </Paper>
+
+        {/* Full-bleed banner */}
+        <Box sx={{
+          position: 'relative',
+          left: '50%',
+          right: '50%',
+          marginLeft: '-50vw',
+          marginRight: '-50vw',
+          width: '100vw',
+          mb: 2,
+        }}>
+          <Box sx={{ position: 'relative', height: 300 }}>
+            <Box
+              component="img"
+              src={selectedIdentity.profile.heroUrl}
+              alt={`${social?.displayName || 'user'}'s banner`}
+              sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+            />
+            <BannerOverlay />
+            <Box sx={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 1200, px: 2, display: 'flex', alignItems: 'flex-end' }}>
+              <Avatar
+                src={selectedIdentity.profile.avatarUrl}
+                alt={social?.displayName || 'user'}
+                sx={{ width: 120, height: 120, border: `4px solid`, mr: 2 }}
+              >
+                {social?.displayName?.charAt(0).toUpperCase() || 'U'}
+              </Avatar>
+              <Box sx={{ flexGrow: 1 }}>
+                {social?.displayName && (
+                  <Typography variant="subtitle1" sx={{ color: 'common.white', textShadow: '0 2px 6px rgba(0,0,0,0.85)', fontWeight: 700 }}>
+                    {social.displayName} ({selectedIdentity.persona})
+                  </Typography>
+                )}
+              </Box>
+              <IconButton onClick={handleMenuOpen} sx={{ color: 'common.white' }}>
+                <MoreVert />
+              </IconButton>
+              <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleMenuClose}>
+                <MenuItem onClick={() => { handleMenuClose(); navigate(`/identity/edit/${selectedIdentity.didUri}`); }}>
+                  <ListItemIcon><Edit fontSize="small" /></ListItemIcon>
+                  <ListItemText>Edit Identity</ListItemText>
+                </MenuItem>
+                <MenuItem onClick={() => setBackupDialogOpen(true)}>
+                  <ListItemIcon><GetApp fontSize="small" /></ListItemIcon>
+                  <ListItemText>Backup Identity</ListItemText>
+                </MenuItem>
+                <Divider />
+                <MenuItem onClick={() => setConfirmDelete(true)}>
+                  <ListItemIcon><Delete fontSize="small" /></ListItemIcon>
+                  <ListItemText>Delete Identity</ListItemText>
+                </MenuItem>
+              </Menu>
+            </Box>
+          </Box>
+        </Box>
+
+        {/* Sentinel to trigger sticky header once banner scrolls out */}
+        <Box ref={sentinelRef} sx={{ height: 1 }} />
+
+        {/* Main content */}
+        <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
+          <Paper elevation={3} sx={{ p: 3 }}>
+            <Typography variant="body1" gutterBottom>{social?.tagline}</Typography>
+            <Divider sx={{ my: 2 }} />
+            <Grid container spacing={2}>
+              <Grid size={12}>
+                <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                  <Person2Outlined sx={{ mr: 1 }} />
+                  <Typography variant="body2" sx={{ mr: 1 }}>
+                    {selectedIdentity.didUri}
+                  </Typography>
+                  <ClickAwayListener onClickAway={handleTooltipClose}>
+                    <Tooltip
+                      title={copyTooltipText}
+                      open={copyTooltipOpen}
+                      onClose={handleTooltipClose}
+                      disableFocusListener
+                      disableHoverListener
+                      disableTouchListener
+                    >
+                      <IconButton size="small" onClick={handleCopyDid}>
+                        <ContentCopy fontSize="small" />
                       </IconButton>
                     </Tooltip>
-                  </Box>
-                </Grid>
-                <Grid size={{ xs: 12, sm: 6  }}>
-                  <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
-                    {dwnEndpoints.length === 0 && (
-                      <Typography variant="body2" color="text.secondary">no DWN endpoints configured</Typography>
-                    )}
-                    {dwnEndpoints.map(endpoint => (
-                        <Box key={endpoint} sx={{ display: 'flex', alignItems: 'center' }}>
-                          <Language sx={{ mr: 1 }} />
-                          <Typography variant="body2">{endpoint}</Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                </Grid>
+                  </ClickAwayListener>
+                  <Tooltip title="Show QR Code">
+                    <IconButton size="small" onClick={() => setShowQrCode(true)}>
+                      <QrCode2 fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
               </Grid>
-              {social?.bio && (
-                <>
-                  <Divider sx={{ my: 2 }} />
-                  <Typography variant="body2">{social.bio}</Typography>
-                </>
-              )}
-            </Box>
+              <Grid size={{ xs: 12, sm: 6  }}>
+                <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+                  {dwnEndpoints.length === 0 && (
+                    <Typography variant="body2" color="text.secondary">no DWN endpoints configured</Typography>
+                  )}
+                  {dwnEndpoints.map(endpoint => (
+                      <Box key={endpoint} sx={{ display: 'flex', alignItems: 'center' }}>
+                        <Language sx={{ mr: 1 }} />
+                        <Typography variant="body2">{endpoint}</Typography>
+                    </Box>
+                  ))}
+                </Box>
+              </Grid>
+            </Grid>
+            {social?.bio && (
+              <>
+                <Divider sx={{ my: 2 }} />
+                <Typography variant="body2">{social.bio}</Typography>
+              </>
+            )}
           </Paper>
         </Box>
 
-        <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
+        {/* Existing sections */}
+        <Box sx={{ maxWidth: 1200, margin: '0 auto', mt: 3 }}>
           <Grid container spacing={3}>
-            {/* Protocols section */}
             <Grid size={{ xs: 12, md: 6 }}>
               <Paper elevation={1} sx={{ p: 3, height: '100%' }}>
                 <Typography variant="h6" gutterBottom>Protocols</Typography>
@@ -230,7 +291,6 @@ const IdentityDetailsPage: React.FC = () => {
               </Paper>
             </Grid>
 
-            {/* Wallets section */}
             <Grid size={{ xs: 12, md: 6 }}>
               <Paper elevation={1} sx={{ p: 3, height: '100%' }}>
                 <Typography variant="h6" gutterBottom>Wallets</Typography>
@@ -250,7 +310,6 @@ const IdentityDetailsPage: React.FC = () => {
               </Paper>
             </Grid>
 
-            {/* Permissions section */}
             <Grid size={12}>
               <Paper elevation={1} sx={{ p: 3 }}>
                 <Typography variant="h6" gutterBottom>Permissions</Typography>
@@ -262,6 +321,19 @@ const IdentityDetailsPage: React.FC = () => {
               </Paper>
             </Grid>
           </Grid>
+        </Box>
+
+        {/* Dummy sections to simulate scroll */}
+        <Box sx={{ maxWidth: 1200, margin: '0 auto', mt: 3 }}>
+          {["Activity", "Connections", "Data", "Settings"].map((title, idx) => (
+            <Paper key={title} elevation={1} sx={{ p: 3, mb: 3 }}>
+              <Typography variant="h6" gutterBottom>{title}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                This is dummy content section {idx + 1}. Add real content here. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer et ligula nec urna congue tristique. Curabitur non pretium sem. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas.
+              </Typography>
+              <Box sx={{ height: 240 }} />
+            </Paper>
+          ))}
         </Box>
 
         {confirmDelete && (
@@ -318,7 +390,7 @@ const IdentityDetailsPage: React.FC = () => {
             </DialogContent>
           </Dialog>
         )}
-      </Box>
+      </>
     )}
   </PageContainer>
 }
