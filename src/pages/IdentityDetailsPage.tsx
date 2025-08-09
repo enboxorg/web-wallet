@@ -17,6 +17,7 @@ import {
   Tab,
   Chip,
   Fade,
+  useMediaQuery,
 } from '@mui/material';
 import {
   Edit, Delete, GetApp, ContentCopy, QrCode2,
@@ -29,7 +30,7 @@ import {
   ShieldOutlined as ShieldIcon,
 } from '@mui/icons-material';
 import { PageContainer } from '@toolpad/core';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ProtocolItem from '@/components/ProtocolItem';
 import PermissionsList from '@/components/PermissionsList';
@@ -65,6 +66,11 @@ const IdentityDetailsPage: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [parallax, setParallax] = useState(0);
   const isStuck = parallax > 8;
+  const smallUp = useMediaQuery('(min-width:600px)');
+  const toolbarHeight = smallUp ? 64 : 56;
+  const heroRef = useRef<HTMLDivElement | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
+  const [heroHeight, setHeroHeight] = useState(0);
 
   useEffect(() => {
     if (didUri !== selectedIdentity?.didUri) {
@@ -78,8 +84,16 @@ const IdentityDetailsPage: React.FC = () => {
       const y = window.scrollY || 0;
       const clamped = Math.max(0, Math.min(y, 300));
       setParallax(clamped);
+      if (heroRef.current) {
+        const rect = heroRef.current.getBoundingClientRect();
+        setHeroHeight(rect.height);
+        setIsPinned(rect.top <= toolbarHeight);
+      }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
+    window.addEventListener('resize', handleScroll);
+    // initial measure
+    handleScroll();
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -231,16 +245,25 @@ const IdentityDetailsPage: React.FC = () => {
       {selectedIdentity && (
         <Box sx={{ pb: 4 }}>
           {/* Hero Header */}
-          <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
+          <Box
+            ref={heroRef}
+            sx={{
+              maxWidth: 1200,
+              margin: '0 auto',
+              position: isPinned ? 'fixed' : 'relative',
+              top: isPinned ? `${toolbarHeight}px` : undefined,
+              left: isPinned ? '50%' : undefined,
+              transform: isPinned ? 'translateX(-50%)' : undefined,
+              width: '100%',
+              zIndex: isPinned ? 10 : 'auto',
+            }}
+          >
             <GlassSection
               elevation={0}
               sx={{
                 mb: 3,
                 p: 0,
                 overflow: 'hidden',
-                position: 'sticky',
-                top: { xs: '56px', sm: '64px' },
-                zIndex: 10,
                 // Enhance styling when stuck
                 borderColor: isStuck ? alpha('#ffffff', 0.2) : undefined,
                 boxShadow: isStuck ? '0 8px 24px rgba(0,0,0,0.35)' : 'none',
@@ -447,6 +470,7 @@ const IdentityDetailsPage: React.FC = () => {
               </Box>
             </GlassSection>
           </Box>
+          {isPinned && <Box sx={{ height: heroHeight, mb: 3 }} />}
 
           {/* Stats Row */}
           <Box sx={{ maxWidth: 1200, margin: '0 auto', mb: 3 }}>
