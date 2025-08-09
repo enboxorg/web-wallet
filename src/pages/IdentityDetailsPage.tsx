@@ -73,6 +73,8 @@ const IdentityDetailsPage: React.FC = () => {
   const heroRef = useRef<HTMLDivElement | null>(null);
   const [isPinned, setIsPinned] = useState(false);
   const [heroHeight, setHeroHeight] = useState(0);
+  const [pinnedLeft, setPinnedLeft] = useState(0);
+  const [pinnedWidth, setPinnedWidth] = useState<number | 'auto'>('auto');
   const expandedHeroHeight = mdUp ? 300 : smallUp ? 260 : 220;
   const collapsedHeroHeight = mdUp ? 64 : smallUp ? 60 : 56;
   const currentHeroHeight = isPinned ? collapsedHeroHeight : expandedHeroHeight;
@@ -94,7 +96,10 @@ const IdentityDetailsPage: React.FC = () => {
       setParallax(clamped);
       if (heroWrapperRef.current) {
         const rect = heroWrapperRef.current.getBoundingClientRect();
-        setIsPinned(rect.top <= toolbarHeight);
+        const shouldPin = rect.top <= toolbarHeight;
+        setIsPinned(shouldPin);
+        setPinnedLeft(rect.left);
+        setPinnedWidth(rect.width);
       }
       if (heroRef.current) {
         setHeroHeight(heroRef.current.getBoundingClientRect().height);
@@ -277,13 +282,13 @@ const IdentityDetailsPage: React.FC = () => {
                 backdropFilter: isStuck ? 'blur(26px)' : undefined,
                 position: isPinned ? 'fixed' : 'relative',
                 top: isPinned ? `${toolbarHeight}px` : undefined,
-                left: isPinned ? '50%' : undefined,
-                transform: isPinned ? 'translateX(-50%)' : undefined,
+                left: isPinned ? `${pinnedLeft}px` : undefined,
+                transform: isPinned ? 'none' : undefined,
                 zIndex: isPinned ? 1000 : 'auto',
-                width: isPinned ? '100%' : undefined,
+                width: isPinned ? `${pinnedWidth}px` : undefined,
               }}
             >
-              <Box ref={heroRef} sx={{ position: 'relative', height: `${currentHeroHeight}px`, transition: 'height 0.2s ease' }}>
+              <Box ref={heroRef} sx={{ position: 'relative', height: `${currentHeroHeight}px`, transition: 'height 320ms cubic-bezier(0.22, 0.61, 0.36, 1)' }}>
                 <Box
                   component="img"
                   src={selectedIdentity.profile.heroUrl}
@@ -296,7 +301,7 @@ const IdentityDetailsPage: React.FC = () => {
                     height: '100%',
                     objectFit: 'cover',
                     transform: isPinned ? 'none' : `translateY(${parallax * 0.15}px) scale(${1 + parallax * 0.0005})`,
-                    transition: 'transform 0.05s linear',
+                    transition: isPinned ? 'none' : 'transform 60ms linear',
                     willChange: 'transform',
                   }}
                 />
@@ -311,6 +316,7 @@ const IdentityDetailsPage: React.FC = () => {
                     display: 'flex',
                     alignItems: 'flex-end',
                     gap: isPinned ? 1 : 2,
+                    transition: 'bottom 220ms ease',
                   }}
                 >
                   {/* Blurred halo behind avatar */}
@@ -327,6 +333,7 @@ const IdentityDetailsPage: React.FC = () => {
                       filter: 'blur(6px)',
                       transform: 'translateY(8px)',
                       zIndex: 0,
+                      transition: 'bottom 220ms ease, width 320ms cubic-bezier(0.22, 0.61, 0.36, 1), height 320ms cubic-bezier(0.22, 0.61, 0.36, 1)',
                     }}
                   />
                   <Avatar
@@ -343,7 +350,7 @@ const IdentityDetailsPage: React.FC = () => {
                       boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
                       position: 'relative',
                       zIndex: 1,
-                      transition: 'width 0.2s ease, height 0.2s ease',
+                      transition: 'width 320ms cubic-bezier(0.22, 0.61, 0.36, 1), height 320ms cubic-bezier(0.22, 0.61, 0.36, 1)',
                     }}
                   >
                     {social?.displayName?.charAt(0).toUpperCase() || 'U'}
@@ -352,7 +359,7 @@ const IdentityDetailsPage: React.FC = () => {
                   <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
                     {social?.displayName && (
                       <Typography
-                        variant={isPinned ? 'subtitle1' : 'h5'}
+                        variant="h5"
                         sx={{
                           color: 'common.white',
                           textShadow: '0 2px 4px rgba(0,0,0,0.8)',
@@ -362,20 +369,23 @@ const IdentityDetailsPage: React.FC = () => {
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
                           opacity: headerOpacity,
-                          transition: 'all 0.2s ease',
-                          lineHeight: isPinned ? 1.2 : undefined,
+                          lineHeight: isPinned ? 1.2 : 1.3,
+                          fontSize: isPinned ? (mdUp ? '1rem' : '0.95rem') : (mdUp ? '1.5rem' : '1.35rem'),
+                          transition: 'font-size 320ms cubic-bezier(0.22, 0.61, 0.36, 1), line-height 320ms cubic-bezier(0.22, 0.61, 0.36, 1), opacity 200ms ease',
                         }}
                       >
                         {social.displayName} ({selectedIdentity.persona})
                       </Typography>
                     )}
-                    {!isPinned && social?.tagline && (
-                      <Typography
-                        variant="body2"
-                        sx={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(0,0,0,0.8)', opacity: headerOpacity }}
-                      >
-                        {social.tagline}
-                      </Typography>
+                    {social?.tagline && (
+                      <Fade in={!isPinned} timeout={320}>
+                        <Typography
+                          variant="body2"
+                          sx={{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(0,0,0,0.8)', opacity: headerOpacity }}
+                        >
+                          {social.tagline}
+                        </Typography>
+                      </Fade>
                     )}
                   </Box>
 
