@@ -205,7 +205,7 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
             </Grid>
 
             <Grid size={{ xs: 12, md: 7 }}>
-              <FormSection title="Profile" description="Set how this identity appears across apps.">
+              <FormSection title="Profile" description="Set how this identity appears across apps." gutterTop={1}>
                 <Grid container spacing={2} alignItems="center">
                   <Grid>
                     <AvatarUpload
@@ -247,7 +247,7 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
                 </Box>
               </FormSection>
 
-              <FormSection title="Banner" description="An optional cover image for profile surfaces.">
+              <FormSection title="Banner" description="An optional cover image for profile surfaces." gutterTop={1}>
                 <BannerUpload
                   src={bannerPreview}
                   onChange={(file) => {
@@ -263,7 +263,7 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
                 </Typography>
               </FormSection>
 
-              <FormSection title="About" description="Tell others a bit more about this identity.">
+              <FormSection title="About" description="Tell others a bit more about this identity." gutterTop={1}>
                 <Box sx={{ mb: 2 }}>
                   <GlassyTextField
                     fullWidth
@@ -290,7 +290,7 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
                 />
               </FormSection>
 
-              <FormSection title="Decentralized Web Node" description="Where your data is stored and synced.">
+              <FormSection title="Decentralized Web Node" description="Where your data is stored and synced." gutterTop={1}>
                 <ListInput
                   label={'DWN Endpoint'}
                   value={formData.dwnEndpoints}

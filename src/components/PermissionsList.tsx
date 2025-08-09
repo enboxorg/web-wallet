@@ -51,6 +51,11 @@ const PermissionsList: React.FC<{ protocols: DwnProtocolDefinition[], permission
   return (
     <List disablePadding>
       {loading && <Typography>Loading...</Typography>}
+      {!loading && grantees.length === 0 && (
+        <ListItem sx={{ px: 0 }}>
+          <Typography variant="body2" color="text.secondary">there are no connected apps</Typography>
+        </ListItem>
+      )}
       {!loading && grantees.map((grantee) => {
         const grants = granteeGrants.get(grantee);
         const grantProtocols = grants && grants.size > 0 ? [ ...grants.keys() ].map((protocol) => protocol) : [];

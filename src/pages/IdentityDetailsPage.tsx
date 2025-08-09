@@ -42,6 +42,7 @@ const IdentityDetailsPage: React.FC = () => {
     left: 0,
     right: 0,
     bottom: 0,
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.8) 100%)',
   }));
 
   useEffect(() => {
@@ -117,8 +118,8 @@ const IdentityDetailsPage: React.FC = () => {
   return <PageContainer title={title} breadcrumbs={breadCrumbs}>
     {selectedIdentity && (<Box sx={{ pb: 4 }}>
       <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
-        <Paper elevation={3} sx={{ mb: 4 }}>
-          <Box sx={{ position: 'relative', height: 300 }}>
+        <Paper elevation={3} sx={{ mb: 3 }}>
+          <Box sx={{ position: 'relative', height: 280 }}>
             <Box
               component="img"
               src={selectedIdentity.profile.heroUrl}
@@ -126,7 +127,7 @@ const IdentityDetailsPage: React.FC = () => {
               sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
             <BannerOverlay />
-              <Box sx={{ position: 'absolute', bottom: 16, left: 16, right: 16, display: 'flex', alignItems: 'flex-end' }}>
+              <Box sx={{ position: 'absolute', bottom: 12, left: 16, right: 16, display: 'flex', alignItems: 'flex-end' }}>
               <Avatar
                 src={selectedIdentity.profile.avatarUrl}
                 alt={social?.displayName || 'user'}
@@ -136,7 +137,7 @@ const IdentityDetailsPage: React.FC = () => {
             </Avatar>
             <Box sx={{ flexGrow: 1 }}>
               {social?.displayName && (
-                <Typography variant="subtitle1" sx={{ color: 'common.white', textShadow: '0 1px 2px rgba(0,0,0,0.6)' }}>
+                <Typography variant="subtitle1" sx={{ color: 'common.white', textShadow: '0 2px 6px rgba(0,0,0,0.85)', fontWeight: 700 }}>
                   {social.displayName} ({selectedIdentity.persona})
                 </Typography>
               )}
@@ -165,7 +166,7 @@ const IdentityDetailsPage: React.FC = () => {
             </Menu>
           </Box>
         </Box>
-        <Box sx={{ p: 3 }}>
+        <Box sx={{ p: 3, pt: 2 }}>
           <Typography variant="body1" gutterBottom>{social?.tagline}</Typography>
           <Divider sx={{ my: 2 }} />
           <Grid container spacing={2}>
@@ -197,7 +198,10 @@ const IdentityDetailsPage: React.FC = () => {
               </Box>
             </Grid>
             <Grid size={{ xs: 12, sm: 6  }}>
-              <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start' }}>
+              <Box sx={{ display: 'flex', flexDirection: 'row', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+                {dwnEndpoints.length === 0 && (
+                  <Typography variant="body2" color="text.secondary">no DWN endpoints configured</Typography>
+                )}
                 {dwnEndpoints.map(endpoint => (
                     <Box key={endpoint} sx={{ display: 'flex', alignItems: 'center' }}>
                       <Language sx={{ mr: 1 }} />
@@ -236,6 +240,11 @@ const IdentityDetailsPage: React.FC = () => {
               <Typography variant="h6" gutterBottom>Wallets</Typography>
               <Divider sx={{ mb: 2 }} />
               <List>
+                {wallets.length === 0 && (
+                  <ListItem sx={{ px: 0 }}>
+                    <ListItemText primaryTypographyProps={{ variant: 'body2', color: 'text.secondary' }} primary="there are no connected wallets" />
+                  </ListItem>
+                )}
                 {wallets.map((wallet, index) => (
                   <ListItem key={index}>
                     <ListItemText primary={wallet} />

@@ -20,7 +20,7 @@ const BannerOverlay = styled(Box)(({ theme }) => ({
   left: 0,
   right: 0,
   bottom: 0,
-  background: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%)',
+  background: 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.85) 100%)',
 }));
 
 const GlassCard = styled(Card)(({ theme }) => ({
@@ -97,8 +97,8 @@ const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => 
                 <Typography variant="h5" sx={{ 
                   color: 'common.white', 
                   mb: 0.5, 
-                  textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-                  fontWeight: 600,
+                  textShadow: '0 2px 6px rgba(0,0,0,0.85)',
+                  fontWeight: 700,
                   fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem' },
                   whiteSpace: 'nowrap',
                   overflow: 'hidden',
@@ -109,9 +109,9 @@ const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => 
               )}
               {social?.tagline && (
                 <Typography variant="body2" sx={{ 
-                  color: 'rgba(255,255,255,0.8)', 
+                  color: 'rgba(255,255,255,0.9)', 
                   mb: 1,
-                  textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                  textShadow: '0 1px 3px rgba(0,0,0,0.85)',
                   fontSize: { xs: '0.8rem', sm: '0.875rem' },
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -123,7 +123,7 @@ const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => 
                 </Typography>
               )}
               <Typography variant="caption" sx={{ 
-                color: 'rgba(255,255,255,0.6)', 
+                color: 'rgba(255,255,255,0.7)', 
                 textShadow: '0 1px 3px rgba(0,0,0,0.8)',
                 fontFamily: 'monospace',
                 fontSize: '0.75rem',

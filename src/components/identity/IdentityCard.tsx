@@ -17,7 +17,7 @@ const BannerOverlay = styled(Box)(({ theme }) => ({
   left: 0,
   right: 0,
   bottom: 0,
-  background: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%)',
+  background: 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.85) 100%)',
 }));
 
 const GlassCard = styled(Card)(({ theme }) => ({
@@ -98,8 +98,8 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
               <Typography variant="h6" sx={{ 
                 color: 'common.white', 
                 mb: 0.5, 
-                textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-                fontWeight: 600,
+                textShadow: '0 2px 6px rgba(0,0,0,0.85)',
+                fontWeight: 700,
                 fontSize: { xs: '1.1rem', sm: '1.25rem' },
                 whiteSpace: 'nowrap',
                 overflow: 'hidden',
@@ -111,8 +111,8 @@ const IdentityCard: React.FC<IdentityCardProps> = ({ identity, onClick, selected
             )}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, maxWidth: '100%' }}>
               <Typography variant="caption" sx={{ 
-                color: 'rgba(255,255,255,0.8)', 
-                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+                color: 'rgba(255,255,255,0.85)', 
+                textShadow: '0 1px 3px rgba(0,0,0,0.85)',
                 fontFamily: 'monospace',
                 fontSize: { xs: '0.7rem', sm: '0.75rem' },
                 overflow: 'hidden',
