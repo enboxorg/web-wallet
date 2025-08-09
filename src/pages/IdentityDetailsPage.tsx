@@ -64,6 +64,7 @@ const IdentityDetailsPage: React.FC = () => {
   const [copyTooltipText, setCopyTooltipText] = useState('Copy DID');
   const [tabValue, setTabValue] = useState(0);
   const [parallax, setParallax] = useState(0);
+  const isStuck = parallax > 8;
 
   useEffect(() => {
     if (didUri !== selectedIdentity?.didUri) {
@@ -231,7 +232,21 @@ const IdentityDetailsPage: React.FC = () => {
         <Box sx={{ pb: 4 }}>
           {/* Hero Header */}
           <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
-            <GlassSection elevation={0} sx={{ mb: 3, p: 0, overflow: 'hidden', position: 'sticky', top: 0, zIndex: 10 }}>
+            <GlassSection
+              elevation={0}
+              sx={{
+                mb: 3,
+                p: 0,
+                overflow: 'hidden',
+                position: 'sticky',
+                top: { xs: '56px', sm: '64px' },
+                zIndex: 10,
+                // Enhance styling when stuck
+                borderColor: isStuck ? alpha('#ffffff', 0.2) : undefined,
+                boxShadow: isStuck ? '0 8px 24px rgba(0,0,0,0.35)' : 'none',
+                backdropFilter: isStuck ? 'blur(26px)' : undefined,
+              }}
+            >
               <Box sx={{ position: 'relative', height: { xs: 220, sm: 260, md: 300 } }}>
                 <Box
                   component="img"
