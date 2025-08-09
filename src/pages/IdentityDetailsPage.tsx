@@ -38,6 +38,7 @@ const IdentityDetailsPage: React.FC = () => {
   const [copyTooltipOpen, setCopyTooltipOpen] = useState(false);
   const [copyTooltipText, setCopyTooltipText] = useState("Copy DID");
   const [condensed, setCondensed] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const bannerRef = useRef<HTMLDivElement | null>(null);
@@ -45,11 +46,12 @@ const IdentityDetailsPage: React.FC = () => {
 
   const BannerOverlay = styled(Box)(({ theme }) => ({
     position: 'absolute',
-    top: 0,
+    bottom: 0,
     left: 0,
     right: 0,
-    bottom: 0,
-    background: 'linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.85) 100%)',
+    height: '45%',
+    background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.55) 40%, rgba(0,0,0,0) 100%)',
+    pointerEvents: 'none',
   }));
 
   useEffect(() => {
@@ -68,16 +70,23 @@ const IdentityDetailsPage: React.FC = () => {
     );
     observer.observe(el);
 
+    const clamp = (v: number, min = 0, max = 1) => Math.min(max, Math.max(min, v));
     const onScroll = () => {
       const banner = bannerRef.current;
       const sticky = stickyRef.current;
       if (!banner || !sticky) return;
       const stickyH = sticky.getBoundingClientRect().height || 0;
-      const bottom = banner.getBoundingClientRect().bottom;
-      setCondensed(bottom <= stickyH + 8);
+      const rect = banner.getBoundingClientRect();
+      const bannerH = rect.height || 1;
+      const progressRaw = (0 - rect.top) / (bannerH * 0.6);
+      const progress = clamp(progressRaw);
+      setScrollProgress(progress);
+      const bottom = rect.bottom;
+      setCondensed(bottom <= stickyH + 8 || progress >= 0.98);
     };
 
     window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
 
     return () => {
       observer.disconnect();
@@ -154,15 +163,15 @@ const IdentityDetailsPage: React.FC = () => {
             position: 'sticky',
             top: 0,
             zIndex: (theme) => theme.zIndex.appBar,
-            transition: 'opacity 200ms ease, transform 200ms ease',
-            opacity: condensed ? 1 : 0,
-            transform: condensed ? 'translateY(0)' : 'translateY(-8px)',
-            pointerEvents: condensed ? 'auto' : 'none',
+            transition: 'opacity 150ms ease, transform 150ms ease, background-color 150ms ease, backdrop-filter 150ms ease',
+            opacity: scrollProgress,
+            transform: `translateY(${(-8 + 8 * scrollProgress)}px)`,
+            pointerEvents: scrollProgress > 0.02 ? 'auto' : 'none',
             px: 2,
             py: 1,
             borderRadius: 0,
-            bgcolor: (theme) => alpha(theme.palette.background.paper, 0.8),
-            backdropFilter: 'blur(8px)',
+            bgcolor: (theme) => alpha(theme.palette.background.paper, 0.6 + 0.2 * scrollProgress),
+            backdropFilter: `blur(${4 + 4 * scrollProgress}px)`,
             borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
           }}
         >
@@ -196,7 +205,7 @@ const IdentityDetailsPage: React.FC = () => {
 
         {/* Banner aligned to content area width */}
         <Box sx={{ maxWidth: 1200, mx: 'auto', px: 2, mb: 2 }}>
-          <Box ref={bannerRef} sx={{ position: 'relative', height: 300, borderRadius: 2, overflow: 'hidden' }}>
+          <Box ref={bannerRef} sx={{ position: 'relative', height: 300, borderRadius: `${8 * (1 - scrollProgress)}px`, overflow: 'hidden', boxShadow: (theme) => scrollProgress < 0.98 ? theme.shadows[3] : 'none', transition: 'border-radius 150ms ease, box-shadow 150ms ease' }}>
             <Box
               component="img"
               src={selectedIdentity.profile.heroUrl}
