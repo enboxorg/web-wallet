@@ -12,6 +12,8 @@ import {
   DialogActions,
   Button,
   ClickAwayListener,
+  Chip,
+  alpha,
 } from '@mui/material';
 import {
   Edit, Delete, GetApp, ContentCopy, QrCode2,
@@ -38,6 +40,8 @@ const IdentityDetailsPage: React.FC = () => {
   const [condensed, setCondensed] = useState(false);
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const bannerRef = useRef<HTMLDivElement | null>(null);
+  const stickyRef = useRef<HTMLDivElement | null>(null);
 
   const BannerOverlay = styled(Box)(({ theme }) => ({
     position: 'absolute',
@@ -45,7 +49,7 @@ const IdentityDetailsPage: React.FC = () => {
     left: 0,
     right: 0,
     bottom: 0,
-    background: 'linear-gradient(to bottom, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.55) 50%, rgba(0,0,0,0.8) 100%)',
+    background: 'linear-gradient(to bottom, rgba(0,0,0,0.25) 0%, rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.85) 100%)',
   }));
 
   useEffect(() => {
@@ -57,13 +61,29 @@ const IdentityDetailsPage: React.FC = () => {
   useEffect(() => {
     const el = sentinelRef.current;
     if (!el) return;
+
     const observer = new IntersectionObserver(
       ([entry]) => setCondensed(!entry.isIntersecting),
       { root: null, threshold: 0.01 }
     );
     observer.observe(el);
-    return () => observer.disconnect();
-  }, [sentinelRef]);
+
+    const onScroll = () => {
+      const banner = bannerRef.current;
+      const sticky = stickyRef.current;
+      if (!banner || !sticky) return;
+      const stickyH = sticky.getBoundingClientRect().height || 0;
+      const bottom = banner.getBoundingClientRect().bottom;
+      setCondensed(bottom <= stickyH + 8);
+    };
+
+    window.addEventListener('scroll', onScroll, { passive: true });
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, []);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -128,6 +148,7 @@ const IdentityDetailsPage: React.FC = () => {
       <>
         {/* Sticky condensed header */}
         <Paper
+          ref={stickyRef}
           elevation={3}
           sx={{
             position: 'sticky',
@@ -140,7 +161,8 @@ const IdentityDetailsPage: React.FC = () => {
             px: 2,
             py: 1,
             borderRadius: 0,
-            bgcolor: (theme) => theme.palette.background.paper,
+            bgcolor: (theme) => alpha(theme.palette.background.paper, 0.8),
+            backdropFilter: 'blur(8px)',
             borderBottom: (theme) => `1px solid ${theme.palette.divider}`,
           }}
         >
@@ -148,10 +170,18 @@ const IdentityDetailsPage: React.FC = () => {
             <Avatar src={selectedIdentity.profile.avatarUrl} sx={{ width: 36, height: 36 }}>
               {social?.displayName?.charAt(0).toUpperCase() || 'U'}
             </Avatar>
-            <Box sx={{ flex: 1, minWidth: 0 }}>
-              <Typography variant="subtitle1" noWrap>
-                {social?.displayName || 'Unnamed'} ({selectedIdentity.persona})
-              </Typography>
+            <Box sx={{ flex: 1, minWidth: 0, overflow: 'hidden' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                <Typography variant="subtitle1" noWrap sx={{ fontWeight: 700 }}>
+                  {social?.displayName || 'Unnamed'}
+                </Typography>
+                <Chip size="small" variant="outlined" label={selectedIdentity.persona} />
+              </Box>
+              {social?.tagline && (
+                <Typography variant="caption" color="text.secondary" noWrap>
+                  {social.tagline}
+                </Typography>
+              )}
             </Box>
             <Tooltip title={copyTooltipText} open={copyTooltipOpen} onClose={handleTooltipClose} disableFocusListener disableHoverListener disableTouchListener>
               <IconButton size="small" onClick={handleCopyDid}>
@@ -164,17 +194,9 @@ const IdentityDetailsPage: React.FC = () => {
           </Box>
         </Paper>
 
-        {/* Full-bleed banner */}
-        <Box sx={{
-          position: 'relative',
-          left: '50%',
-          right: '50%',
-          marginLeft: '-50vw',
-          marginRight: '-50vw',
-          width: '100vw',
-          mb: 2,
-        }}>
-          <Box sx={{ position: 'relative', height: 300 }}>
+        {/* Banner aligned to content area width */}
+        <Box sx={{ maxWidth: 1200, mx: 'auto', px: 2, mb: 2 }}>
+          <Box ref={bannerRef} sx={{ position: 'relative', height: 300, borderRadius: 2, overflow: 'hidden' }}>
             <Box
               component="img"
               src={selectedIdentity.profile.heroUrl}
@@ -182,7 +204,7 @@ const IdentityDetailsPage: React.FC = () => {
               sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
             <BannerOverlay />
-            <Box sx={{ position: 'absolute', bottom: 14, left: '50%', transform: 'translateX(-50%)', width: '100%', maxWidth: 1200, px: 2, display: 'flex', alignItems: 'flex-end' }}>
+            <Box sx={{ position: 'absolute', bottom: 16, left: 16, right: 16, display: 'flex', alignItems: 'flex-end' }}>
               <Avatar
                 src={selectedIdentity.profile.avatarUrl}
                 alt={social?.displayName || 'user'}
@@ -190,12 +212,29 @@ const IdentityDetailsPage: React.FC = () => {
               >
                 {social?.displayName?.charAt(0).toUpperCase() || 'U'}
               </Avatar>
-              <Box sx={{ flexGrow: 1 }}>
-                {social?.displayName && (
-                  <Typography variant="subtitle1" sx={{ color: 'common.white', textShadow: '0 2px 6px rgba(0,0,0,0.85)', fontWeight: 700 }}>
-                    {social.displayName} ({selectedIdentity.persona})
-                  </Typography>
-                )}
+              <Box sx={{ flexGrow: 1, minWidth: 0 }}>
+                <Box sx={{
+                  display: 'inline-flex',
+                  flexDirection: 'column',
+                  gap: 0.5,
+                  px: 1,
+                  py: 0.5,
+                  borderRadius: 1,
+                  backgroundColor: alpha('#000', 0.25),
+                  backdropFilter: 'blur(4px)'
+                }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                    <Typography variant="subtitle1" sx={{ color: 'common.white', textShadow: '0 2px 6px rgba(0,0,0,0.85)', fontWeight: 700 }} noWrap>
+                      {social?.displayName || 'Unnamed'}
+                    </Typography>
+                    <Chip size="small" label={selectedIdentity.persona} sx={{ color: 'common.white', borderColor: alpha('#fff', 0.6) }} variant="outlined" />
+                  </Box>
+                  {social?.tagline && (
+                    <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', textShadow: '0 1px 3px rgba(0,0,0,0.85)' }} noWrap>
+                      {social.tagline}
+                    </Typography>
+                  )}
+                </Box>
               </Box>
               <IconButton onClick={handleMenuOpen} sx={{ color: 'common.white' }}>
                 <MoreVert />
@@ -223,7 +262,7 @@ const IdentityDetailsPage: React.FC = () => {
         <Box ref={sentinelRef} sx={{ height: 1 }} />
 
         {/* Main content */}
-        <Box sx={{ maxWidth: 1200, margin: '0 auto' }}>
+        <Box sx={{ maxWidth: 1200, margin: '0 auto', px: 2 }}>
           <Paper elevation={3} sx={{ p: 3 }}>
             <Typography variant="body1" gutterBottom>{social?.tagline}</Typography>
             <Divider sx={{ my: 2 }} />
@@ -279,7 +318,7 @@ const IdentityDetailsPage: React.FC = () => {
         </Box>
 
         {/* Existing sections */}
-        <Box sx={{ maxWidth: 1200, margin: '0 auto', mt: 3 }}>
+        <Box sx={{ maxWidth: 1200, margin: '0 auto', mt: 3, px: 2 }}>
           <Grid container spacing={3}>
             <Grid size={{ xs: 12, md: 6 }}>
               <Paper elevation={1} sx={{ p: 3, height: '100%' }}>
@@ -324,14 +363,14 @@ const IdentityDetailsPage: React.FC = () => {
         </Box>
 
         {/* Dummy sections to simulate scroll */}
-        <Box sx={{ maxWidth: 1200, margin: '0 auto', mt: 3 }}>
+        <Box sx={{ maxWidth: 1200, margin: '0 auto', mt: 3, px: 2 }}>
           {["Activity", "Connections", "Data", "Settings"].map((title, idx) => (
             <Paper key={title} elevation={1} sx={{ p: 3, mb: 3 }}>
               <Typography variant="h6" gutterBottom>{title}</Typography>
               <Typography variant="body2" color="text.secondary">
                 This is dummy content section {idx + 1}. Add real content here. Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer et ligula nec urna congue tristique. Curabitur non pretium sem. Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas.
               </Typography>
-              <Box sx={{ height: 240 }} />
+              <Box sx={{ height: 320 }} />
             </Paper>
           ))}
         </Box>
