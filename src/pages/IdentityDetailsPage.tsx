@@ -69,6 +69,7 @@ const IdentityDetailsPage: React.FC = () => {
   const smallUp = useMediaQuery('(min-width:600px)');
   const mdUp = useMediaQuery('(min-width:900px)');
   const toolbarHeight = smallUp ? 64 : 56;
+  const heroWrapperRef = useRef<HTMLDivElement | null>(null);
   const heroRef = useRef<HTMLDivElement | null>(null);
   const [isPinned, setIsPinned] = useState(false);
   const [heroHeight, setHeroHeight] = useState(0);
@@ -91,10 +92,12 @@ const IdentityDetailsPage: React.FC = () => {
       const y = window.scrollY || 0;
       const clamped = Math.max(0, Math.min(y, 300));
       setParallax(clamped);
-      if (heroRef.current) {
-        const rect = heroRef.current.getBoundingClientRect();
-        setHeroHeight(rect.height);
+      if (heroWrapperRef.current) {
+        const rect = heroWrapperRef.current.getBoundingClientRect();
         setIsPinned(rect.top <= toolbarHeight);
+      }
+      if (heroRef.current) {
+        setHeroHeight(heroRef.current.getBoundingClientRect().height);
       }
     };
     window.addEventListener('scroll', handleScroll, { passive: true });
@@ -253,16 +256,13 @@ const IdentityDetailsPage: React.FC = () => {
         <Box sx={{ pb: 4 }}>
           {/* Hero Header */}
           <Box
-            ref={heroRef}
+            ref={heroWrapperRef}
             sx={{
               maxWidth: 1200,
               margin: '0 auto',
-              position: isPinned ? 'fixed' : 'relative',
-              top: isPinned ? `${toolbarHeight}px` : undefined,
-              left: isPinned ? '50%' : undefined,
-              transform: isPinned ? 'translateX(-50%)' : undefined,
+              position: 'relative',
               width: '100%',
-              zIndex: isPinned ? 10 : 'auto',
+              height: `${currentHeroHeight}px`,
             }}
           >
             <GlassSection
@@ -275,9 +275,15 @@ const IdentityDetailsPage: React.FC = () => {
                 borderColor: isStuck ? alpha('#ffffff', 0.2) : undefined,
                 boxShadow: isStuck ? '0 8px 24px rgba(0,0,0,0.35)' : 'none',
                 backdropFilter: isStuck ? 'blur(26px)' : undefined,
+                position: isPinned ? 'fixed' : 'relative',
+                top: isPinned ? `${toolbarHeight}px` : undefined,
+                left: isPinned ? '50%' : undefined,
+                transform: isPinned ? 'translateX(-50%)' : undefined,
+                zIndex: isPinned ? 1000 : 'auto',
+                width: isPinned ? '100%' : undefined,
               }}
             >
-              <Box sx={{ position: 'relative', height: `${currentHeroHeight}px`, transition: 'height 0.2s ease' }}>
+              <Box ref={heroRef} sx={{ position: 'relative', height: `${currentHeroHeight}px`, transition: 'height 0.2s ease' }}>
                 <Box
                   component="img"
                   src={selectedIdentity.profile.heroUrl}
@@ -299,12 +305,12 @@ const IdentityDetailsPage: React.FC = () => {
                 <Box
                   sx={{
                     position: 'absolute',
-                    bottom: 16,
+                    bottom: isPinned ? 6 : 16,
                     left: 16,
                     right: 16,
                     display: 'flex',
                     alignItems: 'flex-end',
-                    gap: 2,
+                    gap: isPinned ? 1 : 2,
                   }}
                 >
                   {/* Blurred halo behind avatar */}
@@ -312,7 +318,7 @@ const IdentityDetailsPage: React.FC = () => {
                     sx={{
                       position: 'absolute',
                       left: 16,
-                      bottom: 16,
+                      bottom: isPinned ? 6 : 16,
                       width: avatarSize + 8,
                       height: avatarSize + 8,
                       borderRadius: '9999px',
@@ -357,6 +363,7 @@ const IdentityDetailsPage: React.FC = () => {
                           textOverflow: 'ellipsis',
                           opacity: headerOpacity,
                           transition: 'all 0.2s ease',
+                          lineHeight: isPinned ? 1.2 : undefined,
                         }}
                       >
                         {social.displayName} ({selectedIdentity.persona})
@@ -405,7 +412,6 @@ const IdentityDetailsPage: React.FC = () => {
               </Box>
             </GlassSection>
           </Box>
-          {isPinned && <Box sx={{ height: heroHeight, mb: 3 }} />}
 
           {/* Info and quick actions (separate, scrolls under the compact header) */}
           <Box sx={{ maxWidth: 1200, margin: '0 auto', mb: 3 }}>
