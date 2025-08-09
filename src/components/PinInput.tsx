@@ -1,13 +1,47 @@
-import Grid from '@mui/material/Grid2';
-import React, { createRef, useEffect } from 'react';
-import { TextField } from '@mui/material';
-import { useState } from 'react';
+import React, { createRef, useEffect, useState } from 'react';
+import { Box, InputBase, alpha, styled } from '@mui/material';
 
 interface PinInputProps {
   initialPin: string[];
   onPinChange: (updatedPin: string[]) => void;
   error?: boolean;
 }
+
+const DigitInput = styled(InputBase)(({ theme }) => ({
+  width: 64,
+  height: 64,
+  borderRadius: 16,
+  backgroundColor: alpha(theme.palette.background.paper, 0.5),
+  backdropFilter: 'blur(12px)',
+  border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
+  transition: 'all 0.2s ease',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  '&:hover': {
+    borderColor: alpha(theme.palette.primary.main, 0.5),
+  },
+  '&.Mui-focused': {
+    borderColor: theme.palette.primary.main,
+    boxShadow: `0 0 0 4px ${alpha(theme.palette.primary.main, 0.18)}`,
+  },
+  '&.error': {
+    borderColor: theme.palette.error.main,
+    boxShadow: `0 0 0 4px ${alpha(theme.palette.error.main, 0.16)}`,
+  },
+  '& input': {
+    textAlign: 'center',
+    fontSize: '1.75rem',
+    fontWeight: 600,
+    padding: 0,
+    lineHeight: 1,
+    width: '100%',
+  },
+  [theme.breakpoints.up('sm')]: {
+    width: 72,
+    height: 72,
+  },
+}));
 
 const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange, error = false }) => {
   const [pin, setPin] = useState(initialPin);
@@ -16,6 +50,11 @@ const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange, error = fa
   useEffect(() => {
     firstInputRef.current?.focus();
   }, []);
+
+  // Keep local state in sync when parent resets the PIN (e.g., after invalid attempts)
+  useEffect(() => {
+    setPin(initialPin);
+  }, [initialPin]);
 
   const onDigitInputChange = (digitIndex: number) => (event: React.ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
@@ -37,7 +76,7 @@ const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange, error = fa
   };
 
   const onDigitInputKeyDown = (digitIndex: number) => (event: React.KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Backspace" && !pin[digitIndex] && digitIndex > 0) {
+    if (event.key === 'Backspace' && !pin[digitIndex] && digitIndex > 0) {
       const prevInput = document.getElementById(`pin-${digitIndex - 1}`) as HTMLInputElement | null;
       prevInput?.focus();
     }
@@ -62,42 +101,26 @@ const PinInput: React.FC<PinInputProps> = ({ initialPin, onPinChange, error = fa
   };
 
   return (
-    <Grid container spacing={2} justifyContent="center" onPaste={onPaste}>
+    <Box display="flex" justifyContent="center" gap={{ xs: 1.5, sm: 2 }} onPaste={onPaste}>
       {pin.map((digit, digitIndex) => (
-        <Grid key={digitIndex}>
-          <TextField
-            id={`pin-${digitIndex}`}
-            variant="outlined"
-            value={digit}
-            onChange={onDigitInputChange(digitIndex)}
-            onKeyDown={onDigitInputKeyDown(digitIndex)}
-            error={error}
-            sx={{
-              width: 72,
-              height: 72,
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 2,
-                fontSize: '1.5rem',
-                '& input': {
-                  textAlign: 'center',
-                  padding: 0,
-                },
-                '& fieldset': {
-                  transition: 'border-color 0.2s ease',
-                },
-              },
-            }}
-            inputRef={digitIndex === 0 ? firstInputRef : undefined}
-            slotProps={{
-              htmlInput: {
-                inputMode: 'numeric',
-                maxLength: 1,
-              }
-            }}
-          />
-        </Grid>
+        <DigitInput
+          key={digitIndex}
+          id={`pin-${digitIndex}`}
+          value={digit}
+          onChange={onDigitInputChange(digitIndex)}
+          onKeyDown={onDigitInputKeyDown(digitIndex)}
+          className={error ? 'error' : undefined}
+          inputRef={digitIndex === 0 ? firstInputRef : undefined}
+          inputProps={{
+            inputMode: 'numeric',
+            maxLength: 1,
+            pattern: '[0-9]*',
+            'aria-label': `PIN digit ${digitIndex + 1}`,
+            autoComplete: 'one-time-code',
+          }}
+        />
       ))}
-    </Grid>
+    </Box>
   );
 };
 
