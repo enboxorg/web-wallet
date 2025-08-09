@@ -32,6 +32,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import ProtocolItem from '@/components/ProtocolItem';
 import PermissionsList from '@/components/PermissionsList';
+import { CSSTransition } from 'react-transition-group';
 
 // Subtle gradient overlay for hero banner
 const BannerOverlay = styled(Box)(({ theme }) => ({
@@ -63,12 +64,24 @@ const IdentityDetailsPage: React.FC = () => {
   const [copyTooltipOpen, setCopyTooltipOpen] = useState(false);
   const [copyTooltipText, setCopyTooltipText] = useState('Copy DID');
   const [tabValue, setTabValue] = useState(0);
+  const [parallax, setParallax] = useState(0);
 
   useEffect(() => {
     if (didUri !== selectedIdentity?.didUri) {
       selectIdentity(didUri);
     }
   }, [didUri, selectedIdentity, selectIdentity]);
+
+  // Parallax effect on scroll
+  useEffect(() => {
+    const handleScroll = () => {
+      const y = window.scrollY || 0;
+      const clamped = Math.max(0, Math.min(y, 300));
+      setParallax(clamped);
+    };
+    window.addEventListener('scroll', handleScroll, { passive: true });
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const handleMenuOpen = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -173,7 +186,14 @@ const IdentityDetailsPage: React.FC = () => {
                   onError={(e: any) => {
                     e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="800" height="300"%3E%3Crect fill="%23252525" width="800" height="300"/%3E%3C/svg%3E';
                   }}
-                  sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  sx={{
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'cover',
+                    transform: `translateY(${parallax * 0.15}px) scale(${1 + parallax * 0.0005})`,
+                    transition: 'transform 0.05s linear',
+                    willChange: 'transform',
+                  }}
                 />
                 <BannerOverlay />
 
@@ -188,6 +208,22 @@ const IdentityDetailsPage: React.FC = () => {
                     gap: 2,
                   }}
                 >
+                  {/* Blurred halo behind avatar */}
+                  <Box
+                    sx={{
+                      position: 'absolute',
+                      left: 16,
+                      bottom: 16,
+                      width: { xs: 88, sm: 104, md: 120 },
+                      height: { xs: 88, sm: 104, md: 120 },
+                      borderRadius: '9999px',
+                      backgroundColor: alpha('#000000', 0.2),
+                      backdropFilter: 'blur(12px)',
+                      filter: 'blur(6px)',
+                      transform: 'translateY(8px)',
+                      zIndex: 0,
+                    }}
+                  />
                   <Avatar
                     src={selectedIdentity.profile.avatarUrl}
                     alt={social?.displayName || 'user'}
@@ -200,6 +236,8 @@ const IdentityDetailsPage: React.FC = () => {
                       border: '3px solid',
                       borderColor: alpha('#ffffff', 0.2),
                       boxShadow: '0 6px 16px rgba(0,0,0,0.35)',
+                      position: 'relative',
+                      zIndex: 1,
                     }}
                   >
                     {social?.displayName?.charAt(0).toUpperCase() || 'U'}
@@ -403,10 +441,11 @@ const IdentityDetailsPage: React.FC = () => {
                 <Tab label={`Protocols (${protocols.length})`} />
                 <Tab label={`Wallets (${wallets.length})`} />
                 <Tab label={`Permissions (${permissions.length})`} />
+                <Tab label={`Activity`} />
               </Tabs>
 
               {/* Overview */}
-              {tabValue === 0 && (
+              <CSSTransition in={tabValue === 0} timeout={200} classNames="fade" unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   {social?.bio && (
                     <Box sx={{ mb: 2.5 }}>
@@ -458,10 +497,10 @@ const IdentityDetailsPage: React.FC = () => {
                     </Box>
                   )}
                 </Box>
-              )}
+              </CSSTransition>
 
               {/* Protocols */}
-              {tabValue === 1 && (
+              <CSSTransition in={tabValue === 1} timeout={200} classNames="fade" unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <List>
                     {protocols.map((definition) => (
@@ -469,10 +508,10 @@ const IdentityDetailsPage: React.FC = () => {
                     ))}
                   </List>
                 </Box>
-              )}
+              </CSSTransition>
 
               {/* Wallets */}
-              {tabValue === 2 && (
+              <CSSTransition in={tabValue === 2} timeout={200} classNames="fade" unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <List>
                     {wallets.map((wallet, index) => (
@@ -482,14 +521,24 @@ const IdentityDetailsPage: React.FC = () => {
                     ))}
                   </List>
                 </Box>
-              )}
+              </CSSTransition>
 
               {/* Permissions */}
-              {tabValue === 3 && (
+              <CSSTransition in={tabValue === 3} timeout={200} classNames="fade" unmountOnExit>
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <PermissionsList permissions={permissions} protocols={protocols} />
                 </Box>
-              )}
+              </CSSTransition>
+
+              {/* Activity */}
+              <CSSTransition in={tabValue === 4} timeout={200} classNames="fade" unmountOnExit>
+                <Box sx={{ p: { xs: 2, sm: 3 } }}>
+                  <Box sx={{ textAlign: 'center', color: 'text.secondary', py: 6 }}>
+                    <Typography variant="h6" sx={{ mb: 1 }}>No recent activity</Typography>
+                    <Typography variant="body2">When this identity interacts with apps and protocols, updates will appear here.</Typography>
+                  </Box>
+                </Box>
+              </CSSTransition>
             </GlassSection>
           </Box>
 
