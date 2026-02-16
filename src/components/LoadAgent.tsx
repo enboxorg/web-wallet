@@ -20,7 +20,7 @@ const LoadAgent:React.FC<{
 
   const [pin, setPin] = useState(['', '', '', '']);
   const [invalidPin, setInvalidPin] = useState(false);
-  const [dwnEndpoint, setDwnEndpoint] = useState('https://dwn.enbox.org/latest');
+  const [dwnEndpoint, setDwnEndpoint] = useState('https://enbox-dwn.fly.dev');
 
   // Auto-submit in both modes when 4 digits are present
   useEffect(() => {
