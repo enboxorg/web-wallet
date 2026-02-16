@@ -31,7 +31,7 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
     displayName: '',
     tagline: '',
     bio: '',
-          dwnEndpoints: ['https://dwn.enbox.org/latest'],
+          dwnEndpoints: ['https://enbox-dwn.fly.dev'],
     avatar: null as File | Blob | null,
     banner: null as File | Blob | null,
   }
@@ -270,8 +270,8 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
                 <ListInput
                   label={'DWN Endpoint'}
                   value={formData.dwnEndpoints}
-                              defaultValue={'https://dwn.enbox.org/latest'}
-                  placeholder='https://dwn.enbox.org/latest'
+                  defaultValue={'https://enbox-dwn.fly.dev'}
+                  placeholder='https://enbox-dwn.fly.dev'
                   onChange={(value) => {
                     setFormData({ ...formData, dwnEndpoints: value });
                   }}
