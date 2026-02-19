@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useEffect, useState } from "react";
-import { BearerIdentity, DwnPermissionGrant, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, Web5Agent } from "@enbox/agent";
+import { BearerIdentity, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, Web5Agent } from "@enbox/agent";
 
 import Web5Helper from "@/lib/Web5Helper";
 import ProfileProtocol, { profileDefinition } from "@/lib/ProfileProtocol";
@@ -57,7 +57,7 @@ interface IdentityContextProps {
   /** Identity specific */
   selectedIdentity: Identity | undefined;
   protocols: DwnProtocolDefinition[];
-  permissions: DwnPermissionGrant[];
+  permissions: PermissionGrant[];
   wallets: string[];
   dwnEndpoints: string[];
   selectIdentity: (didUri: string | undefined) => void;
@@ -191,7 +191,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     await web5Helper.configureProtocol(profileDefinition);
 
     /** Set Wallet Information */
-    await setWallets([ walletHost ]);
+    await setIdentityWallets(identity.did.uri, [ walletHost ]);
 
     /** Set Profile Information */
     const profileProtocol = ProfileProtocol(identity.did.uri, agent);
@@ -257,11 +257,9 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       persona,
       profile: {
         ...identity.profile,
-        displayName,
-        tagline,
-        bio,
+        social: { displayName, tagline, bio, apps: identity.profile.social?.apps ?? {} },
         avatar,
-        hero
+        hero,
       }
     }
 

@@ -2,7 +2,7 @@ import { useBackupSeed } from '@/contexts/Context';
 import LockIcon from '@mui/icons-material/Lock';
 import { Box, Button, Container, Paper, TextField, Typography, alpha } from "@mui/material";
 import Grid from '@mui/material/Grid2';
-import { Web5UserAgent } from '@enbox/user-agent';
+import { Web5UserAgent } from '@enbox/agent';
 import { useCallback, useEffect, useState } from 'react';
 import PinInput from './PinInput';
 import EnboxLogo from './EnboxLogo';

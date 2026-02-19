@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useEffect, useState } from "react";
 
 import { AppProvider } from "@toolpad/core";
 
-import { Web5UserAgent } from "@enbox/user-agent";
+import { Web5UserAgent } from "@enbox/agent";
 
 import Loader from "@/components/Loader";
 import LoadAgent from "@/components/LoadAgent";
@@ -76,21 +76,6 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     }
 
-    // Set up a timer and callbacks for an inactivity timer.
-    // If the user is inactive for 10 minutes, the wallet will be locked
-    let inactivityTimer: NodeJS.Timeout;
-    const resetTimer = () => {
-      clearTimeout(inactivityTimer);
-      const newTimer = setTimeout(() => {
-        lock();
-      }, LOCK_TIMEOUT);
-      return newTimer;
-    };
-
-    const resetActivityTimer = () => {
-      inactivityTimer = resetTimer();
-    }
-
     setIsConnecting(true);
     try {
         await web5Agent.start({ password });
@@ -98,16 +83,6 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
         setWeb5Agent(web5Agent);
         setUnlocked(true);
         web5Agent.sync.startSync({ interval: '15s' });
-
-        // After 10 minutes of inactivity, remove the password from local storage
-        // TODO: make this configurable?
-        inactivityTimer = setTimeout(() => {
-          lock();
-        }, LOCK_TIMEOUT);
-
-        // Add event listeners for user activity
-        window.addEventListener('mousemove', resetActivityTimer);
-        window.addEventListener('keypress', resetActivityTimer);
     } catch (error) {
       setIsConnecting(false);
       throw error;
@@ -115,6 +90,34 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
       setIsConnecting(false);
     }
   }, [ web5Agent, unlocked, isConnecting ]);
+
+  // Inactivity timer: lock the wallet after LOCK_TIMEOUT of no activity.
+  // Listeners are added once when unlocked and cleaned up when locked or unmounted.
+  useEffect(() => {
+    if (!unlocked) {
+      return;
+    }
+
+    let inactivityTimer: NodeJS.Timeout = setTimeout(() => {
+      lock();
+    }, LOCK_TIMEOUT);
+
+    const resetActivityTimer = () => {
+      clearTimeout(inactivityTimer);
+      inactivityTimer = setTimeout(() => {
+        lock();
+      }, LOCK_TIMEOUT);
+    };
+
+    window.addEventListener('mousemove', resetActivityTimer);
+    window.addEventListener('keypress', resetActivityTimer);
+
+    return () => {
+      clearTimeout(inactivityTimer);
+      window.removeEventListener('mousemove', resetActivityTimer);
+      window.removeEventListener('keypress', resetActivityTimer);
+    };
+  }, [ unlocked, lock ]);
 
   useEffect(() => {
     if (web5Agent && initialized && !unlocked) {
@@ -135,8 +138,10 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
       if (await web5Agent.firstLaunch()) {
         const recoveryPhrase = await web5Agent.initialize({ password, dwnEndpoints: [ dwnEndpoint ] });
         await web5Agent.start({ password });
-        await web5Agent.sync.registerIdentity({ did: web5Agent.agentDid.uri })
+        localStorage.setItem('password', password);
+        await web5Agent.sync.registerIdentity({ did: web5Agent.agentDid.uri });
         await web5Agent.sync.sync('pull');
+        web5Agent.sync.startSync({ interval: '15s' });
         setInitialized(true);
         setUnlocked(true);
         return recoveryPhrase;

@@ -5,7 +5,7 @@ import { DwnPermissionScope, DwnProtocolDefinition } from "@enbox/agent";
 const ProtocolPermissionScope:React.FC<{ definition: DwnProtocolDefinition, scopes: DwnPermissionScope[] }> = ({ definition, scopes }) => {
   const formatScopes = (scopes: DwnPermissionScope[]) => {
     const sync = scopes.some(scope => scope.interface === 'Messages' && scope.method === 'Read') &&
-                 scopes.some(scope => scope.interface === 'Messages' && scope.method === 'Query');
+                 scopes.some(scope => scope.interface === 'Messages' && scope.method === 'Sync');
 
     const records = scopes.filter(scope => scope.interface === 'Records').map(scope => scope.method);
 
