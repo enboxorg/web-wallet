@@ -38,10 +38,12 @@ export const BackupSeedProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   const setBackupSeed = (seed: string) => {
     localStorage.setItem('recoveryPhrase', seed);
+    setBackupSeedState(seed);
   }
 
   const removeBackupSeed = () => {
     localStorage.removeItem('recoveryPhrase');
+    setBackupSeedState(undefined);
   }
 
   return (

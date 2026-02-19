@@ -55,26 +55,24 @@ const DWebConnect: React.FC = () => {
       const delegatePortableDid = await delegateBearerDid.export();
 
       // TODO: roll back permissions and protocol configurations if an error occurs. Need a way to delete protocols to achieve this.
-      const delegateGrantPromises = permissions.map(permissionRequest => {
-        return new Promise(async (resolve) => {
-          const { protocolDefinition, permissionScopes } = permissionRequest;
-    
-          // We validate that all permission scopes match the protocol uri of the protocol definition they are provided with.
-          const grantsMatchProtocolUri = permissionScopes.every(scope => 'protocol' in scope && scope.protocol === protocolDefinition.protocol);
-          if (!grantsMatchProtocolUri) {
-            throw new Error('All permission scopes must match the protocol uri they are provided with.');
-          }
-
-          await prepareProtocol(did, agent, protocolDefinition);
-          const permissionGrants = await Oidc.createPermissionGrants(
-            did,
-            delegateBearerDid,
-            agent,
-            permissionScopes
-          );
+      const delegateGrantPromises = permissions.map(async (permissionRequest) => {
+        const { protocolDefinition, permissionScopes } = permissionRequest;
   
-          resolve(permissionGrants);
-        });
+        // We validate that all permission scopes match the protocol uri of the protocol definition they are provided with.
+        const grantsMatchProtocolUri = permissionScopes.every(scope => 'protocol' in scope && scope.protocol === protocolDefinition.protocol);
+        if (!grantsMatchProtocolUri) {
+          throw new Error('All permission scopes must match the protocol uri they are provided with.');
+        }
+
+        await prepareProtocol(did, agent, protocolDefinition);
+        const permissionGrants = await Oidc.createPermissionGrants(
+          did,
+          delegateBearerDid,
+          agent,
+          permissionScopes
+        );
+
+        return permissionGrants;
       });
 
       const grants = (await Promise.all(delegateGrantPromises)).flat();
