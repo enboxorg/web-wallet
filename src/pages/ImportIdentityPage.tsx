@@ -9,9 +9,9 @@ import PublicIdentityCard from '@/components/identity/PublicIdentityCard';
 import { useAgent, useDragIdentities, useIdentities } from '@/contexts/Context';
 import { CheckCircle, HighlightOff } from '@mui/icons-material';
 import { Convert } from '@enbox/common';
-import { profileDefinition } from '@/lib/ProfileProtocol';
+import { ProfileDefinition } from '@enbox/protocols';
 
-const profileProtocolB64 = Convert.string(profileDefinition.protocol).toBase64Url();
+const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
 
 type ImportStatus = 'pending' | 'success' | 'error';
 
@@ -113,8 +113,8 @@ const ImportIdentityPage: React.FC = () => {
           identity={{
             didUri: identity.metadata.uri,
             profile: {
-              heroUrl: `https://dweb/${identity.metadata.uri}/read/protocols/${profileProtocolB64}/hero`,
-              avatarUrl: `https://dweb/${identity.metadata.uri}/read/protocols/${profileProtocolB64}/avatar`,
+              heroUrl: `https://dweb/${identity.metadata.uri}/read/protocols/${profileProtocolB64}/profile/hero`,
+              avatarUrl: `https://dweb/${identity.metadata.uri}/read/protocols/${profileProtocolB64}/profile/avatar`,
               social: undefined
             }
           }}

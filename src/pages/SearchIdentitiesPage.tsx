@@ -4,12 +4,12 @@ import { Did } from '@enbox/dids';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Convert } from '@enbox/common';
-import { profileDefinition } from '@/lib/ProfileProtocol';
+import { ProfileDefinition } from '@enbox/protocols';
 import { SocialData } from '@/lib/types';
 import { truncateDid } from '@/lib/utils';
 import { Search } from '@mui/icons-material';
 
-const profileProtocolB64 = Convert.string(profileDefinition.protocol).toBase64Url();
+const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
 
 const SearchIdentitiesPage: React.FC = () => {
   const { didUri } = useParams<{ didUri: string }>();
@@ -21,7 +21,7 @@ const SearchIdentitiesPage: React.FC = () => {
 
   useEffect(() => {
     const fetchSocial = async (did: string) => {
-      const social = await fetch(`https://dweb/${did}/read/protocols/${profileProtocolB64}/social`);
+      const social = await fetch(`https://dweb/${did}/read/protocols/${profileProtocolB64}/profile`);
       const socialData = await social.json();
       setSocial(socialData);
     };
@@ -32,8 +32,8 @@ const SearchIdentitiesPage: React.FC = () => {
 
   }, [ did, social ]);
 
-  const heroUrl = `https://dweb/${did}/read/protocols/${profileProtocolB64}/hero`;
-  const avatarUrl = `https://dweb/${did}/read/protocols/${profileProtocolB64}/avatar`;
+  const heroUrl = `https://dweb/${did}/read/protocols/${profileProtocolB64}/profile/hero`;
+  const avatarUrl = `https://dweb/${did}/read/protocols/${profileProtocolB64}/profile/avatar`;
 
   useEffect(() => {
     if (didUri) {
