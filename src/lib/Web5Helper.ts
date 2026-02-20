@@ -1,4 +1,4 @@
-import { Web5, Record as DwnRecord } from '@enbox/api';
+import { Protocol, Web5, Record as DwnRecord } from '@enbox/api';
 import { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
 import { canonicalize } from '@enbox/crypto';
 
@@ -99,14 +99,12 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return protocol!;
     },
     listProtocols: async () => {
-      const { status, protocols } = await (web5 as any)._dwn.protocols.query({
-        filter: {}
-      });
+      const { status, protocols } = await (web5 as any)._dwn.protocols.query({});
       if (status.code !== 200) {
         throw new Error('Web5Helper: Failed to list protocols');
       }
 
-      return protocols.map(protocol => protocol.definition);
+      return protocols.map((protocol: Protocol) => protocol.definition);
     },
     listPermissions: async () => {
       try {
