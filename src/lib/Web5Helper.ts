@@ -9,12 +9,10 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
     web5,
     didUri,
     getRecord: async (protocol: string, protocolPath: string) => {
-      const { status, records } = await web5.dwn.records.query({
-        message: {
-          filter: {
-            protocol,
-            protocolPath
-          }
+      const { status, records } = await (web5 as any)._dwn.records.query({
+        filter: {
+          protocol,
+          protocolPath
         }
       });
   
@@ -23,41 +21,39 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       }
     },
     updateRecord: async (record: DwnRecord, dataFormat: string, data: any) => {
-      const { status } = await record.update({ data, dataFormat });
+      const { status, record: updatedRecord } = await record.update({ data, dataFormat });
       if (status.code !== 202) {
         throw new Error('Web5Helper: Failed to update name');
       }
 
-      const { status: sendStatus } = await record.send();
+      const { status: sendStatus } = await updatedRecord.send();
       if (sendStatus.code !== 202) {
-        console.info(`Web5Helper: Failed to send ${record.protocol} record at ${record.protocolPath}: ${sendStatus.detail}`);
+        console.info(`Web5Helper: Failed to send ${updatedRecord.protocol} record at ${updatedRecord.protocolPath}: ${sendStatus.detail}`);
       }
 
-      return record; 
+      return updatedRecord; 
     },
     deleteRecord: async (record: DwnRecord) => {
-      const { status } = await record.delete();
+      const { status, record: deletedRecord } = await record.delete();
       if (status.code !== 202) {
         throw new Error('Web5Helper: Failed to delete record');
       }
 
-      const { status: sendStatus } = await record.send();
+      const { status: sendStatus } = await deletedRecord.send();
       if (sendStatus.code !== 202) {
-        console.info(`Web5Helper: Failed to send delete ${record.protocol} record at ${record.protocolPath}: ${sendStatus.detail}`);
+        console.info(`Web5Helper: Failed to send delete ${deletedRecord.protocol} record at ${deletedRecord.protocolPath}: ${sendStatus.detail}`);
       }
 
-      return record;
+      return deletedRecord;
     },
     createRecord: async (protocol: string, protocolPath: string, dataFormat: string, data: any, parentContextId?: string) => {
-      const { status, record } = await web5.dwn.records.create({
+      const { status, record } = await (web5 as any)._dwn.records.write({
         data,
-        message: {
-          published: true,
-          protocol,
-          protocolPath,
-          dataFormat,
-          ...(parentContextId ? { parentContextId } : {}),
-        }
+        published: true,
+        protocol,
+        protocolPath,
+        dataFormat,
+        ...(parentContextId ? { parentContextId } : {}),
       });
   
       if (status.code !== 202) {
@@ -72,11 +68,9 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return record!;
     },
     configureProtocol: async (definition: DwnProtocolDefinition) => {
-      const { status, protocols } = await web5.dwn.protocols.query({
-        message: {
-          filter: {
-            protocol: definition.protocol
-          }
+      const { status, protocols } = await (web5 as any)._dwn.protocols.query({
+        filter: {
+          protocol: definition.protocol
         }
       });
 
@@ -89,10 +83,8 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
         return { status, protocol: protocols[0] };
       }
 
-      const { status: configureProfileStatus, protocol } = await web5.dwn.protocols.configure({
-        message: {
-          definition
-        }
+      const { status: configureProfileStatus, protocol } = await (web5 as any)._dwn.protocols.configure({
+        definition
       });
 
       if (configureProfileStatus.code !== 202) {
@@ -107,8 +99,8 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return protocol!;
     },
     listProtocols: async () => {
-      const { status, protocols } = await web5.dwn.protocols.query({
-        message: {}
+      const { status, protocols } = await (web5 as any)._dwn.protocols.query({
+        filter: {}
       });
       if (status.code !== 200) {
         throw new Error('Web5Helper: Failed to list protocols');
@@ -118,7 +110,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
     },
     listPermissions: async () => {
       try {
-        const permissions = await web5.dwn.permissions.queryGrants();
+        const permissions = await (web5 as any)._dwn.permissions.queryGrants();
         return permissions;
       } catch (_error) {
         console.log('Web5Helper: Failed to list permissions', _error);
@@ -126,11 +118,9 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return [];
     },
     getProtocolDefinition: async (protocol: string) => {
-      const { status, protocols } = await web5.dwn.protocols.query({
-        message: {
-          filter: {
-            protocol
-          }
+      const { status, protocols } = await (web5 as any)._dwn.protocols.query({
+        filter: {
+          protocol
         }
       });
 
