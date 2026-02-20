@@ -3,6 +3,7 @@ import { BearerIdentity, DwnProtocolDefinition, getDwnServiceEndpointUrls, Porta
 
 import Web5Helper from "@/lib/Web5Helper";
 import ProfileHelper, { ConnectDefinition, ProfileDefinition } from "@/lib/ProfileProtocol";
+import { SocialGraphDefinition } from "@enbox/protocols";
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
@@ -174,6 +175,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     await agent.sync.registerIdentity({ did: identity.did.uri, options: { protocols: [
+      SocialGraphDefinition.protocol,
       ProfileDefinition.protocol,
       ConnectDefinition.protocol,
     ]} });
@@ -189,8 +191,10 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     await agent.sync.sync('pull');
 
-    /** Configure protocols */
+    /** Configure protocols — SocialGraph must be installed first because
+     *  ProfileDefinition declares `uses: { social: '…/social-graph' }`. */
     const web5Helper = Web5Helper(identity.did.uri, agent);
+    await web5Helper.configureProtocol(SocialGraphDefinition);
     await web5Helper.configureProtocol(ProfileDefinition);
     await web5Helper.configureProtocol(ConnectDefinition);
 
@@ -333,6 +337,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const web5Helper = Web5Helper(importedIdentity.did.uri, agent);
+    await web5Helper.configureProtocol(SocialGraphDefinition);
     await web5Helper.configureProtocol(ProfileDefinition);
     await web5Helper.configureProtocol(ConnectDefinition);
 
