@@ -2,20 +2,22 @@ import React, { createContext, useCallback, useEffect, useState } from "react";
 import { BearerIdentity, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, Web5Agent } from "@enbox/agent";
 
 import Web5Helper from "@/lib/Web5Helper";
-import ProfileProtocol, { profileDefinition } from "@/lib/ProfileProtocol";
+import ProfileHelper, { ConnectDefinition, ProfileDefinition } from "@/lib/ProfileProtocol";
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
 import { Convert } from "@enbox/common";
 import { PermissionGrant, Record } from "@enbox/api";
 
+const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
+
 const loadProfileFromBearerIdentity = (agent: Web5Agent) => async (identity: BearerIdentity): Promise<Identity> => {
-  const profileProtocol = ProfileProtocol(identity.did.uri, agent);
-  const social = await profileProtocol.getSocial();
-  const avatar = await profileProtocol.getAvatar();
-  const avatarUrl = avatar ? `https://dweb/${identity.did.uri}/read/protocols/${Convert.string(profileDefinition.protocol).toBase64Url()}/avatar` : undefined;
-  const hero = await profileProtocol.getHero();
-  const heroUrl = hero ? `https://dweb/${identity.did.uri}/read/protocols/${Convert.string(profileDefinition.protocol).toBase64Url()}/hero` : undefined;
+  const helper = ProfileHelper(identity.did.uri, agent);
+  const social = await helper.getSocial();
+  const avatar = await helper.getAvatar();
+  const avatarUrl = avatar ? `https://dweb/${identity.did.uri}/read/protocols/${profileProtocolB64}/profile/avatar` : undefined;
+  const hero = await helper.getHero();
+  const heroUrl = hero ? `https://dweb/${identity.did.uri}/read/protocols/${profileProtocolB64}/profile/hero` : undefined;
 
   return {
     persona: identity.metadata.name,
@@ -79,14 +81,14 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [ wallets, setWalletsState ] = useState<string[]>([]);
   const [ dwnEndpoints, setDwnEndpointsState ] = useState<string[]>([]);
 
-  const setIdentityWallets = async (didUri: string, wallets: string[]) => {
+  const setIdentityWallets = async (didUri: string, walletList: string[]) => {
     if (!agent) return;
     const web5Helper = Web5Helper(didUri, agent);
-    let record = await web5Helper.getRecord(profileDefinition.protocol, 'connect');
+    let record = await web5Helper.getRecord(ConnectDefinition.protocol, 'wallet');
     if (!record) {
-      record = await web5Helper.createRecord(profileDefinition.protocol, 'connect', 'application/json', { webWallets: wallets });
+      record = await web5Helper.createRecord(ConnectDefinition.protocol, 'wallet', 'application/json', { webWallets: walletList });
     } else {
-      await web5Helper.updateRecord(record, 'application/json', { webWallets: wallets });
+      await web5Helper.updateRecord(record, 'application/json', { webWallets: walletList });
     }
   }
 
@@ -118,7 +120,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const permissionsPromise = web5Helper.listPermissions();
     const protocolsPromise = web5Helper.listProtocols();
-    const walletsPromise = web5Helper.getRecord(profileDefinition.protocol, 'connect').then(getWallets);
+    const walletsPromise = web5Helper.getRecord(ConnectDefinition.protocol, 'wallet').then(getWallets);
     const dwnEndpointsPromise = getDwnServiceEndpointUrls(selectedIdentity.didUri, agent.did);
 
     setPermissions(await permissionsPromise);
@@ -172,7 +174,8 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     });
 
     await agent.sync.registerIdentity({ did: identity.did.uri, options: { protocols: [
-      profileDefinition.protocol,
+      ProfileDefinition.protocol,
+      ConnectDefinition.protocol,
     ]} });
 
     const localStorageIdentities = localStorage.getItem('identities');
@@ -186,23 +189,24 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     await agent.sync.sync('pull');
 
-    /** Configure profile protocol */
+    /** Configure protocols */
     const web5Helper = Web5Helper(identity.did.uri, agent);
-    await web5Helper.configureProtocol(profileDefinition);
+    await web5Helper.configureProtocol(ProfileDefinition);
+    await web5Helper.configureProtocol(ConnectDefinition);
 
     /** Set Wallet Information */
     await setIdentityWallets(identity.did.uri, [ walletHost ]);
 
     /** Set Profile Information */
-    const profileProtocol = ProfileProtocol(identity.did.uri, agent);
-    await profileProtocol.setSocial({ displayName, tagline, bio, apps: {} });
+    const helper = ProfileHelper(identity.did.uri, agent);
+    await helper.setSocial({ displayName, tagline, bio, apps: {} });
 
     if (avatar) {
-      await profileProtocol.setAvatar(avatar);
+      await helper.setAvatar(avatar);
     }
 
     if (hero) {
-      await profileProtocol.setHero(hero);
+      await helper.setHero(hero);
     }
 
     const craetedIdentity = {
@@ -233,18 +237,18 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       await agent.identity.setMetadataName({ didUri, name: persona });
     }
 
-    const profileProtocol = ProfileProtocol(didUri, agent);
+    const helper = ProfileHelper(didUri, agent);
 
     if (identity.profile.social?.displayName !== displayName || identity.profile.social?.tagline !== tagline || identity.profile.social?.bio !== bio) {
-      await profileProtocol.setSocial({ displayName, tagline, bio, apps: {} });
+      await helper.setSocial({ displayName, tagline, bio, apps: {} });
     }
 
     if (avatar !== identity.profile.avatar) {
-      await profileProtocol.setAvatar(avatar || null);
+      await helper.setAvatar(avatar || null);
     }
 
     if (hero !== identity.profile.hero) {
-      await profileProtocol.setHero(hero || null);
+      await helper.setHero(hero || null);
     }
 
     const existingEndpoints = await getDwnServiceEndpointUrls(didUri, agent.did);
@@ -297,10 +301,9 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
 
     try {
-      // await agent.did.delete({ didUri, tenant: agent.agentDid.uri });
       await agent.did.delete({ didUri, tenant: agent.agentDid.uri });
     } catch(error) {
-      /** Newer versions of `@web5/agent` should not throw an error here */
+      /** Newer versions of `@enbox/agent` should not throw an error here */
       console.error('could not delete did', error);
     }
 
@@ -330,12 +333,13 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const web5Helper = Web5Helper(importedIdentity.did.uri, agent);
-    await web5Helper.configureProtocol(profileDefinition);
+    await web5Helper.configureProtocol(ProfileDefinition);
+    await web5Helper.configureProtocol(ConnectDefinition);
 
-    const wallets = await web5Helper.getRecord(profileDefinition.protocol, 'connect').then(getWallets);
-    if (wallets.length === 0 || !wallets.includes(walletHost)) {
-      wallets.push(walletHost);
-      await setIdentityWallets(importedIdentity.did.uri, wallets);
+    const existingWallets = await web5Helper.getRecord(ConnectDefinition.protocol, 'wallet').then(getWallets);
+    if (existingWallets.length === 0 || !existingWallets.includes(walletHost)) {
+      existingWallets.push(walletHost);
+      await setIdentityWallets(importedIdentity.did.uri, existingWallets);
     }
   }
 
@@ -349,13 +353,13 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     return portableIdentity;
   };
 
-  const setWallets = async (wallets: string[]) => {
+  const setWallets = async (walletList: string[]) => {
     if (!agent) return;
     if (!selectedIdentity) return;
-    await setIdentityWallets(selectedIdentity.didUri, wallets);
+    await setIdentityWallets(selectedIdentity.didUri, walletList);
   }
 
-  /* TODO: Implement in `@web5/agent` */
+  /* TODO: Implement in `@enbox/agent` */
   const setDwnEndpoints = async () => {
     throw new Error("Not implemented");
   }

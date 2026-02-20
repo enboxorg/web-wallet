@@ -6,10 +6,10 @@ import IdentitySelector from './IdentitySelector';
 import PermissionRequest from './PermissionsRequest';
 import { useNavigate } from 'react-router-dom';
 import { Convert } from '@enbox/common';
-import { profileDefinition } from '@/lib/ProfileProtocol';
+import { ProfileDefinition } from '@enbox/protocols';
 import { ConnectPermissionRequest } from '@enbox/agent';
 
-const profileProtocolB64 = Convert.string(profileDefinition.protocol).toBase64Url();
+const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
 
 export interface ConnectRequestProps {
   did?: string;
@@ -54,8 +54,8 @@ const ConnectRequest: React.FC<{
         identity={{
           didUri: selectedDid,
           profile: {
-            heroUrl: `https://dweb/${selectedDid}/read/protocols/${profileProtocolB64}/hero`,
-            avatarUrl: `https://dweb/${selectedDid}/read/protocols/${profileProtocolB64}/avatar`,
+            heroUrl: `https://dweb/${selectedDid}/read/protocols/${profileProtocolB64}/profile/hero`,
+            avatarUrl: `https://dweb/${selectedDid}/read/protocols/${profileProtocolB64}/profile/avatar`,
             social: undefined // We don't have the social data here
           }
         }}

@@ -48,14 +48,15 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
 
       return record;
     },
-    createRecord: async (protocol: string, protocolPath: string, dataFormat: string, data: any) => {
+    createRecord: async (protocol: string, protocolPath: string, dataFormat: string, data: any, parentContextId?: string) => {
       const { status, record } = await web5.dwn.records.create({
         data,
         message: {
           published: true,
           protocol,
           protocolPath,
-          dataFormat
+          dataFormat,
+          ...(parentContextId ? { parentContextId } : {}),
         }
       });
   
