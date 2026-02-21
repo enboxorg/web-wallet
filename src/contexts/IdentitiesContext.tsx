@@ -189,7 +189,14 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem('identities', JSON.stringify([ identity.did.uri ]));
     }
 
-    await agent.sync.sync('pull');
+    // Stop the auto-sync interval before triggering a manual pull to avoid
+    // "Sync operation is already in progress" race condition.
+    await agent.sync.stopSync();
+    try {
+      await agent.sync.sync('pull');
+    } finally {
+      agent.sync.startSync({ interval: '15s' });
+    }
 
     /** Configure protocols — SocialGraph must be installed first because
      *  ProfileDefinition declares `uses: { social: '…/social-graph' }`. */
