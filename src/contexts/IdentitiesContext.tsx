@@ -8,7 +8,6 @@ import type { WalletData } from "@enbox/protocols";
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
-import { Convert } from "@enbox/common";
 import { PermissionGrant, Web5, Record as DwnRecord } from "@enbox/api";
 
 export type ActivityKind = 'record-created' | 'record-updated' | 'protocol-installed' | 'permission-granted';
@@ -77,15 +76,13 @@ const buildActivityFeed = (
   return items;
 };
 
-const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
-
 const loadProfileFromBearerIdentity = (agent: Web5Agent) => async (identity: BearerIdentity): Promise<Identity> => {
   const helper = ProfileHelper(identity.did.uri, agent);
   const social = await helper.getSocial();
   const avatar = await helper.getAvatar();
-  const avatarUrl = avatar ? `https://dweb/${identity.did.uri}/read/protocols/${profileProtocolB64}/profile/avatar` : undefined;
+  const avatarUrl = avatar ? URL.createObjectURL(avatar) : undefined;
   const hero = await helper.getHero();
-  const heroUrl = hero ? `https://dweb/${identity.did.uri}/read/protocols/${profileProtocolB64}/profile/hero` : undefined;
+  const heroUrl = hero ? URL.createObjectURL(hero) : undefined;
 
   return {
     persona: identity.metadata.name,
@@ -352,6 +349,14 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       await agent.identity.setDwnEndpoints({ didUri, endpoints: dwnEndpoints });
     }
 
+    // Revoke old blob URLs before creating new ones to avoid memory leaks
+    if (avatar !== identity.profile.avatar && identity.profile.avatarUrl) {
+      URL.revokeObjectURL(identity.profile.avatarUrl);
+    }
+    if (hero !== identity.profile.hero && identity.profile.heroUrl) {
+      URL.revokeObjectURL(identity.profile.heroUrl);
+    }
+
     const updatedIdentity = {
       ...identity,
       persona,
@@ -359,7 +364,9 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
         ...identity.profile,
         social: { displayName, tagline, bio, apps: identity.profile.social?.apps ?? {} },
         avatar,
+        avatarUrl: avatar ? URL.createObjectURL(avatar) : undefined,
         hero,
+        heroUrl: hero ? URL.createObjectURL(hero) : undefined,
       }
     }
 
