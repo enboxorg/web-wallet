@@ -306,9 +306,11 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       persona: persona,
       didUri: identity.did.uri,
       profile: {
-        social: { displayName, tagline, bio, apps: {} },
+        social   : { displayName, tagline, bio, apps: {} },
         avatar,
-        hero
+        avatarUrl: avatar ? URL.createObjectURL(avatar) : undefined,
+        hero,
+        heroUrl  : hero ? URL.createObjectURL(hero) : undefined,
       }
     }
 
