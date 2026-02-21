@@ -8,7 +8,73 @@ import { SocialGraphDefinition } from "@enbox/protocols";
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
 import { Convert } from "@enbox/common";
-import { PermissionGrant, Record } from "@enbox/api";
+import { PermissionGrant, Record, Record as DwnRecord } from "@enbox/api";
+
+export type ActivityKind = 'record-created' | 'record-updated' | 'protocol-installed' | 'permission-granted';
+
+export interface ActivityItem {
+  kind        : ActivityKind;
+  title       : string;
+  description : string;
+  timestamp   : Date;
+}
+
+/** Extract the last segment of a protocol URI as a human-friendly name. */
+const protocolLabel = (uri: string): string => {
+  try {
+    const path = new URL(uri).pathname;
+    const last = path.split('/').filter(Boolean).pop();
+    return last ? last.replace(/-/g, ' ') : uri;
+  } catch {
+    return uri;
+  }
+};
+
+/** Build a unified activity feed from real DWN data. */
+const buildActivityFeed = (
+  records     : DwnRecord[],
+  protocols   : DwnProtocolDefinition[],
+  permissions : PermissionGrant[],
+): ActivityItem[] => {
+  const items: ActivityItem[] = [];
+
+  for (const record of records) {
+    const isCreate = record.dateCreated === (record as any).messageTimestamp
+                  || record.dateCreated === (record as any).timestamp;
+    const label    = record.protocol ? protocolLabel(record.protocol) : 'record';
+    const path     = record.protocolPath ?? '';
+
+    items.push({
+      kind        : isCreate ? 'record-created' : 'record-updated',
+      title       : isCreate ? 'Record created' : 'Record updated',
+      description : `${label}${path ? ' / ' + path : ''}`,
+      timestamp   : new Date(record.dateCreated),
+    });
+  }
+
+  for (const proto of protocols) {
+    items.push({
+      kind        : 'protocol-installed',
+      title       : 'Protocol installed',
+      description : protocolLabel(proto.protocol),
+      timestamp   : new Date(), // protocol query doesn't expose install timestamp
+    });
+  }
+
+  for (const grant of permissions) {
+    items.push({
+      kind        : 'permission-granted',
+      title       : 'Permission granted',
+      description : (grant as any).scope?.protocol
+        ? protocolLabel((grant as any).scope.protocol)
+        : 'general',
+      timestamp   : new Date((grant as any).dateGranted ?? (grant as any).messageTimestamp ?? Date.now()),
+    });
+  }
+
+  items.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+  return items;
+};
 
 const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
 
@@ -61,6 +127,7 @@ interface IdentityContextProps {
   selectedIdentity: Identity | undefined;
   protocols: DwnProtocolDefinition[];
   permissions: PermissionGrant[];
+  activities: ActivityItem[];
   wallets: string[];
   dwnEndpoints: string[];
   selectIdentity: (didUri: string | undefined) => void;
@@ -79,6 +146,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [ selectedIdentity, setSelectedIdentity ] = useState<Identity | undefined>();
   const [ protocols, setProtocols ] = useState<DwnProtocolDefinition[]>([]);
   const [ permissions, setPermissions ] = useState<PermissionGrant[]>([]);
+  const [ activities, setActivities ] = useState<ActivityItem[]>([]);
   const [ wallets, setWalletsState ] = useState<string[]>([]);
   const [ dwnEndpoints, setDwnEndpointsState ] = useState<string[]>([]);
 
@@ -124,11 +192,17 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const permissionsPromise = web5Helper.listPermissions();
     const protocolsPromise = web5Helper.listProtocols();
+    const recordsPromise = web5Helper.listRecentRecords(50);
     const walletsPromise = web5Helper.getRecord(ConnectDefinition.protocol, 'wallet').then(getWallets);
     const dwnEndpointsPromise = getDwnServiceEndpointUrls(selectedIdentity.didUri, agent.did);
 
-    setPermissions(await permissionsPromise);
-    setProtocols(await protocolsPromise);
+    const [loadedPermissions, loadedProtocols, loadedRecords] = await Promise.all([
+      permissionsPromise, protocolsPromise, recordsPromise,
+    ]);
+
+    setPermissions(loadedPermissions);
+    setProtocols(loadedProtocols);
+    setActivities(buildActivityFeed(loadedRecords, loadedProtocols, loadedPermissions));
     setWalletsState(await walletsPromise);
     setDwnEndpointsState(await dwnEndpointsPromise);
 
@@ -398,6 +472,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
         wallets,
         protocols,
         permissions,
+        activities,
         dwnEndpoints,
         selectedIdentity,
         loadIdentities,
