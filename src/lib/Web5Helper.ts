@@ -1,5 +1,6 @@
+import type { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
+
 import { Protocol, Web5, Record as DwnRecord } from '@enbox/api';
-import { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
 import { canonicalize } from '@enbox/crypto';
 
 const Web5Helper = (didUri: string, agent: Web5Agent) => {
@@ -114,6 +115,19 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       } catch (_error) {
         console.log('Web5Helper: Failed to list permissions', _error);
       }
+      return [];
+    },
+    listRecentRecords: async (limit: number = 50): Promise<DwnRecord[]> => {
+      const { status, records } = await (web5 as any)._dwn.records.query({
+        filter    : {},
+        dateSort  : 'createdDescending',
+        pagination: { limit },
+      });
+
+      if (status.code === 200 && records) {
+        return records as DwnRecord[];
+      }
+
       return [];
     },
     getProtocolDefinition: async (protocol: string) => {
