@@ -79,6 +79,16 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
         throw new Error(`Web5Helper: Failed to configure protocol ${definition.protocol}: ${status.detail}`);
       }
       console.info(`Web5Helper: ${definition.protocol}: ${status.detail}`);
+
+      // Install the protocol on the remote DWN so that subsequent record.send()
+      // calls don't fail with ProtocolAuthorizationProtocolNotFound.
+      if (protocol) {
+        const { status: sendStatus } = await protocol.send(didUri);
+        if (sendStatus.code >= 300) {
+          console.info(`Web5Helper: Failed to send protocol ${definition.protocol} to remote: ${sendStatus.detail}`);
+        }
+      }
+
       return protocol;
     },
     listProtocols: async () => {

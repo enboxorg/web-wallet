@@ -274,11 +274,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     // Stop the auto-sync interval before triggering a manual pull to avoid
     // "Sync operation is already in progress" race condition.
     await agent.sync.stopSync();
-    try {
-      await agent.sync.sync('pull');
-    } finally {
-      agent.sync.startSync({ interval: '15s' });
-    }
+    await agent.sync.sync('pull');
 
     /** Configure protocols — SocialGraph must be installed first because
      *  ProfileDefinition declares `uses: { social: '…/social-graph' }`. */
@@ -301,6 +297,10 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     if (hero) {
       await helper.setHero(hero);
     }
+
+    // Restart the sync interval now that protocols are installed on both
+    // local and remote DWNs and all profile records have been written.
+    agent.sync.startSync({ interval: '15s' });
 
     const craetedIdentity = {
       persona: persona,
