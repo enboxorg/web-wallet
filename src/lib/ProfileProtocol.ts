@@ -1,10 +1,15 @@
-import type { Web5Agent } from '@enbox/agent';
+import type { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
 import type { Record as DwnRecord } from '@enbox/api';
 
 import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
 
 import Web5Helper from './Web5Helper';
 import { SocialData } from './types';
+
+/** Look up the schema URI for a protocol type, or undefined if none defined. */
+function schemaForType(definition: DwnProtocolDefinition, typeName: string): string | undefined {
+  return (definition.types as Record<string, { schema?: string }>)?.[typeName]?.schema;
+}
 
 /** Re-export definitions from @enbox/protocols for convenience. */
 export { ConnectDefinition, ProfileDefinition };
@@ -35,9 +40,12 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
 
   const setRecordData = async (path: string, dataFormat: string, data: unknown): Promise<DwnRecord> => {
     const record = await web5Helper.getRecord(protocol, path);
+    // The leaf segment of the protocolPath is the type name used in the definition.
+    const typeName = path.split('/').pop()!;
+    const schema = schemaForType(ProfileDefinition, typeName);
     return record
       ? await web5Helper.updateRecord(record, dataFormat, data)
-      : await web5Helper.createRecord(protocol, path, dataFormat, data);
+      : await web5Helper.createRecord(protocol, path, dataFormat, data, undefined, schema);
   };
 
   const setChildRecordData = async (
@@ -49,21 +57,24 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
     // Ensure the parent profile record exists (avatar/hero are nested under it)
     let parentRecord = await web5Helper.getRecord(protocol, parentPath);
     if (!parentRecord) {
+      const parentType = parentPath.split('/').pop()!;
+      const parentSchema = schemaForType(ProfileDefinition, parentType);
       // Auto-create a placeholder profile record so children can be created
       parentRecord = await web5Helper.createRecord(protocol, parentPath, 'application/json', {
         displayName : '',
         apps        : {},
-      });
+      }, undefined, parentSchema);
       profileRecordId = parentRecord.id;
     } else {
       profileRecordId = parentRecord.id;
     }
 
     const fullPath = `${parentPath}/${childPath}`;
+    const childSchema = schemaForType(ProfileDefinition, childPath);
     const existingChild = await web5Helper.getRecord(protocol, fullPath);
     return existingChild
       ? await web5Helper.updateRecord(existingChild, dataFormat, data)
-      : await web5Helper.createRecord(protocol, fullPath, dataFormat, data, profileRecordId);
+      : await web5Helper.createRecord(protocol, fullPath, dataFormat, data, profileRecordId, childSchema);
   };
 
   const deleteChildRecord = async (parentPath: string, childPath: string): Promise<DwnRecord | undefined> => {

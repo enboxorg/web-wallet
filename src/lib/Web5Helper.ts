@@ -46,7 +46,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
 
       return deletedRecord;
     },
-    createRecord: async (protocol: string, protocolPath: string, dataFormat: string, data: any, parentContextId?: string) => {
+    createRecord: async (protocol: string, protocolPath: string, dataFormat: string, data: any, parentContextId?: string, schema?: string) => {
       const { status, record } = await (web5 as any)._dwn.records.write({
         data,
         published: true,
@@ -54,6 +54,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
         protocolPath,
         dataFormat,
         ...(parentContextId ? { parentContextId } : {}),
+        ...(schema ? { schema } : {}),
       });
   
       if (status.code !== 202) {

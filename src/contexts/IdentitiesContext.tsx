@@ -87,7 +87,10 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     const web5Helper = Web5Helper(didUri, agent);
     let record = await web5Helper.getRecord(ConnectDefinition.protocol, 'wallet');
     if (!record) {
-      record = await web5Helper.createRecord(ConnectDefinition.protocol, 'wallet', 'application/json', { webWallets: walletList });
+      record = await web5Helper.createRecord(
+        ConnectDefinition.protocol, 'wallet', 'application/json', { webWallets: walletList },
+        undefined, ConnectDefinition.types.wallet.schema,
+      );
     } else {
       await web5Helper.updateRecord(record, 'application/json', { webWallets: walletList });
     }
