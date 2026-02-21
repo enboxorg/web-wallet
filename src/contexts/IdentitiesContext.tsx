@@ -3,12 +3,13 @@ import { BearerIdentity, DwnProtocolDefinition, getDwnServiceEndpointUrls, Porta
 
 import Web5Helper from "@/lib/Web5Helper";
 import ProfileHelper, { ConnectDefinition, ProfileDefinition } from "@/lib/ProfileProtocol";
-import { SocialGraphDefinition } from "@enbox/protocols";
+import { ConnectProtocol, SocialGraphDefinition } from "@enbox/protocols";
+import type { WalletData } from "@enbox/protocols";
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
 import { Convert } from "@enbox/common";
-import { PermissionGrant, Record, Record as DwnRecord } from "@enbox/api";
+import { PermissionGrant, Web5, Record as DwnRecord } from "@enbox/api";
 
 export type ActivityKind = 'record-created' | 'record-updated' | 'protocol-installed' | 'permission-granted';
 
@@ -152,15 +153,26 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const setIdentityWallets = async (didUri: string, walletList: string[]) => {
     if (!agent) return;
-    const web5Helper = Web5Helper(didUri, agent);
-    let record = await web5Helper.getRecord(ConnectDefinition.protocol, 'wallet');
-    if (!record) {
-      record = await web5Helper.createRecord(
-        ConnectDefinition.protocol, 'wallet', 'application/json', { webWallets: walletList },
-        undefined, ConnectDefinition.types.wallet.schema,
-      );
+    const web5    = new Web5({ agent, connectedDid: didUri });
+    const connect = web5.using(ConnectProtocol);
+
+    const { records } = await connect.records.query('wallet');
+    const existing = records && records.length > 0 ? records[0] : undefined;
+
+    if (existing) {
+      const { status, record: updatedRecord } = await existing.update({
+        data: { webWallets: walletList },
+      });
+      if (status.code === 202) {
+        await updatedRecord.send();
+      }
     } else {
-      await web5Helper.updateRecord(record, 'application/json', { webWallets: walletList });
+      const { status, record } = await connect.records.write('wallet', {
+        data: { webWallets: walletList },
+      });
+      if (status.code === 202 && record) {
+        await record.send();
+      }
     }
   }
 
@@ -189,11 +201,16 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     const web5Helper = Web5Helper(selectedIdentity.didUri, agent);
+    const connect    = web5Helper.web5.using(ConnectProtocol);
 
     const permissionsPromise = web5Helper.listPermissions();
     const protocolsPromise = web5Helper.listProtocols();
     const recordsPromise = web5Helper.listRecentRecords(50);
-    const walletsPromise = web5Helper.getRecord(ConnectDefinition.protocol, 'wallet').then(getWallets);
+    const walletsPromise = connect.records.query('wallet').then(({ records }) =>
+      records && records.length > 0
+        ? records[0].data.json().then((d: any) => (d as WalletData).webWallets)
+        : []
+    );
     const dwnEndpointsPromise = getDwnServiceEndpointUrls(selectedIdentity.didUri, agent.did);
 
     const [loadedPermissions, loadedProtocols, loadedRecords] = await Promise.all([
@@ -207,15 +224,6 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     setDwnEndpointsState(await dwnEndpointsPromise);
 
   }, [ selectedIdentity ]);
-
-  const getWallets = async (record?: Record) => {
-    if (!record) {
-      return [];
-    } else {
-      const { webWallets } = await record.data.json() as { webWallets: string[] };
-      return webWallets;
-    }
-  }
 
   const createIdentity = async ({ persona, dwnEndpoints, walletHost, displayName, tagline, bio, avatar, hero }: CreateIdentityParams) => {
     if (!agent) {
@@ -425,7 +433,11 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     await web5Helper.configureProtocol(ProfileDefinition);
     await web5Helper.configureProtocol(ConnectDefinition);
 
-    const existingWallets = await web5Helper.getRecord(ConnectDefinition.protocol, 'wallet').then(getWallets);
+    const connect = web5Helper.web5.using(ConnectProtocol);
+    const { records: walletRecords } = await connect.records.query('wallet');
+    const existingWallets = walletRecords && walletRecords.length > 0
+      ? ((await walletRecords[0].data.json()) as WalletData).webWallets
+      : [] as string[];
     if (existingWallets.length === 0 || !existingWallets.includes(walletHost)) {
       existingWallets.push(walletHost);
       await setIdentityWallets(importedIdentity.did.uri, existingWallets);

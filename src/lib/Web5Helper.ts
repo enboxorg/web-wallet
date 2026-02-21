@@ -1,7 +1,6 @@
 import type { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
 
-import { Protocol, Web5, Record as DwnRecord } from '@enbox/api';
-import { canonicalize } from '@enbox/crypto';
+import { Protocol, Web5, Record as DwnRecord, defineProtocol } from '@enbox/api';
 
 const Web5Helper = (didUri: string, agent: Web5Agent) => {
   const web5 = new Web5({ agent, connectedDid: didUri });
@@ -69,36 +68,18 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
   
       return record!;
     },
+    /**
+     * Installs a protocol using TypedWeb5.configure() for idempotent installation.
+     * The definition is wrapped with defineProtocol() to get a TypedProtocol instance.
+     */
     configureProtocol: async (definition: DwnProtocolDefinition) => {
-      const { status, protocols } = await (web5 as any)._dwn.protocols.query({
-        filter: {
-          protocol: definition.protocol
-        }
-      });
-
-      if (status.code === 200 && protocols && protocols.length > 0) {
-        const existingDefinition = protocols[0].definition;
-        if (canonicalize(existingDefinition) !== canonicalize(definition)) {
-          throw new Error(`Web5Helper: Protocol ${definition.protocol} already configured with a different definition`);
-        }
-
-        return { status, protocol: protocols[0] };
+      const typed = web5.using(defineProtocol(definition));
+      const { status, protocol } = await typed.configure();
+      if (status.code >= 300) {
+        throw new Error(`Web5Helper: Failed to configure protocol ${definition.protocol}: ${status.detail}`);
       }
-
-      const { status: configureProfileStatus, protocol } = await (web5 as any)._dwn.protocols.configure({
-        definition
-      });
-
-      if (configureProfileStatus.code !== 202) {
-        throw new Error(`Web5Helper: Failed to configure protocol ${definition.protocol}: ${configureProfileStatus.detail}`);
-      }
-
-      const { status: protocolSendStatus } = await protocol!.send(didUri);
-      if (protocolSendStatus.code !== 202) {
-        console.info(`Web5Helper: Failed to send protocol ${definition.protocol} to ${didUri}`);
-      }
-
-      return protocol!;
+      console.info(`Web5Helper: ${definition.protocol}: ${status.detail}`);
+      return protocol;
     },
     listProtocols: async () => {
       const { status, protocols } = await (web5 as any)._dwn.protocols.query({});
