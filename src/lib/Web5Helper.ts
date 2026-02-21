@@ -118,8 +118,10 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return [];
     },
     listRecentRecords: async (limit: number = 50): Promise<DwnRecord[]> => {
+      // The DWN RecordsFilter schema requires at least one property
+      // (`minProperties: 1`), so we use a dateCreated range that matches all.
       const { status, records } = await (web5 as any)._dwn.records.query({
-        filter    : {},
+        filter    : { dateCreated: { from: '1970-01-01T00:00:00.000000Z' } },
         dateSort  : 'createdDescending',
         pagination: { limit },
       });
