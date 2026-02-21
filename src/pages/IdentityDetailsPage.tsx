@@ -585,22 +585,7 @@ const IdentityDetailsPage: React.FC = () => {
                 <Box sx={{ p: { xs: 2, sm: 3 } }}>
                   <Box sx={{ mb: 2.5 }}>
                     <Typography variant="h6" gutterBottom>About</Typography>
-                    <Typography variant="body2" paragraph>{social?.bio || 'This identity represents a web-native persona used across decentralized applications. It includes public profile metadata and connected endpoints for secure interactions.'}</Typography>
-                    <Typography variant="body2" paragraph>
-                      Lorem ipsum dolor sit amet, consectetur adipiscing elit. Mauris congue, lectus ut facilisis rhoncus, justo nibh feugiat felis, id venenatis lectus lorem et turpis. Vivamus sit amet dolor nibh. Integer aliquet fermentum dapibus. Proin vitae iaculis est. Integer at sagittis magna. Nulla facilisi. Sed egestas, ex sed sodales pretium, lacus tortor dictum est, ut sodales tellus libero vitae nibh.
-                    </Typography>
-                    <Typography variant="body2" paragraph>
-                      Cras sit amet molestie nibh. Nunc condimentum suscipit cursus. Curabitur dignissim, justo a dictum hendrerit, orci nibh bibendum justo, quis porta ex lorem sit amet turpis. Phasellus molestie massa at velit tempor, vitae efficitur libero pulvinar. Nunc porta semper felis, a rhoncus risus rutrum sit amet. Aenean auctor nunc nec massa viverra, sit amet iaculis nisl placerat.
-                    </Typography>
-                    <Typography variant="body2" paragraph>
-                      Integer sed sem magna. Vivamus iaculis, nulla eget lobortis pharetra, odio mauris semper augue, vitae tristique lorem velit et nibh. Vestibulum mattis, neque at efficitur scelerisque, justo purus scelerisque risus, quis vehicula ipsum arcu ut sapien. Fusce sodales vestibulum finibus. In id magna vel purus viverra pretium. Suspendisse id nunc et massa congue maximus.
-                    </Typography>
-                    <Typography variant="body2" paragraph>
-                      Pellentesque habitant morbi tristique senectus et netus et malesuada fames ac turpis egestas. Phasellus at cursus nisi, id aliquet justo. Pellentesque eu maximus ante, a consectetur sem. Vestibulum id dolor in velit blandit vehicula in nec dolor. Suspendisse potenti. Donec dignissim hendrerit sapien, vel volutpat nulla faucibus id.
-                    </Typography>
-                    <Typography variant="body2" paragraph>
-                      Ut sagittis, nibh sed gravida condimentum, lorem quam commodo velit, in volutpat tortor eros nec ligula. Etiam rhoncus fermentum tortor, sit amet porta arcu hendrerit non. Sed egestas nisl mi, vel pulvinar justo finibus et. Duis in massa sollicitudin, tempus diam vitae, consectetur arcu. Nam justo mauris, porttitor a accumsan at, porta ac justo.
-                    </Typography>
+                    <Typography variant="body2" paragraph>{social?.bio || 'No bio provided.'}</Typography>
                   </Box>
 
                   {dwnEndpoints.length > 0 && (
