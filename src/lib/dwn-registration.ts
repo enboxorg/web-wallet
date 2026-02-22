@@ -1,36 +1,6 @@
+import type { ServerInfo } from '@enbox/dwn-clients';
+
 import { DwnRegistrar } from '@enbox/dwn-clients';
-
-/**
- * Provider auth configuration from the server's `/info` endpoint.
- *
- * Defined locally to avoid depending on unpublished types from
- * `@enbox/dwn-clients`. Once a new version of dwn-clients is published with
- * the `ProviderAuthInfo` type, this can be replaced with the import.
- */
-type ProviderAuthInfo = {
-  authorizeUrl  : string;
-  tokenUrl      : string;
-  refreshUrl?   : string;
-  managementUrl?: string;
-};
-
-/**
- * Minimal server info shape needed for registration discovery.
- */
-type ServerInfo = {
-  registrationRequirements : string[];
-  providerAuth?            : ProviderAuthInfo;
-};
-
-/**
- * Response from the token exchange endpoint.
- */
-type TokenExchangeResponse = {
-  registrationToken : string;
-  refreshToken?     : string;
-  expiresIn?        : number;
-  tokenType         : string;
-};
 
 /**
  * Register a DID as a tenant on a DWN server.
@@ -102,67 +72,18 @@ async function registerWithProviderAuth(
   const { code } = await authorizeResponse.json() as { code: string };
 
   // Step 2: Exchange authorization code for registration token.
-  const tokenResponse = await exchangeAuthCode(providerAuth.tokenUrl, code, redirectUri);
+  const tokenResponse = await DwnRegistrar.exchangeAuthCode(
+    providerAuth.tokenUrl,
+    code,
+    redirectUri,
+  );
 
   // Step 3: Register the DID with the obtained token.
-  await registerTenantWithToken(dwnEndpoint, did, tokenResponse.registrationToken);
-}
-
-/**
- * Exchange an authorization code for a registration token.
- *
- * Inlined here because `DwnRegistrar.exchangeAuthCode` is not yet available
- * in the published npm version of `@enbox/dwn-clients`. Once a new version is
- * published, this can be replaced with `DwnRegistrar.exchangeAuthCode()`.
- */
-async function exchangeAuthCode(
-  tokenUrl: string,
-  code: string,
-  redirectUri: string,
-): Promise<TokenExchangeResponse> {
-  const response = await fetch(tokenUrl, {
-    method  : 'POST',
-    headers : { 'Content-Type': 'application/json' },
-    body    : JSON.stringify({
-      grantType : 'authorization_code',
-      code,
-      redirectUri,
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Token exchange failed (${response.status}): ${errorText}`);
-  }
-
-  return response.json() as Promise<TokenExchangeResponse>;
-}
-
-/**
- * Register a DID as a tenant using a provider auth registration token.
- *
- * Inlined here because `DwnRegistrar.registerTenantWithToken` is not yet
- * available in the published npm version of `@enbox/dwn-clients`. Once a new
- * version is published, this can be replaced.
- */
-async function registerTenantWithToken(
-  dwnEndpoint: string,
-  did: string,
-  registrationToken: string,
-): Promise<void> {
-  const response = await fetch(`${dwnEndpoint}/registration`, {
-    method  : 'POST',
-    headers : { 'Content-Type': 'application/json' },
-    body    : JSON.stringify({
-      providerAuth     : { registrationToken },
-      registrationData : { did },
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Provider auth registration failed (${response.status}): ${errorText}`);
-  }
+  await DwnRegistrar.registerTenantWithToken(
+    dwnEndpoint,
+    did,
+    tokenResponse.registrationToken,
+  );
 }
 
 /**
