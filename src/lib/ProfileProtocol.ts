@@ -1,5 +1,4 @@
 import type { Web5Agent } from '@enbox/agent';
-import type { Record as DwnRecord } from '@enbox/api';
 
 import { ConnectDefinition, ProfileDefinition, ProfileProtocol } from '@enbox/protocols';
 import { Web5 } from '@enbox/api';
@@ -24,7 +23,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
   /** The profile record ID, cached after first create/get. */
   let profileRecordId: string | undefined;
 
-  const getProfileRecord = async (): Promise<DwnRecord | undefined> => {
+  const getProfileRecord = async () => {
     const { records } = await profile.records.query('profile');
     if (records && records.length > 0) {
       profileRecordId = records[0].id;
@@ -35,7 +34,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
 
   const getSocial = async (): Promise<SocialData | undefined> => {
     const record = await getProfileRecord();
-    return record ? record.data.json() : undefined;
+    return record ? await record.data.json() as SocialData : undefined;
   };
 
   const getAvatar = async (): Promise<Blob | undefined> => {
@@ -48,7 +47,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
     return records && records.length > 0 ? records[0].data.blob() : undefined;
   };
 
-  const setSocial = async (social: SocialData): Promise<DwnRecord> => {
+  const setSocial = async (social: SocialData) => {
     const existing = await getProfileRecord();
     if (existing) {
       const { status, record: updatedRecord } = await existing.update({
@@ -65,7 +64,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
       return updatedRecord;
     }
 
-    const { status, record } = await profile.records.write('profile', {
+    const { status, record } = await profile.records.create('profile', {
       data      : social,
       published : true,
     });
@@ -80,29 +79,29 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
     return record;
   };
 
-  const setAvatar = async (avatar: Blob | null): Promise<DwnRecord | undefined> => {
+  const setAvatar = async (avatar: Blob | null) => {
     return avatar
       ? setChildImage('avatar', avatar)
       : deleteChild('avatar');
   };
 
-  const setHero = async (hero: Blob | null): Promise<DwnRecord | undefined> => {
+  const setHero = async (hero: Blob | null) => {
     return hero
       ? setChildImage('hero', hero)
       : deleteChild('hero');
   };
 
-  /** Write or update a child image record (avatar or hero). */
+  /** Create or update a child image record (avatar or hero). */
   const setChildImage = async (
     child: 'avatar' | 'hero',
     blob: Blob,
-  ): Promise<DwnRecord> => {
+  ) => {
     // Ensure the parent profile record exists
     if (!profileRecordId) {
       const existing = await getProfileRecord();
       if (!existing) {
         // Auto-create a placeholder profile record
-        const { status, record } = await profile.records.write('profile', {
+        const { status, record } = await profile.records.create('profile', {
           data      : { displayName: '' } as SocialData,
           published : true,
         });
@@ -133,7 +132,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
       return updatedRecord;
     }
 
-    const { status, record } = await profile.records.write(path, {
+    const { status, record } = await profile.records.create(path, {
       data            : blob,
       published       : true,
       dataFormat      : blob.type as 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp',
@@ -150,7 +149,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
   };
 
   /** Delete a child record (avatar or hero). */
-  const deleteChild = async (child: 'avatar' | 'hero'): Promise<DwnRecord | undefined> => {
+  const deleteChild = async (child: 'avatar' | 'hero') => {
     const path = `profile/${child}` as const;
     const { records } = await profile.records.query(path);
     if (!records || records.length === 0) {

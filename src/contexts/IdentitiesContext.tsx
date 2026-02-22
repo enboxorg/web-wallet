@@ -165,7 +165,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
         await updatedRecord.send();
       }
     } else {
-      const { status, record } = await connect.records.write('wallet', {
+      const { status, record } = await connect.records.create('wallet', {
         data: { webWallets: walletList },
       });
       if (status.code === 202 && record) {
