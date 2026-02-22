@@ -9,6 +9,7 @@ import LoadAgent from "@/components/LoadAgent";
 import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { darkTheme } from '@/theme/muiTheme';
+import { registerDidWithDwn } from '@/lib/dwn-registration';
 
 /** The amount of time of inactivity before the wallet is locked */
 const LOCK_TIMEOUT = 10 * 60 * 1000;
@@ -139,6 +140,14 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
         const recoveryPhrase = await web5Agent.initialize({ password, dwnEndpoints: [ dwnEndpoint ] });
         await web5Agent.start({ password });
         localStorage.setItem('password', password);
+
+        // Register the agent DID as a tenant on the DWN server.
+        try {
+          await registerDidWithDwn(dwnEndpoint, web5Agent.agentDid.uri);
+        } catch (error) {
+          console.warn('Agent DID registration failed (will retry on next identity creation):', error);
+        }
+
         await web5Agent.sync.registerIdentity({ did: web5Agent.agentDid.uri });
         await web5Agent.sync.sync('pull');
         web5Agent.sync.startSync({ interval: '15s' });

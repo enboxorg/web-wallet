@@ -5,6 +5,7 @@ import Web5Helper from "@/lib/Web5Helper";
 import ProfileHelper, { ConnectDefinition, ProfileDefinition } from "@/lib/ProfileProtocol";
 import { ConnectProtocol, SocialGraphDefinition } from "@enbox/protocols";
 import type { WalletData } from "@enbox/protocols";
+import { registerDidsWithDwn } from "@/lib/dwn-registration";
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
@@ -256,6 +257,11 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       metadata: { name: persona }
     });
 
+    // Register the new DID as a tenant on each DWN endpoint.
+    for (const endpoint of dwnEndpoints) {
+      await registerDidsWithDwn(endpoint, [identity.did.uri]);
+    }
+
     await agent.sync.registerIdentity({ did: identity.did.uri, options: { protocols: [
       SocialGraphDefinition.protocol,
       ProfileDefinition.protocol,
@@ -426,6 +432,13 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     const importedIdentity = await agent.identity.import({ portableIdentity: identity });
+
+    // Register the imported DID as a tenant on each of its DWN endpoints.
+    const importedEndpoints = await getDwnServiceEndpointUrls(importedIdentity.did.uri, agent.did);
+    for (const endpoint of importedEndpoints) {
+      await registerDidsWithDwn(endpoint, [importedIdentity.did.uri]);
+    }
+
     await agent.sync.registerIdentity({ did: importedIdentity.did.uri });
 
     const localStorageIdentities = localStorage.getItem('identities');
