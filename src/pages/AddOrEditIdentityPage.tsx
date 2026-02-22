@@ -16,6 +16,7 @@ import AvatarUpload from '@/components/ui/AvatarUpload';
 import BannerUpload from '@/components/ui/BannerUpload';
 import FormActions from '@/components/ui/FormActions';
 import StyledButton from '@/components/ui/StyledButton';
+import { DEFAULT_DWN_ENDPOINT } from '@/lib/dwn-config';
 
 const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) => {
   const { didUri } = useParams();
@@ -31,7 +32,7 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
     displayName: '',
     tagline: '',
     bio: '',
-          dwnEndpoints: ['https://enbox-dwn.fly.dev'],
+          dwnEndpoints: [DEFAULT_DWN_ENDPOINT],
     avatar: null as File | Blob | null,
     banner: null as File | Blob | null,
   }
@@ -270,8 +271,8 @@ const AddOrEditIdentityPage: React.FC<{ edit?: boolean }> = ({ edit = false }) =
                 <ListInput
                   label={'DWN Endpoint'}
                   value={formData.dwnEndpoints}
-                  defaultValue={'https://enbox-dwn.fly.dev'}
-                  placeholder='https://enbox-dwn.fly.dev'
+                  defaultValue={DEFAULT_DWN_ENDPOINT}
+                  placeholder={DEFAULT_DWN_ENDPOINT}
                   onChange={(value) => {
                     setFormData({ ...formData, dwnEndpoints: value });
                   }}

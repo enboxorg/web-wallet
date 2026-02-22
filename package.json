@@ -17,6 +17,7 @@
     "@enbox/common": "^0.0.3",
     "@enbox/crypto": "^0.0.4",
     "@enbox/dids": "^0.0.5",
+    "@enbox/dwn-clients": "^0.0.5",
     "@enbox/protocols": "0.2.5",
     "@fontsource/roboto": "^5.1.0",
     "@mui/icons-material": "^6.1.1",

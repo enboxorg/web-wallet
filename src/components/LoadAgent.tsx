@@ -8,6 +8,7 @@ import PinInput from './PinInput';
 import EnboxLogo from './EnboxLogo';
 import StyledButton from './ui/StyledButton';
 import GlassyTextField from './ui/GlassyTextField';
+import { DEFAULT_DWN_ENDPOINT } from '@/lib/dwn-config';
 
 const LoadAgent:React.FC<{
   agent: Web5UserAgent | undefined;
@@ -20,7 +21,7 @@ const LoadAgent:React.FC<{
 
   const [pin, setPin] = useState(['', '', '', '']);
   const [invalidPin, setInvalidPin] = useState(false);
-  const [dwnEndpoint, setDwnEndpoint] = useState('https://enbox-dwn.fly.dev');
+  const [dwnEndpoint, setDwnEndpoint] = useState(DEFAULT_DWN_ENDPOINT);
 
   // Auto-submit in both modes when 4 digits are present
   useEffect(() => {
