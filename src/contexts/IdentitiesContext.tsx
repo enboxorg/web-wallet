@@ -1,15 +1,16 @@
-import React, { createContext, useCallback, useEffect, useState } from "react";
+import React, { createContext, useCallback, useEffect, useRef, useState } from "react";
 import { BearerIdentity, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, Web5Agent } from "@enbox/agent";
 
 import Web5Helper from "@/lib/Web5Helper";
 import ProfileHelper, { ConnectDefinition, ProfileDefinition } from "@/lib/ProfileProtocol";
 import { ConnectProtocol, SocialGraphDefinition } from "@enbox/protocols";
 import type { WalletData } from "@enbox/protocols";
-import { registerDidsWithDwn } from "@/lib/dwn-registration";
+import { getStoredTokens, storeTokens, registerDidWithEndpoint } from "@/lib/registration";
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
-import { PermissionGrant, Web5, Record as DwnRecord } from "@enbox/api";
+import { PermissionGrant, Web5, Record as DwnRecord, LiveQuery } from "@enbox/api";
+import { DwnApi } from "@enbox/api/advanced";
 
 export type ActivityKind = 'record-created' | 'record-updated' | 'protocol-installed' | 'permission-granted';
 
@@ -148,6 +149,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [ activities, setActivities ] = useState<ActivityItem[]>([]);
   const [ wallets, setWalletsState ] = useState<string[]>([]);
   const [ dwnEndpoints, setDwnEndpointsState ] = useState<string[]>([]);
+  const liveQueryRef = useRef<LiveQuery | null>(null);
 
   const setIdentityWallets = async (didUri: string, walletList: string[]) => {
     if (!agent) return;
@@ -198,8 +200,15 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       return;
     };
 
+    // Close any existing LiveQuery subscription
+    if (liveQueryRef.current) {
+      liveQueryRef.current.close();
+      liveQueryRef.current = null;
+    }
+
     const web5Helper = Web5Helper(selectedIdentity.didUri, agent);
     const connect    = web5Helper.web5.using(ConnectProtocol);
+    const dwn        = new DwnApi({ agent, connectedDid: selectedIdentity.didUri });
 
     const permissionsPromise = web5Helper.listPermissions();
     const protocolsPromise = web5Helper.listProtocols();
@@ -220,6 +229,41 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     setActivities(buildActivityFeed(loadedRecords, loadedProtocols, loadedPermissions));
     setWalletsState(await walletsPromise);
     setDwnEndpointsState(await dwnEndpointsPromise);
+
+    // Set up a LiveQuery subscription for real-time activity updates
+    try {
+      const subscribeResult = await dwn.records.subscribe({
+        filter: { dateCreated: { from: '1970-01-01T00:00:00.000000Z' } },
+      });
+
+      const liveQuery = subscribeResult.liveQuery;
+      if (!liveQuery) { throw new Error('LiveQuery not returned'); }
+
+      liveQueryRef.current = liveQuery;
+
+      liveQuery.on('create', (record: DwnRecord) => {
+        const label = record.protocol ? protocolLabel(record.protocol) : 'record';
+        setActivities(prev => [{
+          kind        : 'record-created',
+          title       : 'Record created',
+          description : `${label}${record.protocolPath ? ' / ' + record.protocolPath : ''}`,
+          timestamp   : new Date(record.dateCreated),
+        }, ...prev]);
+      });
+
+      liveQuery.on('update', (record: DwnRecord) => {
+        const label = record.protocol ? protocolLabel(record.protocol) : 'record';
+        setActivities(prev => [{
+          kind        : 'record-updated',
+          title       : 'Record updated',
+          description : `${label}${record.protocolPath ? ' / ' + record.protocolPath : ''}`,
+          timestamp   : new Date(record.dateCreated),
+        }, ...prev]);
+      });
+    } catch (err) {
+      // LiveQuery requires WebSocket support; fall back silently if unavailable
+      console.info('LiveQuery subscription not available:', err);
+    }
 
   }, [ selectedIdentity ]);
 
@@ -257,11 +301,6 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       metadata: { name: persona }
     });
 
-    // Register the new DID as a tenant on each DWN endpoint.
-    for (const endpoint of dwnEndpoints) {
-      await registerDidsWithDwn(endpoint, [identity.did.uri]);
-    }
-
     await agent.sync.registerIdentity({ did: identity.did.uri, options: { protocols: [
       SocialGraphDefinition.protocol,
       ProfileDefinition.protocol,
@@ -281,6 +320,22 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     // "Sync operation is already in progress" race condition.
     await agent.sync.stopSync();
     await agent.sync.sync('pull');
+
+    // Register the new DID with each DWN endpoint. If the endpoint supports
+    // provider-auth-v0 and we have a cached token, use it; otherwise fall
+    // back to proof-of-work registration.
+    let tokens = getStoredTokens();
+    for (const endpoint of dwnEndpoints) {
+      try {
+        const serverInfo = await agent.rpc.getServerInfo(endpoint);
+        tokens = await registerDidWithEndpoint(endpoint, identity.did.uri, serverInfo, tokens);
+      } catch (err) {
+        // Registration may fail for endpoints that don't require it or are
+        // unreachable — log and continue so the identity is still usable.
+        console.info(`IdentitiesContext: registration with ${endpoint} skipped:`, err);
+      }
+    }
+    storeTokens(tokens);
 
     /** Configure protocols — SocialGraph must be installed first because
      *  ProfileDefinition declares `uses: { social: '…/social-graph' }`. */
@@ -304,9 +359,9 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       await helper.setHero(hero);
     }
 
-    // Restart the sync interval now that protocols are installed on both
+    // Restart sync now that protocols are installed on both
     // local and remote DWNs and all profile records have been written.
-    agent.sync.startSync({ interval: '15s' });
+    agent.sync.startSync({ mode: 'live', interval: '5m' });
 
     const craetedIdentity = {
       persona: persona,
@@ -433,13 +488,20 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     const importedIdentity = await agent.identity.import({ portableIdentity: identity });
 
-    // Register the imported DID as a tenant on each of its DWN endpoints.
-    const importedEndpoints = await getDwnServiceEndpointUrls(importedIdentity.did.uri, agent.did);
-    for (const endpoint of importedEndpoints) {
-      await registerDidsWithDwn(endpoint, [importedIdentity.did.uri]);
-    }
-
     await agent.sync.registerIdentity({ did: importedIdentity.did.uri });
+
+    // Register the imported DID with its DWN endpoints (provider auth or PoW).
+    const importedEndpoints = await getDwnServiceEndpointUrls(importedIdentity.did.uri, agent.did);
+    let tokens = getStoredTokens();
+    for (const endpoint of importedEndpoints) {
+      try {
+        const serverInfo = await agent.rpc.getServerInfo(endpoint);
+        tokens = await registerDidWithEndpoint(endpoint, importedIdentity.did.uri, serverInfo, tokens);
+      } catch (err) {
+        console.info(`IdentitiesContext: registration with ${endpoint} skipped:`, err);
+      }
+    }
+    storeTokens(tokens);
 
     const localStorageIdentities = localStorage.getItem('identities');
     if (localStorageIdentities) {
@@ -482,9 +544,11 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     await setIdentityWallets(selectedIdentity.didUri, walletList);
   }
 
-  /* TODO: Implement in `@enbox/agent` */
-  const setDwnEndpoints = async () => {
-    throw new Error("Not implemented");
+  const setDwnEndpoints = async (endpoints: string[]) => {
+    if (!agent) return;
+    if (!selectedIdentity) return;
+    await agent.identity.setDwnEndpoints({ didUri: selectedIdentity.didUri, endpoints });
+    setDwnEndpointsState(endpoints);
   }
 
   useEffect(() => {

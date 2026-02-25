@@ -8,12 +8,12 @@ import PinInput from './PinInput';
 import EnboxLogo from './EnboxLogo';
 import StyledButton from './ui/StyledButton';
 import GlassyTextField from './ui/GlassyTextField';
-import { DEFAULT_DWN_ENDPOINT } from '@/lib/dwn-config';
+import { DEFAULT_DWN_ENDPOINTS } from '@/lib/utils';
 
 const LoadAgent:React.FC<{
   agent: Web5UserAgent | undefined;
   initialized: boolean;
-  initialize: (password: string, dwnEndpoint: string) => Promise<string | undefined>;
+  initialize: (password: string, dwnEndpoints: string[]) => Promise<string | undefined>;
   unlock: (password: string) => Promise<void>;
 }> = ({ agent, initialized, initialize, unlock }) => {
 
@@ -21,7 +21,7 @@ const LoadAgent:React.FC<{
 
   const [pin, setPin] = useState(['', '', '', '']);
   const [invalidPin, setInvalidPin] = useState(false);
-  const [dwnEndpoint, setDwnEndpoint] = useState(DEFAULT_DWN_ENDPOINT);
+  const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(DEFAULT_DWN_ENDPOINTS);
 
   // Auto-submit in both modes when 4 digits are present
   useEffect(() => {
@@ -34,7 +34,7 @@ const LoadAgent:React.FC<{
   const handleAgentSetup = useCallback(async (password: string) => {
    if (agent && !initialized && password) {
       try {
-        const recoveryPhrase = await initialize(password, dwnEndpoint);
+        const recoveryPhrase = await initialize(password, dwnEndpoints);
         if (recoveryPhrase) {
           setBackupSeed(recoveryPhrase);
         }
@@ -60,7 +60,7 @@ const LoadAgent:React.FC<{
         setPin(['', '', '', '']);
       }
     }
-  }, [ agent, initialized, dwnEndpoint ]);
+  }, [ agent, initialized, dwnEndpoints ]);
 
   const handleUnlock =  useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
@@ -117,12 +117,19 @@ const LoadAgent:React.FC<{
               </Box>
 
               {!initialized && <Grid container spacing={2} justifyContent="center" sx={{ my: 2 }}>
-                <GlassyTextField
-                  label="DWN Endpoint"
-                  value={dwnEndpoint}
-                  onChange={(e) => setDwnEndpoint(e.target.value)}
-                  fullWidth
-                />
+                {dwnEndpoints.map((endpoint, index) => (
+                  <GlassyTextField
+                    key={index}
+                    label={`DWN Endpoint ${index + 1}`}
+                    value={endpoint}
+                    onChange={(e) => {
+                      const updated = [...dwnEndpoints];
+                      updated[index] = e.target.value;
+                      setDwnEndpoints(updated);
+                    }}
+                    fullWidth
+                  />
+                ))}
               </Grid>}
               <StyledButton
                 type="submit"

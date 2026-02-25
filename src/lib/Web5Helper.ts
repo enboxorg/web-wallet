@@ -1,15 +1,18 @@
 import type { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
 
 import { Protocol, Web5, Record as DwnRecord, defineProtocol } from '@enbox/api';
+import type { RecordsQueryRequest } from '@enbox/api/advanced';
+import { DwnApi } from '@enbox/api/advanced';
 
 const Web5Helper = (didUri: string, agent: Web5Agent) => {
   const web5 = new Web5({ agent, connectedDid: didUri });
+  const dwn  = new DwnApi({ agent, connectedDid: didUri });
 
   return {
     web5,
     didUri,
     getRecord: async (protocol: string, protocolPath: string) => {
-      const { status, records } = await (web5 as any)._dwn.records.query({
+      const { status, records } = await dwn.records.query({
         filter: {
           protocol,
           protocolPath
@@ -47,7 +50,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return deletedRecord;
     },
     createRecord: async (protocol: string, protocolPath: string, dataFormat: string, data: any, parentContextId?: string, schema?: string) => {
-      const { status, record } = await (web5 as any)._dwn.records.write({
+      const { status, record } = await dwn.records.write({
         data,
         published: true,
         protocol,
@@ -92,7 +95,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return protocol;
     },
     listProtocols: async () => {
-      const { status, protocols } = await (web5 as any)._dwn.protocols.query({});
+      const { status, protocols } = await dwn.protocols.query({});
       if (status.code !== 200) {
         throw new Error('Web5Helper: Failed to list protocols');
       }
@@ -101,7 +104,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
     },
     listPermissions: async () => {
       try {
-        const permissions = await (web5 as any)._dwn.permissions.queryGrants();
+        const permissions = await dwn.permissions.queryGrants();
         return permissions;
       } catch (_error) {
         console.log('Web5Helper: Failed to list permissions', _error);
@@ -111,9 +114,9 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
     listRecentRecords: async (limit: number = 50): Promise<DwnRecord[]> => {
       // The DWN RecordsFilter schema requires at least one property
       // (`minProperties: 1`), so we use a dateCreated range that matches all.
-      const { status, records } = await (web5 as any)._dwn.records.query({
+      const { status, records } = await dwn.records.query({
         filter    : { dateCreated: { from: '1970-01-01T00:00:00.000000Z' } },
-        dateSort  : 'createdDescending',
+        dateSort  : 'createdDescending' as RecordsQueryRequest['dateSort'],
         pagination: { limit },
       });
 
@@ -124,7 +127,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       return [];
     },
     getProtocolDefinition: async (protocol: string) => {
-      const { status, protocols } = await (web5 as any)._dwn.protocols.query({
+      const { status, protocols } = await dwn.protocols.query({
         filter: {
           protocol
         }
