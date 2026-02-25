@@ -14,8 +14,8 @@
   "dependencies": {
     "@emotion/react": "^11.13.3",
     "@emotion/styled": "^11.13.0",
-    "@enbox/agent": "0.2.1",
-    "@enbox/api": "0.3.1",
+    "@enbox/agent": "0.2.2",
+    "@enbox/api": "0.3.2",
     "@enbox/browser": "0.1.1",
     "@enbox/common": "0.0.6",
     "@enbox/crypto": "0.0.7",
