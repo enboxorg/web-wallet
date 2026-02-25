@@ -2,6 +2,12 @@ import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { toast } from "sonner";
 
+/** Default DWN endpoints that identities are registered against. */
+export const DEFAULT_DWN_ENDPOINTS = [
+  'https://enbox-dwn.fly.dev',
+  'https://dev.aws.dwn.enbox.id',
+];
+
 export function truncateDid(str: string, maxLength: number = 30): string {
   if (str.length <= maxLength) return str;
 

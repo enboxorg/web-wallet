@@ -7,8 +7,8 @@ interface PublicIdentityCardProps {
   identity: {
     didUri: string;
     profile: {
-      heroUrl: string;
-      avatarUrl: string;
+      heroUrl?: string;
+      avatarUrl?: string;
       social?: SocialData;
     };
   };

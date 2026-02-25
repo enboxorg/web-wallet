@@ -9,7 +9,7 @@ import LoadAgent from "@/components/LoadAgent";
 import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline } from '@mui/material';
 import { darkTheme } from '@/theme/muiTheme';
-import { registerDidWithDwn } from '@/lib/dwn-registration';
+import { getStoredTokens, storeTokens, registerDidWithEndpoint } from '@/lib/registration';
 
 /** The amount of time of inactivity before the wallet is locked */
 const LOCK_TIMEOUT = 10 * 60 * 1000;
@@ -59,6 +59,17 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
   const lock = useCallback(async () => {
     if (web5Agent) {
       localStorage.removeItem('password');
+
+      // Close the DID resolver cache so LevelDB handles are released.
+      // The cache re-opens lazily on the next resolve() call after unlock.
+      // AgentDidApi extends UniversalResolver which has close() — use cast
+      // since the type declarations don't always surface it.
+      try {
+        await (web5Agent.did as unknown as { close(): Promise<void> }).close();
+      } catch {
+        // Ignore — cache may already be closed or not yet opened.
+      }
+
       await web5Agent.vault.lock();
       setUnlocked(false);
     }
@@ -83,7 +94,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
         localStorage.setItem('password', password);
         setWeb5Agent(web5Agent);
         setUnlocked(true);
-        web5Agent.sync.startSync({ interval: '15s' });
+        web5Agent.sync.startSync({ mode: 'live', interval: '5m' });
     } catch (error) {
       setIsConnecting(false);
       throw error;
@@ -129,7 +140,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   }, [ web5Agent, initialized, unlocked, unlock ]);
 
-  const initialize = useCallback(async (password: string, dwnEndpoint: string): Promise<string | undefined> => {
+  const initialize = useCallback(async (password: string, dwnEndpoints: string[]): Promise<string | undefined> => {
     if (!web5Agent) {
       throw new Error("Agent not initialized");
     }
@@ -137,20 +148,25 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsInitializing(true);
     try {
       if (await web5Agent.firstLaunch()) {
-        const recoveryPhrase = await web5Agent.initialize({ password, dwnEndpoints: [ dwnEndpoint ] });
+        const recoveryPhrase = await web5Agent.initialize({ password, dwnEndpoints });
         await web5Agent.start({ password });
         localStorage.setItem('password', password);
 
-        // Register the agent DID as a tenant on the DWN server.
-        try {
-          await registerDidWithDwn(dwnEndpoint, web5Agent.agentDid.uri);
-        } catch (error) {
-          console.warn('Agent DID registration failed (will retry on next identity creation):', error);
+        // Register the agent DID as a tenant on each DWN endpoint.
+        let tokens = getStoredTokens();
+        for (const endpoint of dwnEndpoints) {
+          try {
+            const serverInfo = await web5Agent.rpc.getServerInfo(endpoint);
+            tokens = await registerDidWithEndpoint(endpoint, web5Agent.agentDid.uri, serverInfo, tokens);
+          } catch (error) {
+            console.warn(`Agent DID registration with ${endpoint} skipped:`, error);
+          }
         }
+        storeTokens(tokens);
 
         await web5Agent.sync.registerIdentity({ did: web5Agent.agentDid.uri });
         await web5Agent.sync.sync('pull');
-        web5Agent.sync.startSync({ interval: '15s' });
+        web5Agent.sync.startSync({ mode: 'live', interval: '5m' });
         setInitialized(true);
         setUnlocked(true);
         return recoveryPhrase;

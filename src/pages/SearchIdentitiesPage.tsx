@@ -1,15 +1,22 @@
 import PublicIdentityCard from '@/components/identity/PublicIdentityCard';
 import { TextField, Box, Typography, InputAdornment, Fade, alpha } from '@mui/material';
 import { Did } from '@enbox/dids';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Convert } from '@enbox/common';
 import { ProfileDefinition } from '@enbox/protocols';
+import { Web5 } from '@enbox/api';
 import { SocialData } from '@/lib/types';
 import { truncateDid } from '@/lib/utils';
 import { Search } from '@mui/icons-material';
 
-const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
+/** Lazily-created anonymous Web5 instance for reading public DWN data. */
+let _anonApi: ReturnType<typeof Web5.anonymous> | undefined;
+const getAnonymousApi = () => {
+  if (!_anonApi) {
+    _anonApi = Web5.anonymous();
+  }
+  return _anonApi;
+};
 
 const SearchIdentitiesPage: React.FC = () => {
   const { didUri } = useParams<{ didUri: string }>();
@@ -18,22 +25,92 @@ const SearchIdentitiesPage: React.FC = () => {
   const [ didInput, setDidInput ] = useState('');
   const [ did, setDid ] = useState('');
   const [ social, setSocial ] = useState<SocialData>();
+  const [ avatarUrl, setAvatarUrl ] = useState<string | undefined>();
+  const [ heroUrl, setHeroUrl ] = useState<string | undefined>();
+  const avatarBlobUrlRef = useRef<string>();
+  const heroBlobUrlRef = useRef<string>();
 
+  /** Fetch profile, avatar, and hero using anonymous DWN reads. */
   useEffect(() => {
-    const fetchSocial = async (did: string) => {
-      const social = await fetch(`https://dweb/${did}/read/protocols/${profileProtocolB64}/profile`);
-      const socialData = await social.json();
-      setSocial(socialData);
+    if (!did) return;
+
+    let cancelled = false;
+    const fetchProfileData = async () => {
+      const { dwn } = getAnonymousApi();
+
+      // Fetch profile social data
+      try {
+        const { records } = await dwn.records.query({
+          from   : did,
+          filter : {
+            protocol     : ProfileDefinition.protocol,
+            protocolPath : 'profile',
+          },
+        });
+        if (!cancelled && records.length > 0) {
+          const data = await records[0].data.json();
+          setSocial(data as SocialData);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile data:', err);
+      }
+
+      // Fetch avatar
+      try {
+        const { records } = await dwn.records.query({
+          from   : did,
+          filter : {
+            protocol     : ProfileDefinition.protocol,
+            protocolPath : 'profile/avatar',
+          },
+        });
+        if (!cancelled && records.length > 0) {
+          const blob = await records[0].data.blob();
+          if (avatarBlobUrlRef.current) URL.revokeObjectURL(avatarBlobUrlRef.current);
+          const url = URL.createObjectURL(blob);
+          avatarBlobUrlRef.current = url;
+          setAvatarUrl(url);
+        }
+      } catch (err) {
+        console.error('Failed to fetch avatar:', err);
+      }
+
+      // Fetch hero
+      try {
+        const { records } = await dwn.records.query({
+          from   : did,
+          filter : {
+            protocol     : ProfileDefinition.protocol,
+            protocolPath : 'profile/hero',
+          },
+        });
+        if (!cancelled && records.length > 0) {
+          const blob = await records[0].data.blob();
+          if (heroBlobUrlRef.current) URL.revokeObjectURL(heroBlobUrlRef.current);
+          const url = URL.createObjectURL(blob);
+          heroBlobUrlRef.current = url;
+          setHeroUrl(url);
+        }
+      } catch (err) {
+        console.error('Failed to fetch hero:', err);
+      }
     };
 
-    if (!social && did) {
-      fetchSocial(did);
-    }
+    setSocial(undefined);
+    setAvatarUrl(undefined);
+    setHeroUrl(undefined);
+    fetchProfileData();
 
-  }, [ did, social ]);
+    return () => { cancelled = true; };
+  }, [ did ]);
 
-  const heroUrl = `https://dweb/${did}/read/protocols/${profileProtocolB64}/profile/hero`;
-  const avatarUrl = `https://dweb/${did}/read/protocols/${profileProtocolB64}/profile/avatar`;
+  // Clean up blob URLs on unmount
+  useEffect(() => {
+    return () => {
+      if (avatarBlobUrlRef.current) URL.revokeObjectURL(avatarBlobUrlRef.current);
+      if (heroBlobUrlRef.current) URL.revokeObjectURL(heroBlobUrlRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     if (didUri) {
@@ -50,53 +127,24 @@ const SearchIdentitiesPage: React.FC = () => {
     return did ? `/search/${did}` : '/search';
   }, [ did ]);
 
-  const breadCrumbs = did ? [{ title: 'Find DIDs', path: '/search' }, { title, path }]: [{ title: 'Find DIDs', path: '/search' }, { title, path }];
-
-  const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    e.preventDefault();
-
-    setDidInput(e.target.value);
-    const did = Did.parse(e.target.value);
-    if (did) {
-      const didResolution = await fetch(`https://dweb/${did.uri}`);
-      if (didResolution.ok) {
-        const didResolutionData = await didResolution.json();
-        if (didResolutionData.didDocument) {
-          navigate(`/search/${did.uri}`);
-          return;
-        }
-      }
-    } 
-    navigate('/search');
-    setDid('');
-  }
-
   const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setDid('');
     setSocial(undefined);
+    setAvatarUrl(undefined);
+    setHeroUrl(undefined);
     const trimmedDid = didInput.trim();
     if (trimmedDid.length > 0) {
       try {
         const parsedDid = Did.parse(trimmedDid);
         if (parsedDid) {
-          const didResolution = await fetch(`https://dweb/${parsedDid.uri}`);
-          if (didResolution.ok) {
-            const didResolutionData = await didResolution.json();
-            if (didResolutionData.didDocument) {
-              setDid(parsedDid.uri);
-              navigate(`/search/${parsedDid.uri}`);
-            } else {
-              console.error('DID document not found');
-            }
-          } else {
-            console.error('Failed to resolve DID');
-          }
+          setDid(parsedDid.uri);
+          navigate(`/search/${parsedDid.uri}`);
         } else {
           console.error('Invalid DID format');
         }
       } catch (error) {
-        console.error('Error resolving DID:', error);
+        console.error('Error parsing DID:', error);
       }
     }
   };
