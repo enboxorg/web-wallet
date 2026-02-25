@@ -31,8 +31,10 @@ registerRoute(
   new NavigationRoute(createHandlerBoundToURL("index.html"), { allowlist })
 );
 
-// Activate Enbox Service Worker Polyfills
+// Activate Enbox Service Worker Polyfills (DRL fetch interception)
 activatePolyfills({
+  injectStyles: false, // No DOM in SW context
+  links: false,        // No DOM in SW context
   onCacheCheck() {
     return {
       ttl: 30000,

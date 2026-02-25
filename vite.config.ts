@@ -25,7 +25,7 @@ export default defineConfig({
       srcDir: "src",
       filename: "sw.ts",
       registerType: "prompt",
-      injectRegister: "auto",
+      injectRegister: false,
 
       pwaAssets: {
         disabled: false,

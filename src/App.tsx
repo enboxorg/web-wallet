@@ -7,7 +7,9 @@ import { useEffect } from 'react';
 import Dashboard from './layoutes/Dshboard';
 import { ProtocolsProvider } from './contexts/ProtocolsContext';
 
-activatePolyfills();
+activatePolyfills({
+  serviceWorker: false, // SW registration is handled by vite-plugin-pwa
+});
 
 function App() {
 
