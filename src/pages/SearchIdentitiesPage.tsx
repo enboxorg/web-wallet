@@ -4,16 +4,16 @@ import { Did } from '@enbox/dids';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ProfileDefinition } from '@enbox/protocols';
-import { Web5 } from '@enbox/api';
+import { Enbox } from '@enbox/api';
 import { SocialData } from '@/lib/types';
 import { truncateDid } from '@/lib/utils';
 import { Search } from '@mui/icons-material';
 
-/** Lazily-created anonymous Web5 instance for reading public DWN data. */
-let _anonApi: ReturnType<typeof Web5.anonymous> | undefined;
+/** Lazily-created anonymous Enbox instance for reading public DWN data. */
+let _anonApi: ReturnType<typeof Enbox.anonymous> | undefined;
 const getAnonymousApi = () => {
   if (!_anonApi) {
-    _anonApi = Web5.anonymous();
+    _anonApi = Enbox.anonymous();
   }
   return _anonApi;
 };

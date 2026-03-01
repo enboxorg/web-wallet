@@ -3,7 +3,7 @@
  *
  * Persists `RegistrationTokenData` (keyed by DWN endpoint URL) in localStorage
  * so that tokens survive page reloads and can be passed back into
- * `Web5.connect()` or used directly with `DwnRegistrar` on subsequent sessions.
+ * `Enbox.connect()` or used directly with `DwnRegistrar` on subsequent sessions.
  *
  * When a DWN endpoint requires `provider-auth-v0` and no cached token exists,
  * the authorize → token-exchange flow is performed automatically.
