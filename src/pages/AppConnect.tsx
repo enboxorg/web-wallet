@@ -4,7 +4,7 @@ import { truncateDid } from "@/lib/utils";
 import { FileOpen, FlashOff, FlashOn, NoPhotography } from "@mui/icons-material";
 import { Box, Button, CircularProgress, FormControl, IconButton, InputLabel, MenuItem, Select, Typography } from "@mui/material";
 import { PageContainer, useNotifications } from "@toolpad/core"
-import { Oidc, Web5ConnectAuthRequest } from "@enbox/agent";
+import { Oidc, EnboxConnectAuthRequest } from "@enbox/agent";
 import { CryptoUtils } from "@enbox/crypto";
 import Scanner from 'qr-scanner';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,7 +34,7 @@ const QRScanner: React.FC = () => {
   const [ devices, setDevices ] = useState<Scanner.Camera[]>([]);
   const [ selectedCamera, setSelectedCamera ] = useState<string>('environment');
   const [ hasFlash, setHasFlash ] = useState<boolean>(false);
-  const [ connectionRequest, setConnectionRequest ] = useState<Web5ConnectAuthRequest>();
+  const [ connectionRequest, setConnectionRequest ] = useState<EnboxConnectAuthRequest>();
   const [ authorizing, setAuthorizing ] = useState<boolean>(false);
   const [ pin, setPin ] = useState<string>('');
 

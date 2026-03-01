@@ -1,7 +1,7 @@
-import type { Web5Agent } from '@enbox/agent';
+import type { EnboxAgent } from '@enbox/agent';
 
 import { ConnectDefinition, ProfileDefinition, ProfileProtocol } from '@enbox/protocols';
-import { repository, Web5 } from '@enbox/api';
+import { repository, Enbox } from '@enbox/api';
 
 import { SocialData } from './types';
 
@@ -20,9 +20,9 @@ export { ConnectDefinition, ProfileDefinition };
  * Because `profile`, `avatar`, and `hero` are all singletons, the repository
  * exposes `set()` / `get()` instead of `create()` / `query()`.
  */
-const ProfileHelper = (didUri: string, agent: Web5Agent) => {
-  const web5 = new Web5({ agent, connectedDid: didUri });
-  const repo = repository(web5.using(ProfileProtocol));
+const ProfileHelper = (didUri: string, agent: EnboxAgent) => {
+  const enbox = new Enbox({ agent, connectedDid: didUri });
+  const repo  = repository(enbox.using(ProfileProtocol));
 
   const getSocial = async (): Promise<SocialData | undefined> => {
     const record = await repo.profile.get();
@@ -51,7 +51,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
       data      : social,
       published : true,
     });
-    if (status.code !== 202) {
+    if (status.code !== 202 || !record) {
       throw new Error(`ProfileHelper: Failed to set profile: ${status.detail}`);
     }
     const { status: sendStatus } = await record.send();
@@ -87,14 +87,14 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
         data      : { displayName: '' },
         published : true,
       });
-      if (status.code !== 202) {
+      if (status.code !== 202 || !record) {
         throw new Error(`ProfileHelper: Failed to create placeholder profile: ${status.detail}`);
       }
       await record.send();
       profileRecord = record;
     }
 
-    if (!profileRecord.contextId) {
+    if (!profileRecord?.contextId) {
       throw new Error('ProfileHelper: Profile record has no contextId');
     }
 
@@ -102,7 +102,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
     const { status, record } = await childRepo.set(profileRecord.contextId, {
       data : blob,
     });
-    if (status.code !== 202) {
+    if (status.code !== 202 || !record) {
       throw new Error(`ProfileHelper: Failed to set ${child}: ${status.detail}`);
     }
     const { status: sendStatus } = await record.send();
@@ -134,7 +134,7 @@ const ProfileHelper = (didUri: string, agent: Web5Agent) => {
   };
 
   return {
-    web5,
+    enbox,
     repo,
     getSocial,
     getAvatar,

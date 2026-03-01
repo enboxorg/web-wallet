@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useState } from "react";
 import { useAgent } from "./Context";
 import { DwnProtocolDefinition } from "@enbox/agent";
-import Web5Helper from "@/lib/Web5Helper";
+import EnboxHelper from "@/lib/EnboxHelper";
 
 interface ProtocolContextProps {
   getDefinition(fromDid: string, protocol: string): Promise<DwnProtocolDefinition | undefined>;
@@ -23,7 +23,7 @@ export const ProtocolsProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     if (!protocolDefinitionsMap.has(protocol)) {
-      const helper = Web5Helper(fromDid, agent);
+      const helper = EnboxHelper(fromDid, agent);
       const definition = await helper.getProtocolDefinition(protocol);
       if (definition) {
         setProtocolDefinitionsMap(new Map(protocolDefinitionsMap.set(protocol, definition)));

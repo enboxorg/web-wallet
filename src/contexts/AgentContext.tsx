@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useEffect, useState } from "react";
 
 import { AppProvider } from "@toolpad/core";
 
-import { Web5UserAgent } from "@enbox/agent";
+import { EnboxUserAgent } from "@enbox/agent";
 
 import Loader from "@/components/Loader";
 import LoadAgent from "@/components/LoadAgent";
@@ -14,14 +14,14 @@ import { getStoredTokens, storeTokens, registerDidWithEndpoint } from '@/lib/reg
 /** The amount of time of inactivity before the wallet is locked */
 const LOCK_TIMEOUT = 10 * 60 * 1000;
 
-interface Web5ContextProps {
-  agent?: Web5UserAgent;
+interface AgentContextProps {
+  agent?: EnboxUserAgent;
   initialized: boolean;
   unlocked: boolean;
   lock: () => Promise<void>;
 }
 
-export const AgentContext = createContext<Web5ContextProps>({
+export const AgentContext = createContext<AgentContextProps>({
   unlocked: false,
   initialized: false,
   lock: async () => {},
@@ -30,7 +30,7 @@ export const AgentContext = createContext<Web5ContextProps>({
 export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [web5Agent, setWeb5Agent] = useState<Web5UserAgent | undefined>(undefined);
+  const [enboxAgent, setEnboxAgent] = useState<EnboxUserAgent | undefined>(undefined);
 
   const [initialized, setInitialized] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
@@ -44,43 +44,41 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     const loadAgent = async () => {
       if (loading) return;
       loading = true;
-      const agent = await Web5UserAgent.create();
+      const agent = await EnboxUserAgent.create();
       setInitialized(!await agent.firstLaunch());
-      setWeb5Agent(agent);
+      setEnboxAgent(agent);
       loading = false;
     }
 
-    if (!web5Agent) {
+    if (!enboxAgent) {
       loadAgent();
     }
 
-  }, [web5Agent]);
+  }, [enboxAgent]);
 
   const lock = useCallback(async () => {
-    if (web5Agent) {
-      localStorage.removeItem('password');
-
+    if (enboxAgent) {
       // Close the DID resolver cache so LevelDB handles are released.
       // The cache re-opens lazily on the next resolve() call after unlock.
       // AgentDidApi extends UniversalResolver which has close() — use cast
       // since the type declarations don't always surface it.
       try {
-        await (web5Agent.did as unknown as { close(): Promise<void> }).close();
+        await (enboxAgent.did as unknown as { close(): Promise<void> }).close();
       } catch {
         // Ignore — cache may already be closed or not yet opened.
       }
 
-      await web5Agent.vault.lock();
+      await enboxAgent.vault.lock();
       setUnlocked(false);
     }
-  }, [ web5Agent, setUnlocked ]);
+  }, [ enboxAgent, setUnlocked ]);
 
   const unlock = useCallback(async (password: string) => {
     if (isConnecting) {
       return;
     }
 
-    if (!web5Agent) {
+    if (!enboxAgent) {
       throw new Error("Agent not initialized");
     }
 
@@ -90,18 +88,17 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
 
     setIsConnecting(true);
     try {
-        await web5Agent.start({ password });
-        localStorage.setItem('password', password);
-        setWeb5Agent(web5Agent);
+        await enboxAgent.start({ password });
+        setEnboxAgent(enboxAgent);
         setUnlocked(true);
-        web5Agent.sync.startSync({ mode: 'live', interval: '5m' });
+        enboxAgent.sync.startSync({ mode: 'live', interval: '5m' });
     } catch (error) {
       setIsConnecting(false);
       throw error;
     } finally {
       setIsConnecting(false);
     }
-  }, [ web5Agent, unlocked, isConnecting ]);
+  }, [ enboxAgent, unlocked, isConnecting ]);
 
   // Inactivity timer: lock the wallet after LOCK_TIMEOUT of no activity.
   // Listeners are added once when unlocked and cleaned up when locked or unmounted.
@@ -131,42 +128,32 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [ unlocked, lock ]);
 
-  useEffect(() => {
-    if (web5Agent && initialized && !unlocked) {
-      const password = localStorage.getItem('password');
-      if (password) {
-        unlock(password);
-      }
-    }
-  }, [ web5Agent, initialized, unlocked, unlock ]);
-
   const initialize = useCallback(async (password: string, dwnEndpoints: string[]): Promise<string | undefined> => {
-    if (!web5Agent) {
+    if (!enboxAgent) {
       throw new Error("Agent not initialized");
     }
 
     setIsInitializing(true);
     try {
-      if (await web5Agent.firstLaunch()) {
-        const recoveryPhrase = await web5Agent.initialize({ password, dwnEndpoints });
-        await web5Agent.start({ password });
-        localStorage.setItem('password', password);
+      if (await enboxAgent.firstLaunch()) {
+        const recoveryPhrase = await enboxAgent.initialize({ password, dwnEndpoints });
+        await enboxAgent.start({ password });
 
         // Register the agent DID as a tenant on each DWN endpoint.
         let tokens = getStoredTokens();
         for (const endpoint of dwnEndpoints) {
           try {
-            const serverInfo = await web5Agent.rpc.getServerInfo(endpoint);
-            tokens = await registerDidWithEndpoint(endpoint, web5Agent.agentDid.uri, serverInfo, tokens);
+            const serverInfo = await enboxAgent.rpc.getServerInfo(endpoint);
+            tokens = await registerDidWithEndpoint(endpoint, enboxAgent.agentDid.uri, serverInfo, tokens);
           } catch (error) {
             console.warn(`Agent DID registration with ${endpoint} skipped:`, error);
           }
         }
         storeTokens(tokens);
 
-        await web5Agent.sync.registerIdentity({ did: web5Agent.agentDid.uri });
-        await web5Agent.sync.sync('pull');
-        web5Agent.sync.startSync({ mode: 'live', interval: '5m' });
+        await enboxAgent.sync.registerIdentity({ did: enboxAgent.agentDid.uri });
+        await enboxAgent.sync.sync('pull');
+        enboxAgent.sync.startSync({ mode: 'live', interval: '5m' });
         setInitialized(true);
         setUnlocked(true);
         return recoveryPhrase;
@@ -177,22 +164,22 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     } finally {
       setIsInitializing(false);
     }
-  }, [ web5Agent ]);
+  }, [ enboxAgent ]);
 
   return (<AgentContext.Provider
       value={{
         lock,
         unlocked,
         initialized,
-        agent: web5Agent,
+        agent: enboxAgent,
       }}
     >
-      {(initialized && unlocked && web5Agent) ? children : <ThemeProvider theme={darkTheme}>
+      {(initialized && unlocked && enboxAgent) ? children : <ThemeProvider theme={darkTheme}>
         <CssBaseline />
         <AppProvider>
           {(isInitializing || isConnecting) && <Loader message={isInitializing ? "Initializing Agent..." : "Connecting..."} /> ||
           <LoadAgent
-            agent={web5Agent}
+            agent={enboxAgent}
             initialized={initialized}
             unlock={unlock}
             initialize={initialize}

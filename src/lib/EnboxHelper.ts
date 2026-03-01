@@ -1,15 +1,15 @@
-import type { DwnProtocolDefinition, Web5Agent } from '@enbox/agent';
+import type { DwnProtocolDefinition, EnboxAgent } from '@enbox/agent';
 
-import { Protocol, Web5, Record as DwnRecord, defineProtocol } from '@enbox/api';
+import { Protocol, Enbox, Record as DwnRecord, defineProtocol } from '@enbox/api';
 import type { RecordsQueryRequest } from '@enbox/api/advanced';
 import { DwnApi } from '@enbox/api/advanced';
 
-const Web5Helper = (didUri: string, agent: Web5Agent) => {
-  const web5 = new Web5({ agent, connectedDid: didUri });
-  const dwn  = new DwnApi({ agent, connectedDid: didUri });
+const EnboxHelper = (didUri: string, agent: EnboxAgent) => {
+  const enbox = new Enbox({ agent, connectedDid: didUri });
+  const dwn   = new DwnApi({ agent, connectedDid: didUri });
 
   return {
-    web5,
+    enbox,
     didUri,
     getRecord: async (protocol: string, protocolPath: string) => {
       const { status, records } = await dwn.records.query({
@@ -26,12 +26,12 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
     updateRecord: async (record: DwnRecord, dataFormat: string, data: any) => {
       const { status, record: updatedRecord } = await record.update({ data, dataFormat });
       if (status.code !== 202) {
-        throw new Error('Web5Helper: Failed to update name');
+        throw new Error('EnboxHelper: Failed to update name');
       }
 
       const { status: sendStatus } = await updatedRecord.send();
       if (sendStatus.code !== 202) {
-        console.info(`Web5Helper: Failed to send ${updatedRecord.protocol} record at ${updatedRecord.protocolPath}: ${sendStatus.detail}`);
+        console.info(`EnboxHelper: Failed to send ${updatedRecord.protocol} record at ${updatedRecord.protocolPath}: ${sendStatus.detail}`);
       }
 
       return updatedRecord; 
@@ -39,12 +39,12 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
     deleteRecord: async (record: DwnRecord) => {
       const { status, record: deletedRecord } = await record.delete();
       if (status.code !== 202) {
-        throw new Error('Web5Helper: Failed to delete record');
+        throw new Error('EnboxHelper: Failed to delete record');
       }
 
       const { status: sendStatus } = await deletedRecord.send();
       if (sendStatus.code !== 202) {
-        console.info(`Web5Helper: Failed to send delete ${deletedRecord.protocol} record at ${deletedRecord.protocolPath}: ${sendStatus.detail}`);
+        console.info(`EnboxHelper: Failed to send delete ${deletedRecord.protocol} record at ${deletedRecord.protocolPath}: ${sendStatus.detail}`);
       }
 
       return deletedRecord;
@@ -61,34 +61,34 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
       });
   
       if (status.code !== 202) {
-        throw new Error(`Web5Helper: Failed to create ${protocol} record at ${protocolPath}: ${status.detail}`);
+        throw new Error(`EnboxHelper: Failed to create ${protocol} record at ${protocolPath}: ${status.detail}`);
       }
   
       const { status: sendStatus } = await record!.send();
       if (sendStatus.code !== 202) {
-        console.info(`Web5Helper: Failed to send ${protocol} record at ${protocolPath}: ${sendStatus.detail}`);
+        console.info(`EnboxHelper: Failed to send ${protocol} record at ${protocolPath}: ${sendStatus.detail}`);
       }
   
       return record!;
     },
     /**
-     * Installs a protocol using TypedWeb5.configure() for idempotent installation.
+     * Installs a protocol using TypedEnbox.configure() for idempotent installation.
      * The definition is wrapped with defineProtocol() to get a TypedProtocol instance.
      */
     configureProtocol: async (definition: DwnProtocolDefinition) => {
-      const typed = web5.using(defineProtocol(definition));
+      const typed = enbox.using(defineProtocol(definition));
       const { status, protocol } = await typed.configure();
       if (status.code >= 300) {
-        throw new Error(`Web5Helper: Failed to configure protocol ${definition.protocol}: ${status.detail}`);
+        throw new Error(`EnboxHelper: Failed to configure protocol ${definition.protocol}: ${status.detail}`);
       }
-      console.info(`Web5Helper: ${definition.protocol}: ${status.detail}`);
+      console.info(`EnboxHelper: ${definition.protocol}: ${status.detail}`);
 
       // Install the protocol on the remote DWN so that subsequent record.send()
       // calls don't fail with ProtocolAuthorizationProtocolNotFound.
       if (protocol) {
         const { status: sendStatus } = await protocol.send(didUri);
         if (sendStatus.code >= 300) {
-          console.info(`Web5Helper: Failed to send protocol ${definition.protocol} to remote: ${sendStatus.detail}`);
+          console.info(`EnboxHelper: Failed to send protocol ${definition.protocol} to remote: ${sendStatus.detail}`);
         }
       }
 
@@ -97,7 +97,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
     listProtocols: async () => {
       const { status, protocols } = await dwn.protocols.query({});
       if (status.code !== 200) {
-        throw new Error('Web5Helper: Failed to list protocols');
+        throw new Error('EnboxHelper: Failed to list protocols');
       }
 
       return protocols.map((protocol: Protocol) => protocol.definition);
@@ -107,7 +107,7 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
         const permissions = await dwn.permissions.queryGrants();
         return permissions;
       } catch (_error) {
-        console.log('Web5Helper: Failed to list permissions', _error);
+        console.log('EnboxHelper: Failed to list permissions', _error);
       }
       return [];
     },
@@ -140,4 +140,4 @@ const Web5Helper = (didUri: string, agent: Web5Agent) => {
   }
 }
 
-export default Web5Helper;
+export default EnboxHelper;
