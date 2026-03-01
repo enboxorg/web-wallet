@@ -1,4 +1,4 @@
-import React, { createContext, useEffect, useState } from "react";
+import React, { createContext, useState } from "react";
 
 interface BackupSeedContextProps {
   showSeedScreen: boolean;
@@ -24,25 +24,11 @@ export const BackupSeedProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     setShowSeedScreen(!showSeedScreen);
   }
 
-  useEffect(() => {
-    const checkLocalStorage = () => {
-      const seed = localStorage.getItem('recoveryPhrase');
-      setBackupSeedState(seed || undefined);
-    };
-
-    checkLocalStorage();
-
-    window.addEventListener('storage', checkLocalStorage);
-    return () => window.removeEventListener('storage', checkLocalStorage);
-  }, []);
-
   const setBackupSeed = (seed: string) => {
-    localStorage.setItem('recoveryPhrase', seed);
     setBackupSeedState(seed);
   }
 
   const removeBackupSeed = () => {
-    localStorage.removeItem('recoveryPhrase');
     setBackupSeedState(undefined);
   }
 

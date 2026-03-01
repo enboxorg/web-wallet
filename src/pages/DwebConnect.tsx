@@ -1,6 +1,6 @@
 import { useAgent } from '@/contexts/Context';
 import { toastError } from '@/lib/utils';
-import { ConnectPermissionRequest, DwnInterface, DwnProtocolDefinition, Oidc, Web5Agent } from '@enbox/agent';
+import { ConnectPermissionRequest, DwnInterface, DwnProtocolDefinition, Oidc, EnboxAgent } from '@enbox/agent';
 import { DidJwk } from '@enbox/dids';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Typography, CircularProgress, AppBar, Toolbar } from '@mui/material';
@@ -137,7 +137,7 @@ const DWebConnect: React.FC = () => {
  */
 async function prepareProtocol(
   selectedDid: string,
-  agent: Web5Agent,
+  agent: EnboxAgent,
   protocolDefinition: DwnProtocolDefinition
 ): Promise<void> {
 

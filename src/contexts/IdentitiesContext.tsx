@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from "react";
-import { BearerIdentity, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, Web5Agent } from "@enbox/agent";
+import { BearerIdentity, DwnProtocolDefinition, getDwnServiceEndpointUrls, PortableIdentity, EnboxAgent } from "@enbox/agent";
 
-import Web5Helper from "@/lib/Web5Helper";
+import EnboxHelper from "@/lib/EnboxHelper";
 import ProfileHelper, { ConnectDefinition, ProfileDefinition } from "@/lib/ProfileProtocol";
 import { ConnectProtocol, SocialGraphDefinition } from "@enbox/protocols";
 import type { WalletData } from "@enbox/protocols";
@@ -9,7 +9,7 @@ import { getStoredTokens, storeTokens, registerDidWithEndpoint } from "@/lib/reg
 
 import { useAgent } from "./Context";
 import { Identity } from "@/lib/types";
-import { PermissionGrant, Web5, Record as DwnRecord, LiveQuery } from "@enbox/api";
+import { PermissionGrant, Enbox, Record as DwnRecord, LiveQuery } from "@enbox/api";
 import { DwnApi } from "@enbox/api/advanced";
 
 export type ActivityKind = 'record-created' | 'record-updated' | 'protocol-installed' | 'permission-granted';
@@ -78,7 +78,7 @@ const buildActivityFeed = (
   return items;
 };
 
-const loadProfileFromBearerIdentity = (agent: Web5Agent) => async (identity: BearerIdentity): Promise<Identity> => {
+const loadProfileFromBearerIdentity = (agent: EnboxAgent) => async (identity: BearerIdentity): Promise<Identity> => {
   const helper = ProfileHelper(identity.did.uri, agent);
   const social = await helper.getSocial();
   const avatar = await helper.getAvatar();
@@ -153,8 +153,8 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const setIdentityWallets = async (didUri: string, walletList: string[]) => {
     if (!agent) return;
-    const web5    = new Web5({ agent, connectedDid: didUri });
-    const connect = web5.using(ConnectProtocol);
+    const enbox   = new Enbox({ agent, connectedDid: didUri });
+    const connect = enbox.using(ConnectProtocol);
 
     const { records } = await connect.records.query('wallet');
     const existing = records && records.length > 0 ? records[0] : undefined;
@@ -206,13 +206,13 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       liveQueryRef.current = null;
     }
 
-    const web5Helper = Web5Helper(selectedIdentity.didUri, agent);
-    const connect    = web5Helper.web5.using(ConnectProtocol);
-    const dwn        = new DwnApi({ agent, connectedDid: selectedIdentity.didUri });
+    const enboxHelper = EnboxHelper(selectedIdentity.didUri, agent);
+    const connect     = enboxHelper.enbox.using(ConnectProtocol);
+    const dwn         = new DwnApi({ agent, connectedDid: selectedIdentity.didUri });
 
-    const permissionsPromise = web5Helper.listPermissions();
-    const protocolsPromise = web5Helper.listProtocols();
-    const recordsPromise = web5Helper.listRecentRecords(50);
+    const permissionsPromise = enboxHelper.listPermissions();
+    const protocolsPromise = enboxHelper.listProtocols();
+    const recordsPromise = enboxHelper.listRecentRecords(50);
     const walletsPromise = connect.records.query('wallet').then(({ records }) =>
       records && records.length > 0
         ? records[0].data.json().then((d: any) => (d as WalletData).webWallets)
@@ -292,7 +292,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
               purposes  : ['assertionMethod', 'authentication']
             },
             {
-              algorithm : 'secp256k1',
+              algorithm : 'X25519',
               id        : 'enc',
               purposes  : ['keyAgreement']
             }
@@ -339,10 +339,10 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     /** Configure protocols — SocialGraph must be installed first because
      *  ProfileDefinition declares `uses: { social: '…/social-graph' }`. */
-    const web5Helper = Web5Helper(identity.did.uri, agent);
-    await web5Helper.configureProtocol(SocialGraphDefinition);
-    await web5Helper.configureProtocol(ProfileDefinition);
-    await web5Helper.configureProtocol(ConnectDefinition);
+    const enboxHelper = EnboxHelper(identity.did.uri, agent);
+    await enboxHelper.configureProtocol(SocialGraphDefinition);
+    await enboxHelper.configureProtocol(ProfileDefinition);
+    await enboxHelper.configureProtocol(ConnectDefinition);
 
     /** Set Wallet Information */
     await setIdentityWallets(identity.did.uri, [ walletHost ]);
@@ -363,7 +363,7 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     // local and remote DWNs and all profile records have been written.
     agent.sync.startSync({ mode: 'live', interval: '5m' });
 
-    const craetedIdentity = {
+    const createdIdentity = {
       persona: persona,
       didUri: identity.did.uri,
       profile: {
@@ -375,8 +375,8 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
 
-    setIdentities([ ...identities, craetedIdentity ]);
-    return craetedIdentity;
+    setIdentities([ ...identities, createdIdentity ]);
+    return createdIdentity;
   }
 
   const updateIdentity = async ({ didUri, persona, displayName, tagline, bio, avatar, hero, dwnEndpoints }: UpdateIdentityParams) => {
@@ -512,12 +512,12 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem('identities', JSON.stringify([ importedIdentity.did.uri ]));
     }
 
-    const web5Helper = Web5Helper(importedIdentity.did.uri, agent);
-    await web5Helper.configureProtocol(SocialGraphDefinition);
-    await web5Helper.configureProtocol(ProfileDefinition);
-    await web5Helper.configureProtocol(ConnectDefinition);
+    const enboxHelper = EnboxHelper(importedIdentity.did.uri, agent);
+    await enboxHelper.configureProtocol(SocialGraphDefinition);
+    await enboxHelper.configureProtocol(ProfileDefinition);
+    await enboxHelper.configureProtocol(ConnectDefinition);
 
-    const connect = web5Helper.web5.using(ConnectProtocol);
+    const connect = enboxHelper.enbox.using(ConnectProtocol);
     const { records: walletRecords } = await connect.records.query('wallet');
     const existingWallets = walletRecords && walletRecords.length > 0
       ? ((await walletRecords[0].data.json()) as WalletData).webWallets

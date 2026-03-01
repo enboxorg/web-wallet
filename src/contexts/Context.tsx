@@ -8,7 +8,7 @@ import { DragOverIdentitiesContext } from "./DragOverIdentities";
 export const useAgent = () => {
   const context = useContext(AgentContext);
   if (!context) {
-    throw new Error("useAgent must be used within a Web5Provider");
+    throw new Error("useAgent must be used within an AgentProvider");
   }
 
   const { agent, initialized, unlocked, lock } = context;
@@ -22,7 +22,7 @@ export const useAgent = () => {
 export const useIdentities = () => {
   const context = useContext(IdentitiesContext);
   if (!context) {
-    throw new Error("useAgent must be used within a Web5Provider");
+    throw new Error("useIdentities must be used within an AgentProvider");
   }
 
   const { 
