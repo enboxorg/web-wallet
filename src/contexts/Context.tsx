@@ -90,6 +90,17 @@ export const useBackupSeed = () => {
   return { backupSeed, setBackupSeed, removeBackupSeed, showSeedScreen, toggleSeedScreen };
 };
 
+export const useLocalDwn = () => {
+  const context = useContext(AgentContext);
+  if (!context) {
+    throw new Error("useLocalDwn must be used within an AgentProvider");
+  }
+
+  const { localDwnAvailable, triggerLocalDwnDiscovery } = context;
+
+  return { localDwnAvailable, triggerLocalDwnDiscovery };
+};
+
 export const useDragIdentities = () => {
   const context = useContext(DragOverIdentitiesContext);
   if (!context) {
