@@ -1,8 +1,6 @@
 import { useBackupSeed } from '@/contexts/Context';
-import LockIcon from '@mui/icons-material/Lock';
-import { Box, Button, Container, Paper, TextField, Typography, alpha } from "@mui/material";
+import { Box, Container, Paper, Typography } from "@mui/material";
 import Grid from '@mui/material/Grid2';
-import { EnboxUserAgent } from '@enbox/agent';
 import { useCallback, useEffect, useState } from 'react';
 import PinInput from './PinInput';
 import EnboxLogo from './EnboxLogo';
@@ -11,11 +9,11 @@ import GlassyTextField from './ui/GlassyTextField';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/utils';
 
 const LoadAgent:React.FC<{
-  agent: EnboxUserAgent | undefined;
   initialized: boolean;
+  ready: boolean;
   initialize: (password: string, dwnEndpoints: string[]) => Promise<string | undefined>;
   unlock: (password: string) => Promise<void>;
-}> = ({ agent, initialized, initialize, unlock }) => {
+}> = ({ initialized, ready, initialize, unlock }) => {
 
   const { setBackupSeed } = useBackupSeed();
 
@@ -32,7 +30,7 @@ const LoadAgent:React.FC<{
   }, [ pin ]);
 
   const handleAgentSetup = useCallback(async (password: string) => {
-   if (agent && !initialized && password) {
+   if (ready && !initialized && password) {
       try {
         const recoveryPhrase = await initialize(password, dwnEndpoints);
         if (recoveryPhrase) {
@@ -60,7 +58,7 @@ const LoadAgent:React.FC<{
         setPin(['', '', '', '']);
       }
     }
-  }, [ agent, initialized, dwnEndpoints ]);
+  }, [ ready, initialized, dwnEndpoints ]);
 
   const handleUnlock =  useCallback(async (e: React.FormEvent) => {
     e.preventDefault();

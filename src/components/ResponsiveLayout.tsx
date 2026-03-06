@@ -24,6 +24,7 @@ import {
   ChevronLeft as ChevronLeftIcon,
 } from '@mui/icons-material';
 import EnboxLogo from './EnboxLogo';
+import LocalDwnIndicator from './LocalDwnIndicator';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 interface NavigationItem {
@@ -334,8 +335,8 @@ const ResponsiveLayout: React.FC<ResponsiveLayoutProps> = ({ children, navigatio
              <ChevronLeftIcon />}
           </IconButton>
 
-          {/* Add header content here if needed */}
           <Box sx={{ flexGrow: 1 }} />
+          <LocalDwnIndicator />
         </Toolbar>
       </AppBar>
 
