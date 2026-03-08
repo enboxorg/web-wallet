@@ -147,9 +147,14 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (cancelled) return;
 
-      // Listen for local DWN discovery events.
-      // Update both the React state (for rendering) and the ref (for
-      // synchronous reads in onSessionReady).
+      // Check if a local DWN was discovered during create() (before
+      // event listeners were attached). If so, set the state immediately.
+      if (auth.localDwnEndpoint) {
+        localDwnAvailableRef.current = true;
+        setLocalDwnAvailable(true);
+      }
+
+      // Listen for local DWN discovery events for future changes.
       auth.on('local-dwn-available', () => {
         localDwnAvailableRef.current = true;
         setLocalDwnAvailable(true);
