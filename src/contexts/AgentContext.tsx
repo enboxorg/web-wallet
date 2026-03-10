@@ -17,6 +17,23 @@ import { getStoredTokens, storeTokens, registerDidWithEndpoint } from '@/lib/reg
 /** The amount of time of inactivity before the wallet is locked */
 const LOCK_TIMEOUT = 10 * 60 * 1000;
 
+/**
+ * How long to wait for a `dwn://connect` redirect to come back before
+ * giving up and proceeding without a local DWN. This only applies on
+ * the very first visit when no cached endpoint exists.
+ *
+ * The round-trip is local (browser → OS → electrobun-dwn → browser),
+ * so it completes in well under a second when a handler is installed.
+ * If the timeout expires it means no `dwn://` handler is registered.
+ */
+const DWN_DISCOVERY_TIMEOUT_MS = 3_000;
+
+/**
+ * The localStorage key where `@enbox/auth` persists the discovered local
+ * DWN endpoint. This mirrors `BrowserStorage.prefix + STORAGE_KEYS.LOCAL_DWN_ENDPOINT`.
+ */
+const LOCAL_DWN_ENDPOINT_LS_KEY = 'enbox:enbox:auth:localDwnEndpoint';
+
 // ─── Registration token persistence (localStorage) ─────────────
 const REG_TOKENS_KEY = 'enbox:registrationTokens';
 
@@ -40,9 +57,9 @@ interface AgentContextProps {
   initialized: boolean;
   unlocked: boolean;
   lock: () => Promise<void>;
-  /** Whether a local DWN is available (discovered via dwn:// or port probe). */
+  /** Whether a local DWN server is available (discovered via dwn://connect). */
   localDwnAvailable: boolean;
-  /** Trigger the dwn://register flow to discover a local DWN. */
+  /** Trigger the dwn://connect flow to discover a local DWN. */
   triggerLocalDwnDiscovery: () => void;
 }
 
@@ -105,19 +122,70 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
   const [unlocked, setUnlocked] = useState(false);
   const [localDwnAvailable, setLocalDwnAvailable] = useState(false);
 
-  // Track whether we've already triggered the dwn://register redirect
-  // in this page session to avoid spamming the user.
-  const dwnDiscoveryTriggeredRef = useRef(false);
-
   // Ref-mirror of localDwnAvailable so we can read it synchronously
-  // inside onSessionReady() without stale closure issues.
+  // inside callbacks without stale closure issues.
   const localDwnAvailableRef = useRef(false);
 
-  // Create the AuthManager once on mount.
+  // ─── Phase 1: Pre-agent local DWN discovery ────────────────────
+  //
+  // HARD REQUIREMENT: If a local DWN server is running, the agent MUST
+  // be created in remote mode (no in-process DWN). Discovery must
+  // complete BEFORE AuthManager.create() is called.
+  //
+  // Discovery channels (browser):
+  //   1. URL fragment — a dwn://connect redirect just landed (highest priority)
+  //   2. localStorage — a previously discovered and persisted endpoint
+  //   3. dwn://connect trigger — fire the protocol handler redirect and
+  //      wait briefly; if the handler is installed the page will reload
+  //      with the endpoint in the fragment before the timeout expires.
+  //
+  // Only after discovery resolves (or times out) do we create the AuthManager.
+
   useEffect(() => {
     let cancelled = false;
 
-    const createAuth = async () => {
+    const initializeWithDiscovery = async () => {
+      // Channel 1: Check if we're returning from a dwn://connect redirect.
+      // We only check for the fragment's PRESENCE here — do NOT consume it.
+      // discoverLocalDwn() inside AuthManager.create() will read, validate,
+      // persist, and clear the fragment.
+      const hasFragment = globalThis.location?.hash?.length > 1;
+
+      // Channel 2: Check localStorage for a previously persisted endpoint.
+      const cachedEndpoint = localStorage.getItem(LOCAL_DWN_ENDPOINT_LS_KEY);
+
+      const hasKnownEndpoint = hasFragment || !!cachedEndpoint;
+
+      if (!hasKnownEndpoint) {
+        // Channel 3: No endpoint known — trigger the dwn://connect flow.
+        // If electrobun-dwn is running, it will redirect back to this page
+        // with the endpoint in the URL fragment. The round-trip is local
+        // (sub-second). If no handler is installed, nothing happens and
+        // the timeout below fires.
+        //
+        // We wait for the redirect because creating the agent in local
+        // mode when a local DWN IS available violates the core design:
+        // there must NEVER be an in-process DWN if a local server exists.
+        requestLocalDwnDiscovery();
+
+        // Wait for the redirect to come back. If the page navigates
+        // (redirect succeeded), this code is destroyed and never
+        // reaches the AuthManager.create() call below. If the timeout
+        // fires, no local DWN handler is installed — proceed without one.
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, DWN_DISCOVERY_TIMEOUT_MS);
+        });
+
+        if (cancelled) return;
+      }
+
+      // ─── Phase 2: Create the AuthManager ──────────────────────────
+      //
+      // discoverLocalDwn() inside AuthManager.create() will:
+      //   - Read and consume the URL fragment (if present), validate via
+      //     GET /info, and persist the endpoint to localStorage.
+      //   - Or read the cached endpoint from localStorage and re-validate.
+
       const auth = await AuthManager.create({
         dwnEndpoints     : DEFAULT_DWN_ENDPOINTS,
         sync             : '5m',
@@ -126,7 +194,6 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
           onSuccess: () => console.info('AgentContext: DWN registration complete'),
           onFailure: (err) => console.warn('AgentContext: DWN registration failed:', err),
           onProviderAuthRequired: async ({ authorizeUrl, state }) => {
-            // Auto-approve provider auth (same as the old registration.ts logic).
             const response = await fetch(authorizeUrl, {
               signal: AbortSignal.timeout(30_000),
             });
@@ -147,9 +214,13 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       if (cancelled) return;
 
-      // Listen for local DWN discovery events.
-      // Update both the React state (for rendering) and the ref (for
-      // synchronous reads in onSessionReady).
+      // Track whether a local DWN was discovered.
+      if (auth.localDwnEndpoint) {
+        localDwnAvailableRef.current = true;
+        setLocalDwnAvailable(true);
+      }
+
+      // Listen for local DWN discovery events for future changes.
       auth.on('local-dwn-available', () => {
         localDwnAvailableRef.current = true;
         setLocalDwnAvailable(true);
@@ -163,7 +234,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
       setInitialized(auth.state !== 'uninitialized');
     };
 
-    createAuth();
+    initializeWithDiscovery();
     return () => { cancelled = true; };
   }, []);
 
@@ -174,35 +245,16 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     setUnlocked(false);
   }, [authManager]);
 
-  // Post-session setup: register DIDs with DWN endpoints and trigger
-  // local DWN discovery.  Called after both connect() and restoreSession().
+  // Post-session setup: register DIDs with DWN endpoints.
+  // Called after both connect() and restoreSession().
+  //
+  // NOTE: Local DWN discovery is handled BEFORE AuthManager.create() in
+  // Phase 1 above. By the time a session starts, the agent is already
+  // in the correct mode (remote if a local DWN was found, local otherwise).
   const onSessionReady = useCallback((userAgent: EnboxUserAgent) => {
-    // 1. Ensure all DIDs are registered with remote DWN endpoints.
     ensureRegistration(userAgent, DEFAULT_DWN_ENDPOINTS).catch((err) => {
       console.warn('AgentContext: Post-session DWN registration failed:', err);
     });
-
-    // 2. Auto-trigger dwn://register if no local DWN was discovered yet.
-    //    applyLocalDwnDiscovery() already ran inside connect()/restoreSession()
-    //    and checked the URL fragment + localStorage.  If that found an
-    //    endpoint, the 'local-dwn-available' event will have fired
-    //    synchronously and set localDwnAvailableRef — skip the redirect.
-    //
-    //    If nothing was found, trigger the protocol handler redirect (once
-    //    per page session).  We skip probeLocalDwn() because in browsers
-    //    the fetch() calls to 127.0.0.1:55500-55509 are typically blocked
-    //    by CORS/ad-blockers, producing noisy ERR_BLOCKED_BY_CLIENT errors.
-    //    The dwn:// redirect is the proper browser discovery channel.
-    if (!dwnDiscoveryTriggeredRef.current && !localDwnAvailableRef.current) {
-      // Small delay to let the UI settle after unlock before opening a
-      // protocol handler (which may flash a system dialog).
-      setTimeout(() => {
-        if (!dwnDiscoveryTriggeredRef.current && !localDwnAvailableRef.current) {
-          dwnDiscoveryTriggeredRef.current = true;
-          requestLocalDwnDiscovery();
-        }
-      }, 1500);
-    }
   }, []);
 
   const unlock = useCallback(async (password: string) => {
@@ -281,12 +333,10 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [authManager, onSessionReady]);
 
   const triggerLocalDwnDiscovery = useCallback(() => {
-    // In the browser, direct port probing (probeLocalDwn) is unreliable —
-    // fetches to 127.0.0.1:{55500-55509} are blocked by CORS and ad-blockers.
-    // Instead, always use the dwn://register protocol handler redirect.
-    // The local DWN handler (electrobun-dwn) will redirect back to this page
-    // with the actual endpoint in the URL fragment, which applyLocalDwnDiscovery()
-    // picks up on the next connect/restore cycle.
+    // Trigger the dwn://connect protocol handler redirect. The local DWN
+    // handler (electrobun-dwn) will redirect back to this page with the
+    // endpoint in the URL fragment. On reload, Phase 1 discovery will
+    // pick it up and create the agent in remote mode.
     requestLocalDwnDiscovery();
   }, []);
 

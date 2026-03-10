@@ -227,7 +227,7 @@ const QRScanner: React.FC = () => {
       </Box>}
     </>}
     {!pin && !authorizing && connectionRequest && <ConnectRequest
-      origin={truncateDid(connectionRequest.client_id)}
+      origin={truncateDid(connectionRequest.clientDid)}
       permissions={connectionRequest.permissionRequests}
       handleApprove={handleAuthorize}
       handleDeny={() => navigate('/')}
