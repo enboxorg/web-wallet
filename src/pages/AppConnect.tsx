@@ -4,7 +4,7 @@ import { truncateDid } from "@/lib/utils";
 import { FileOpen, FlashOff, FlashOn, NoPhotography } from "@mui/icons-material";
 import { Box, Button, CircularProgress, FormControl, IconButton, InputLabel, MenuItem, Select, Typography } from "@mui/material";
 import { PageContainer, useNotifications } from "@toolpad/core"
-import { EnboxConnectAuthRequest, Oidc } from "@enbox/agent";
+import { EnboxConnectProtocol, EnboxConnectRequest } from "@enbox/agent";
 import { CryptoUtils } from "@enbox/crypto";
 import Scanner from 'qr-scanner';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -34,7 +34,7 @@ const QRScanner: React.FC = () => {
   const [ devices, setDevices ] = useState<Scanner.Camera[]>([]);
   const [ selectedCamera, setSelectedCamera ] = useState<string>('environment');
   const [ hasFlash, setHasFlash ] = useState<boolean>(false);
-  const [ connectionRequest, setConnectionRequest ] = useState<EnboxConnectAuthRequest>();
+  const [ connectionRequest, setConnectionRequest ] = useState<EnboxConnectRequest>();
   const [ authorizing, setAuthorizing ] = useState<boolean>(false);
   const [ pin, setPin ] = useState<string>('');
 
@@ -131,7 +131,7 @@ const QRScanner: React.FC = () => {
     }
 
     try {
-      const decryptedConnectionRequest = await Oidc.getAuthRequest(
+      const decryptedConnectionRequest = await EnboxConnectProtocol.getConnectRequest(
         request_uri,
         encryption_key
       );
@@ -158,7 +158,7 @@ const QRScanner: React.FC = () => {
     try {
       const pin = CryptoUtils.randomPin({ length: 4 });
       setPin(pin);
-      await Oidc.submitAuthResponse(did, connectionRequest, pin, agent);
+      await EnboxConnectProtocol.submitConnectResponse(did, connectionRequest, pin, agent);
     } catch (error) {
       console.error('failed to authorize', error);
       notifications.show('Failed to authorize', { severity: 'error', autoHideDuration: 1500 });

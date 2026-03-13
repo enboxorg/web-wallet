@@ -1,6 +1,6 @@
 import { useAgent } from '@/contexts/Context';
 import { toastError } from '@/lib/utils';
-import { ConnectPermissionRequest, DwnInterface, DwnProtocolDefinition, EnboxAgent, Oidc } from '@enbox/agent';
+import { ConnectPermissionRequest, DwnInterface, DwnProtocolDefinition, EnboxAgent, EnboxConnectProtocol } from '@enbox/agent';
 import { DidJwk } from '@enbox/dids';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Box, Typography, CircularProgress, AppBar, Toolbar } from '@mui/material';
@@ -65,7 +65,7 @@ const DWebConnect: React.FC = () => {
         }
 
         await prepareProtocol(did, agent, protocolDefinition);
-        const permissionGrants = await Oidc.createPermissionGrants(
+        const permissionGrants = await EnboxConnectProtocol.createPermissionGrants(
           did,
           delegateBearerDid,
           agent,
