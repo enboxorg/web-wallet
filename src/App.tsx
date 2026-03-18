@@ -1,6 +1,7 @@
 import { AgentProvider } from '@/contexts/AgentContext';
 import { IdentitiesProvider } from '@/contexts/IdentitiesContext';
 import { BackupSeedProvider } from '@/contexts/BackupSeedContext';
+import { DWebConnectProvider } from '@/contexts/DWebConnectContext';
 
 import { activatePolyfills } from '@enbox/browser';
 import { useEffect } from 'react';
@@ -43,13 +44,15 @@ function App() {
 
   return (
     <BackupSeedProvider>
-      <AgentProvider>
-        <ProtocolsProvider>
-          <IdentitiesProvider>
-            <Dashboard />
-          </IdentitiesProvider>
-        </ProtocolsProvider>
-      </AgentProvider>
+      <DWebConnectProvider>
+        <AgentProvider>
+          <ProtocolsProvider>
+            <IdentitiesProvider>
+              <Dashboard />
+            </IdentitiesProvider>
+          </ProtocolsProvider>
+        </AgentProvider>
+      </DWebConnectProvider>
     </BackupSeedProvider>
   );
 }

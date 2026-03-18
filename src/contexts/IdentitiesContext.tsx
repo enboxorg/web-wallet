@@ -379,6 +379,29 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     return createdIdentity;
   }
 
+  /**
+   * Ensure the required protocols (SocialGraph, Profile, Connect) are installed
+   * for the given identity. This is a safety net for identities that may have
+   * been created without protocols (e.g. imported identities, or identities
+   * created before protocols were installed eagerly).
+   */
+  const ensureProtocols = async (didUri: string) => {
+    if (!agent) return;
+    const enboxHelper = EnboxHelper(didUri, agent);
+    const installed = await enboxHelper.listProtocols();
+    const installedUris = new Set(installed.map(p => p.protocol));
+
+    if (!installedUris.has(SocialGraphDefinition.protocol)) {
+      await enboxHelper.configureProtocol(SocialGraphDefinition);
+    }
+    if (!installedUris.has(ProfileDefinition.protocol)) {
+      await enboxHelper.configureProtocol(ProfileDefinition);
+    }
+    if (!installedUris.has(ConnectDefinition.protocol)) {
+      await enboxHelper.configureProtocol(ConnectDefinition);
+    }
+  };
+
   const updateIdentity = async ({ didUri, persona, displayName, tagline, bio, avatar, hero, dwnEndpoints }: UpdateIdentityParams) => {
     if (!agent) {
       throw new Error("Agent not found");
@@ -392,6 +415,9 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
     if (identity.persona !== persona) {
       await agent.identity.setMetadataName({ didUri, name: persona });
     }
+
+    // Ensure protocols are installed before writing profile data.
+    await ensureProtocols(didUri);
 
     const helper = ProfileHelper(didUri, agent);
 

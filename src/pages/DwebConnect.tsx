@@ -1,48 +1,32 @@
 import { useAgent } from '@/contexts/Context';
+import { useDWebConnect } from '@/contexts/DWebConnectContext';
 import { toastError } from '@/lib/utils';
-import { ConnectPermissionRequest, DwnInterface, DwnProtocolDefinition, EnboxAgent, EnboxConnectProtocol } from '@enbox/agent';
+import { DwnInterface, DwnProtocolDefinition, EnboxAgent, EnboxConnectProtocol } from '@enbox/agent';
 import { DidJwk } from '@enbox/dids';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Box, Typography, CircularProgress, AppBar, Toolbar } from '@mui/material';
 import ConnectRequest from '@/components/ConnectRequest';
 
 
 const DWebConnect: React.FC = () => {
   const { agent } = useAgent();
+  const { pendingRequest, isPopup } = useDWebConnect();
+
   const [ isCreatingDelegate, setIsCreatingDelegate ] = useState<boolean>(false);
   const [ returningGrants, setReturningGrants ] = useState<boolean>(false);
-
-  const [ origin, setOrigin ] = useState<string>();
-  const [ did, setDid ] = useState<string>();
-  const [ permissions, setPermissions ] = useState<ConnectPermissionRequest[]>([]);
 
   const connecting = useMemo(() => {
     return isCreatingDelegate || returningGrants;
   }, [ isCreatingDelegate, returningGrants ]);
 
-  useEffect(() => {
-    const authRequest = async (e: MessageEvent) => {
-      const { type, did, permissions } = e.data;
-      if (type === 'dweb-connect-authorization-request') {
-        if (!window?.opener?.closed) {
-          setOrigin(e.origin);
-          setDid(did);
-          setPermissions(permissions);
-        } else {
-          window.close();
-        }
-      }
-    }
+  // The request data comes from DWebConnectContext, which buffers it
+  // before the user unlocks. By the time this component mounts (after
+  // unlock), the request is already available.
+  const origin = pendingRequest?.origin;
+  const did = pendingRequest?.did;
+  const permissions = pendingRequest?.permissions ?? [];
 
-    addEventListener('message', authRequest);
-    window.opener?.postMessage({ type: 'dweb-connect-loaded' }, '*');
-    return () => {
-      removeEventListener('message', authRequest);
-    };
-  }, []);
-
-
-  const handleAgentSetup = async (did: string) => {
+  const handleAgentSetup = async (selectedDid: string) => {
 
     if (!origin || !agent) {
       toastError('Not ready');
@@ -64,9 +48,9 @@ const DWebConnect: React.FC = () => {
           throw new Error('All permission scopes must match the protocol uri they are provided with.');
         }
 
-        await prepareProtocol(did, agent, protocolDefinition);
+        await prepareProtocol(selectedDid, agent, protocolDefinition);
         const permissionGrants = await EnboxConnectProtocol.createPermissionGrants(
-          did,
+          selectedDid,
           delegateBearerDid,
           agent,
           permissionScopes
@@ -96,11 +80,16 @@ const DWebConnect: React.FC = () => {
   }
 
   const handleDeny = () => {
-    window.opener.postMessage({
-      type: 'dweb-connect-authorization-response',
-    }, origin);
+    if (origin) {
+      window.opener.postMessage({
+        type: 'dweb-connect-authorization-response',
+      }, origin);
+    }
     window.close();
   };
+
+  // Waiting for the dapp to send the authorization request
+  const isWaiting = isPopup && !pendingRequest && !connecting;
 
   return (
     <Box sx={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
@@ -112,6 +101,30 @@ const DWebConnect: React.FC = () => {
           </Typography>
         </Toolbar>
       </AppBar>
+
+      {/* Waiting for authorization request from dapp */}
+      {isWaiting && (
+        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+          <CircularProgress size={48} sx={{ mb: 2 }} />
+          <Typography variant="body1">
+            Waiting for connection request...
+          </Typography>
+        </Box>
+      )}
+
+      {/* Not opened as a popup */}
+      {!isPopup && (
+        <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+          <Typography variant="body1" color="text.secondary">
+            This page handles connection requests from apps.
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+            It should be opened automatically when an app requests access.
+          </Typography>
+        </Box>
+      )}
+
+      {/* Connect request UI */}
       {!connecting && origin && did && permissions.length > 0 && <ConnectRequest
         sx={{ mt: 10 }}
         permissions={permissions}
@@ -120,6 +133,8 @@ const DWebConnect: React.FC = () => {
         handleApprove={handleAgentSetup}
         handleDeny={handleDeny}
       />}
+
+      {/* Processing */}
       {connecting && (
         <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
           <CircularProgress size={48} sx={{ mb: 2 }} />
