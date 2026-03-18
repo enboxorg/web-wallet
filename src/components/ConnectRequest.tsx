@@ -1,13 +1,13 @@
-import React, { ReactNode, useState } from 'react';
-import { Typography, Box, Button } from '@mui/material';
+import React, { useState } from 'react';
+import { Typography, Box, Button, Alert } from '@mui/material';
 import { Check as CheckIcon, Close as CloseIcon } from '@mui/icons-material';
 import PublicIdentityCard from './identity/PublicIdentityCard';
 import IdentitySelector from './IdentitySelector';
 import PermissionRequest from './PermissionsRequest';
-import { useNavigate } from 'react-router-dom';
 import { Convert } from '@enbox/common';
 import { ProfileDefinition } from '@enbox/protocols';
 import { ConnectPermissionRequest } from '@enbox/agent';
+import { useIdentities } from '@/contexts/Context';
 
 const profileProtocolB64 = Convert.string(ProfileDefinition.protocol).toBase64Url();
 
@@ -29,6 +29,8 @@ const ConnectRequest: React.FC<{
   [key: string]: any;
 }> = ({ did, origin, permissions, handleApprove, handleDeny, ...props }) => {
   const [ selectedDid, setSelectedDid ] = useState<string>(did || '');
+  const { identities } = useIdentities();
+  const hasIdentities = identities.length > 0;
 
   return <Box 
       {...props}
@@ -60,9 +62,14 @@ const ConnectRequest: React.FC<{
           }
         }}
       />}
-      {!selectedDid && <Typography variant="subtitle2" color="text.secondary">Select an identity to approve the request</Typography>}
+      {!selectedDid && hasIdentities && <Typography variant="subtitle2" color="text.secondary">Select an identity to approve the request</Typography>}
+      {!hasIdentities && (
+        <Alert severity="warning" sx={{ mt: 2 }}>
+          You don't have any identities yet. Close this window, create an identity in your wallet first, then try connecting again.
+        </Alert>
+      )}
     </Box>
-    {!did && <IdentitySelector value={selectedDid} onChange={setSelectedDid} sx={{ px: 5, width: '100%', mb: 2 }} />}
+    {!did && hasIdentities && <IdentitySelector value={selectedDid} onChange={setSelectedDid} sx={{ px: 5, width: '100%', mb: 2 }} />}
     <Typography variant="subtitle1" gutterBottom>Requested Permissions:</Typography>
     <PermissionRequest permissions={permissions} />
     <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2, mb: 2, gap: 2 }}>
@@ -80,6 +87,7 @@ const ConnectRequest: React.FC<{
         color="success"
         startIcon={<CheckIcon />}
         onClick={() => handleApprove(selectedDid)}
+        disabled={!selectedDid}
         sx={{ minWidth: 120 }}
       >
         Approve
