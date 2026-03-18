@@ -125,7 +125,7 @@ const DWebConnect: React.FC = () => {
       )}
 
       {/* Connect request UI */}
-      {!connecting && origin && did && permissions.length > 0 && <ConnectRequest
+      {!connecting && origin && permissions.length > 0 && <ConnectRequest
         sx={{ mt: 10 }}
         permissions={permissions}
         did={did}
