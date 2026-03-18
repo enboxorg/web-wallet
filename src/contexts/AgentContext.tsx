@@ -354,6 +354,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
         <CssBaseline />
         <AppProvider>
           {(isInitializing || isConnecting) && <Loader message={isInitializing ? "Initializing Agent..." : "Connecting..."} /> ||
+          !authManager && <Loader message="Loading..." /> ||
           <LoadAgent
             initialized={initialized}
             ready={!!authManager}
