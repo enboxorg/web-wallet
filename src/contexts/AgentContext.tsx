@@ -188,7 +188,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const auth = await AuthManager.create({
         dwnEndpoints     : DEFAULT_DWN_ENDPOINTS,
-        sync             : '5m',
+        sync             : 'off',
         localDwnStrategy : 'prefer',
         registration     : {
           onSuccess: () => console.info('AgentContext: DWN registration complete'),
@@ -245,15 +245,22 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     setUnlocked(false);
   }, [authManager]);
 
-  // Post-session setup: register DIDs with DWN endpoints.
-  // Called after both connect() and restoreSession().
+  // Post-session setup: register DIDs with DWN endpoints, then start sync.
   //
-  // NOTE: Local DWN discovery is handled BEFORE AuthManager.create() in
-  // Phase 1 above. By the time a session starts, the agent is already
-  // in the correct mode (remote if a local DWN was found, local otherwise).
-  const onSessionReady = useCallback((userAgent: EnboxUserAgent) => {
-    ensureRegistration(userAgent, DEFAULT_DWN_ENDPOINTS).catch((err) => {
+  // Sync is configured as 'off' in AuthManager.create() so that it does NOT
+  // start automatically during connect/restoreSession. This avoids the
+  // "Not a registered tenant" error that occurs when sync runs before the
+  // DID is registered with the remote DWN servers.
+  const onSessionReady = useCallback(async (userAgent: EnboxUserAgent) => {
+    try {
+      await ensureRegistration(userAgent, DEFAULT_DWN_ENDPOINTS);
+    } catch (err) {
       console.warn('AgentContext: Post-session DWN registration failed:', err);
+    }
+
+    // Now that all DIDs are registered, start sync.
+    userAgent.sync.startSync({ mode: 'live', interval: '5m' }).catch((err: unknown) => {
+      console.error('AgentContext: Sync start failed:', err);
     });
   }, []);
 
@@ -267,7 +274,7 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
         const userAgent = session.agent as EnboxUserAgent;
         setAgent(userAgent);
         setUnlocked(true);
-        onSessionReady(userAgent);
+        await onSessionReady(userAgent);
       }
     } catch (error) {
       setIsConnecting(false);
@@ -320,8 +327,9 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
       setAgent(userAgent);
 
       // connect() runs registration internally, but errors are swallowed
-      // (logged via onFailure).  Run our own registration as a safety net.
-      onSessionReady(userAgent);
+      // (logged via onFailure).  Run our own registration as a safety net
+      // and start sync after registration completes.
+      await onSessionReady(userAgent);
 
       return session.recoveryPhrase;
     } catch (error) {
