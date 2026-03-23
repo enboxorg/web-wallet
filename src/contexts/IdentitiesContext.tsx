@@ -316,14 +316,9 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       localStorage.setItem('identities', JSON.stringify([ identity.did.uri ]));
     }
 
-    // Stop the auto-sync interval before triggering a manual pull to avoid
-    // "Sync operation is already in progress" race condition.
-    await agent.sync.stopSync();
-    await agent.sync.sync('pull');
-
-    // Register the new DID with each DWN endpoint. If the endpoint supports
-    // provider-auth-v0 and we have a cached token, use it; otherwise fall
-    // back to proof-of-work registration.
+    // Register the new DID with each DWN endpoint BEFORE syncing.
+    // The remote DWN rejects requests from unregistered tenants, so
+    // registration must complete before any sync operation.
     let tokens = getStoredTokens();
     for (const endpoint of dwnEndpoints) {
       try {
@@ -336,6 +331,11 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     }
     storeTokens(tokens);
+
+    // Stop the auto-sync interval before triggering a manual pull to avoid
+    // "Sync operation is already in progress" race condition.
+    await agent.sync.stopSync();
+    await agent.sync.sync('pull');
 
     /** Configure protocols — SocialGraph must be installed first because
      *  ProfileDefinition declares `uses: { social: '…/social-graph' }`. */
