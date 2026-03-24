@@ -124,7 +124,7 @@ function AuthGate() {
 
   // Still initialising the AuthManager
   if (!initialized) {
-    return <Loader message="Initialising wallet..." />;
+    return <Loader message="Initialising wallet..." fullScreen />;
   }
 
   // Wallet is locked — show setup or unlock screen
@@ -160,7 +160,7 @@ function AuthGate() {
 
   // Unlocked but still loading identity list — show loader briefly
   if (identitiesLoading) {
-    return <Loader message="Loading identities..." />;
+    return <Loader message="Loading identities..." fullScreen />;
   }
 
   // Unlocked with no identities — show full-screen identity creation

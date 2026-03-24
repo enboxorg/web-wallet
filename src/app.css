@@ -328,6 +328,12 @@
     overflow-x: hidden;
   }
 
+  #root {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
   ::selection {
     background: var(--accent-muted);
     color: var(--text-primary);
