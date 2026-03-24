@@ -129,7 +129,8 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
-      await ensurePostSession(agent);
+      // Run post-session tasks in the background — don't block the UI
+      ensurePostSession(agent);
       return true;
     } catch {
       clearSessionPin();
@@ -217,7 +218,8 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
       cacheSessionPin(password);
-      await ensurePostSession(agent);
+      // Run post-session tasks in the background
+      ensurePostSession(agent);
 
       return session.recoveryPhrase;
     } catch (err) {
@@ -246,7 +248,9 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
       cacheSessionPin(password);
-      await ensurePostSession(agent);
+      // Run post-session tasks in the background — don't block the UI.
+      // DWN registration + sync restart aren't needed to show the app.
+      ensurePostSession(agent);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unlock failed';
       setError(msg);
