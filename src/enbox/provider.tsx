@@ -87,11 +87,32 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // keys are stored as DWN records in the agent DID's local DWN.
     // Without this registration, those records never get pushed to the
     // remote, making seed-phrase recovery impossible.
+    //
+    // Since the SDK's connect/restoreSession already started sync before
+    // we get here, registerIdentity only writes to the DB — the live
+    // push subscription wasn't opened for the agent DID. We restart
+    // sync so it picks up the new registration and opens a subscription.
+    //
+    // TODO(@enbox/auth): registerIdentity() should open a live push
+    // subscription when sync is already running. And the agent DID
+    // should be registered automatically.
+    let needsSyncRestart = false;
     try {
       await agent.sync.registerIdentity({ did: agent.agentDid.uri });
+      needsSyncRestart = true;
       console.info('[ensurePostSession] Agent DID registered for sync:', agent.agentDid.uri);
     } catch {
-      // Already registered — expected on subsequent unlocks
+      // Already registered — no restart needed, subscription exists
+    }
+
+    if (needsSyncRestart) {
+      try {
+        await agent.sync.stopSync();
+        await agent.sync.startSync({ mode: 'live', interval: '5m' });
+        console.info('[ensurePostSession] Sync restarted with agent DID subscription');
+      } catch (err) {
+        console.warn('[ensurePostSession] Sync restart failed:', err);
+      }
     }
   }, []);
 
