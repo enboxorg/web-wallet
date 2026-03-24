@@ -116,7 +116,8 @@ export async function createIdentity(
     data: socialData,
     published: true,
   });
-  await profileRecord!.send();
+  const sendResult = await profileRecord!.send();
+  console.info(`[createIdentity] Profile send status: ${JSON.stringify(sendResult.status)}`);
 
   // 6. Set avatar if provided
   if (params.avatar && profileRecord) {
