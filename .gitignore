@@ -13,6 +13,16 @@ dist-ssr
 *.local
 *.tsbuildinfo
 
+# Test / coverage
+coverage
+playwright-report/
+test-results/
+
+# PWA generated assets
+dev-dist
+public/sw.js
+public/workbox-*.js
+
 # Local AI agent instructions (not committed)
 CLAUDE.local.md
 

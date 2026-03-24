@@ -1,141 +1,99 @@
-import React from 'react';
-import { Card, Typography, Avatar, Box, styled, alpha } from '@mui/material';
-import { truncateDid } from '@/lib/utils';
-import { SocialData } from '@/lib/types';
+import { useState } from 'react';
+import { Copy, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { truncateDid, copyToClipboard } from '@/lib/utils';
+import { Avatar } from '@/components/ui/Avatar';
 
 interface PublicIdentityCardProps {
-  identity: {
-    didUri: string;
-    profile: {
-      heroUrl?: string;
-      avatarUrl?: string;
-      social?: SocialData;
-    };
-  };
+  did: string;
+  displayName?: string;
+  tagline?: string;
+  bio?: string;
+  avatarUrl?: string | null;
+  heroUrl?: string | null;
+  className?: string;
 }
 
-const BannerOverlay = styled(Box)(({ theme }) => ({
-  position: 'absolute',
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  background: 'linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.8) 100%)',
-}));
+export function PublicIdentityCard({
+  did,
+  displayName,
+  tagline,
+  bio,
+  avatarUrl,
+  heroUrl,
+  className,
+}: PublicIdentityCardProps) {
+  const [copied, setCopied] = useState(false);
 
-const GlassCard = styled(Card)(({ theme }) => ({
-  backgroundColor: alpha(theme.palette.background.paper, 0.6),
-  backdropFilter: 'blur(20px)',
-  border: `1px solid ${alpha(theme.palette.divider, 0.5)}`,
-  transition: 'all 0.3s ease-in-out',
-  overflow: 'hidden',
-  '&:hover': {
-    backgroundColor: alpha(theme.palette.background.paper, 0.7),
-    borderColor: alpha(theme.palette.primary.main, 0.3),
-    boxShadow: `0 8px 32px ${alpha(theme.palette.common.black, 0.4)}`,
-  },
-}));
-
-const PublicIdentityCard: React.FC<PublicIdentityCardProps> = ({ identity }) => {
-  const { didUri, profile } = identity;
-  const { social, heroUrl, avatarUrl } = profile;
+  async function handleCopyDid() {
+    const ok = await copyToClipboard(did);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  }
 
   return (
-    <GlassCard
-      sx={{ 
-        width: '100%',
-        maxWidth: '100%',
-        height: { xs: 240, sm: 280, md: 320 },
-        borderRadius: 2,
-        position: 'relative',
-        mx: 'auto',
-        transition: 'all 0.3s ease-in-out',
-      }}
+    <div
+      className={cn(
+        'flex flex-col overflow-hidden rounded-lg border border-border-default',
+        'bg-surface-1 w-full',
+        className,
+      )}
     >
-      <Box sx={{ position: 'relative', height: '100%', width: '100%' }}>
-        <Box
-          component="img"
-          src={heroUrl}
-          alt={`${social?.displayName || 'user'}'s banner`}
-          sx={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-          }}
-          onError={(e: any) => {
-            e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="550" height="300"%3E%3Crect fill="%23252525" width="550" height="300"/%3E%3C/svg%3E';
-          }}
-        />
-        <BannerOverlay />
-        <Box
-          sx={{
-            position: 'absolute',
-            bottom: { xs: 16, sm: 20, md: 24 },
-            left: { xs: 16, sm: 20, md: 24 },
-            right: { xs: 16, sm: 20, md: 24 },
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: { xs: 2, sm: 3 } }}>
-            <Avatar 
-              src={avatarUrl} 
-              alt={social?.displayName || 'user'}
-              sx={{ 
-                width: { xs: 64, sm: 72, md: 80 },
-                height: { xs: 64, sm: 72, md: 80 },
-                border: '3px solid',
-                borderColor: alpha('#ffffff', 0.2),
-                boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-              }}
-              onError={(e: any) => {
-                e.target.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="80" height="80"%3E%3Crect fill="%234a4a4a" width="80" height="80"/%3E%3C/svg%3E';
-              }}
-            >
-              {social?.displayName?.charAt(0).toUpperCase() || 'U'}
-            </Avatar>
-            <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
-              {social?.displayName && (
-                <Typography variant="h5" sx={{ 
-                  color: 'common.white', 
-                  mb: 0.5, 
-                  textShadow: '0 2px 4px rgba(0,0,0,0.8)',
-                  fontWeight: 600,
-                  fontSize: { xs: '1.25rem', sm: '1.5rem', md: '1.75rem' },
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}>
-                  {social.displayName}
-                </Typography>
-              )}
-              {social?.tagline && (
-                <Typography variant="body2" sx={{ 
-                  color: 'rgba(255,255,255,0.8)', 
-                  mb: 1,
-                  textShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                  fontSize: { xs: '0.8rem', sm: '0.875rem' },
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  display: '-webkit-box',
-                  WebkitLineClamp: 2,
-                  WebkitBoxOrient: 'vertical',
-                }}>
-                  {social.tagline}
-                </Typography>
-              )}
-              <Typography variant="caption" sx={{ 
-                color: 'rgba(255,255,255,0.6)', 
-                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
-                fontFamily: 'monospace',
-                fontSize: '0.75rem',
-              }}>
-                {truncateDid(didUri, 40)}
-              </Typography>
-            </Box>
-          </Box>
-        </Box>
-      </Box>
-    </GlassCard>
-  );
-};
+      {/* Hero banner */}
+      <div className="h-40 md:h-52 w-full overflow-hidden">
+        {heroUrl ? (
+          <img
+            src={heroUrl}
+            alt=""
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="h-full w-full bg-gradient-to-br from-accent-muted to-surface-2" />
+        )}
+      </div>
 
-export default PublicIdentityCard;
+      {/* Content */}
+      <div className="relative px-6 pb-6">
+        <div className="-mt-12">
+          <Avatar src={avatarUrl} name={displayName} size="xl" />
+        </div>
+
+        <div className="mt-3">
+          <h2 className="text-lg font-semibold text-text-primary">
+            {displayName ?? 'Unnamed'}
+          </h2>
+          {tagline && (
+            <p className="mt-0.5 text-sm text-text-secondary">{tagline}</p>
+          )}
+
+          {/* DID with copy button */}
+          <div className="mt-2 flex items-center gap-2">
+            <p className="text-xs text-text-ghost font-mono truncate">
+              {truncateDid(did)}
+            </p>
+            <button
+              type="button"
+              onClick={handleCopyDid}
+              className="shrink-0 rounded-md p-1 text-text-ghost hover:text-text-secondary hover:bg-surface-2 transition-colors"
+              aria-label="Copy DID"
+            >
+              {copied ? (
+                <Check className="h-3.5 w-3.5 text-success" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+
+          {bio && (
+            <p className="mt-4 text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
+              {bio}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

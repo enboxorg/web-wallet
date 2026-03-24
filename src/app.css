@@ -1,0 +1,428 @@
+/* ============================================================
+   ENBOX WALLET — Tailwind v4 + @enbox/ui Design Tokens
+   ============================================================ */
+
+@import 'tailwindcss';
+
+/* ============================================================
+   DESIGN TOKENS (inlined from @enbox/ui canonical tokens.css)
+   When @enbox/ui is published to npm, replace with:
+   @import '@enbox/ui/tokens.css';
+   ============================================================ */
+
+:root {
+  /* ---- Neutrals ---- */
+  --gray-950: #08090a;
+  --gray-900: #0e1011;
+  --gray-850: #131618;
+  --gray-800: #1a1d20;
+  --gray-750: #21252a;
+  --gray-700: #2a2f35;
+  --gray-600: #3d444d;
+  --gray-500: #545d69;
+  --gray-400: #78828f;
+  --gray-300: #a0a9b4;
+  --gray-200: #c4cad1;
+  --gray-100: #e2e5e9;
+  --gray-50: #f3f4f6;
+  --white: #ffffff;
+
+  /* ---- Semantic surfaces ---- */
+  --surface-0: var(--gray-950);
+  --surface-1: var(--gray-900);
+  --surface-2: var(--gray-850);
+  --surface-3: var(--gray-800);
+  --surface-code: var(--gray-850);
+  --surface-glass: rgba(14, 16, 17, 0.72);
+
+  /* ---- Text hierarchy ---- */
+  --text-primary: var(--gray-50);
+  --text-secondary: var(--gray-300);
+  --text-tertiary: var(--gray-400);
+  --text-ghost: var(--gray-500);
+  --text-code: var(--gray-100);
+
+  /* ---- Borders ---- */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --border-accent: var(--accent);
+
+  /* ---- Focus ring ---- */
+  --focus-ring-color: var(--accent);
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* ---- Status colours ---- */
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #f87171;
+  --color-info: #60a5fa;
+
+  /* ---- Typography ---- */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    sans-serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  --font-display: 'Inter', var(--font-sans);
+
+  --text-xs: 0.75rem;
+  --text-sm: 0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.3125rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.25rem;
+  --text-4xl: 3rem;
+  --text-5xl: 3.75rem;
+
+  --weight-normal: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.3;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.75;
+
+  --tracking-tighter: -0.03em;
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.04em;
+  --tracking-wider: 0.08em;
+
+  /* ---- Spacing (4px base) ---- */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-14: 3.5rem;
+  --space-16: 4rem;
+  --space-20: 5rem;
+  --space-24: 6rem;
+  --space-32: 8rem;
+
+  /* ---- Layout ---- */
+  --content-width: 1080px;
+  --content-narrow: 720px;
+  --content-wide: 1280px;
+  --content-gutter: clamp(1.25rem, 5vw, 3rem);
+
+  /* ---- Radii ---- */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 24px;
+  --radius-full: 9999px;
+
+  /* ---- Shadows ---- */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-glow: 0 0 40px rgba(var(--accent-rgb), 0.12);
+
+  /* ---- Transitions ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --duration-fast: 120ms;
+  --duration-base: 200ms;
+  --duration-slow: 400ms;
+
+  /* ---- Z-index ---- */
+  --z-base: 1;
+  --z-sticky: 100;
+  --z-overlay: 200;
+  --z-modal: 300;
+  --z-toast: 400;
+
+  /* ---- Glass ---- */
+  --glass-blur: 16px;
+  --glass-saturate: 1.4;
+
+  /* ---- Scrollbar ---- */
+  --scrollbar-thumb: var(--gray-700);
+
+  /* ---- Sidebar ---- */
+  --sidebar-width: 240px;
+  --sidebar-mini-width: 64px;
+}
+
+/* ---- authd product accent (rose/pink) ---- */
+:root {
+  --accent: #ff6b8a;
+  --accent-rgb: 255, 107, 138;
+  --accent-hover: #ff8fa6;
+  --accent-muted: rgba(255, 107, 138, 0.12);
+  --accent-subtle: rgba(255, 107, 138, 0.06);
+  --accent-text: var(--gray-950);
+  --accent-gradient: linear-gradient(135deg, #ff6b8a, #ffb3c6);
+}
+
+/* ---- blue product accent ---- */
+[data-product='blue'] {
+  --accent: #3b82f6;
+  --accent-rgb: 59, 130, 246;
+  --accent-hover: #60a5fa;
+  --accent-muted: rgba(59, 130, 246, 0.12);
+  --accent-subtle: rgba(59, 130, 246, 0.06);
+  --accent-text: var(--white);
+  --accent-gradient: linear-gradient(135deg, #3b82f6, #93c5fd);
+}
+
+/* Blue light mode accent */
+[data-product='blue'][data-theme='light'] {
+  --accent: #2563eb;
+  --accent-rgb: 37, 99, 235;
+  --accent-hover: #1d4ed8;
+  --accent-muted: rgba(37, 99, 235, 0.1);
+  --accent-subtle: rgba(37, 99, 235, 0.05);
+  --accent-text: var(--white);
+  --accent-gradient: linear-gradient(135deg, #2563eb, #60a5fa);
+}
+
+/* ============================================================
+   LIGHT MODE
+   ============================================================ */
+
+[data-theme='light'] {
+  --warm-white: #fffcf9;
+  --warm-50: #f9f6f2;
+  --warm-100: #f0ece7;
+  --warm-200: #e3dfd9;
+
+  --surface-0: var(--warm-white);
+  --surface-1: var(--warm-50);
+  --surface-2: var(--warm-100);
+  --surface-3: var(--warm-200);
+  --surface-code: var(--warm-50);
+  --surface-glass: rgba(255, 252, 249, 0.72);
+
+  --text-primary: #1a1816;
+  --text-secondary: #5c564e;
+  --text-tertiary: #7a746b;
+  --text-ghost: #9e9890;
+  --text-code: #2d2a26;
+
+  --border-subtle: rgba(80, 60, 30, 0.06);
+  --border-default: rgba(80, 60, 30, 0.1);
+  --border-strong: rgba(80, 60, 30, 0.16);
+
+  --shadow-sm: 0 1px 2px rgba(40, 30, 15, 0.06);
+  --shadow-md: 0 4px 12px rgba(40, 30, 15, 0.08);
+  --shadow-lg: 0 8px 32px rgba(40, 30, 15, 0.12);
+  --shadow-glow: 0 0 40px rgba(var(--accent-rgb), 0.08);
+
+  --scrollbar-thumb: var(--gray-300);
+
+  --color-success: #059669;
+  --color-warning: #d97706;
+  --color-error: #dc2626;
+  --color-info: #2563eb;
+
+  /* authd light accent */
+  --accent: #d43a5c;
+  --accent-rgb: 212, 58, 92;
+  --accent-hover: #bf3250;
+  --accent-muted: rgba(212, 58, 92, 0.1);
+  --accent-subtle: rgba(212, 58, 92, 0.05);
+  --accent-text: var(--white);
+  --accent-gradient: linear-gradient(135deg, #d43a5c, #e87a98);
+}
+
+/* ============================================================
+   TAILWIND v4 THEME MAPPING
+   Maps CSS custom properties to Tailwind utility classes.
+   ============================================================ */
+
+@theme {
+  /* Surfaces */
+  --color-surface-0: var(--surface-0);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-surface-glass: var(--surface-glass);
+
+  /* Text */
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  --color-text-ghost: var(--text-ghost);
+
+  /* Accent */
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-text: var(--accent-text);
+
+  /* Status */
+  --color-success: var(--color-success);
+  --color-warning: var(--color-warning);
+  --color-error: var(--color-error);
+  --color-info: var(--color-info);
+
+  /* Borders */
+  --color-border-subtle: var(--border-subtle);
+  --color-border-default: var(--border-default);
+  --color-border-strong: var(--border-strong);
+  --color-border-accent: var(--border-accent);
+
+  /* Radii */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-2xl: var(--radius-2xl);
+  --radius-full: var(--radius-full);
+
+  /* Shadows */
+  --shadow-sm: var(--shadow-sm);
+  --shadow-md: var(--shadow-md);
+  --shadow-lg: var(--shadow-lg);
+  --shadow-glow: var(--shadow-glow);
+
+  /* Fonts */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-display: var(--font-display);
+
+  /* Spacing overrides for design-token based sizing */
+  --spacing: 4px;
+}
+
+/* ============================================================
+   BASE STYLES (from @enbox/ui base.css)
+   Must be inside @layer base so Tailwind utilities can override.
+   ============================================================ */
+
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-size: 16px;
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+
+  html[data-theme='light'] {
+    color-scheme: light;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    font-weight: var(--weight-normal);
+    line-height: var(--leading-normal);
+    color: var(--text-primary);
+    background: var(--surface-0);
+    overflow-x: hidden;
+  }
+
+  ::selection {
+    background: var(--accent-muted);
+    color: var(--text-primary);
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: var(--radius-full);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+    transition: color var(--duration-fast) var(--ease-out);
+  }
+  a:hover {
+    color: var(--accent-hover);
+  }
+}
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Alias for JS-friendly name used in animate-[fadeIn_...] */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0);
+  }
+  50% {
+    box-shadow: 0 0 20px 4px rgba(var(--accent-rgb), 0.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

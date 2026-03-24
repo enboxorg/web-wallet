@@ -1,41 +1,56 @@
-import React from 'react';
-import { Box, Avatar, IconButton, alpha, Tooltip } from '@mui/material';
+import { useRef } from 'react';
 import { Camera } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { Avatar } from './Avatar';
 
 interface AvatarUploadProps {
   src?: string | null;
-  onChange: (file: File) => void;
-  size?: number;
+  name?: string;
+  onUpload: (file: File) => void;
+  size?: 'lg' | 'xl';
+  className?: string;
 }
 
-const AvatarUpload: React.FC<AvatarUploadProps> = ({ src, onChange, size = 72 }) => {
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files[0]) onChange(files[0]);
-  };
+export function AvatarUpload({
+  src,
+  name,
+  onUpload,
+  size = 'lg',
+  className,
+}: AvatarUploadProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) onUpload(file);
+    e.target.value = '';
+  }
 
   return (
-    <Box position="relative" sx={{ width: size, height: size }}>
-      <Avatar src={src || undefined} sx={{ width: size, height: size }} />
-      <Tooltip title="Upload avatar">
-        <IconButton
-          component="label"
-          size="small"
-          sx={{
-            position: 'absolute',
-            right: 0,
-            bottom: 0,
-            backgroundColor: (theme) => alpha(theme.palette.background.paper, 0.8),
-            border: (theme) => `1px solid ${alpha(theme.palette.divider, 0.6)}`,
-            '&:hover': { backgroundColor: (theme) => alpha(theme.palette.background.paper, 1) },
-          }}
-        >
-          <Camera size={16} />
-          <input type="file" hidden accept="image/*" onChange={handleFileChange} />
-        </IconButton>
-      </Tooltip>
-    </Box>
+    <button
+      type="button"
+      onClick={() => inputRef.current?.click()}
+      className={cn('group relative cursor-pointer', className)}
+      aria-label="Upload avatar"
+    >
+      <Avatar src={src} name={name} size={size} />
+      <div
+        className={cn(
+          'absolute inset-0 flex items-center justify-center rounded-full',
+          'bg-black/50 opacity-0 group-hover:opacity-100',
+          'transition-opacity duration-[var(--duration-fast)]',
+        )}
+      >
+        <Camera className="h-5 w-5 text-white" />
+      </div>
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleChange}
+        className="hidden"
+        tabIndex={-1}
+      />
+    </button>
   );
-};
-
-export default AvatarUpload;
+}
