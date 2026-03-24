@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Users, Plus, Search } from 'lucide-react';
+import { Users, UserPlus, Plus, Search } from 'lucide-react';
 import { useNavigate, Link } from 'react-router';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
@@ -11,6 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import { Input } from '@/components/ui/Input';
 import { Loader } from '@/components/ui/Loader';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 function IdentityCardWithProfile({ identity }: { identity: any }) {
   const did = identity.did.uri;
@@ -74,22 +75,18 @@ export default function IdentitiesListPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-[length:var(--text-2xl)] font-semibold text-text-primary">
-            Identities
-          </h1>
-          <p className="mt-2 text-text-secondary">
-            Manage your decentralised identities.
-          </p>
-        </div>
-        <Link to="/identities/create">
-          <Button size="md">
-            <Plus className="h-4 w-4" />
-            Create Identity
-          </Button>
-        </Link>
-      </div>
+      <PageHeader
+        title="Identities"
+        description="Manage your decentralised identities."
+        actions={
+          <Link to="/identities/create">
+            <Button size="sm">
+              <UserPlus size={16} />
+              Create Identity
+            </Button>
+          </Link>
+        }
+      />
 
       {hasIdentities && (
         <div className="relative">

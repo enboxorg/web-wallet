@@ -1,8 +1,9 @@
-import { useState, useCallback, Fragment } from 'react';
+import { useState, useCallback } from 'react';
 import { PinInput } from '@/components/ui/PinInput';
 import { SeedPhraseInput } from '@/components/ui/SeedPhraseInput';
 import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
+import { StepIndicator } from '@/components/ui/StepIndicator';
 import { PIN_LENGTH } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { EnboxLogo } from './EnboxLogo';
@@ -22,27 +23,6 @@ const STEP_INDEX: Record<Step, number> = {
   'create-pin': 1,
   'confirm-pin': 2,
 };
-
-function StepIndicator({ current, total }: { current: number; total: number }) {
-  return (
-    <div className="flex items-center gap-2">
-      {Array.from({ length: total }, (_, i) => (
-        <Fragment key={i}>
-          {i > 0 && (
-            <div className={cn(
-              'h-px w-6',
-              i <= current ? 'bg-accent' : 'bg-border-default',
-            )} />
-          )}
-          <div className={cn(
-            'h-2 w-2 rounded-full transition-colors',
-            i === current ? 'bg-accent' : i < current ? 'bg-accent/50' : 'bg-border-default',
-          )} />
-        </Fragment>
-      ))}
-    </div>
-  );
-}
 
 export function RestoreWalletPage({ onRestore, isLoading, error, onBack }: RestoreWalletPageProps) {
   const [step, setStep] = useState<Step>('phrase');

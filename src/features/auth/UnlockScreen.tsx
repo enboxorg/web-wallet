@@ -7,11 +7,12 @@ import { cn } from '@/lib/utils';
 
 export interface UnlockScreenProps {
   onUnlock: (pin: string) => void;
+  onForgotPin?: () => void;
   error: string | null;
   isLoading: boolean;
 }
 
-export function UnlockScreen({ onUnlock, error, isLoading }: UnlockScreenProps) {
+export function UnlockScreen({ onUnlock, onForgotPin, error, isLoading }: UnlockScreenProps) {
   const handleComplete = useCallback(
     (pin: string) => {
       if (!isLoading) {
@@ -58,6 +59,16 @@ export function UnlockScreen({ onUnlock, error, isLoading }: UnlockScreenProps) 
               </p>
             )}
           </div>
+        )}
+
+        {onForgotPin && (
+          <button
+            type="button"
+            onClick={onForgotPin}
+            className="mt-2 text-sm text-text-tertiary hover:text-accent transition-colors"
+          >
+            Forgot PIN? Restore from recovery phrase
+          </button>
         )}
       </div>
     </div>

@@ -45,6 +45,7 @@ export default function IdentityDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [qrOpen, setQrOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [qrCopied, setQrCopied] = useState(false);
@@ -273,30 +274,41 @@ export default function IdentityDetailsPage() {
       {/* Delete confirmation dialog */}
       <Dialog
         open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
+        onClose={() => { setDeleteOpen(false); setDeleteConfirmText(''); }}
         title="Delete Identity"
       >
-        <p className="text-sm text-text-secondary">
-          Are you sure you want to delete this identity? This action cannot be
-          undone. All associated data, protocols, and permissions will be
-          permanently removed.
-        </p>
-        <div className="mt-6 flex items-center justify-end gap-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setDeleteOpen(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={handleDelete}
-            loading={deleteIdentity.isPending}
-          >
-            Delete Identity
-          </Button>
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">
+            This will permanently delete this identity and all its data.
+            This action <strong className="text-text-primary">cannot be undone</strong>.
+          </p>
+          <div>
+            <label className="text-xs text-text-tertiary">
+              Type <strong className="text-text-primary font-mono">DELETE</strong> to confirm
+            </label>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="DELETE"
+              className="mt-1.5 w-full rounded-lg bg-surface-2 px-4 py-2.5 text-sm text-text-primary border border-border-default focus:border-error focus:outline-none font-mono"
+              autoComplete="off"
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" size="sm" onClick={() => { setDeleteOpen(false); setDeleteConfirmText(''); }}>
+              Cancel
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleDelete}
+              loading={deleteIdentity.isPending}
+              disabled={deleteConfirmText !== 'DELETE'}
+            >
+              Delete Identity
+            </Button>
+          </div>
         </div>
       </Dialog>
     </div>

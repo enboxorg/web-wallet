@@ -1,8 +1,9 @@
 import { Link } from 'react-router';
-import { ExternalLink, AlertCircle } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { useProfile } from '@/enbox/hooks/use-profile';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 
@@ -18,14 +19,7 @@ export default function OverviewTab({ did }: OverviewTabProps) {
   }
 
   if (isError) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
-        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
-        <p className="text-sm text-error">
-          {error instanceof Error ? error.message : 'Failed to load data'}
-        </p>
-      </div>
-    );
+    return <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load data'} />;
   }
 
   if (!profile || !profile.displayName) {
@@ -55,7 +49,7 @@ export default function OverviewTab({ did }: OverviewTabProps) {
           style={{ backgroundImage: `url(${profile.heroUrl})` }}
         />
       ) : (
-        <div className="h-40 rounded-lg bg-gradient-to-r from-accent/20 to-accent/5" />
+        <div className="h-40 rounded-lg bg-gradient-to-br from-accent/30 via-accent/10 to-surface-2" />
       )}
 
       {/* Avatar + name */}

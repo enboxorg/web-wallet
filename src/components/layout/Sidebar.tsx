@@ -67,7 +67,9 @@ export function Sidebar({
             )}
 
             {sectionItems.map((item) => {
-              const active = currentPath === item.path;
+              const active = item.path === '/'
+                ? currentPath === '/'
+                : currentPath.startsWith(item.path);
               return (
                 <button
                   key={item.path}
