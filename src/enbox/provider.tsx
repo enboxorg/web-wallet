@@ -21,6 +21,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { INACTIVITY_TIMEOUT_MS, SESSION_PIN_KEY, STORAGE_KEYS, SYNC_INTERVAL } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { ensureRegistration, getStoredTokens, storeTokens } from './registration';
+import { installProtocols } from './protocols';
 import type { EnboxAgent } from './types';
 
 // ── Local DWN discovery constants ──────────────────────────────────
@@ -262,19 +263,55 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const auth = authManagerRef.current;
     if (!auth) throw new Error('AuthManager not ready');
 
+    const endpoints = dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS;
+
     setIsLoading(true);
     setError(null);
     try {
       const session = await auth.importFromPhrase({
         recoveryPhrase,
         password,
-        dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
+        dwnEndpoints: endpoints,
       });
 
       const agent = session.agent as EnboxAgent;
+
+      // After recovery the vault is re-derived but the local DWN is empty.
+      // We need to pull from the remote to recover original identities and
+      // their data (profiles, protocols, records). The SDK creates a default
+      // identity, but the original one(s) should appear after sync pull.
+      try {
+        await ensureRegistration(agent, endpoints);
+
+        // Pull all data from remote — this recovers identities + records.
+        await agent.sync.sync('pull');
+
+        // Now register all recovered identities for ongoing sync and
+        // install their protocols (they may not be configured locally).
+        const identities = await agent.identity.list();
+        for (const identity of identities) {
+          const did = identity.did.uri;
+          try {
+            await agent.sync.registerIdentity({ did });
+            await installProtocols(agent, did);
+          } catch (err) {
+            console.warn(`Restore: failed to set up recovered identity ${did}:`, err);
+          }
+        }
+
+        // Push any locally-written data (protocol configs) to remote.
+        await agent.sync.sync('push');
+      } catch (syncErr) {
+        console.warn('Restore: post-recovery sync failed (will retry on next cycle):', syncErr);
+      }
+
+      // Start live sync for ongoing operation.
+      agent.sync.startSync({ mode: 'live', interval: SYNC_INTERVAL }).catch((err: unknown) => {
+        console.error('Restore: sync start failed:', err);
+      });
+
       setUnlocked(agent);
       cacheSessionPin(password);
-      await onSessionReady(agent);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Restore failed';
       setError(msg);
