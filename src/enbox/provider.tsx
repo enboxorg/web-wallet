@@ -277,29 +277,49 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const agent = session.agent as EnboxAgent;
 
       // After recovery the vault is re-derived but the local DWN is empty.
-      // We need to pull from the remote to recover original identities and
-      // their data (profiles, protocols, records). The SDK creates a default
-      // identity, but the original one(s) should appear after sync pull.
+      // Identity metadata and DID private keys are stored as DWN records
+      // under the agent DID's tenant. We need to:
+      // 1. Register the AGENT DID for sync (not just the new default identity)
+      // 2. Pull from remote to recover identity records
+      // 3. Register each recovered identity for ongoing sync
       try {
+        const agentDid = agent.agentDid.uri;
         await ensureRegistration(agent, endpoints);
 
-        // Pull all data from remote — this recovers identities + records.
+        // Register the agent DID for sync — this is crucial because
+        // identity metadata (DwnIdentityStore) and DID private keys
+        // (DwnKeyStore) are stored as records in the agent DID's DWN.
+        // Without this, sync('pull') won't pull those records back.
+        try {
+          await agent.sync.registerIdentity({ did: agentDid });
+        } catch {
+          // May already be registered by importFromPhrase
+        }
+
+        // Pull all data from remote — recovers identity records + keys.
         await agent.sync.sync('pull');
 
-        // Now register all recovered identities for ongoing sync and
-        // install their protocols (they may not be configured locally).
+        // Now list identities — the originals should be recovered.
         const identities = await agent.identity.list();
+        console.info(`Restore: found ${identities.length} identities after sync pull`);
+
+        // Register each recovered identity for ongoing sync and
+        // install their protocols (may only exist on remote).
         for (const identity of identities) {
           const did = identity.did.uri;
           try {
             await agent.sync.registerIdentity({ did });
+          } catch {
+            // Already registered — this is fine
+          }
+          try {
             await installProtocols(agent, did);
           } catch (err) {
-            console.warn(`Restore: failed to set up recovered identity ${did}:`, err);
+            console.warn(`Restore: failed to install protocols for ${did}:`, err);
           }
         }
 
-        // Push any locally-written data (protocol configs) to remote.
+        // Push protocol configs to remote.
         await agent.sync.sync('push');
       } catch (syncErr) {
         console.warn('Restore: post-recovery sync failed (will retry on next cycle):', syncErr);
