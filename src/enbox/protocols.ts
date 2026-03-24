@@ -5,9 +5,14 @@
  * records, social graph entries, and DWeb Connect grants can be created.
  *
  * Uses the high-level Enbox.using(defineProtocol(...)).configure() API
- * which is idempotent — protocols already installed are skipped.
+ * which is idempotent — protocols already installed are skipped (202/409).
  * After local install, sends each protocol to the remote DWN so that
  * subsequent record.send() calls don't fail with ProtocolNotFound.
+ *
+ * IMPORTANT: This function THROWS on failure. If any protocol fails to
+ * install locally, the entire operation stops. This prevents downstream
+ * code from writing records against a protocol that doesn't exist,
+ * which would cause persistent sync push failures.
  */
 
 import { Enbox, defineProtocol } from '@enbox/api';
@@ -29,6 +34,10 @@ const REQUIRED_PROTOCOLS = [
 /**
  * Configure (install) all required protocols for the given DID,
  * both locally and on the remote DWN.
+ *
+ * Throws if any protocol fails to install locally (status >= 300).
+ * Remote send failures are logged but do not throw — sync will
+ * eventually push the protocols to the remote.
  */
 export async function installProtocols(
   agent: EnboxAgent,
@@ -37,34 +46,32 @@ export async function installProtocols(
   const enbox = new Enbox({ agent, connectedDid: did });
 
   for (const definition of REQUIRED_PROTOCOLS) {
-    try {
-      const typed = enbox.using(defineProtocol(definition));
-      const result = await typed.configure();
-      const status = result?.status;
-      const protocol = result?.protocol;
+    const typed = enbox.using(defineProtocol(definition));
+    const result = await typed.configure();
+    const status = result?.status;
+    const protocol = result?.protocol;
 
-      if (status && status.code >= 300) {
-        console.warn(
-          `Protocol install for ${definition.protocol} returned ${status.code}: ${status.detail}`,
-        );
-        continue;
-      }
+    if (!status || status.code >= 300) {
+      throw new Error(
+        `Failed to install protocol ${definition.protocol}: ${status?.code ?? 'unknown'} ${status?.detail ?? 'no status returned'}`,
+      );
+    }
 
-      // Send to the remote DWN so record.send() works for this protocol
-      if (protocol) {
-        try {
-          const { status: sendStatus } = await protocol.send(did);
-          if (sendStatus.code >= 300) {
-            console.warn(
-              `Protocol remote send for ${definition.protocol} returned ${sendStatus.code}: ${sendStatus.detail}`,
-            );
-          }
-        } catch (sendErr) {
-          console.warn(`Failed to send protocol ${definition.protocol} to remote:`, sendErr);
+    console.info(`Protocol installed: ${definition.protocol} (${status.code})`);
+
+    // Send to the remote DWN so record.send() works for this protocol.
+    // Remote failures are non-fatal — sync will retry.
+    if (protocol) {
+      try {
+        const { status: sendStatus } = await protocol.send(did);
+        if (sendStatus.code >= 300) {
+          console.warn(
+            `Protocol remote send for ${definition.protocol}: ${sendStatus.code} ${sendStatus.detail}`,
+          );
         }
+      } catch (sendErr) {
+        console.warn(`Protocol remote send failed for ${definition.protocol}:`, sendErr);
       }
-    } catch (err) {
-      console.warn(`Failed to install protocol ${definition.protocol}:`, err);
     }
   }
 }

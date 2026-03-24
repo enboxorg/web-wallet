@@ -94,8 +94,8 @@ export async function createIdentity(
     did,
     options: {
       protocols: [
-        ProfileDefinition.protocol,
         SocialGraphDefinition.protocol,
+        ProfileDefinition.protocol,
         ConnectDefinition.protocol,
       ],
     },
@@ -281,8 +281,8 @@ export async function importIdentity(
     did,
     options: {
       protocols: [
-        ProfileDefinition.protocol,
         SocialGraphDefinition.protocol,
+        ProfileDefinition.protocol,
         ConnectDefinition.protocol,
       ],
     },
