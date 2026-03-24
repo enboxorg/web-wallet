@@ -125,7 +125,8 @@ export async function createIdentity(
     const { record: avatarRecord } = await repo.profile.avatar.set(ctxId, {
       data: params.avatar,
     });
-    await avatarRecord!.send();
+    const avatarSend = await avatarRecord!.send();
+    console.info(`[createIdentity] Avatar send status: ${JSON.stringify(avatarSend.status)}`);
   }
 
   // 7. Set hero if provided
@@ -134,7 +135,8 @@ export async function createIdentity(
     const { record: heroRecord } = await repo.profile.hero.set(ctxId, {
       data: params.hero,
     });
-    await heroRecord!.send();
+    const heroSend = await heroRecord!.send();
+    console.info(`[createIdentity] Hero send status: ${JSON.stringify(heroSend.status)}`);
   }
 
   // 8. Create wallet record
