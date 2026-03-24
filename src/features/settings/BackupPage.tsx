@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Download, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
+import { Download, KeyRound, ShieldCheck, Copy, Check, Upload, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
@@ -73,6 +73,7 @@ export default function BackupPage() {
   }, [identities, exportIdentity]);
 
   const words = phrase?.trim().split(/\s+/) ?? [];
+  const identityCount = identities?.length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -82,23 +83,72 @@ export default function BackupPage() {
         backTo="/settings"
       />
 
-      {/* Recovery phrase */}
+      {/* Identity Export — PRIMARY backup method */}
+      <Card padding="lg" className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Download className="h-5 w-5 text-accent" />
+          <h2 className="text-lg font-medium text-text-primary">
+            Export Identities
+          </h2>
+          <span className="rounded-full bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent">
+            Recommended
+          </span>
+        </div>
+
+        <p className="text-sm text-text-secondary">
+          Export your identities as a portable JSON file. This is the <strong className="text-text-primary">most
+          reliable way</strong> to back up your wallet — it preserves your exact DIDs, private keys,
+          and all associated data.
+        </p>
+
+        <div className="flex items-center gap-3 rounded-lg bg-surface-2 p-3">
+          <Upload className="h-4 w-4 text-text-tertiary shrink-0" />
+          <p className="text-xs text-text-tertiary">
+            To restore, use <strong>Import Identities</strong> from the sidebar after setting up a new wallet.
+          </p>
+        </div>
+
+        <div className="flex items-center justify-between pt-1">
+          <span className="text-sm text-text-tertiary">
+            {identityCount} {identityCount === 1 ? 'identity' : 'identities'} available
+          </span>
+          <Button
+            onClick={handleExportAll}
+            loading={exporting}
+            disabled={identityCount === 0}
+            size="sm"
+          >
+            <Download size={14} />
+            Export All
+          </Button>
+        </div>
+      </Card>
+
+      {/* Recovery phrase — secondary backup */}
       <Card padding="lg" className="space-y-4">
         <div className="flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-text-secondary" />
           <h2 className="text-lg font-medium text-text-primary">
-            Recovery phrase
+            Recovery Phrase
           </h2>
         </div>
 
         {phrase ? (
           <>
-            <div className="rounded-lg border border-warning/30 bg-warning/5 p-4">
-              <p className="text-sm text-warning">
-                Write these words down and store them safely. Once you confirm
-                backup, this phrase will be permanently removed from the app
-                and cannot be shown again.
-              </p>
+            <div className="rounded-lg border border-warning/30 bg-warning/5 p-4 space-y-2">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+                <div className="text-sm text-warning space-y-1">
+                  <p>
+                    <strong>Important:</strong> The recovery phrase restores your <em>wallet vault</em> but
+                    does not preserve your identity DIDs or profile data. For a full backup,
+                    use <strong>Export Identities</strong> above.
+                  </p>
+                  <p>
+                    Once confirmed, this phrase will be permanently removed from the app.
+                  </p>
+                </div>
+              </div>
             </div>
 
             <div
@@ -125,17 +175,13 @@ export default function BackupPage() {
             <div className="flex flex-wrap gap-3 pt-2">
               <Button variant="secondary" onClick={handleCopy} size="sm">
                 {copied ? (
-                  <>
-                    <Check size={14} /> Copied
-                  </>
+                  <><Check size={14} /> Copied</>
                 ) : (
-                  <>
-                    <Copy size={14} /> Copy phrase
-                  </>
+                  <><Copy size={14} /> Copy phrase</>
                 )}
               </Button>
               <Button onClick={() => setShowConfirmDialog(true)} size="sm">
-                <ShieldCheck size={14} /> I've backed it up
+                <ShieldCheck size={14} /> I've saved it
               </Button>
             </div>
           </>
@@ -143,43 +189,18 @@ export default function BackupPage() {
           <div className="flex items-start gap-3 rounded-lg bg-surface-2 p-4">
             <ShieldCheck className="h-5 w-5 shrink-0 text-success mt-0.5" />
             <p className="text-sm text-text-secondary">
-              Your recovery phrase has been backed up. It is no longer stored
+              Your recovery phrase has been confirmed. It is no longer stored
               in the app for security.
             </p>
           </div>
         )}
       </Card>
 
-      {/* Export all identities */}
-      <Card padding="lg">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <Download className="h-5 w-5 text-text-secondary shrink-0" />
-            <div className="min-w-0">
-              <h2 className="text-sm font-medium text-text-primary">
-                Export all identities
-              </h2>
-              <p className="text-xs text-text-tertiary">
-                Download all identities as a JSON file for backup.
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleExportAll}
-            loading={exporting}
-          >
-            Export
-          </Button>
-        </div>
-      </Card>
-
       {/* Confirmation dialog */}
       <Dialog
         open={showConfirmDialog}
         onClose={() => setShowConfirmDialog(false)}
-        title="Confirm backup"
+        title="Confirm phrase backup"
       >
         <div className="space-y-4">
           <p className="text-sm text-text-secondary">

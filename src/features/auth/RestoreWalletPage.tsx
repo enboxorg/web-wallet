@@ -108,7 +108,8 @@ export function RestoreWalletPage({ onRestore, isLoading, error, onBack }: Resto
                 Restore Wallet
               </h1>
               <p className="text-sm text-text-secondary text-center">
-                Enter your recovery phrase to restore your wallet
+                Enter your recovery phrase to restore your wallet vault.
+                To restore identities, import them from a JSON backup after setup.
               </p>
             </div>
 

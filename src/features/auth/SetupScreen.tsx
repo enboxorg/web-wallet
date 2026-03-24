@@ -120,7 +120,7 @@ export function SetupScreen({ onSetup, isLoading, error, onSwitchToRestore }: Se
             onClick={onSwitchToRestore}
             className="text-sm text-text-tertiary hover:text-accent transition-colors"
           >
-            Restore from backup phrase
+            Restore wallet from recovery phrase
           </button>
         )}
       </div>

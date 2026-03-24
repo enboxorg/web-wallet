@@ -27,10 +27,10 @@ export function SeedPhraseWarningBanner() {
     >
       <ShieldAlert size={18} className="shrink-0" />
       <div className="flex-1 min-w-0">
-        <span className="font-medium">Back up your recovery phrase</span>
-        <span className="hidden sm:inline text-warning/70"> — this is the only way to recover your wallet if you lose access.</span>
+        <span className="font-medium">Back up your wallet</span>
+        <span className="hidden sm:inline text-warning/70"> — export your identities to keep your DIDs and data safe.</span>
       </div>
-      <span className="text-xs text-warning/60 shrink-0">Back up now</span>
+      <span className="text-xs text-warning/60 shrink-0">Back up</span>
     </button>
   );
 }
