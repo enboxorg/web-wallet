@@ -105,15 +105,28 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     // identity metadata (DwnIdentityStore) and DID private keys
     // (DwnKeyStore). Without this, those records never get pushed to
     // the remote, making seed-phrase recovery impossible.
+    const agentDid = agent.agentDid.uri;
+    console.info('[onSessionReady] Agent DID:', agentDid);
     try {
-      await agent.sync.registerIdentity({ did: agent.agentDid.uri });
-    } catch {
-      // Already registered — expected on subsequent unlocks
+      await agent.sync.registerIdentity({ did: agentDid });
+      console.info('[onSessionReady] Agent DID registered for sync');
+    } catch (err) {
+      console.info('[onSessionReady] Agent DID sync registration:', (err as Error).message);
     }
 
+    // List what identities exist locally
+    const ids = await agent.identity.list();
+    console.info('[onSessionReady] Local identities:', ids.length, ids.map((i: any) => i.did.uri));
+
     // Start live sync now that all DIDs are registered.
-    agent.sync.startSync({ mode: 'live', interval: SYNC_INTERVAL }).catch((err: unknown) => {
-      console.error('EnboxAuthProvider: Sync start failed:', err);
+    agent.sync.startSync({ mode: 'live', interval: SYNC_INTERVAL }).then(() => {
+      console.info('[onSessionReady] Live sync started');
+      // Do an immediate push to ensure agent DID records reach the remote
+      return agent.sync.sync('push');
+    }).then(() => {
+      console.info('[onSessionReady] Initial push complete');
+    }).catch((err: unknown) => {
+      console.error('[onSessionReady] Sync failed:', err);
     });
   }, []);
 
