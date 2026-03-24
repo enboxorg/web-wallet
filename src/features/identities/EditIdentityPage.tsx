@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, UserX } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
@@ -125,6 +125,21 @@ export default function EditIdentityPage() {
 
   if (identitiesLoading || profileLoading || endpointsLoading) {
     return <Loader message="Loading identity..." />;
+  }
+
+  if (!identity && !identitiesLoading) {
+    return (
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
+        <UserX size={48} className="text-text-ghost" />
+        <h1 className="text-xl font-semibold text-text-primary">Identity not found</h1>
+        <p className="text-sm text-text-secondary">
+          This identity may have been deleted or the DID is invalid.
+        </p>
+        <Link to="/">
+          <Button>Go to Identities</Button>
+        </Link>
+      </div>
+    );
   }
 
   return (

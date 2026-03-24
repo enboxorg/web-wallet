@@ -29,6 +29,10 @@ vi.mock('@/stores/ui-store', () => ({
   useUIStore: () => mockStore,
 }));
 
+vi.mock('@/enbox/hooks/use-auth', () => ({
+  useAuth: () => ({ lock: vi.fn() }),
+}));
+
 import { AppShell } from '../AppShell';
 
 /* ---- Fixtures ---- */

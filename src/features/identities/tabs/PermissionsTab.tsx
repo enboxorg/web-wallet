@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Shield, Copy, Check } from 'lucide-react';
+import { Shield, Copy, Check, AlertCircle } from 'lucide-react';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -10,7 +10,7 @@ interface PermissionsTabProps {
 }
 
 export default function PermissionsTab({ did }: PermissionsTabProps) {
-  const { data: permissions, isLoading } = usePermissions(did);
+  const { data: permissions, isLoading, isError, error } = usePermissions(did);
   const [copiedDid, setCopiedDid] = useState<string | null>(null);
 
   const grouped = useMemo(() => {
@@ -25,6 +25,17 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
 
   if (isLoading) {
     return <Loader message="Loading permissions..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
+        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
+        <p className="text-sm text-error">
+          {error instanceof Error ? error.message : 'Failed to load data'}
+        </p>
+      </div>
+    );
   }
 
   const grantees = Object.keys(grouped);
@@ -66,7 +77,7 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
               aria-label="Copy DID"
             >
               {copiedDid === grantee ? (
-                <Check className="h-3.5 w-3.5 text-green-500" />
+                <Check className="h-3.5 w-3.5 text-success" />
               ) : (
                 <Copy className="h-3.5 w-3.5" />
               )}

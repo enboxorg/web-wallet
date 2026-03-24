@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Clock, Globe, FileText } from 'lucide-react';
+import { Clock, Globe, FileText, AlertCircle } from 'lucide-react';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { fetchActivity, type ActivityRecord } from '@/enbox/queries/identity-queries';
@@ -14,7 +14,7 @@ interface ActivityTabProps {
 export default function ActivityTab({ did }: ActivityTabProps) {
   const agent = useAgent();
 
-  const { data: activity, isLoading } = useQuery({
+  const { data: activity, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.identities.activity(did),
     queryFn: () => fetchActivity(agent, did),
     enabled: !!did,
@@ -22,6 +22,17 @@ export default function ActivityTab({ did }: ActivityTabProps) {
 
   if (isLoading) {
     return <Loader message="Loading activity..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
+        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
+        <p className="text-sm text-error">
+          {error instanceof Error ? error.message : 'Failed to load data'}
+        </p>
+      </div>
+    );
   }
 
   if (!activity || activity.length === 0) {

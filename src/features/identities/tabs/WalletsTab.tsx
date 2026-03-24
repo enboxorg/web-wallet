@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { ExternalLink, Database } from 'lucide-react';
+import { ExternalLink, Database, AlertCircle } from 'lucide-react';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { fetchWallets } from '@/enbox/queries/identity-queries';
@@ -13,7 +13,7 @@ interface WalletsTabProps {
 export default function WalletsTab({ did }: WalletsTabProps) {
   const agent = useAgent();
 
-  const { data: wallets, isLoading } = useQuery({
+  const { data: wallets, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.identities.wallets(did),
     queryFn: () => fetchWallets(agent, did),
     enabled: !!did,
@@ -21,6 +21,17 @@ export default function WalletsTab({ did }: WalletsTabProps) {
 
   if (isLoading) {
     return <Loader message="Loading wallets..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
+        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
+        <p className="text-sm text-error">
+          {error instanceof Error ? error.message : 'Failed to load data'}
+        </p>
+      </div>
+    );
   }
 
   if (!wallets || wallets.length === 0) {

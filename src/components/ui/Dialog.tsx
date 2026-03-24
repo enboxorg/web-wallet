@@ -1,4 +1,4 @@
-import { useEffect, useCallback } from 'react';
+import { useEffect, useRef, useState, useId } from 'react';
 import { createPortal } from 'react-dom';
 import { cn } from '@/lib/utils';
 
@@ -10,52 +10,122 @@ interface DialogProps {
   className?: string;
 }
 
-export function Dialog({ open, onClose, title, children, className }: DialogProps) {
-  const handleKeyDown = useCallback(
-    (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    },
-    [onClose],
-  );
+const FOCUSABLE_SELECTOR =
+  'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
+export function Dialog({ open, onClose, title, children, className }: DialogProps) {
+  const [visible, setVisible] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const previousFocusRef = useRef<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+
+  // Visibility & animation state machine
   useEffect(() => {
-    if (!open) return;
-    document.addEventListener('keydown', handleKeyDown);
+    if (open) {
+      previousFocusRef.current = document.activeElement as HTMLElement;
+      setVisible(true);
+      setAnimating(true);
+      requestAnimationFrame(() => setAnimating(false));
+    } else if (visible) {
+      setAnimating(true);
+      const timer = setTimeout(() => {
+        setVisible(false);
+        setAnimating(false);
+        previousFocusRef.current?.focus();
+      }, 200); // match CSS exit duration
+      return () => clearTimeout(timer);
+    }
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lock body scroll while visible
+  useEffect(() => {
+    if (!visible) return;
     document.body.style.overflow = 'hidden';
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [open, handleKeyDown]);
+  }, [visible]);
 
-  if (!open) return null;
+  // Focus first focusable element on open
+  useEffect(() => {
+    if (open && visible && !animating) {
+      const first = dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE_SELECTOR);
+      first?.focus();
+    }
+  }, [open, visible, animating]);
+
+  // Focus trap + Escape key
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Escape') {
+      onClose();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+
+    const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+    if (!focusable?.length) return;
+
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  }
+
+  if (!visible) return null;
+
+  // Enter: opacity-0 scale-95 -> opacity-100 scale-100  (200ms ease-out)
+  // Exit:  opacity-100 scale-100 -> opacity-0 scale-95   (150ms ease-in)
+  const entering = open && !animating;
+  const exiting = !open && animating;
+
+  const backdropClasses = cn(
+    'absolute inset-0 bg-black/60 transition-opacity',
+    entering ? 'opacity-100 duration-200 ease-out' : '',
+    exiting ? 'opacity-0 duration-150 ease-in' : '',
+    animating && open ? 'opacity-0' : '',
+  );
+
+  const panelClasses = cn(
+    'relative w-full max-w-lg rounded-xl bg-surface-2 p-6 shadow-lg transition-all',
+    entering ? 'opacity-100 scale-100 duration-200 ease-out' : '',
+    exiting ? 'opacity-0 scale-95 duration-150 ease-in' : '',
+    animating && open ? 'opacity-0 scale-95' : '',
+    className,
+  );
 
   const portalTarget = document.getElementById('root') ?? document.body;
 
   return createPortal(
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4"
       role="dialog"
       aria-modal="true"
-      aria-label={title}
+      aria-labelledby={title ? titleId : undefined}
+      aria-label={title ? undefined : 'Dialog'}
+      onKeyDown={handleKeyDown}
     >
       {/* Backdrop */}
       <div
-        className="absolute inset-0 bg-black/60 animate-[fade-in_var(--duration-base)_var(--ease-out)]"
+        className={backdropClasses}
         onClick={onClose}
         aria-hidden="true"
       />
 
       {/* Panel */}
-      <div
-        className={cn(
-          'relative w-full max-w-lg rounded-xl bg-surface-2 p-6 shadow-lg',
-          'animate-[fade-in_var(--duration-base)_var(--ease-out)]',
-          className,
-        )}
-      >
+      <div className={panelClasses}>
         {title && (
-          <h2 className="mb-4 text-lg font-semibold text-text-primary">
+          <h2
+            id={titleId}
+            className="mb-4 text-lg font-semibold text-text-primary"
+          >
             {title}
           </h2>
         )}

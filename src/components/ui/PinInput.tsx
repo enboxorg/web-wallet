@@ -113,7 +113,7 @@ export function PinInput({
         <div
           key={i}
           className={cn(
-            'flex h-14 w-12 items-center justify-center rounded-lg border-2 transition-colors',
+            'relative flex h-14 w-12 items-center justify-center rounded-lg border-2 transition-colors',
             'bg-surface-1',
             error
               ? 'border-error'

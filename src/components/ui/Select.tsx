@@ -1,4 +1,5 @@
 import { forwardRef } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
@@ -21,29 +22,35 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             {label}
           </label>
         )}
-        <select
-          ref={ref}
-          id={selectId}
-          className={cn(
-            'w-full rounded-lg bg-surface-1 px-4 py-2.5 text-sm text-text-primary',
-            'border border-border-default',
-            'transition-colors duration-[var(--duration-fast)]',
-            'focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
-            'disabled:opacity-50 disabled:cursor-not-allowed',
-            'appearance-none bg-[url("data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2216%22%20height%3D%2216%22%20fill%3D%22%23a0a9b4%22%20viewBox%3D%220%200%2016%2016%22%3E%3Cpath%20d%3D%22M4.5%206l3.5%203.5L11.5%206%22%20stroke%3D%22%23a0a9b4%22%20stroke-width%3D%221.5%22%20fill%3D%22none%22%2F%3E%3C%2Fsvg%3E")] bg-[length:16px] bg-[right_8px_center] bg-no-repeat pr-8',
-            error && 'border-error focus:ring-error',
-            className,
-          )}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${selectId}-error` : undefined}
-          {...props}
-        >
-          {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            ref={ref}
+            id={selectId}
+            className={cn(
+              'w-full rounded-lg bg-surface-1 px-4 py-2.5 text-sm text-text-primary',
+              'border border-border-default',
+              'transition-colors duration-[var(--duration-fast)]',
+              'focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
+              'disabled:opacity-50 disabled:cursor-not-allowed',
+              'appearance-none pr-9',
+              error && 'border-error focus:ring-error',
+              className,
+            )}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${selectId}-error` : undefined}
+            {...props}
+          >
+            {options.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          <ChevronDown
+            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-secondary"
+            aria-hidden="true"
+          />
+        </div>
         {error && (
           <p id={`${selectId}-error`} className="text-xs text-error">
             {error}

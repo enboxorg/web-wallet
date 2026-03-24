@@ -10,6 +10,7 @@ import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 
 import { Loader } from '@/components/ui/Loader';
+import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AppShell } from '@/components/layout/AppShell';
 import { DragDropOverlay } from '@/components/layout/DragDropOverlay';
 import { UnlockScreen } from '@/features/auth/UnlockScreen';
@@ -165,6 +166,7 @@ function AuthGate() {
 
 export default function App() {
   return (
+    <ErrorBoundary>
     <QueryClientProvider client={queryClient}>
       <EnboxAuthProvider>
         <AuthGate />
@@ -180,5 +182,6 @@ export default function App() {
         />
       </EnboxAuthProvider>
     </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

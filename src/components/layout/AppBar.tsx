@@ -54,7 +54,7 @@ export function AppBar({ isDesktop = true, title, className }: AppBarProps) {
           type="button"
           onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
           className={cn(
-            'inline-flex items-center justify-center w-9 h-9 rounded-md',
+            'inline-flex items-center justify-center w-11 h-11 rounded-md',
             'text-text-secondary hover:text-text-primary hover:bg-surface-2',
             'transition-colors duration-[var(--duration-fast)]',
           )}

@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, AlertCircle } from 'lucide-react';
 import { useProfile } from '@/enbox/hooks/use-profile';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -10,10 +10,21 @@ interface OverviewTabProps {
 }
 
 export default function OverviewTab({ did }: OverviewTabProps) {
-  const { data: profile, isLoading } = useProfile(did);
+  const { data: profile, isLoading, isError, error } = useProfile(did);
 
   if (isLoading) {
     return <Loader message="Loading profile..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
+        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
+        <p className="text-sm text-error">
+          {error instanceof Error ? error.message : 'Failed to load data'}
+        </p>
+      </div>
+    );
   }
 
   if (!profile || !profile.displayName) {

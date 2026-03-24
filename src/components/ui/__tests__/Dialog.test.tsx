@@ -60,7 +60,9 @@ describe('Dialog', () => {
         <p>Content</p>
       </Dialog>,
     );
-    fireEvent.keyDown(document, { key: 'Escape' });
+    // Escape is handled by the dialog's onKeyDown, so fire on the dialog element
+    const dialog = screen.getByRole('dialog');
+    fireEvent.keyDown(dialog, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledOnce();
   });
 

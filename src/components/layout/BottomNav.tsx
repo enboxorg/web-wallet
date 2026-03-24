@@ -44,7 +44,7 @@ export function BottomNav({
             onClick={() => onNavigate(item.path)}
             className={cn(
               'flex flex-col items-center justify-center gap-0.5',
-              'flex-1 py-2 pt-2.5',
+              'flex-1 py-3 pt-3',
               'transition-colors duration-[var(--duration-fast)]',
               active
                 ? 'text-accent'

@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useUIStore } from '@/stores/ui-store';
+import { useAuth } from '@/enbox/hooks/use-auth';
 import { useMediaQuery } from './useMediaQuery';
 import { Sidebar } from './Sidebar';
 import { AppBar } from './AppBar';
@@ -29,6 +30,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
   const { sidebarMini } = useUIStore();
+  const { lock } = useAuth();
 
   const handleNavigate = useCallback(
     (path: string) => {
@@ -46,6 +48,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
           currentPath={location.pathname}
           onNavigate={handleNavigate}
           mini={sidebarMini}
+          onLock={lock}
         />
       )}
 

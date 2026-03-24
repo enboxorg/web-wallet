@@ -33,7 +33,7 @@ export function IdentityCard({
         'flex flex-col overflow-hidden rounded-lg border border-border-default',
         'bg-surface-1 text-left w-full',
         'transition-all duration-[var(--duration-fast)]',
-        onClick && 'cursor-pointer hover:border-border-strong hover:shadow-md',
+        onClick && 'cursor-pointer hover:border-border-strong hover:shadow-md hover:-translate-y-0.5',
         className,
       )}
     >

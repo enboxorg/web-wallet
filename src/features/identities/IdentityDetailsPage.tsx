@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
-import { Pencil, Download, Trash2, Copy, Check, QrCode } from 'lucide-react';
+import { Pencil, Download, Trash2, Copy, Check, QrCode, UserX } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'sonner';
 
@@ -91,6 +91,21 @@ export default function IdentityDetailsPage() {
     return <Loader message="Loading identity..." />;
   }
 
+  if (!identity && !identitiesLoading) {
+    return (
+      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
+        <UserX size={48} className="text-text-ghost" />
+        <h1 className="text-xl font-semibold text-text-primary">Identity not found</h1>
+        <p className="text-sm text-text-secondary">
+          This identity may have been deleted or the DID is invalid.
+        </p>
+        <Link to="/">
+          <Button>Go to Identities</Button>
+        </Link>
+      </div>
+    );
+  }
+
   const displayName = profile?.displayName || 'Unnamed';
   const persona = identity?.metadata?.name;
 
@@ -110,7 +125,7 @@ export default function IdentityDetailsPage() {
                 {displayName}
               </h1>
               {persona && (
-                <span className="shrink-0 rounded-full bg-surface-2 px-2.5 py-0.5 text-xs font-medium text-text-secondary">
+                <span className="shrink-0 rounded-full bg-accent-muted px-2.5 py-0.5 text-xs font-medium text-accent">
                   {persona}
                 </span>
               )}

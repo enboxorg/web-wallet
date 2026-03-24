@@ -1,4 +1,4 @@
-import { Globe, Lock, Database } from 'lucide-react';
+import { Globe, Lock, Database, AlertCircle } from 'lucide-react';
 import { useProtocols } from '@/enbox/hooks/use-protocols';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -8,10 +8,21 @@ interface ProtocolsTabProps {
 }
 
 export default function ProtocolsTab({ did }: ProtocolsTabProps) {
-  const { data: protocols, isLoading } = useProtocols(did);
+  const { data: protocols, isLoading, isError, error } = useProtocols(did);
 
   if (isLoading) {
     return <Loader message="Loading protocols..." />;
+  }
+
+  if (isError) {
+    return (
+      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
+        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
+        <p className="text-sm text-error">
+          {error instanceof Error ? error.message : 'Failed to load data'}
+        </p>
+      </div>
+    );
   }
 
   if (!protocols || protocols.length === 0) {
