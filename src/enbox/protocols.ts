@@ -60,8 +60,10 @@ export async function installProtocols(
     console.info(`Protocol installed: ${definition.protocol} (${status.code})`);
 
     // Send to the remote DWN so record.send() works for this protocol.
-    // Remote failures are non-fatal — sync will retry.
-    if (protocol) {
+    // Only send if newly configured (202). If already exists (200),
+    // skip the remote send — it's already on the remote (and sending a
+    // pulled protocol back causes IPLD encoding errors on undefined values).
+    if (protocol && status.code === 202) {
       try {
         const { status: sendStatus } = await protocol.send(did);
         if (sendStatus.code >= 300) {
