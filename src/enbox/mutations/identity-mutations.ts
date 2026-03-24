@@ -1,17 +1,24 @@
 /**
- * Mutation functions for identity CRUD operations.
+ * Identity CRUD mutation functions.
  *
- * These are pure async functions consumed by TanStack Query `useMutation`.
- * They orchestrate the Enbox SDK calls for creating, updating, deleting,
- * importing, and exporting identities.
+ * These are pure async functions called by TanStack Query mutation hooks.
+ * They interact with the Enbox SDK agent to create, update, delete, and
+ * import/export identities.
+ *
+ * SYNC POLICY: We do NOT manually manage sync (stopSync/startSync).
+ * The SDK manages sync automatically. We only:
+ * - Register new identity DIDs for sync
+ * - Register DIDs as DWN tenants
+ * - Install protocols locally and send them to the remote directly
+ * - Send individual records to the remote via record.send()
  */
 
 import { Enbox, repository } from '@enbox/api';
 import {
   ProfileProtocol,
   ConnectProtocol,
-  ProfileDefinition,
   SocialGraphDefinition,
+  ProfileDefinition,
   ConnectDefinition,
 } from '@enbox/protocols';
 
@@ -19,9 +26,8 @@ import type { EnboxAgent } from '../types';
 import { installProtocols } from '../protocols';
 import { ensureRegistration } from '../registration';
 import { WALLET_URL } from '@/lib/dwn-endpoints';
-import { SYNC_INTERVAL } from '@/lib/constants';
 
-// ── Param types ────────────────────────────────────────────────────
+// ── Create identity ────────────────────────────────────────────────
 
 export interface CreateIdentityParams {
   persona: string;
@@ -33,26 +39,6 @@ export interface CreateIdentityParams {
   dwnEndpoints: string[];
 }
 
-export interface UpdateIdentityProfileParams {
-  did: string;
-  persona?: string;
-  displayName: string;
-  tagline?: string;
-  bio?: string;
-  /** Blob = update, null = delete, undefined = no change */
-  avatar?: Blob | null;
-  /** Blob = update, null = delete, undefined = no change */
-  hero?: Blob | null;
-}
-
-export interface UpdateDwnEndpointsParams {
-  did: string;
-  endpoints: string[];
-}
-
-// ── Create ─────────────────────────────────────────────────────────
-
-/** Create a brand-new identity with profile, protocols, and sync. */
 export async function createIdentity(
   agent: EnboxAgent,
   params: CreateIdentityParams,
@@ -89,29 +75,31 @@ export async function createIdentity(
 
   const did: string = identity.did.uri;
 
-  // 2. Register for DWN sync with protocol-specific filters
-  await agent.sync.registerIdentity({
-    did,
-    options: {
-      protocols: [
-        SocialGraphDefinition.protocol,
-        ProfileDefinition.protocol,
-        ConnectDefinition.protocol,
-      ],
-    },
-  });
+  // 2. Register identity DID for sync
+  try {
+    await agent.sync.registerIdentity({
+      did,
+      options: {
+        protocols: [
+          SocialGraphDefinition.protocol,
+          ProfileDefinition.protocol,
+          ConnectDefinition.protocol,
+        ],
+      },
+    });
+  } catch {
+    // Already registered
+  }
 
-  // 3. Register identity with DWN endpoints
+  // 3. Register identity as DWN tenant on remote endpoints
   await ensureRegistration(agent, params.dwnEndpoints);
 
-  // 4. Stop sync, do initial pull, then install protocols.
-  // installProtocols() sends each protocol to the remote DWN sequentially
-  // in dependency order (SocialGraph before Profile) via protocol.send().
-  // We do NOT do a sync push here — the sync engine pushes ProtocolsConfigure
-  // messages without order guarantees, causing ComposedProtocolNotInstalled
-  // errors when Profile arrives before SocialGraph on the remote.
-  await agent.sync.stopSync();
-  await agent.sync.sync('pull');
+  // 4. Install protocols locally and send to remote directly.
+  // protocol.send() handles remote installation sequentially in the
+  // correct dependency order (SocialGraph before Profile).
+  // The sync engine may also push ProtocolsConfigure messages — if they
+  // arrive out of order, the remote will reject them, but since the
+  // protocols are already installed via direct send, this is harmless.
   await installProtocols(agent, did);
 
   // 5. Set profile social data
@@ -130,7 +118,7 @@ export async function createIdentity(
   });
   await profileRecord!.send();
 
-  // 7. Set avatar if provided
+  // 6. Set avatar if provided
   if (params.avatar && profileRecord) {
     const ctxId = profileRecord.contextId as string;
     const { record: avatarRecord } = await repo.profile.avatar.set(ctxId, {
@@ -139,7 +127,7 @@ export async function createIdentity(
     await avatarRecord!.send();
   }
 
-  // 8. Set hero if provided
+  // 7. Set hero if provided
   if (params.hero && profileRecord) {
     const ctxId = profileRecord.contextId as string;
     const { record: heroRecord } = await repo.profile.hero.set(ctxId, {
@@ -148,7 +136,7 @@ export async function createIdentity(
     await heroRecord!.send();
   }
 
-  // 9. Create wallet record via Connect protocol
+  // 8. Create wallet record
   try {
     const connect = enbox.using(ConnectProtocol);
     const { records: existingWallets } = await connect.records.query('wallet');
@@ -162,20 +150,25 @@ export async function createIdentity(
     console.warn('Failed to create wallet record:', err);
   }
 
-  // 10. Restart sync
-  await agent.sync.startSync({ mode: 'live', interval: SYNC_INTERVAL });
-
   return identity;
 }
 
 // ── Update profile ─────────────────────────────────────────────────
 
-/** Update an existing identity's profile (social data, avatar, hero). */
+export interface UpdateIdentityProfileParams {
+  did: string;
+  persona?: string;
+  displayName: string;
+  tagline?: string;
+  bio?: string;
+  avatar?: Blob | null;
+  hero?: Blob | null;
+}
+
 export async function updateIdentityProfile(
   agent: EnboxAgent,
   params: UpdateIdentityProfileParams,
 ) {
-  // Update metadata name if provided
   if (params.persona) {
     await agent.identity.setMetadataName({
       didUri: params.did,
@@ -183,7 +176,6 @@ export async function updateIdentityProfile(
     });
   }
 
-  // Update social data
   const enbox = new Enbox({ agent, connectedDid: params.did });
   const repo = repository(enbox.using(ProfileProtocol));
 
@@ -201,7 +193,6 @@ export async function updateIdentityProfile(
 
   const ctxId = profileRecord?.contextId as string | undefined;
 
-  // Handle avatar: Blob = update, null = delete, undefined = no change
   if (params.avatar !== undefined && ctxId) {
     if (params.avatar) {
       const { record: avatarRecord } = await repo.profile.avatar.set(ctxId, {
@@ -209,7 +200,6 @@ export async function updateIdentityProfile(
       });
       await avatarRecord!.send();
     } else {
-      // null -> delete existing avatar
       const existing = await repo.profile.avatar.get(ctxId);
       if (existing) {
         await existing.delete();
@@ -218,7 +208,6 @@ export async function updateIdentityProfile(
     }
   }
 
-  // Handle hero: same semantics as avatar
   if (params.hero !== undefined && ctxId) {
     if (params.hero) {
       const { record: heroRecord } = await repo.profile.hero.set(ctxId, {
@@ -235,65 +224,63 @@ export async function updateIdentityProfile(
   }
 }
 
-// ── Delete ─────────────────────────────────────────────────────────
+// ── Delete identity ────────────────────────────────────────────────
 
-/** Delete an identity, unregistering it from sync first. */
 export async function deleteIdentity(agent: EnboxAgent, did: string) {
   const identity = await agent.identity.get({ didUri: did });
   if (!identity) throw new Error('Identity not found');
 
-  await agent.sync.unregisterIdentity(did);
+  try {
+    await agent.sync.unregisterIdentity(did);
+  } catch {
+    // May not be registered
+  }
   await agent.identity.delete({ didUri: did });
   await agent.did.delete({ didUri: did, tenant: agent.agentDid.uri });
 }
 
-// ── Export ─────────────────────────────────────────────────────────
+// ── Export identity ────────────────────────────────────────────────
 
-/** Export an identity to a portable JSON representation. */
 export async function exportIdentity(agent: EnboxAgent, did: string) {
   const identity = await agent.identity.get({ didUri: did });
   if (!identity) throw new Error('Identity not found');
   return identity.export();
 }
 
-// ── Import ─────────────────────────────────────────────────────────
+// ── Import identity ────────────────────────────────────────────────
 
-/**
- * Import an identity from a portable JSON blob.
- * Installs required protocols and registers for sync.
- */
 export async function importIdentity(
   agent: EnboxAgent,
-  /** Portable identity JSON (as returned by `exportIdentity`). */
-  portableIdentity: any,  
+  portableIdentity: any, // eslint-disable-line @typescript-eslint/no-explicit-any
 ) {
-  // Guard against duplicates
   const existing = await agent.identity.get({
     didUri: portableIdentity.portableDid?.uri,
   });
   if (existing) throw new Error('Identity already exists');
 
   const identity = await agent.identity.import({ portableIdentity });
-  const did: string = identity.did.uri;
+  const did = identity.did.uri;
 
-  // Register for sync with protocol filters
-  await agent.sync.registerIdentity({
-    did,
-    options: {
-      protocols: [
-        SocialGraphDefinition.protocol,
-        ProfileDefinition.protocol,
-        ConnectDefinition.protocol,
-      ],
-    },
-  });
+  // Register for sync
+  try {
+    await agent.sync.registerIdentity({
+      did,
+      options: {
+        protocols: [
+          SocialGraphDefinition.protocol,
+          ProfileDefinition.protocol,
+          ConnectDefinition.protocol,
+        ],
+      },
+    });
+  } catch {
+    // Already registered
+  }
 
-  // Stop sync, pull, install protocols (sends to remote in order), restart sync
-  await agent.sync.stopSync();
-  await agent.sync.sync('pull');
+  // Install protocols
   await installProtocols(agent, did);
 
-  // Create wallet record if none exists
+  // Create wallet record
   try {
     const enbox = new Enbox({ agent, connectedDid: did });
     const connect = enbox.using(ConnectProtocol);
@@ -308,14 +295,16 @@ export async function importIdentity(
     console.warn('Failed to create wallet record on import:', err);
   }
 
-  await agent.sync.startSync({ mode: 'live', interval: SYNC_INTERVAL });
-
   return identity;
 }
 
 // ── Update DWN endpoints ───────────────────────────────────────────
 
-/** Update the DWN service endpoints in the DID document. */
+export interface UpdateDwnEndpointsParams {
+  did: string;
+  endpoints: string[];
+}
+
 export async function updateDwnEndpoints(
   agent: EnboxAgent,
   params: UpdateDwnEndpointsParams,
