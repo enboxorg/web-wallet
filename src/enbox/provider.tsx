@@ -101,6 +101,16 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       console.warn('EnboxAuthProvider: Post-session DWN registration failed:', err);
     }
 
+    // Register the agent DID for sync. The agent DID's DWN stores
+    // identity metadata (DwnIdentityStore) and DID private keys
+    // (DwnKeyStore). Without this, those records never get pushed to
+    // the remote, making seed-phrase recovery impossible.
+    try {
+      await agent.sync.registerIdentity({ did: agent.agentDid.uri });
+    } catch {
+      // Already registered — expected on subsequent unlocks
+    }
+
     // Start live sync now that all DIDs are registered.
     agent.sync.startSync({ mode: 'live', interval: SYNC_INTERVAL }).catch((err: unknown) => {
       console.error('EnboxAuthProvider: Sync start failed:', err);
@@ -275,54 +285,97 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       });
 
       const agent = session.agent as EnboxAgent;
+      const agentDid = agent.agentDid.uri;
 
-      // After recovery the vault is re-derived but the local DWN is empty.
+      // --- Recovery sync ---
+      //
+      // The HD vault re-derives the same agent DID from the seed phrase.
       // Identity metadata and DID private keys are stored as DWN records
-      // under the agent DID's tenant. We need to:
-      // 1. Register the AGENT DID for sync (not just the new default identity)
-      // 2. Pull from remote to recover identity records
-      // 3. Register each recovered identity for ongoing sync
+      // in the agent DID's local DWN, and (if agent DID was registered
+      // for sync) pushed to the remote DWN.
+      //
+      // importFromPhrase() creates an empty "Default" identity because
+      // the local DWN is empty before sync. After we pull from remote,
+      // the original identities should appear. We then clean up the
+      // empty "Default" identity if originals were recovered.
+      //
+      // Note: The SDK's importFromPhrase does NOT register the agent DID
+      // for sync — it only registers the new default identity DID.
+      // This means identity records on the remote are only recoverable
+      // if WE register the agent DID (which onSessionReady now does on
+      // every session, so newly created wallets will have this).
+
+      // Remember the default identity the SDK just created (to clean up later)
+      const preRecoveryIdentities = await agent.identity.list();
+      const defaultIdentityDid = preRecoveryIdentities.length === 1
+        ? preRecoveryIdentities[0].did.uri
+        : undefined;
+
       try {
-        const agentDid = agent.agentDid.uri;
         await ensureRegistration(agent, endpoints);
 
-        // Register the agent DID for sync — this is crucial because
-        // identity metadata (DwnIdentityStore) and DID private keys
-        // (DwnKeyStore) are stored as records in the agent DID's DWN.
-        // Without this, sync('pull') won't pull those records back.
+        // Register the agent DID for sync so we can pull identity records.
         try {
           await agent.sync.registerIdentity({ did: agentDid });
         } catch {
-          // May already be registered by importFromPhrase
+          // Already registered
         }
 
-        // Pull all data from remote — recovers identity records + keys.
+        // Also register the default identity DID (SDK already did this,
+        // but ensure it has DWN endpoint resolution).
+        if (defaultIdentityDid) {
+          try {
+            await agent.sync.registerIdentity({ did: defaultIdentityDid });
+          } catch {
+            // Already registered
+          }
+        }
+
+        // Pull everything from remote.
         await agent.sync.sync('pull');
 
-        // Now list identities — the originals should be recovered.
+        // Check what we recovered.
         const identities = await agent.identity.list();
         console.info(`Restore: found ${identities.length} identities after sync pull`);
 
-        // Register each recovered identity for ongoing sync and
-        // install their protocols (may only exist on remote).
-        for (const identity of identities) {
+        // If we recovered original identities beyond the default,
+        // clean up the empty "Default" identity the SDK created.
+        if (defaultIdentityDid && identities.length > 1) {
+          const hasRealIdentities = identities.some(
+            (id: any) => id.did.uri !== defaultIdentityDid,
+          );
+          if (hasRealIdentities) {
+            try {
+              console.info(`Restore: removing empty default identity ${defaultIdentityDid}`);
+              await agent.identity.delete({ didUri: defaultIdentityDid });
+              await agent.sync.unregisterIdentity(defaultIdentityDid);
+            } catch (err) {
+              console.warn('Restore: failed to clean up default identity:', err);
+            }
+          }
+        }
+
+        // Register all (possibly recovered) identities for ongoing sync
+        // and install their protocols locally.
+        const finalIdentities = await agent.identity.list();
+        for (const identity of finalIdentities) {
           const did = identity.did.uri;
           try {
             await agent.sync.registerIdentity({ did });
           } catch {
-            // Already registered — this is fine
+            // Already registered
           }
           try {
             await installProtocols(agent, did);
           } catch (err) {
-            console.warn(`Restore: failed to install protocols for ${did}:`, err);
+            console.warn(`Restore: protocol install for ${did}:`, err);
           }
         }
 
-        // Push protocol configs to remote.
+        // Push protocol configs + any local changes to remote.
         await agent.sync.sync('push');
       } catch (syncErr) {
-        console.warn('Restore: post-recovery sync failed (will retry on next cycle):', syncErr);
+        console.warn('Restore: post-recovery sync failed:', syncErr);
       }
 
       // Start live sync for ongoing operation.
