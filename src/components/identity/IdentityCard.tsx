@@ -34,6 +34,7 @@ export function IdentityCard({
         'bg-surface-1 text-left w-full',
         'transition-all duration-[var(--duration-fast)]',
         onClick && 'cursor-pointer hover:border-border-strong hover:shadow-md hover:-translate-y-0.5',
+        'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-0',
         className,
       )}
     >

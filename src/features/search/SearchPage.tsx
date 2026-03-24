@@ -11,7 +11,26 @@ import { Loader } from '@/components/ui/Loader';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PublicIdentityCard } from '@/components/identity/PublicIdentityCard';
 import { queryKeys } from '@/enbox/queries/query-keys';
+import { truncateDid } from '@/lib/utils';
 import type { IdentityProfile } from '@/enbox/types';
+
+const SEARCH_HISTORY_KEY = 'enbox:searchHistory';
+const MAX_HISTORY = 5;
+
+function getSearchHistory(): string[] {
+  try {
+    const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch { return []; }
+}
+
+function addToSearchHistory(did: string): void {
+  try {
+    const history = getSearchHistory().filter(d => d !== did);
+    history.unshift(did);
+    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+  } catch {}
+}
 
 /** Lazily-created anonymous Enbox instance for reading public DWN data. */
 let _anonApi: ReturnType<typeof Enbox.anonymous> | undefined;
@@ -89,6 +108,7 @@ export default function SearchPage() {
 
   const [didInput, setDidInput] = useState(routeDid ?? '');
   const [searchDid, setSearchDid] = useState(routeDid ?? '');
+  const [searchHistory, setSearchHistory] = useState<string[]>(() => getSearchHistory());
   const prevProfileRef = useRef<IdentityProfile | null>(null);
 
   // Pre-fill from route param changes
@@ -127,6 +147,14 @@ export default function SearchPage() {
     retry: false,
   });
 
+  // Track successful searches in history
+  useEffect(() => {
+    if (profile && searchDid) {
+      addToSearchHistory(searchDid);
+      setSearchHistory(getSearchHistory());
+    }
+  }, [profile, searchDid]);
+
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     const trimmed = didInput.trim();
@@ -159,6 +187,25 @@ export default function SearchPage() {
           Search
         </Button>
       </form>
+
+      {/* Recent searches */}
+      {!searchDid && searchHistory.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-medium text-text-ghost uppercase tracking-wider">Recent</h3>
+          <div className="flex flex-wrap gap-2">
+            {searchHistory.map((d) => (
+              <button
+                key={d}
+                type="button"
+                onClick={() => { setDidInput(d); setSearchDid(d); }}
+                className="rounded-full bg-surface-2 px-3 py-1.5 font-mono text-xs text-text-secondary hover:bg-surface-3 hover:text-text-primary transition-colors truncate max-w-[200px]"
+              >
+                {truncateDid(d)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Loading */}
       {isLoading && <Loader message="Looking up DID..." />}

@@ -103,6 +103,7 @@ function AuthGate() {
   }, [unlocked, lock]);
 
   const [showRestore, setShowRestore] = useState(false);
+  const [forgotPin, setForgotPin] = useState(false);
   // Allow user to skip identity creation and go straight to the app
   const [identitySkipped, setIdentitySkipped] = useState(false);
 
@@ -161,9 +162,20 @@ function AuthGate() {
         />
       );
     }
+    if (forgotPin) {
+      return (
+        <RestoreWalletPage
+          onRestore={handleRestore}
+          isLoading={isLoading}
+          error={error}
+          onBack={() => setForgotPin(false)}
+        />
+      );
+    }
     return (
       <UnlockScreen
         onUnlock={handleUnlock}
+        onForgotPin={() => setForgotPin(true)}
         error={error}
         isLoading={isLoading}
       />

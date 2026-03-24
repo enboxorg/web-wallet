@@ -1,11 +1,20 @@
 import { useQuery } from '@tanstack/react-query';
-import { Clock, Globe, FileText, AlertCircle } from 'lucide-react';
+import { Clock, Globe, FileText, User, Users, Link2 } from 'lucide-react';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { fetchActivity, type ActivityRecord } from '@/enbox/queries/identity-queries';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { truncateDid, formatRelativeTime } from '@/lib/utils';
+
+function getProtocolIcon(protocol?: string) {
+  if (!protocol) return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+  if (protocol.includes('profile')) return <User className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+  if (protocol.includes('social-graph')) return <Users className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+  if (protocol.includes('connect')) return <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+  return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+}
 
 interface ActivityTabProps {
   did: string;
@@ -25,14 +34,7 @@ export default function ActivityTab({ did }: ActivityTabProps) {
   }
 
   if (isError) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
-        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
-        <p className="text-sm text-error">
-          {error instanceof Error ? error.message : 'Failed to load data'}
-        </p>
-      </div>
-    );
+    return <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load data'} />;
   }
 
   if (!activity || activity.length === 0) {
@@ -53,7 +55,7 @@ export default function ActivityTab({ did }: ActivityTabProps) {
           className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border-default bg-surface-1 px-4 py-3"
         >
           {/* Icon */}
-          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />
+          {getProtocolIcon(item.protocol)}
 
           {/* Content */}
           <div className="min-w-0 flex-1">

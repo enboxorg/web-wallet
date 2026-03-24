@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Shield, Copy, Check, AlertCircle, Trash2 } from 'lucide-react';
+import { Shield, Copy, Check, Trash2 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
@@ -8,7 +8,9 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { truncateDid, copyToClipboard } from '@/lib/utils';
+import { getProtocolName } from '@/lib/protocol-names';
 import type { PermissionGrant } from '@enbox/api';
 
 interface PermissionsTabProps {
@@ -37,14 +39,7 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
   }
 
   if (isError) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4" role="alert">
-        <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
-        <p className="text-sm text-error">
-          {error instanceof Error ? error.message : 'Failed to load data'}
-        </p>
-      </div>
-    );
+    return <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load data'} />;
   }
 
   const grantees = Object.keys(grouped);
@@ -115,8 +110,8 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
                 key={grant.id ?? i}
                 className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] bg-surface-2 px-3 py-2"
               >
-                <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary">
-                  {grant.scope?.protocol || 'All protocols'}
+                <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary" title={grant.scope?.protocol}>
+                  {grant.scope?.protocol ? getProtocolName(grant.scope.protocol) : 'All protocols'}
                 </span>
                 {grant.scope?.interface && (
                   <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">

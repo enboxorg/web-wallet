@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router';
 import { Shield, KeyRound, ChevronRight } from 'lucide-react';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { cn } from '@/lib/utils';
 
 const settingsLinks = [
@@ -25,12 +26,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-text-primary">Settings</h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Manage your wallet preferences
-        </p>
-      </div>
+      <PageHeader title="Settings" description="Manage your wallet preferences." />
 
       <div className="space-y-2">
         {settingsLinks.map(({ path, label, description, icon: Icon }) => (
