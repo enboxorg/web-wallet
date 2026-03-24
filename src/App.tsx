@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 
 import { EnboxAuthProvider } from '@/enbox/provider';
 import { useAuth } from '@/enbox/hooks/use-auth';
+import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
@@ -15,8 +16,8 @@ import { AppShell } from '@/components/layout/AppShell';
 import { DragDropOverlay } from '@/components/layout/DragDropOverlay';
 import { UnlockScreen } from '@/features/auth/UnlockScreen';
 import { SetupScreen } from '@/features/auth/SetupScreen';
-import { RestoreWalletPage } from '@/features/auth/RestoreWalletPage';
 import { SetupIdentityStep } from '@/features/auth/SetupIdentityStep';
+import { RestoreWalletPage } from '@/features/auth/RestoreWalletPage';
 import { sidebarItems, bottomTabItems } from '@/nav-items';
 import { routes } from '@/routes';
 
@@ -30,15 +31,15 @@ const queryClient = new QueryClient({
 });
 
 /**
- * Onboarding step after wallet setup:
- * shows the identity creation UI with generated defaults.
+ * Shown when the wallet is unlocked but has no identities.
+ * Covers both first-time onboarding and returning users who
+ * deleted all their identities.
  */
-function OnboardingIdentityStep({ onDone }: { onDone: () => void }) {
+function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
   const { agent } = useAuth();
   const createIdentity = useCreateIdentity();
   const [isCreating, setIsCreating] = useState(false);
 
-  // Use the agent DID as the seed for deterministic generation
   const seed = agent?.agentDid?.uri ?? 'default-seed';
 
   const handleCreate = useCallback(
@@ -76,21 +77,25 @@ function OnboardingIdentityStep({ onDone }: { onDone: () => void }) {
 }
 
 /**
- * AuthGate — decides what to render based on auth state.
+ * AuthGate — decides what to render based on auth + identity state.
  *
  * Flow:
  * 1. Not initialized → Loader
- * 2. First time → SetupScreen (PIN) → OnboardingIdentityStep → App
- * 3. Returning user, locked → UnlockScreen → App
- * 4. Unlocked → App
+ * 2. First time → SetupScreen (PIN) or RestoreWalletPage
+ * 3. Returning user, locked → UnlockScreen
+ * 4. Unlocked, no identities → CreateFirstIdentity (full-screen)
+ * 5. Unlocked, has identities → App shell with routes
  */
 function AuthGate() {
   const { initialized, unlocked, firstTime, connect, unlock, restore, error, isLoading } = useAuth();
   const setPhrase = useBackupSeedStore((s) => s.setPhrase);
 
-  // Track whether we just finished first-time setup and need the identity step
-  const [showIdentityStep, setShowIdentityStep] = useState(false);
   const [showRestore, setShowRestore] = useState(false);
+  // Allow user to skip identity creation and go straight to the app
+  const [identitySkipped, setIdentitySkipped] = useState(false);
+
+  // Only query identities when unlocked
+  const { data: identities, isLoading: identitiesLoading } = useIdentities();
 
   const handleSetup = useCallback(
     async (pin: string, dwnEndpoints: string[]) => {
@@ -98,8 +103,6 @@ function AuthGate() {
       if (recoveryPhrase) {
         setPhrase(recoveryPhrase);
       }
-      // After wallet connects, show the identity creation step
-      setShowIdentityStep(true);
       return recoveryPhrase;
     },
     [connect, setPhrase],
@@ -155,14 +158,25 @@ function AuthGate() {
     );
   }
 
-  // Just finished first-time setup — guided identity creation
-  if (showIdentityStep) {
+  // Unlocked but still loading identity list — show loader briefly
+  if (identitiesLoading) {
+    return <Loader message="Loading identities..." />;
+  }
+
+  // Unlocked with no identities — show full-screen identity creation
+  // This covers both first-time onboarding AND returning users with
+  // no identities (e.g. after deleting all, or after a restore that
+  // didn't recover any).
+  const hasIdentities = identities && identities.length > 0;
+  if (!hasIdentities && !identitySkipped) {
     return (
-      <OnboardingIdentityStep onDone={() => setShowIdentityStep(false)} />
+      <CreateFirstIdentity
+        onDone={() => setIdentitySkipped(true)}
+      />
     );
   }
 
-  // Wallet is unlocked — render the app
+  // Wallet is unlocked with identities — render the app
   return (
     <>
       <DragDropOverlay />
