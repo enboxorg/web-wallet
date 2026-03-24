@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Users, UserPlus, Plus, Search } from 'lucide-react';
+import { Users, UserPlus, Search } from 'lucide-react';
 import { useNavigate, Link } from 'react-router';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';

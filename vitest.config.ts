@@ -14,5 +14,27 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['src/e2e/**', 'node_modules'],
     css: false,
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'text-summary', 'lcov'],
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/__tests__/**',
+        'src/**/*.test.*',
+        'src/**/*.spec.*',
+        'src/e2e/**',
+        'src/vite-env.d.ts',
+        'src/vitest.setup.ts',
+        'src/sw.ts',
+        'src/main.tsx',
+      ],
+      thresholds: {
+        // Current baseline — raise as coverage improves
+        statements: 20,
+        branches: 20,
+        functions: 25,
+        lines: 20,
+      },
+    },
   },
 });
