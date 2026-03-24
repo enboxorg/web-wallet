@@ -7,7 +7,7 @@ import { useEnboxAuth } from '../provider';
 
 export function useAuth() {
   const { initialized, unlocked, firstTime, agent } = useAuthStore();
-  const { connect, unlock, lock, error, isLoading } = useEnboxAuth();
+  const { connect, unlock, restore, lock, error, isLoading } = useEnboxAuth();
 
   return {
     initialized,
@@ -16,6 +16,7 @@ export function useAuth() {
     agent,
     connect,
     unlock,
+    restore,
     lock,
     error,
     isLoading,

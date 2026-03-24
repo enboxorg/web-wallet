@@ -11,6 +11,12 @@ if (savedTheme === 'light') {
   document.documentElement.setAttribute('data-theme', 'light');
 }
 
+// Apply product theme from build-time env var
+const productTheme = import.meta.env.VITE_PRODUCT_THEME;
+if (productTheme) {
+  document.documentElement.setAttribute('data-product', productTheme);
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>

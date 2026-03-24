@@ -61,6 +61,8 @@ export interface EnboxAuthContextValue {
   connect: (password: string, dwnEndpoints?: string[]) => Promise<string | undefined>;
   /** Returning user: restore session with password. */
   unlock: (password: string) => Promise<void>;
+  /** Restore wallet from a BIP-39 recovery phrase. */
+  restore: (recoveryPhrase: string, password: string, dwnEndpoints?: string[]) => Promise<void>;
   /** Lock the wallet (clear agent from memory). */
   lock: () => void;
   /** Current error message, if any. */
@@ -254,6 +256,34 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [setUnlocked, onSessionReady]);
 
+  // ── Restore (from recovery phrase) ────────────────────────────────
+
+  const restore = useCallback(async (recoveryPhrase: string, password: string, dwnEndpoints?: string[]): Promise<void> => {
+    const auth = authManagerRef.current;
+    if (!auth) throw new Error('AuthManager not ready');
+
+    setIsLoading(true);
+    setError(null);
+    try {
+      const session = await auth.importFromPhrase({
+        recoveryPhrase,
+        password,
+        dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
+      });
+
+      const agent = session.agent as EnboxAgent;
+      setUnlocked(agent);
+      cacheSessionPin(password);
+      await onSessionReady(agent);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Restore failed';
+      setError(msg);
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [setUnlocked, onSessionReady]);
+
   // ── Lock ─────────────────────────────────────────────────────────
 
   const lock = useCallback(() => {
@@ -294,7 +324,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ── Render ───────────────────────────────────────────────────────
 
-  const value: EnboxAuthContextValue = { connect, unlock, lock, error, isLoading };
+  const value: EnboxAuthContextValue = { connect, unlock, restore, lock, error, isLoading };
 
   return (
     <EnboxAuthContext.Provider value={value}>

@@ -15,6 +15,7 @@ import { AppShell } from '@/components/layout/AppShell';
 import { DragDropOverlay } from '@/components/layout/DragDropOverlay';
 import { UnlockScreen } from '@/features/auth/UnlockScreen';
 import { SetupScreen } from '@/features/auth/SetupScreen';
+import { RestoreWalletPage } from '@/features/auth/RestoreWalletPage';
 import { SetupIdentityStep } from '@/features/auth/SetupIdentityStep';
 import { sidebarItems, bottomTabItems } from '@/nav-items';
 import { routes } from '@/routes';
@@ -84,11 +85,12 @@ function OnboardingIdentityStep({ onDone }: { onDone: () => void }) {
  * 4. Unlocked → App
  */
 function AuthGate() {
-  const { initialized, unlocked, firstTime, connect, unlock, error, isLoading } = useAuth();
+  const { initialized, unlocked, firstTime, connect, unlock, restore, error, isLoading } = useAuth();
   const setPhrase = useBackupSeedStore((s) => s.setPhrase);
 
   // Track whether we just finished first-time setup and need the identity step
   const [showIdentityStep, setShowIdentityStep] = useState(false);
+  const [showRestore, setShowRestore] = useState(false);
 
   const handleSetup = useCallback(
     async (pin: string, dwnEndpoints: string[]) => {
@@ -110,6 +112,13 @@ function AuthGate() {
     [unlock],
   );
 
+  const handleRestore = useCallback(
+    async (phrase: string, pin: string, dwnEndpoints: string[]) => {
+      await restore(phrase, pin, dwnEndpoints);
+    },
+    [restore],
+  );
+
   // Still initialising the AuthManager
   if (!initialized) {
     return <Loader message="Initialising wallet..." />;
@@ -118,9 +127,20 @@ function AuthGate() {
   // Wallet is locked — show setup or unlock screen
   if (!unlocked) {
     if (firstTime) {
+      if (showRestore) {
+        return (
+          <RestoreWalletPage
+            onRestore={handleRestore}
+            isLoading={isLoading}
+            error={error}
+            onBack={() => setShowRestore(false)}
+          />
+        );
+      }
       return (
         <SetupScreen
           onSetup={handleSetup}
+          onSwitchToRestore={() => setShowRestore(true)}
           isLoading={isLoading}
           error={error}
         />

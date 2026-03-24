@@ -11,6 +11,7 @@ export interface SetupScreenProps {
   onSetup: (pin: string, dwnEndpoints: string[]) => Promise<string | undefined>;
   isLoading: boolean;
   error: string | null;
+  onSwitchToRestore?: () => void;
 }
 
 type Step = 'create-pin' | 'confirm-pin' | 'endpoints';
@@ -42,7 +43,7 @@ function StepIndicator({ current, total }: { current: number; total: number }) {
   );
 }
 
-export function SetupScreen({ onSetup, isLoading, error }: SetupScreenProps) {
+export function SetupScreen({ onSetup, isLoading, error, onSwitchToRestore }: SetupScreenProps) {
   const [step, setStep] = useState<Step>('create-pin');
   const [pin, setPin] = useState('');
   const [confirmError, setConfirmError] = useState<string | null>(null);
@@ -111,6 +112,16 @@ export function SetupScreen({ onSetup, isLoading, error }: SetupScreenProps) {
             isLoading={isLoading}
             error={error}
           />
+        )}
+
+        {onSwitchToRestore && (
+          <button
+            type="button"
+            onClick={onSwitchToRestore}
+            className="text-sm text-text-tertiary hover:text-accent transition-colors"
+          >
+            Restore from backup phrase
+          </button>
         )}
       </div>
     </div>

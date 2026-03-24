@@ -166,6 +166,28 @@
   --accent-gradient: linear-gradient(135deg, #ff6b8a, #ffb3c6);
 }
 
+/* ---- blue product accent ---- */
+[data-product='blue'] {
+  --accent: #3b82f6;
+  --accent-rgb: 59, 130, 246;
+  --accent-hover: #60a5fa;
+  --accent-muted: rgba(59, 130, 246, 0.12);
+  --accent-subtle: rgba(59, 130, 246, 0.06);
+  --accent-text: var(--white);
+  --accent-gradient: linear-gradient(135deg, #3b82f6, #93c5fd);
+}
+
+/* Blue light mode accent */
+[data-product='blue'][data-theme='light'] {
+  --accent: #2563eb;
+  --accent-rgb: 37, 99, 235;
+  --accent-hover: #1d4ed8;
+  --accent-muted: rgba(37, 99, 235, 0.1);
+  --accent-subtle: rgba(37, 99, 235, 0.05);
+  --accent-text: var(--white);
+  --accent-gradient: linear-gradient(135deg, #2563eb, #60a5fa);
+}
+
 /* ============================================================
    LIGHT MODE
    ============================================================ */
