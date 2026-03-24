@@ -25,23 +25,85 @@ export function PinInput({
     setValues(Array(length).fill(''));
   }, [length]);
 
-  // Auto-focus first input — use a short delay to ensure DOM is ready
-  // (on refresh, the component may mount before focus is available)
-  useEffect(() => {
-    if (!autoFocus) return;
-    const timer = setTimeout(() => {
-      inputRefs.current[0]?.focus();
-    }, 50);
-    return () => clearTimeout(timer);
-  }, [autoFocus]);
-
   // Reset on error change (allow re-entry)
   useEffect(() => {
     if (error) {
       setValues(Array(length).fill(''));
-      setTimeout(() => inputRefs.current[0]?.focus(), 50);
+      requestAnimationFrame(() => inputRefs.current[0]?.focus());
     }
   }, [error, length]);
+
+  // Auto-focus: aggressively try to focus the first input.
+  // Uses multiple strategies because React re-mounts and browser
+  // focus timing can be unpredictable after state transitions.
+  useEffect(() => {
+    if (!autoFocus || disabled) return;
+
+    const tryFocus = () => {
+      const first = inputRefs.current[0];
+      if (first && document.activeElement !== first) {
+        first.focus();
+      }
+    };
+
+    // Try immediately, then after a frame, then after a delay
+    tryFocus();
+    requestAnimationFrame(tryFocus);
+    const t1 = setTimeout(tryFocus, 100);
+    const t2 = setTimeout(tryFocus, 300);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [autoFocus, disabled]);
+
+  // Global keyboard capture: if the user types a digit anywhere on
+  // the page and the PIN input is visible, redirect it to the first
+  // empty input. This makes the PIN input "just work" without needing
+  // to click it first.
+  useEffect(() => {
+    if (!autoFocus || disabled) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Only capture bare digit presses (no modifiers)
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!/^\d$/.test(e.key)) return;
+
+      // Don't capture if focus is already in our inputs
+      const active = document.activeElement;
+      if (active && containerRef.current?.contains(active)) return;
+
+      // Don't capture if focus is in another input/textarea
+      if (active?.tagName === 'INPUT' || active?.tagName === 'TEXTAREA') return;
+
+      e.preventDefault();
+
+      // Find the first empty slot and fill it
+      const firstEmpty = inputRefs.current.findIndex(
+        (_, i) => !inputRefs.current[i]?.value && values[i] === '',
+      );
+      const target = firstEmpty >= 0 ? firstEmpty : 0;
+
+      inputRefs.current[target]?.focus();
+
+      // Simulate the input
+      const next = [...values];
+      next[target] = e.key;
+      setValues(next);
+
+      if (target < length - 1) {
+        inputRefs.current[target + 1]?.focus();
+      }
+
+      if (next.every((v) => v !== '')) {
+        onComplete(next.join(''));
+      }
+    };
+
+    document.addEventListener('keydown', handleGlobalKeyDown);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown);
+  }, [autoFocus, disabled, values, length, onComplete]);
 
   // Click anywhere on the container to focus the first empty input
   const handleContainerClick = useCallback(() => {
