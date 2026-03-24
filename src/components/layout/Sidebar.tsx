@@ -1,3 +1,4 @@
+import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NavItem } from './types';
 
@@ -7,6 +8,7 @@ export interface SidebarProps {
   onNavigate: (path: string) => void;
   mini?: boolean;
   onLock?: () => void;
+  onToggleMini?: () => void;
   className?: string;
 }
 
@@ -20,6 +22,7 @@ export function Sidebar({
   onNavigate,
   mini = false,
   onLock,
+  onToggleMini,
   className,
 }: SidebarProps) {
   // Group items by section, preserving insertion order
@@ -91,6 +94,26 @@ export function Sidebar({
           </div>
         ))}
       </nav>
+
+      {/* Mini mode toggle */}
+      {onToggleMini && (
+        <div className={cn('border-t border-border-subtle py-2', mini ? 'px-0' : 'px-4')}>
+          <button
+            type="button"
+            onClick={onToggleMini}
+            title={mini ? 'Expand sidebar' : 'Collapse sidebar'}
+            className={cn(
+              'flex items-center w-full gap-3 text-sm font-medium rounded-lg',
+              'text-text-ghost hover:bg-surface-3 hover:text-text-secondary',
+              'transition-colors duration-[var(--duration-fast)]',
+              mini ? 'justify-center py-2.5' : 'px-3 py-2.5',
+            )}
+          >
+            {mini ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
+            {!mini && <span>Collapse</span>}
+          </button>
+        </div>
+      )}
 
       {/* Bottom actions */}
       {onLock && (

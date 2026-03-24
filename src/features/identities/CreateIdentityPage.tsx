@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { AvatarUpload } from '@/components/ui/AvatarUpload';
 import { BannerUpload } from '@/components/ui/BannerUpload';
 import { ChipInput } from '@/components/ui/ChipInput';
+import { EndpointHealth } from '@/components/ui/EndpointHealth';
 import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function CreateIdentityPage() {
@@ -213,6 +214,13 @@ export default function CreateIdentityPage() {
             onChange={setDwnEndpoints}
             placeholder="Add a DWN endpoint URL..."
           />
+          {dwnEndpoints.length > 0 && (
+            <div className="flex flex-wrap gap-3 mt-1">
+              {dwnEndpoints.map((ep) => (
+                <EndpointHealth key={ep} url={ep} />
+              ))}
+            </div>
+          )}
         </section>
 
         {/* Error display */}
