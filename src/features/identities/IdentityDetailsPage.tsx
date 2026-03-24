@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
-import { Pencil, Download, Trash2, Copy, Check, QrCode, UserX } from 'lucide-react';
+import { ArrowLeft, Pencil, Download, Trash2, Copy, Check, QrCode, UserX } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'sonner';
 
@@ -113,7 +113,15 @@ export default function IdentityDetailsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-4">
+        <div className="flex items-start gap-3">
+          {/* Back arrow — visible on mobile/tablet, hidden on desktop (sidebar handles nav) */}
+          <Link
+            to="/"
+            className="mt-1.5 rounded-lg p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors lg:hidden"
+            aria-label="Back to identities"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Link>
           <Avatar
             src={profile?.avatarUrl}
             name={displayName}
