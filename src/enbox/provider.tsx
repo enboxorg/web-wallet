@@ -18,7 +18,7 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
 
 import { useAuthStore } from '@/stores/auth-store';
-import { INACTIVITY_TIMEOUT_MS, SESSION_PIN_KEY, STORAGE_KEYS } from '@/lib/constants';
+import { getAutoLockTimeout, SESSION_PIN_KEY, STORAGE_KEYS } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { ensureRegistration, getStoredTokens, storeTokens } from './registration';
 import { installProtocols } from './protocols';
@@ -65,7 +65,7 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 // ── Provider ───────────────────────────────────────────────────────
 
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const authManagerRef = useRef<any>(null); // eslint-disable-line @typescript-eslint/no-explicit-any
+  const authManagerRef = useRef<any>(null);  
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -100,7 +100,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     try {
       await agent.sync.registerIdentity({ did: agent.agentDid.uri });
       needsSyncRestart = true;
-      console.info('[ensurePostSession] Agent DID registered for sync:', agent.agentDid.uri);
     } catch {
       // Already registered — no restart needed, subscription exists
     }
@@ -109,7 +108,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       try {
         await agent.sync.stopSync();
         await agent.sync.startSync({ mode: 'live', interval: '5m' });
-        console.info('[ensurePostSession] Sync restarted with agent DID subscription');
       } catch (err) {
         console.warn('[ensurePostSession] Sync restart failed:', err);
       }
@@ -118,7 +116,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ── Auto-restore from cached session PIN ─────────────────────────
 
-  const tryAutoRestore = useCallback(async (auth: any): Promise<boolean> => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const tryAutoRestore = useCallback(async (auth: any): Promise<boolean> => {  
     const cachedPin = getCachedSessionPin();
     if (!cachedPin) return false;
     if (auth.state !== 'locked') return false;
@@ -160,7 +158,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const auth = await AuthManager.create({
         dwnEndpoints: DEFAULT_DWN_ENDPOINTS,
         registration: {
-          onSuccess: () => console.info('EnboxAuthProvider: DWN registration complete'),
+          onSuccess: () => {},
           onFailure: (err: unknown) => console.warn('EnboxAuthProvider: DWN registration failed:', err),
           onProviderAuthRequired: async ({ authorizeUrl, state }: { authorizeUrl: string; state: string }) => {
             const res = await fetch(authorizeUrl, { signal: AbortSignal.timeout(30_000) });
@@ -310,11 +308,9 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         try { await agent.sync.registerIdentity({ did: agentDid }); } catch { /* already registered */ }
 
         // Pull 1: recover identity metadata
-        console.info('[restore] Pull 1: recovering identity records...');
         await agent.sync.sync('pull');
 
         let identities = await agent.identity.list();
-        console.info(`[restore] Found ${identities.length} identities after pull 1`);
 
         // Register all recovered identity DIDs for sync + as DWN tenants
         for (const identity of identities) {
@@ -323,11 +319,9 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         await ensureRegistration(agent, endpoints);
 
         // Pull 2: recover profile data for each identity DID
-        console.info('[restore] Pull 2: recovering identity data...');
         await agent.sync.sync('pull');
 
         identities = await agent.identity.list();
-        console.info(`[restore] Found ${identities.length} identities after pull 2`);
 
         // Install protocols locally for each recovered identity
         for (const identity of identities) {
@@ -378,11 +372,14 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     if (!unlocked) return;
 
-    let timer: ReturnType<typeof setTimeout> = setTimeout(lock, INACTIVITY_TIMEOUT_MS);
+    const timeoutMs = getAutoLockTimeout();
+    if (timeoutMs === 0) return; // "Never" option
+
+    let timer: ReturnType<typeof setTimeout> = setTimeout(lock, timeoutMs);
 
     const reset = () => {
       clearTimeout(timer);
-      timer = setTimeout(lock, INACTIVITY_TIMEOUT_MS);
+      timer = setTimeout(lock, timeoutMs);
     };
 
     window.addEventListener('mousemove', reset);

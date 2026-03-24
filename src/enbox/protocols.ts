@@ -57,7 +57,7 @@ export async function installProtocols(
       );
     }
 
-    console.info(`Protocol installed: ${definition.protocol} (${status.code})`);
+    // Protocol installed successfully
 
     // Send to the remote DWN so record.send() works for this protocol.
     // Only send if newly configured (202). If already exists (200),

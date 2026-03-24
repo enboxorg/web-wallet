@@ -1,6 +1,5 @@
 import { cn } from '@/lib/utils';
 import { useUIStore } from '@/stores/ui-store';
-import { SyncIndicator } from './SyncIndicator';
 
 export interface AppBarProps {
   isDesktop?: boolean;
@@ -47,8 +46,6 @@ export function AppBar({ isDesktop = true, title, className }: AppBarProps) {
 
       {/* Right-side actions */}
       <div className="flex items-center gap-2">
-        <SyncIndicator className="hidden sm:inline-flex" />
-
         {/* Theme toggle */}
         <button
           type="button"

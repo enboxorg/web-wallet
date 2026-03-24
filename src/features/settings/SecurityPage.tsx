@@ -1,51 +1,25 @@
-import { useState, useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { Lock, Clock, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { PinInput } from '@/components/ui/PinInput';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { useAuth } from '@/enbox/hooks/use-auth';
-import { PIN_LENGTH, INACTIVITY_TIMEOUT_MS } from '@/lib/constants';
+import { AUTO_LOCK_OPTIONS, AUTO_LOCK_STORAGE_KEY, getAutoLockTimeout } from '@/lib/constants';
+import { cn } from '@/lib/utils';
 
 export default function SecurityPage() {
   const { lock } = useAuth();
 
-  const [currentPin, setCurrentPin] = useState('');
-  const [newPin, setNewPin] = useState('');
-  const [confirmPin, setConfirmPin] = useState('');
-  const [pinError, setPinError] = useState<string | null>(null);
-  const [isChanging, setIsChanging] = useState(false);
+  const [autoLockMs, setAutoLockMs] = useState(getAutoLockTimeout);
 
-  const autoLockMinutes = Math.round(INACTIVITY_TIMEOUT_MS / 60_000);
-
-  const handleChangePin = useCallback(async () => {
-    setPinError(null);
-
-    if (currentPin.length !== PIN_LENGTH) {
-      setPinError('Please enter your current PIN');
-      return;
-    }
-    if (newPin.length !== PIN_LENGTH) {
-      setPinError('Please enter a new PIN');
-      return;
-    }
-    if (newPin !== confirmPin) {
-      setPinError('New PINs do not match');
-      return;
-    }
-    if (newPin === currentPin) {
-      setPinError('New PIN must be different from current PIN');
-      return;
-    }
-
-    setIsChanging(true);
-    // TODO: implement PIN change via AuthManager
-    console.log('TODO: implement PIN change');
-    toast.info('PIN change coming soon');
-    setIsChanging(false);
-  }, [currentPin, newPin, confirmPin]);
+  const handleAutoLockChange = useCallback((value: string) => {
+    const ms = parseInt(value, 10);
+    try { localStorage.setItem(AUTO_LOCK_STORAGE_KEY, String(ms)); } catch {}
+    setAutoLockMs(ms);
+    toast.success('Auto-lock timeout updated');
+  }, []);
 
   const handleLock = useCallback(() => {
     lock();
@@ -60,68 +34,42 @@ export default function SecurityPage() {
       />
 
       {/* Change PIN */}
-      <Card padding="lg" className="space-y-5">
-        <div className="flex items-center gap-2">
+      <Card padding="lg">
+        <div className="flex items-center gap-2 mb-2">
           <Shield className="h-5 w-5 text-text-secondary" />
           <h2 className="text-lg font-medium text-text-primary">Change PIN</h2>
         </div>
-
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-secondary">
-              Current PIN
-            </label>
-            <PinInput
-              length={PIN_LENGTH}
-              onComplete={setCurrentPin}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-secondary">
-              New PIN
-            </label>
-            <PinInput
-              length={PIN_LENGTH}
-              onComplete={setNewPin}
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-text-secondary">
-              Confirm new PIN
-            </label>
-            <PinInput
-              length={PIN_LENGTH}
-              onComplete={setConfirmPin}
-            />
-          </div>
-
-          {pinError && (
-            <p className="text-sm text-error">{pinError}</p>
-          )}
-
-          <Button onClick={handleChangePin} loading={isChanging}>
-            Change PIN
-          </Button>
-        </div>
+        <p className="text-sm text-text-secondary">
+          PIN change is not yet available. This feature will be added in a future update.
+        </p>
       </Card>
 
       {/* Auto-lock timeout */}
       <Card padding="lg">
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-2 mb-3">
           <Clock className="h-5 w-5 text-text-secondary" />
-          <h2 className="text-lg font-medium text-text-primary">
-            Auto-lock timeout
-          </h2>
+          <h2 className="text-lg font-medium text-text-primary">Auto-lock timeout</h2>
         </div>
-        <p className="text-sm text-text-secondary">
-          Your wallet automatically locks after{' '}
-          <span className="font-medium text-text-primary">
-            {autoLockMinutes} minutes
-          </span>{' '}
-          of inactivity.
+        <p className="text-sm text-text-secondary mb-3">
+          Automatically lock the wallet after a period of inactivity.
         </p>
+        <div className="flex flex-wrap gap-2">
+          {AUTO_LOCK_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => handleAutoLockChange(String(opt.value))}
+              className={cn(
+                'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
+                autoLockMs === opt.value
+                  ? 'bg-accent text-accent-text'
+                  : 'bg-surface-2 text-text-secondary hover:text-text-primary',
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
       </Card>
 
       {/* Lock wallet now */}
