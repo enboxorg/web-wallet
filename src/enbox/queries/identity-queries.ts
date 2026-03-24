@@ -155,17 +155,16 @@ export interface ActivityRecord {
   published?: boolean;
 }
 
-/** Recent records created in the last 7 days, sorted newest-first. */
+/** Recent records sorted newest-first. */
 export async function fetchActivity(
   agent: EnboxAgent,
   did: string,
   limit = 50,
 ): Promise<ActivityRecord[]> {
   const dwn = new DwnApi({ agent, connectedDid: did });
-  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const { records } = await dwn.records.query({
-    filter: { dateCreated: { from: oneWeekAgo } },
+    filter: {},
     dateSort: 'createdDescending' as any,  
     pagination: { limit },
   });

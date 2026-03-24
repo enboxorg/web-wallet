@@ -1,7 +1,7 @@
-import { Suspense, useState, useCallback } from 'react';
+import { Suspense, useState, useCallback, useEffect } from 'react';
 import { Routes, Route } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster } from 'sonner';
+import { Toaster, toast } from 'sonner';
 
 import { EnboxAuthProvider } from '@/enbox/provider';
 import { useAuth } from '@/enbox/hooks/use-auth';
@@ -55,7 +55,7 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
         });
         onDone();
       } catch (err) {
-        console.error('Failed to create identity:', err);
+        toast.error(err instanceof Error ? err.message : 'Failed to create identity');
         setIsCreating(false);
       }
     },
@@ -87,8 +87,20 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
  * 5. Unlocked, has identities → App shell with routes
  */
 function AuthGate() {
-  const { initialized, unlocked, firstTime, connect, unlock, restore, error, isLoading } = useAuth();
+  const { initialized, unlocked, firstTime, connect, unlock, lock, restore, error, isLoading } = useAuth();
   const setPhrase = useBackupSeedStore((s) => s.setPhrase);
+
+  // Keyboard shortcut: Cmd/Ctrl+L to lock wallet
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'l') {
+        e.preventDefault();
+        if (unlocked) lock();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [unlocked, lock]);
 
   const [showRestore, setShowRestore] = useState(false);
   // Allow user to skip identity creation and go straight to the app
