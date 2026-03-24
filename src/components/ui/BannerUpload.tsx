@@ -1,81 +1,84 @@
-import React from 'react';
-import { Box, IconButton, Typography, alpha, Tooltip, Button } from '@mui/material';
-import { ImagePlus, X } from 'lucide-react';
+import { useRef } from 'react';
+import { Upload, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface BannerUploadProps {
   src?: string | null;
-  onChange: (file: File) => void;
+  onUpload: (file: File) => void;
   onClear?: () => void;
-  aspectRatio?: number; // width / height
-  maxHeight?: number;
+  className?: string;
 }
 
-const BannerUpload: React.FC<BannerUploadProps> = ({ src, onChange, onClear, aspectRatio = 3.5, maxHeight = 200 }) => {
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files[0]) onChange(files[0]);
-  };
+export function BannerUpload({
+  src,
+  onUpload,
+  onClear,
+  className,
+}: BannerUploadProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (file) onUpload(file);
+    e.target.value = '';
+  }
 
   return (
-    <Box>
+    <div
+      className={cn(
+        'group relative h-40 md:h-52 w-full overflow-hidden rounded-lg',
+        'border border-border-default',
+        !src && 'border-dashed',
+        className,
+      )}
+    >
       {src ? (
-        <Box
-          sx={{
-            position: 'relative',
-            width: '100%',
-            borderRadius: 2,
-            overflow: 'hidden',
-            border: (theme) => `1px solid ${alpha(theme.palette.divider, 0.6)}`,
-          }}
-        >
-          <img
-            src={src}
-            alt="Banner preview"
-            style={{ width: '100%', height: 'auto', maxHeight, objectFit: 'cover' }}
-          />
-          <Box sx={{ position: 'absolute', top: 8, right: 8, display: 'flex', gap: 1 }}>
-            {onClear && (
-              <Tooltip title="Clear banner">
-                <IconButton size="small" onClick={onClear} sx={{ bgcolor: 'background.paper' }}>
-                  <X size={16} />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Box>
-        </Box>
+        <img
+          src={src}
+          alt="Banner"
+          className="h-full w-full object-cover"
+        />
       ) : (
-        <Box
-          sx={{
-            border: (theme) => `1px dashed ${alpha(theme.palette.divider, 0.6)}`,
-            color: 'text.secondary',
-            borderRadius: 2,
-            p: 2,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 2,
-          }}
-        >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <ImagePlus size={18} />
-            <Typography variant="body2">Upload a banner image</Typography>
-          </Box>
-          <Button component="label" variant="outlined" size="small">
-            Upload
-            <input type="file" hidden accept="image/*" onChange={handleFileChange} />
-          </Button>
-        </Box>
+        <div className="flex h-full items-center justify-center bg-surface-2 text-text-ghost">
+          <Upload className="h-8 w-8" />
+        </div>
       )}
-      {src && (
-        <Box sx={{ mt: 1 }}>
-          <Button component="label" variant="outlined" size="small">
-            Replace banner
-            <input type="file" hidden accept="image/*" onChange={handleFileChange} />
-          </Button>
-        </Box>
-      )}
-    </Box>
-  );
-};
 
-export default BannerUpload;
+      <div
+        className={cn(
+          'absolute inset-0 flex items-center justify-center gap-2',
+          'bg-black/40 opacity-0 group-hover:opacity-100',
+          'transition-opacity duration-[var(--duration-fast)]',
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          className="rounded-md bg-surface-1/80 px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-2"
+          aria-label="Upload banner"
+        >
+          <Upload className="h-4 w-4" />
+        </button>
+        {src && onClear && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="rounded-md bg-surface-1/80 px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-2"
+            aria-label="Remove banner"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleChange}
+        className="hidden"
+        tabIndex={-1}
+      />
+    </div>
+  );
+}

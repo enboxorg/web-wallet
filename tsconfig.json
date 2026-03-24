@@ -22,5 +22,6 @@
     "jsx": "react-jsx"
   },
   "include": ["src", "node_modules/vite-plugin-pwa/client.d.ts"],
+  "exclude": ["src/e2e"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
