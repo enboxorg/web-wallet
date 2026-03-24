@@ -18,26 +18,37 @@ export function PinInput({
 }: PinInputProps) {
   const [values, setValues] = useState<string[]>(Array(length).fill(''));
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Reset values when length changes
   useEffect(() => {
     setValues(Array(length).fill(''));
   }, [length]);
 
-  // Auto-focus first input
+  // Auto-focus first input — use a short delay to ensure DOM is ready
+  // (on refresh, the component may mount before focus is available)
   useEffect(() => {
-    if (autoFocus && inputRefs.current[0]) {
-      inputRefs.current[0].focus();
-    }
+    if (!autoFocus) return;
+    const timer = setTimeout(() => {
+      inputRefs.current[0]?.focus();
+    }, 50);
+    return () => clearTimeout(timer);
   }, [autoFocus]);
 
   // Reset on error change (allow re-entry)
   useEffect(() => {
     if (error) {
       setValues(Array(length).fill(''));
-      inputRefs.current[0]?.focus();
+      setTimeout(() => inputRefs.current[0]?.focus(), 50);
     }
   }, [error, length]);
+
+  // Click anywhere on the container to focus the first empty input
+  const handleContainerClick = useCallback(() => {
+    const firstEmpty = values.findIndex((v) => v === '');
+    const target = firstEmpty >= 0 ? firstEmpty : values.length - 1;
+    inputRefs.current[target]?.focus();
+  }, [values]);
 
   const focusInput = useCallback((index: number) => {
     inputRefs.current[index]?.focus();
@@ -104,8 +115,10 @@ export function PinInput({
 
   return (
     <div
+      ref={containerRef}
+      onClick={handleContainerClick}
       className={cn(
-        'flex gap-3 justify-center',
+        'flex gap-3 justify-center cursor-text',
         error && 'animate-[shake_0.4s_ease-in-out]',
       )}
     >
@@ -113,13 +126,13 @@ export function PinInput({
         <div
           key={i}
           className={cn(
-            'relative flex h-14 w-12 items-center justify-center rounded-lg border-2 transition-colors',
+            'relative flex h-14 w-12 items-center justify-center rounded-lg transition-colors',
             'bg-surface-1',
             error
-              ? 'border-error'
+              ? 'border border-error'
               : values[i]
-                ? 'border-accent'
-                : 'border-border-default',
+                ? 'border border-accent'
+                : 'border border-border-default',
             disabled && 'opacity-50 cursor-not-allowed',
           )}
         >
