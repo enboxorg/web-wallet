@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, type FormEvent } from 'react';
-import { useParams, useNavigate, Link } from 'react-router';
+import { useParams, useNavigate, useBlocker, Link } from 'react-router';
 import { UserX } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -8,6 +8,7 @@ import { useProfile } from '@/enbox/hooks/use-profile';
 import { useDwnEndpoints } from '@/enbox/hooks/use-dwn-endpoints';
 import { useUpdateIdentityProfile, useUpdateDwnEndpoints } from '@/enbox/hooks/use-identity-mutations';
 
+import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
@@ -76,6 +77,34 @@ export default function EditIdentityPage() {
       setEndpointsInitialized(true);
     }
   }, [currentEndpoints, endpointsInitialized]);
+
+  // Track whether the form has unsaved changes
+  const isDirty = useMemo(() => {
+    if (!profile) return false;
+    return (
+      displayName !== (profile.displayName ?? '') ||
+      persona !== (identity?.metadata?.name ?? '') ||
+      tagline !== (profile.tagline ?? '') ||
+      bio !== (profile.bio ?? '') ||
+      avatarChanged ||
+      heroChanged ||
+      JSON.stringify(dwnEndpoints) !== JSON.stringify(currentEndpoints ?? [])
+    );
+  }, [displayName, persona, tagline, bio, avatarChanged, heroChanged, dwnEndpoints, profile, identity, currentEndpoints]);
+
+  // Warn on browser back / tab close / URL navigation
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
+
+  // Block in-app navigation via React Router
+  const blocker = useBlocker(isDirty);
 
   function handleAvatarUpload(file: File) {
     setAvatarFile(file);
@@ -226,6 +255,28 @@ export default function EditIdentityPage() {
           </Button>
         </div>
       </form>
+
+      {blocker.state === 'blocked' && (
+        <Dialog
+          open
+          onClose={() => blocker.reset?.()}
+          title="Discard changes?"
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-text-secondary">
+              You have unsaved changes. Are you sure you want to leave?
+            </p>
+            <div className="flex justify-end gap-3">
+              <Button variant="ghost" size="sm" onClick={() => blocker.reset?.()}>
+                Stay
+              </Button>
+              <Button variant="danger" size="sm" onClick={() => blocker.proceed?.()}>
+                Discard
+              </Button>
+            </div>
+          </div>
+        </Dialog>
+      )}
     </div>
   );
 }

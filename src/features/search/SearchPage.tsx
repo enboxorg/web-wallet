@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
-import { Search, AlertCircle } from 'lucide-react';
+import { Search, AlertCircle, UserCheck } from 'lucide-react';
 import { Enbox } from '@enbox/api';
 import { ProfileDefinition } from '@enbox/protocols';
 
@@ -177,14 +177,29 @@ export default function SearchPage() {
       {profile && !isLoading && !isError && (
         <div>
           <h2 className="mb-3 text-sm font-medium text-text-secondary">Result</h2>
-          <PublicIdentityCard
-            did={profile.did}
-            displayName={profile.displayName || undefined}
-            tagline={profile.tagline}
-            bio={profile.bio}
-            avatarUrl={profile.avatarUrl}
-            heroUrl={profile.heroUrl}
-          />
+          {profile.displayName ? (
+            <PublicIdentityCard
+              did={profile.did}
+              displayName={profile.displayName}
+              tagline={profile.tagline}
+              bio={profile.bio}
+              avatarUrl={profile.avatarUrl}
+              heroUrl={profile.heroUrl}
+            />
+          ) : (
+            <div className="flex flex-col items-center gap-3 rounded-lg border border-border-default bg-surface-1 p-8 text-center">
+              <UserCheck className="h-10 w-10 text-text-ghost" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">DID resolved</p>
+                <p className="mt-1 text-xs text-text-tertiary">
+                  This DID exists but has no public profile.
+                </p>
+                <p className="mt-2 font-mono text-xs text-text-ghost break-all">
+                  {profile.did}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
