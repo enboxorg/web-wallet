@@ -82,6 +82,7 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           projectName: ${{ matrix.project }}
           directory: dist
+          branch: main
 
   # Build-only job for PRs and non-main branches (no deploy)
   build:
