@@ -1,11 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Link } from 'react-router';
-import { ArrowLeft, Download, Upload, CheckCircle, XCircle } from 'lucide-react';
+import { Download, Upload, CheckCircle, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useImportIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { useDragDropStore } from '@/stores/drag-drop-store';
 import { Button } from '@/components/ui/Button';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { cn } from '@/lib/utils';
 
 type FileStatus = 'pending' | 'importing' | 'success' | 'error';
@@ -128,21 +129,11 @@ export default function ImportIdentityPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          to="/"
-          className="inline-flex items-center gap-1.5 text-sm text-text-tertiary hover:text-text-primary transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to identities
-        </Link>
-        <h1 className="mt-3 text-[length:var(--text-2xl)] font-semibold text-text-primary">
-          Import Identities
-        </h1>
-        <p className="mt-1 text-text-secondary">
-          Import identities from portable JSON files.
-        </p>
-      </div>
+      <PageHeader
+        title="Import Identities"
+        description="Import identities from portable JSON files."
+        backTo="/"
+      />
 
       {/* Drop zone */}
       <div

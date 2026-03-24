@@ -19,8 +19,8 @@ describe('SetupScreen', () => {
 
   it('renders step 1: create PIN', () => {
     render(<SetupScreen {...defaults} />);
-    expect(screen.getByText('Set up Wallet')).toBeInTheDocument();
-    expect(screen.getByText(/Create a 4-digit PIN/)).toBeInTheDocument();
+    expect(screen.getByText('Welcome to Enbox')).toBeInTheDocument();
+    expect(screen.getByText(/Create a PIN to secure your wallet/)).toBeInTheDocument();
     expect(screen.getAllByRole('textbox')).toHaveLength(4);
   });
 
@@ -82,7 +82,7 @@ describe('SetupScreen', () => {
     expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Back' }));
-    expect(screen.getByText('Set up Wallet')).toBeInTheDocument();
+    expect(screen.getByText('Welcome to Enbox')).toBeInTheDocument();
   });
 
   it('back button in step 3 returns to step 2', async () => {

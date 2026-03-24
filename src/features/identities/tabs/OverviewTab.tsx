@@ -4,6 +4,7 @@ import { useProfile } from '@/enbox/hooks/use-profile';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Avatar } from '@/components/ui/Avatar';
+import { Card } from '@/components/ui/Card';
 
 interface OverviewTabProps {
   did: string;
@@ -77,11 +78,11 @@ export default function OverviewTab({ did }: OverviewTabProps) {
 
       {/* Bio */}
       {profile.bio && (
-        <div className="rounded-lg border border-border-default bg-surface-1 p-4">
+        <Card padding="sm">
           <p className="text-sm leading-relaxed text-text-secondary">
             {profile.bio}
           </p>
-        </div>
+        </Card>
       )}
     </div>
   );

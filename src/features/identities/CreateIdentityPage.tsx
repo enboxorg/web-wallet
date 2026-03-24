@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router';
-import { ArrowLeft, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
@@ -13,6 +13,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { AvatarUpload } from '@/components/ui/AvatarUpload';
 import { BannerUpload } from '@/components/ui/BannerUpload';
 import { ChipInput } from '@/components/ui/ChipInput';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function CreateIdentityPage() {
   const navigate = useNavigate();
@@ -134,33 +135,17 @@ export default function CreateIdentityPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Link
-          to="/"
-          className="rounded-md p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
-          aria-label="Back"
-        >
-          <ArrowLeft className="h-5 w-5" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-semibold text-text-primary">
-            Create Identity
-          </h1>
-          <p className="mt-1 text-sm text-text-secondary">
-            Create a new decentralised identity with DID:DHT.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          onClick={handleRegenerate}
-          title="Regenerate name and images"
-        >
-          <RefreshCw size={14} className={cn(isPending && 'animate-spin')} />
-          <span className="hidden sm:inline">Regenerate</span>
-        </Button>
-      </div>
+      <PageHeader
+        title="Create Identity"
+        description="Create a new decentralised identity with DID:DHT."
+        backTo="/"
+        actions={
+          <Button type="button" variant="ghost" size="sm" onClick={handleRegenerate}>
+            <RefreshCw size={14} className={cn(isPending && 'animate-spin')} />
+            <span className="hidden sm:inline">Regenerate</span>
+          </Button>
+        }
+      />
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Profile media section */}

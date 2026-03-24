@@ -8,6 +8,7 @@ import { ProfileDefinition } from '@enbox/protocols';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { PublicIdentityCard } from '@/components/identity/PublicIdentityCard';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import type { IdentityProfile } from '@/enbox/types';
@@ -139,14 +140,10 @@ export default function SearchPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
-      <div>
-        <h1 className="text-[length:var(--text-2xl)] font-semibold text-text-primary">
-          Search DIDs
-        </h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Look up a DID to view their public profile.
-        </p>
-      </div>
+      <PageHeader
+        title="Search DIDs"
+        description="Look up a DID to view their public profile."
+      />
 
       {/* Search form */}
       <form onSubmit={handleSearch} className="flex gap-3">

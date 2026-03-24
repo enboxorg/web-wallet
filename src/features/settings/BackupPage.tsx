@@ -1,9 +1,11 @@
 import { useState, useCallback } from 'react';
-import { Download, KeyRound, Info, ShieldCheck, Copy, Check } from 'lucide-react';
+import { Download, KeyRound, ShieldCheck, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useExportIdentity } from '@/enbox/hooks/use-identity-mutations';
@@ -74,18 +76,14 @@ export default function BackupPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-semibold text-text-primary">
-          Backup & Recovery
-        </h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Back up your wallet and manage recovery options.
-        </p>
-      </div>
+      <PageHeader
+        title="Backup & Recovery"
+        description="Back up your wallet and manage recovery options."
+        backTo="/settings"
+      />
 
       {/* Recovery phrase */}
-      <div className="rounded-lg border border-border-default bg-surface-1 p-6 space-y-4">
+      <Card padding="lg" className="space-y-4">
         <div className="flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-text-secondary" />
           <h2 className="text-lg font-medium text-text-primary">
@@ -150,10 +148,10 @@ export default function BackupPage() {
             </p>
           </div>
         )}
-      </div>
+      </Card>
 
       {/* Export all identities */}
-      <div className="rounded-lg border border-border-default bg-surface-1 p-6">
+      <Card padding="lg">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <Download className="h-5 w-5 text-text-secondary shrink-0" />
@@ -175,7 +173,7 @@ export default function BackupPage() {
             Export
           </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Confirmation dialog */}
       <Dialog

@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, Fragment } from 'react';
 import { PinInput } from '@/components/ui/PinInput';
 import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
@@ -14,6 +14,33 @@ export interface SetupScreenProps {
 }
 
 type Step = 'create-pin' | 'confirm-pin' | 'endpoints';
+
+const STEP_INDEX: Record<Step, number> = {
+  'create-pin': 0,
+  'confirm-pin': 1,
+  'endpoints': 2,
+};
+
+function StepIndicator({ current, total }: { current: number; total: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      {Array.from({ length: total }, (_, i) => (
+        <Fragment key={i}>
+          {i > 0 && (
+            <div className={cn(
+              'h-px w-6',
+              i <= current ? 'bg-accent' : 'bg-border-default',
+            )} />
+          )}
+          <div className={cn(
+            'h-2 w-2 rounded-full transition-colors',
+            i === current ? 'bg-accent' : i < current ? 'bg-accent/50' : 'bg-border-default',
+          )} />
+        </Fragment>
+      ))}
+    </div>
+  );
+}
 
 export function SetupScreen({ onSetup, isLoading, error }: SetupScreenProps) {
   const [step, setStep] = useState<Step>('create-pin');
@@ -62,6 +89,8 @@ export function SetupScreen({ onSetup, isLoading, error }: SetupScreenProps) {
       <div className="flex w-full max-w-sm flex-col items-center gap-8">
         <EnboxLogo size="lg" />
 
+        <StepIndicator current={STEP_INDEX[step]} total={3} />
+
         {step === 'create-pin' && (
           <StepCreatePin onComplete={handlePinCreated} />
         )}
@@ -97,10 +126,10 @@ function StepCreatePin({ onComplete }: { onComplete: (pin: string) => void }) {
     <div className="flex flex-col items-center gap-6">
       <div className="flex flex-col items-center gap-2">
         <h1 className="text-2xl font-semibold text-text-primary">
-          Set up Wallet
+          Welcome to Enbox
         </h1>
         <p className="text-sm text-text-secondary">
-          Create a {PIN_LENGTH}-digit PIN
+          Create a PIN to secure your wallet
         </p>
       </div>
 

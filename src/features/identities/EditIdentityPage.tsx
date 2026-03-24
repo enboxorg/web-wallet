@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, type FormEvent } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
-import { ArrowLeft, UserX } from 'lucide-react';
+import { UserX } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
@@ -15,6 +15,7 @@ import { ChipInput } from '@/components/ui/ChipInput';
 import { AvatarUpload } from '@/components/ui/AvatarUpload';
 import { BannerUpload } from '@/components/ui/BannerUpload';
 import { Loader } from '@/components/ui/Loader';
+import { PageHeader } from '@/components/ui/PageHeader';
 
 export default function EditIdentityPage() {
   const { did: rawDid } = useParams<{ did: string }>();
@@ -144,21 +145,11 @@ export default function EditIdentityPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <Link
-          to={`/identity/${encodeURIComponent(did)}`}
-          className="inline-flex items-center gap-1.5 text-sm text-text-tertiary hover:text-text-primary transition-colors"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          Back to identity
-        </Link>
-        <h1 className="mt-3 text-[length:var(--text-2xl)] font-semibold text-text-primary">
-          Edit Identity
-        </h1>
-        <p className="mt-1 text-text-secondary">
-          Update your identity profile information.
-        </p>
-      </div>
+      <PageHeader
+        title="Edit Identity"
+        description="Update your identity profile."
+        backTo={`/identity/${encodeURIComponent(did)}`}
+      />
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Banner */}

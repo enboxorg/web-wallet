@@ -3,7 +3,9 @@ import { Lock, Clock, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { PinInput } from '@/components/ui/PinInput';
+import { PageHeader } from '@/components/ui/PageHeader';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { PIN_LENGTH, INACTIVITY_TIMEOUT_MS } from '@/lib/constants';
 
@@ -51,18 +53,14 @@ export default function SecurityPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-[length:var(--text-2xl)] font-semibold text-text-primary">
-          Security
-        </h1>
-        <p className="mt-2 text-text-secondary">
-          Manage wallet security settings.
-        </p>
-      </div>
+      <PageHeader
+        title="Security"
+        description="Manage wallet security settings."
+        backTo="/settings"
+      />
 
       {/* Change PIN */}
-      <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-6 space-y-5">
+      <Card padding="lg" className="space-y-5">
         <div className="flex items-center gap-2">
           <Shield className="h-5 w-5 text-text-secondary" />
           <h2 className="text-lg font-medium text-text-primary">Change PIN</h2>
@@ -107,10 +105,10 @@ export default function SecurityPage() {
             Change PIN
           </Button>
         </div>
-      </div>
+      </Card>
 
       {/* Auto-lock timeout */}
-      <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-6">
+      <Card padding="lg">
         <div className="flex items-center gap-2 mb-2">
           <Clock className="h-5 w-5 text-text-secondary" />
           <h2 className="text-lg font-medium text-text-primary">
@@ -124,10 +122,10 @@ export default function SecurityPage() {
           </span>{' '}
           of inactivity.
         </p>
-      </div>
+      </Card>
 
       {/* Lock wallet now */}
-      <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-6">
+      <Card padding="lg">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Lock className="h-5 w-5 text-text-secondary" />
@@ -144,7 +142,7 @@ export default function SecurityPage() {
             Lock now
           </Button>
         </div>
-      </div>
+      </Card>
     </div>
   );
 }
