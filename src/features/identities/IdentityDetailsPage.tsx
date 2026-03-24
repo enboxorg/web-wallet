@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
-import { Pencil, Download, Trash2, Copy, Check } from 'lucide-react';
+import { Pencil, Download, Trash2, Copy, Check, QrCode } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'sonner';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
@@ -42,7 +43,9 @@ export default function IdentityDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [qrCopied, setQrCopied] = useState(false);
 
   async function handleCopyDid() {
     const ok = await copyToClipboard(did);
@@ -130,10 +133,19 @@ export default function IdentityDetailsPage() {
 
         {/* Actions */}
         <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => setQrOpen(true)}
+            title="Share DID"
+          >
+            <QrCode className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Share</span>
+          </Button>
           <Link to={`/identity/${encodeURIComponent(did)}/edit`}>
             <Button variant="secondary" size="sm">
               <Pencil className="h-3.5 w-3.5" />
-              Edit
+              <span className="hidden sm:inline">Edit</span>
             </Button>
           </Link>
           <Button
@@ -143,7 +155,7 @@ export default function IdentityDetailsPage() {
             loading={exportIdentity.isPending}
           >
             <Download className="h-3.5 w-3.5" />
-            Export
+            <span className="hidden sm:inline">Export</span>
           </Button>
           <Button
             variant="danger"
@@ -151,7 +163,7 @@ export default function IdentityDetailsPage() {
             onClick={() => setDeleteOpen(true)}
           >
             <Trash2 className="h-3.5 w-3.5" />
-            Delete
+            <span className="hidden sm:inline">Delete</span>
           </Button>
         </div>
       </div>
@@ -184,6 +196,52 @@ export default function IdentityDetailsPage() {
       <TabPanel active={activeTab === 4}>
         <ActivityTab did={did} />
       </TabPanel>
+
+      {/* Share DID QR dialog */}
+      <Dialog
+        open={qrOpen}
+        onClose={() => setQrOpen(false)}
+        title="Share Identity"
+      >
+        <div className="flex flex-col items-center gap-5">
+          {/* QR code on white background for scan visibility in any theme */}
+          <div className="rounded-xl bg-white p-5">
+            <QRCodeCanvas
+              value={did}
+              size={200}
+              bgColor="#ffffff"
+              fgColor="#000000"
+              level="M"
+              marginSize={1}
+            />
+          </div>
+
+          {/* DID with copy */}
+          <div className="flex w-full items-center gap-2">
+            <code className="min-w-0 flex-1 truncate rounded-lg bg-surface-2 px-3 py-2.5 font-mono text-xs text-text-secondary">
+              {did}
+            </code>
+            <button
+              type="button"
+              onClick={async () => {
+                const ok = await copyToClipboard(did);
+                if (ok) {
+                  setQrCopied(true);
+                  setTimeout(() => setQrCopied(false), 2000);
+                }
+              }}
+              className="shrink-0 rounded-lg bg-surface-2 p-2.5 text-text-tertiary hover:text-text-primary transition-colors"
+              aria-label="Copy DID"
+            >
+              {qrCopied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+            </button>
+          </div>
+
+          <p className="text-xs text-text-ghost text-center">
+            Scan this QR code or copy the DID to share this identity.
+          </p>
+        </div>
+      </Dialog>
 
       {/* Delete confirmation dialog */}
       <Dialog
