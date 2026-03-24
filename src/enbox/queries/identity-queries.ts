@@ -12,6 +12,25 @@ import { getDwnServiceEndpointUrls } from '@enbox/agent';
 
 import type { EnboxAgent, IdentityProfile } from '../types';
 
+// ── Blob URL lifecycle management ──────────────────────────────────
+
+/** Track active blob URLs per DID so we can revoke them on refetch. */
+const _activeBlobUrls = new Map<string, string[]>();
+
+function revokePreviousUrls(did: string): void {
+  const urls = _activeBlobUrls.get(did);
+  if (urls) {
+    urls.forEach((url) => { try { URL.revokeObjectURL(url); } catch {} });
+  }
+  _activeBlobUrls.set(did, []);
+}
+
+function trackBlobUrl(did: string, url: string): void {
+  const urls = _activeBlobUrls.get(did) ?? [];
+  urls.push(url);
+  _activeBlobUrls.set(did, urls);
+}
+
 // ── Identity list ──────────────────────────────────────────────────
 
 /** List all identities managed by the agent. Returns `BearerIdentity[]`. */
@@ -33,6 +52,9 @@ export async function fetchProfile(
   agent: EnboxAgent,
   did: string,
 ): Promise<IdentityProfile> {
+  // Revoke any blob URLs from a previous fetch for this DID
+  revokePreviousUrls(did);
+
   const enbox = new Enbox({ agent, connectedDid: did });
   const repo = repository(enbox.using(ProfileProtocol));
 
@@ -53,6 +75,7 @@ export async function fetchProfile(
     if (avatarRecord) {
       const blob: Blob = await avatarRecord.data.blob();
       avatarUrl = URL.createObjectURL(blob);
+      trackBlobUrl(did, avatarUrl);
     }
 
     // Hero image
@@ -60,6 +83,7 @@ export async function fetchProfile(
     if (heroRecord) {
       const blob: Blob = await heroRecord.data.blob();
       heroUrl = URL.createObjectURL(blob);
+      trackBlobUrl(did, heroUrl);
     }
   }
 

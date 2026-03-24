@@ -25,6 +25,8 @@ import PermissionsTab from './tabs/PermissionsTab';
 import ActivityTab from './tabs/ActivityTab';
 
 const TABS = ['Overview', 'Protocols', 'Wallets', 'Permissions', 'Activity'] as const;
+const tabId = (i: number) => `identity-tab-${i}`;
+const panelId = (i: number) => `identity-panel-${i}`;
 
 export default function IdentityDetailsPage() {
   const { did: rawDid } = useParams<{ did: string }>();
@@ -196,6 +198,8 @@ export default function IdentityDetailsPage() {
         {TABS.map((label, index) => (
           <Tab
             key={label}
+            id={tabId(index)}
+            panelId={panelId(index)}
             active={activeTab === index}
             onClick={() => setActiveTab(index)}
           >
@@ -204,19 +208,19 @@ export default function IdentityDetailsPage() {
         ))}
       </TabList>
 
-      <TabPanel active={activeTab === 0}>
+      <TabPanel id={panelId(0)} labelledBy={tabId(0)} active={activeTab === 0}>
         <OverviewTab did={did} />
       </TabPanel>
-      <TabPanel active={activeTab === 1}>
+      <TabPanel id={panelId(1)} labelledBy={tabId(1)} active={activeTab === 1}>
         <ProtocolsTab did={did} />
       </TabPanel>
-      <TabPanel active={activeTab === 2}>
+      <TabPanel id={panelId(2)} labelledBy={tabId(2)} active={activeTab === 2}>
         <WalletsTab did={did} />
       </TabPanel>
-      <TabPanel active={activeTab === 3}>
+      <TabPanel id={panelId(3)} labelledBy={tabId(3)} active={activeTab === 3}>
         <PermissionsTab did={did} />
       </TabPanel>
-      <TabPanel active={activeTab === 4}>
+      <TabPanel id={panelId(4)} labelledBy={tabId(4)} active={activeTab === 4}>
         <ActivityTab did={did} />
       </TabPanel>
 

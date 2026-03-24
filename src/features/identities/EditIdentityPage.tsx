@@ -181,8 +181,7 @@ export default function EditIdentityPage() {
             label="Persona"
             value={persona}
             onChange={(e) => setPersona(e.target.value)}
-            placeholder="e.g. Personal, Work"
-            disabled
+            placeholder="e.g. Personal, Work, Gaming"
           />
         </div>
 

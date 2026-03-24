@@ -25,7 +25,7 @@ import {
 import type { EnboxAgent } from '../types';
 import { installProtocols } from '../protocols';
 import { ensureRegistration } from '../registration';
-import { WALLET_URL } from '@/lib/dwn-endpoints';
+import { DEFAULT_DWN_ENDPOINTS, WALLET_URL } from '@/lib/dwn-endpoints';
 
 // ── Create identity ────────────────────────────────────────────────
 
@@ -116,8 +116,7 @@ export async function createIdentity(
     data: socialData,
     published: true,
   });
-  const sendResult = await profileRecord!.send();
-  console.info(`[createIdentity] Profile send status: ${JSON.stringify(sendResult.status)}`);
+  await profileRecord!.send();
 
   // 6. Set avatar if provided
   if (params.avatar && profileRecord) {
@@ -252,7 +251,7 @@ export async function exportIdentity(agent: EnboxAgent, did: string) {
 
 export async function importIdentity(
   agent: EnboxAgent,
-  portableIdentity: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  portableIdentity: any,  
 ) {
   const existing = await agent.identity.get({
     didUri: portableIdentity.portableDid?.uri,
@@ -280,6 +279,9 @@ export async function importIdentity(
 
   // Install protocols
   await installProtocols(agent, did);
+
+  // Register imported identity as DWN tenant on remote endpoints
+  await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
 
   // Create wallet record
   try {

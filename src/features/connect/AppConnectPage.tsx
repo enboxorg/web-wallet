@@ -22,6 +22,8 @@ export default function AppConnectPage() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<Scanner>();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const processConnectUriRef = useRef(processConnectUri);
+  processConnectUriRef.current = processConnectUri;
 
   const [phase, setPhase] = useState<Phase>('scanning');
   const [cameraReady, setCameraReady] = useState(false);
@@ -53,7 +55,7 @@ export default function AppConnectPage() {
 
   const handleScanResult = useCallback(async (result: Scanner.ScanResult) => {
     scannerRef.current?.pause();
-    await processConnectUri(result.data);
+    await processConnectUriRef.current(result.data);
   }, []);
 
   useEffect(() => {

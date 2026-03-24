@@ -1,3 +1,4 @@
+import { useCallback } from 'react';
 import { cn } from '@/lib/utils';
 
 interface TabListProps {
@@ -6,13 +7,31 @@ interface TabListProps {
 }
 
 export function TabList({ children, className }: TabListProps) {
+  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLDivElement>) => {
+    const tabs = Array.from(
+      e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]'),
+    );
+    const current = tabs.findIndex((t) => t === document.activeElement);
+    if (current === -1) return;
+
+    let next = -1;
+    if (e.key === 'ArrowRight') next = (current + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') next = (current - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = tabs.length - 1;
+
+    if (next >= 0) {
+      e.preventDefault();
+      tabs[next].focus();
+      tabs[next].click();
+    }
+  }, []);
+
   return (
     <div
       role="tablist"
-      className={cn(
-        'flex gap-1 border-b border-border-subtle',
-        className,
-      )}
+      onKeyDown={handleKeyDown}
+      className={cn('flex gap-1 border-b border-border-subtle', className)}
     >
       {children}
     </div>
@@ -20,17 +39,22 @@ export function TabList({ children, className }: TabListProps) {
 }
 
 interface TabProps {
+  id?: string;
+  panelId?: string;
   active?: boolean;
   onClick?: () => void;
   children: React.ReactNode;
   className?: string;
 }
 
-export function Tab({ active, onClick, children, className }: TabProps) {
+export function Tab({ id, panelId, active, onClick, children, className }: TabProps) {
   return (
     <button
+      id={id}
       role="tab"
       aria-selected={active}
+      aria-controls={panelId}
+      tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={cn(
         'relative px-4 py-2.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]',
@@ -53,17 +77,22 @@ export function Tab({ active, onClick, children, className }: TabProps) {
 }
 
 interface TabPanelProps {
+  id?: string;
+  labelledBy?: string;
   active?: boolean;
   children: React.ReactNode;
   className?: string;
 }
 
-export function TabPanel({ active, children, className }: TabPanelProps) {
+export function TabPanel({ id, labelledBy, active, children, className }: TabPanelProps) {
   if (!active) return null;
 
   return (
     <div
+      id={id}
       role="tabpanel"
+      aria-labelledby={labelledBy}
+      tabIndex={0}
       className={cn('py-4', className)}
     >
       {children}

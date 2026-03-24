@@ -21,7 +21,13 @@ export type UIStore = UIState & UIActions;
 function getInitialTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEYS.THEME);
-    if (stored === 'light' || stored === 'dark') return stored;
+    if (stored === 'light' || stored === 'dark') {
+      // Apply immediately so the DOM matches before first paint
+      if (typeof document !== 'undefined') {
+        document.documentElement.setAttribute('data-theme', stored);
+      }
+      return stored;
+    }
   } catch {
     // localStorage may be unavailable (SSR, privacy mode, etc.)
   }
