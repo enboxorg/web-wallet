@@ -151,6 +151,18 @@ export async function createIdentity(
     console.warn('Failed to create wallet record:', err);
   }
 
+  // 9. Push agent DID records to remote. The identity metadata and DID
+  // keys are stored under the agent DID's tenant in the local DWN.
+  // The SDK's live sync may not have a push subscription for the agent
+  // DID (it was registered after startSync), so we explicitly push to
+  // ensure these records reach the remote for seed-phrase recovery.
+  try {
+    await agent.sync.sync('push');
+    console.info('[createIdentity] Push complete — agent DID records synced to remote');
+  } catch (err) {
+    console.warn('[createIdentity] Push failed (will retry on next sync cycle):', err);
+  }
+
   return identity;
 }
 
