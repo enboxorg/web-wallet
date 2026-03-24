@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { ChipInput } from '@/components/ui/ChipInput';
+import { EndpointHealth } from '@/components/ui/EndpointHealth';
 import { AvatarUpload } from '@/components/ui/AvatarUpload';
 import { BannerUpload } from '@/components/ui/BannerUpload';
 import { Loader } from '@/components/ui/Loader';
@@ -240,6 +241,13 @@ export default function EditIdentityPage() {
             onChange={setDwnEndpoints}
             placeholder="Add a DWN endpoint URL…"
           />
+          {dwnEndpoints.length > 0 && (
+            <div className="flex flex-wrap gap-3 mt-1">
+              {dwnEndpoints.map((ep) => (
+                <EndpointHealth key={ep} url={ep} />
+              ))}
+            </div>
+          )}
         </section>
 
         <div className="flex items-center gap-3 pt-2">

@@ -6,6 +6,7 @@ import { useMediaQuery } from './useMediaQuery';
 import { Sidebar } from './Sidebar';
 import { AppBar } from './AppBar';
 import { BottomNav } from './BottomNav';
+import { OfflineBanner } from './OfflineBanner';
 import { SeedPhraseWarningBanner } from './SeedPhraseWarningBanner';
 import type { NavItem } from './types';
 
@@ -29,7 +30,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
   const navigate = useNavigate();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
-  const { sidebarMini } = useUIStore();
+  const { sidebarMini, setSidebarMini } = useUIStore();
   const { lock } = useAuth();
 
   const handleNavigate = useCallback(
@@ -49,11 +50,13 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
           onNavigate={handleNavigate}
           mini={sidebarMini}
           onLock={lock}
+          onToggleMini={() => setSidebarMini(!sidebarMini)}
         />
       )}
 
       {/* Main content column */}
       <div className="flex flex-col flex-1 min-w-0">
+        <OfflineBanner />
         {/* Top bar: desktop shows full bar, mobile shows minimal bar */}
         <AppBar isDesktop={isDesktop} />
 
