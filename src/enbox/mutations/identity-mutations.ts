@@ -265,7 +265,7 @@ export async function exportIdentity(agent: EnboxAgent, did: string) {
 export async function importIdentity(
   agent: EnboxAgent,
   /** Portable identity JSON (as returned by `exportIdentity`). */
-  portableIdentity: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  portableIdentity: any,  
 ) {
   // Guard against duplicates
   const existing = await agent.identity.get({

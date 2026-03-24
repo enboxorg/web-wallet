@@ -14,7 +14,7 @@ export function DragDropOverlay() {
   const setDroppedFiles = useDragDropStore((s) => s.setDroppedFiles);
 
   // Track nested dragenter/dragleave calls
-  const [dragCounter, setDragCounter] = useState(0);
+  const [_dragCounter, setDragCounter] = useState(0);
 
   const handleDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();

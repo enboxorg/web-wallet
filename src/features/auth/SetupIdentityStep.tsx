@@ -9,7 +9,6 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { Sparkles, Pencil, Camera, ImagePlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
 import { Avatar } from '@/components/ui/Avatar';
 import { generateName, generateAvatar, generateBanner } from '@/lib/identity-generators';
 import { cn } from '@/lib/utils';

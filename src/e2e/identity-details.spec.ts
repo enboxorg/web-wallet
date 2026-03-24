@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { waitForAppInit, enterPin, expectAppShellLoaded } from './fixtures/test-utils';
+import { waitForAppInit, enterPin } from './fixtures/test-utils';
 
 test.describe('Identity Details', () => {
   test.beforeEach(async ({ page }) => {

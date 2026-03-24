@@ -16,7 +16,7 @@ type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popu
 /** Install a protocol on the DWN if it doesn't already exist. */
 async function prepareProtocol(
   selectedDid: string,
-  agent: any, // eslint-disable-line @typescript-eslint/no-explicit-any
+  agent: any,  
   protocolDefinition: DwnProtocolDefinition,
 ): Promise<void> {
   const queryResult = await agent.processDwnRequest({
@@ -71,7 +71,7 @@ export default function DWebConnectPage() {
   const consumeRequest = useDWebConnectStore((s) => s.consumeRequest);
 
   const [phase, setPhase] = useState<Phase>('waiting');
-  const [pendingRequest, setPendingRequest] = useState<DWebConnectRequest | null>(null);
+  const [_pendingRequest, setPendingRequest] = useState<DWebConnectRequest | null>(null);
   const [permissions, setPermissions] = useState<ConnectPermissionRequest[]>([]);
   const [origin, setOrigin] = useState('');
   const [selectedDid, setSelectedDid] = useState('');

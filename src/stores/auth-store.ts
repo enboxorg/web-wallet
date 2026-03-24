@@ -5,7 +5,7 @@ import { create } from 'zustand';
  * into the store layer. The actual typing comes from the auth provider.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type EnboxUserAgent = any;
 
 export interface AuthState {

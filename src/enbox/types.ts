@@ -6,7 +6,7 @@
  */
 
 // Re-export SDK types as opaque aliases for convenience.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 export type EnboxAgent = any; // Actually EnboxUserAgent from @enbox/agent
 
 /** A resolved identity profile (read model). */

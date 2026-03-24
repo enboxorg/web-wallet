@@ -22,7 +22,7 @@ registerRoute(new NavigationRoute(navigationHandler));
 // Wrapped in an IIFE to avoid top-level await (unsupported in SW build targets)
 (async () => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const mod: any = await import('@enbox/browser');
     const { activatePolyfills } = mod;
     activatePolyfills({ injectStyles: false, links: false });

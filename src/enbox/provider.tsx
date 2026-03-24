@@ -71,6 +71,7 @@ export interface EnboxAuthContextValue {
 
 const EnboxAuthContext = createContext<EnboxAuthContextValue | null>(null);
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useEnboxAuth(): EnboxAuthContextValue {
   const ctx = useContext(EnboxAuthContext);
   if (!ctx) throw new Error('useEnboxAuth must be used within <EnboxAuthProvider>');
@@ -80,7 +81,7 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 // ── Provider ───────────────────────────────────────────────────────
 
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const authManagerRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -105,7 +106,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ── Restore session from cached PIN (silent, no UI) ──────────────
 
-  const tryAutoRestore = useCallback(async (auth: any): Promise<boolean> => { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const tryAutoRestore = useCallback(async (auth: any): Promise<boolean> => {  
     const cachedPin = getCachedSessionPin();
     if (!cachedPin) return false;
 

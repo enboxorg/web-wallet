@@ -142,7 +142,7 @@ export async function fetchActivity(
 
   const { records } = await dwn.records.query({
     filter: { dateCreated: { from: oneWeekAgo } },
-    dateSort: 'createdDescending' as any, // eslint-disable-line @typescript-eslint/no-explicit-any
+    dateSort: 'createdDescending' as any,  
     pagination: { limit },
   });
 
