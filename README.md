@@ -25,6 +25,11 @@
 
 ---
 
+> [!WARNING]
+> **This software is experimental and under active development.** It has not been independently audited for security. The cryptographic primitives and key management are provided by the underlying `@enbox/*` SDK, which is also pre-release. **Do not use this wallet to manage sensitive or high-value credentials in production.** APIs, storage formats, and recovery mechanisms may change without notice between versions.
+
+---
+
 ## Features
 
 - **Identity Management** -- Create, edit, delete, import, and export decentralised identities (DID:DHT) with auto-generated avatars, banners, and friendly names
