@@ -63,7 +63,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
         {/* Scrollable content area */}
         <main
           className={
-            'flex-1 overflow-y-auto px-[var(--content-gutter)] py-6'
+            'flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6'
             + (!isDesktop ? ' pb-24' : '') /* extra bottom padding for bottom nav */
           }
           data-testid="main-content"

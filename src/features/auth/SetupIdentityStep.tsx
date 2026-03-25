@@ -143,6 +143,15 @@ export function SetupIdentityStep({
               className="text-white opacity-0 group-hover:opacity-80 transition-opacity"
             />
           </button>
+          {/* Always-visible upload button for touch devices */}
+          <button
+            type="button"
+            onClick={() => bannerInputRef.current?.click()}
+            className="absolute bottom-2 right-2 rounded-full bg-surface-glass backdrop-blur-sm p-2 text-text-secondary hover:text-text-primary transition-colors shadow-md"
+            aria-label="Change banner"
+          >
+            <ImagePlus size={16} />
+          </button>
           <input
             ref={bannerInputRef}
             type="file"
@@ -173,6 +182,10 @@ export function SetupIdentityStep({
                   className="text-white opacity-0 group-hover:opacity-80 transition-opacity"
                 />
               </button>
+              {/* Always-visible camera badge for touch devices */}
+              <span className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-surface-glass backdrop-blur-sm p-1.5 text-text-secondary shadow-md pointer-events-none">
+                <Camera size={12} />
+              </span>
               <input
                 ref={avatarInputRef}
                 type="file"

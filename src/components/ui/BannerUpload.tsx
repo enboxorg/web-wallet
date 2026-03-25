@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { Upload, X } from 'lucide-react';
+import { Upload, X, ImagePlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface BannerUploadProps {
@@ -70,6 +70,16 @@ export function BannerUpload({
           </button>
         )}
       </div>
+
+      {/* Always-visible upload button for touch devices */}
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        className="absolute bottom-2 right-2 rounded-full bg-surface-glass backdrop-blur-sm p-2 text-text-secondary hover:text-text-primary transition-colors shadow-md"
+        aria-label="Change banner"
+      >
+        <ImagePlus size={16} />
+      </button>
 
       <input
         ref={inputRef}

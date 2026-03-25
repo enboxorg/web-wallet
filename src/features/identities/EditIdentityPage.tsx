@@ -250,16 +250,17 @@ export default function EditIdentityPage() {
           )}
         </section>
 
-        <div className="flex items-center gap-3 pt-2">
-          <Button type="submit" loading={updateProfile.isPending || updateEndpoints.isPending}>
-            Save Changes
-          </Button>
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-border-default pt-6">
           <Button
             type="button"
             variant="ghost"
+            className="w-full sm:w-auto"
             onClick={() => navigate(`/identity/${encodeURIComponent(did)}`)}
           >
             Cancel
+          </Button>
+          <Button type="submit" loading={updateProfile.isPending || updateEndpoints.isPending} className="w-full sm:w-auto">
+            Save Changes
           </Button>
         </div>
       </form>

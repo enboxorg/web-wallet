@@ -80,7 +80,7 @@ export function ChipInput({
             <button
               type="button"
               onClick={() => removeChip(index)}
-              className="inline-flex items-center justify-center rounded-full hover:bg-surface-3 p-0.5"
+              className="inline-flex items-center justify-center rounded-full hover:bg-surface-3 min-w-[28px] min-h-[28px] p-1"
               aria-label={`Remove ${value}`}
             >
               <X className="h-3 w-3" />

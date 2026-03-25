@@ -233,13 +233,13 @@ export default function CreateIdentityPage() {
         )}
 
         {/* Form actions */}
-        <div className="flex items-center justify-end gap-3 border-t border-border-default pt-6">
-          <Link to="/">
-            <Button type="button" variant="secondary">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-border-default pt-6">
+          <Link to="/" className="w-full sm:w-auto">
+            <Button type="button" variant="secondary" className="w-full sm:w-auto">
               Cancel
             </Button>
           </Link>
-          <Button type="submit" loading={isPending}>
+          <Button type="submit" loading={isPending} className="w-full sm:w-auto">
             Create Identity
           </Button>
         </div>

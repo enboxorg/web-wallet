@@ -105,7 +105,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   return createPortal(
     <div
       ref={dialogRef}
-      className="fixed inset-0 z-[var(--z-modal)] flex items-center justify-center p-4"
+      className="fixed inset-0 z-[var(--z-modal)] flex items-start justify-center overflow-y-auto p-4 pt-[15vh] sm:items-center sm:pt-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}

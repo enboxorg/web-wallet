@@ -44,8 +44,9 @@ export function BottomNav({
             onClick={() => onNavigate(item.path)}
             className={cn(
               'flex flex-col items-center justify-center gap-0.5',
-              'flex-1 py-3 pt-3',
-              'transition-colors duration-[var(--duration-fast)]',
+              'flex-1 py-2 pt-2.5',
+              'transition-all duration-[var(--duration-fast)]',
+              'active:scale-95 active:opacity-80',
               active
                 ? 'text-accent'
                 : 'text-text-ghost hover:text-text-secondary',
@@ -61,7 +62,7 @@ export function BottomNav({
             >
               {item.icon}
             </span>
-            <span className="text-[10px] font-medium leading-tight">
+            <span className="text-[11px] font-medium leading-tight">
               {item.label}
             </span>
           </button>

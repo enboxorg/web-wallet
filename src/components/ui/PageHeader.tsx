@@ -17,7 +17,7 @@ export function PageHeader({ title, description, backTo, actions, className }: P
         {backTo && (
           <Link
             to={backTo}
-            className="mt-1 rounded-lg p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
+            className="mt-0.5 rounded-lg p-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
             aria-label="Back"
           >
             <ArrowLeft className="h-5 w-5" />
