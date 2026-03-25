@@ -1,35 +1,46 @@
 import { type Page, expect } from '@playwright/test';
 
 /**
- * Wait for the app to finish initialising (past the "Initialising wallet..." loader).
- * Resolves once either the unlock screen or the setup screen is visible.
+ * Wait for the app to finish initialising.
+ * Resolves when either setup, unlock, identity creation, or the app shell is visible.
  */
 export async function waitForAppInit(page: Page) {
-  await page.waitForSelector('text=Set up Wallet, text=Unlock Wallet, [data-testid="app-shell"]', {
-    timeout: 30_000,
-  }).catch(() => {
-    // Fall back to waiting for the loader to disappear
-    return page.waitForFunction(
-      () => !document.body.textContent?.includes('Initialising wallet'),
-      { timeout: 30_000 },
-    );
-  });
+  // Wait for the initialising loader to disappear
+  await page.waitForFunction(
+    () => !document.body.textContent?.includes('Initialising wallet'),
+    { timeout: 30_000 },
+  );
+  // Give React a moment to render the next state
+  await page.waitForTimeout(500);
 }
 
 /**
- * Enter a PIN digit by digit using the PinInput component.
- * Each input has `aria-label="PIN digit N"`.
+ * Enter a PIN by typing digits on the page.
+ * The PinInput has global keyboard capture, so we just type the digits.
  */
 export async function enterPin(page: Page, pin: string) {
-  for (let i = 0; i < pin.length; i++) {
-    const input = page.getByLabel(`PIN digit ${i + 1}`);
-    await input.fill(pin[i]);
+  for (const digit of pin) {
+    await page.keyboard.type(digit, { delay: 100 });
+    await page.waitForTimeout(50);
   }
+  // Wait for the 200ms PIN success animation + React state transition
+  await page.waitForTimeout(600);
 }
 
-/** Verify the app shell has loaded (sidebar on desktop, appbar on mobile). */
-export async function expectAppShellLoaded(page: Page) {
+/** Wait for the app shell to be visible (after unlock/setup). */
+export async function waitForAppShell(page: Page) {
   await expect(
-    page.getByTestId('sidebar').or(page.getByTestId('appbar')),
+    page.getByTestId('app-shell').or(page.getByTestId('bottom-nav')),
   ).toBeVisible({ timeout: 15_000 });
+}
+
+/** Clear all site data (IndexedDB, localStorage, sessionStorage). */
+export async function clearSiteData(page: Page) {
+  await page.evaluate(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    indexedDB.databases().then(dbs => {
+      dbs.forEach(db => { if (db.name) indexedDB.deleteDatabase(db.name); });
+    });
+  });
 }
