@@ -1,5 +1,7 @@
+import { useState } from 'react';
+import { Copy, Check, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { truncateDid } from '@/lib/utils';
+import { truncateDid, copyToClipboard } from '@/lib/utils';
 import { Avatar } from '@/components/ui/Avatar';
 
 interface IdentityCardProps {
@@ -9,6 +11,7 @@ interface IdentityCardProps {
   avatarUrl?: string | null;
   heroUrl?: string | null;
   persona?: string;
+  appCount?: number;
   onClick?: () => void;
   className?: string;
 }
@@ -20,15 +23,27 @@ export function IdentityCard({
   avatarUrl,
   heroUrl,
   persona,
+  appCount,
   onClick,
   className,
 }: IdentityCardProps) {
-  const Component = onClick ? 'button' : 'div';
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const ok = await copyToClipboard(did);
+    if (ok) {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
 
   return (
-    <Component
-      type={onClick ? 'button' : undefined}
+    <div
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
       onClick={onClick}
+      onKeyDown={onClick ? (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
       className={cn(
         'flex flex-col overflow-hidden rounded-lg border border-border-default',
         'bg-surface-1 text-left w-full',
@@ -74,11 +89,27 @@ export function IdentityCard({
               {tagline}
             </p>
           )}
-          <p className="mt-1 text-xs text-text-ghost font-mono truncate">
-            {truncateDid(did)}
-          </p>
+          <div className="flex items-center gap-1.5 mt-2">
+            <span className="truncate font-mono text-xs text-text-ghost">
+              {truncateDid(did)}
+            </span>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="shrink-0 p-1 rounded text-text-ghost hover:text-text-secondary transition-colors"
+              aria-label="Copy DID"
+            >
+              {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
+            </button>
+          </div>
+          {appCount !== undefined && appCount > 0 && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent mt-2">
+              <Shield size={10} />
+              {appCount} {appCount === 1 ? 'app' : 'apps'}
+            </span>
+          )}
         </div>
       </div>
-    </Component>
+    </div>
   );
 }

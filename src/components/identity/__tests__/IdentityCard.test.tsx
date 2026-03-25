@@ -37,14 +37,16 @@ describe('IdentityCard', () => {
     const user = userEvent.setup();
     const onClick = vi.fn();
     render(<IdentityCard did={longDid} displayName="Alice" onClick={onClick} />);
-    await user.click(screen.getByRole('button'));
+    // Click the card itself (not the copy button)
+    const card = screen.getByText('Alice').closest('[role="button"]')!;
+    await user.click(card);
     expect(onClick).toHaveBeenCalledOnce();
   });
 
   it('applies hover classes when clickable', () => {
     render(<IdentityCard did={longDid} onClick={() => {}} />);
-    const button = screen.getByRole('button');
-    expect(button.className).toContain('hover:border-border-strong');
-    expect(button.className).toContain('hover:shadow-md');
+    const card = document.querySelector('[role="button"][tabindex="0"]')!;
+    expect(card.className).toContain('hover:border-border-strong');
+    expect(card.className).toContain('hover:shadow-md');
   });
 });

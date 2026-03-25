@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useExportIdentity } from '@/enbox/hooks/use-identity-mutations';
-import { copyToClipboard } from '@/lib/utils';
+import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
 
 export default function BackupPage() {
   const phrase = useBackupSeedStore((s) => s.phrase);
@@ -19,6 +19,9 @@ export default function BackupPage() {
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [lastExport, setLastExport] = useState<string | null>(() => {
+    try { return localStorage.getItem('enbox:lastExportTimestamp'); } catch { return null; }
+  });
 
   const handleCopy = useCallback(async () => {
     if (!phrase) return;
@@ -63,6 +66,9 @@ export default function BackupPage() {
       toast.success(
         `Exported ${exported.length} ${exported.length === 1 ? 'identity' : 'identities'}`,
       );
+      const now = Date.now().toString();
+      localStorage.setItem('enbox:lastExportTimestamp', now);
+      setLastExport(now);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to export identities',
@@ -109,9 +115,16 @@ export default function BackupPage() {
         </div>
 
         <div className="flex items-center justify-between pt-1">
-          <span className="text-sm text-text-tertiary">
-            {identityCount} {identityCount === 1 ? 'identity' : 'identities'} available
-          </span>
+          <div className="flex flex-col gap-1">
+            <span className="text-sm text-text-tertiary">
+              {identityCount} {identityCount === 1 ? 'identity' : 'identities'} available
+            </span>
+            {lastExport && (
+              <span className="text-xs text-text-ghost">
+                Last export: {formatRelativeTime(parseInt(lastExport, 10))}
+              </span>
+            )}
+          </div>
           <Button
             onClick={handleExportAll}
             loading={exporting}

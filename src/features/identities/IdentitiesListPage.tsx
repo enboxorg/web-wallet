@@ -3,6 +3,7 @@ import { Users, UserPlus, Search } from 'lucide-react';
 import { useNavigate, Link } from 'react-router';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
+import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { useProfile } from '@/enbox/hooks/use-profile';
 import { IdentityCard } from '@/components/identity/IdentityCard';
 import { IdentityCardSkeleton } from '@/components/identity/IdentityCardSkeleton';
@@ -16,7 +17,12 @@ import { PageHeader } from '@/components/ui/PageHeader';
 function IdentityCardWithProfile({ identity }: { identity: any }) {
   const did = identity.did.uri;
   const { data: profile, isLoading } = useProfile(did);
+  const { data: permissions } = usePermissions(did);
   const navigate = useNavigate();
+
+  const appCount = permissions
+    ? new Set(permissions.map((p: any) => p.grantee)).size
+    : 0;
 
   if (isLoading) {
     return <IdentityCardSkeleton />;
@@ -30,6 +36,7 @@ function IdentityCardWithProfile({ identity }: { identity: any }) {
       avatarUrl={profile?.avatarUrl}
       heroUrl={profile?.heroUrl}
       persona={identity.metadata.name}
+      appCount={appCount}
       onClick={() => navigate(`/identity/${encodeURIComponent(did)}`)}
     />
   );

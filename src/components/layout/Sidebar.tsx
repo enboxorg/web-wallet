@@ -86,8 +86,11 @@ export function Sidebar({
                   )}
                   aria-current={active ? 'page' : undefined}
                 >
-                  <span className="shrink-0 w-5 h-5" aria-hidden="true">
+                  <span className="relative shrink-0 w-5 h-5" aria-hidden="true">
                     {item.icon}
+                    {item.badge && (
+                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-error" />
+                    )}
                   </span>
                   {!mini && <span className="truncate">{item.label}</span>}
                 </button>

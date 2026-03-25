@@ -55,12 +55,15 @@ export function BottomNav({
           >
             <span
               className={cn(
-                'flex items-center justify-center w-6 h-6',
+                'relative flex items-center justify-center w-6 h-6',
                 active && 'drop-shadow-[0_0_6px_rgba(var(--accent-rgb),0.4)]',
               )}
               aria-hidden="true"
             >
               {item.icon}
+              {item.badge && (
+                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-error" />
+              )}
             </span>
             <span className="text-[11px] font-medium leading-tight">
               {item.label}

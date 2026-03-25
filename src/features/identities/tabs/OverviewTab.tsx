@@ -1,6 +1,8 @@
 import { Link } from 'react-router';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, QrCode, Search } from 'lucide-react';
 import { useProfile } from '@/enbox/hooks/use-profile';
+import { useProtocols } from '@/enbox/hooks/use-protocols';
+import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
@@ -13,6 +15,13 @@ interface OverviewTabProps {
 
 export default function OverviewTab({ did }: OverviewTabProps) {
   const { data: profile, isLoading, isError, error } = useProfile(did);
+  const { data: protocols } = useProtocols(did);
+  const { data: permissions } = usePermissions(did);
+
+  const protocolCount = protocols?.length ?? 0;
+  const granteeCount = permissions
+    ? new Set(permissions.map((p: any) => p.grantee)).size
+    : 0;
 
   if (isLoading) {
     return <Loader message="Loading profile..." />;
@@ -77,6 +86,44 @@ export default function OverviewTab({ did }: OverviewTabProps) {
             {profile.bio}
           </p>
         </Card>
+      )}
+
+      {/* Quick stats */}
+      {profile?.displayName && (
+        <div className="grid grid-cols-3 gap-3">
+          <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
+            <p className="text-xl font-semibold text-text-primary">{protocolCount}</p>
+            <p className="text-xs text-text-tertiary mt-0.5">Protocols</p>
+          </div>
+          <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
+            <p className="text-xl font-semibold text-text-primary">{granteeCount}</p>
+            <p className="text-xs text-text-tertiary mt-0.5">Apps</p>
+          </div>
+          <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
+            <p className="text-xl font-semibold text-accent">Active</p>
+            <p className="text-xs text-text-tertiary mt-0.5">Status</p>
+          </div>
+        </div>
+      )}
+
+      {/* Quick action links */}
+      {profile?.displayName && (
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/connect/app"
+            className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-1 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
+          >
+            <QrCode size={16} />
+            Connect App
+          </Link>
+          <Link
+            to="/search"
+            className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-1 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
+          >
+            <Search size={16} />
+            Search DIDs
+          </Link>
+        </div>
       )}
     </div>
   );
