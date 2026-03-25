@@ -1,4 +1,4 @@
-import { Suspense, useState, useCallback, useEffect } from 'react';
+import { Suspense, useState, useCallback, useEffect, useMemo } from 'react';
 import { Routes, Route, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'sonner';
@@ -89,6 +89,7 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
 function AuthGate() {
   const { initialized, unlocked, firstTime, connect, unlock, lock, restore, error, isLoading } = useAuth();
   const setPhrase = useBackupSeedStore((s) => s.setPhrase);
+  const needsBackup = useBackupSeedStore((s) => !!s.phrase);
 
   // Keyboard shortcut: Cmd/Ctrl+L to lock wallet
   useEffect(() => {
@@ -109,6 +110,17 @@ function AuthGate() {
 
   // Only query identities when unlocked
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
+
+  // Compute backup-needed badge for nav items (must be before early returns)
+  const sidebarWithBadges = useMemo(() =>
+    sidebarItems.map(item =>
+      item.path === '/settings/backup' ? { ...item, badge: needsBackup } : item
+    ), [needsBackup]);
+
+  const bottomTabsWithBadges = useMemo(() =>
+    bottomTabItems.map(item =>
+      item.path === '/settings' ? { ...item, badge: needsBackup } : item
+    ), [needsBackup]);
 
   const handleSetup = useCallback(
     async (pin: string, dwnEndpoints: string[]) => {
@@ -204,7 +216,7 @@ function AuthGate() {
   return (
     <>
       <DragDropOverlay />
-      <AppShell sidebarItems={sidebarItems} bottomTabItems={bottomTabItems}>
+      <AppShell sidebarItems={sidebarWithBadges} bottomTabItems={bottomTabsWithBadges}>
         <AnimatedRoutes />
       </AppShell>
     </>

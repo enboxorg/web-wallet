@@ -1,11 +1,13 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
-import { ArrowLeft, Pencil, Download, Trash2, Copy, Check, QrCode, UserX } from 'lucide-react';
+import { ArrowLeft, Pencil, Download, Trash2, Copy, Check, QrCode, UserX, Share2 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import { toast } from 'sonner';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useProfile } from '@/enbox/hooks/use-profile';
+import { useProtocols } from '@/enbox/hooks/use-protocols';
+import { usePermissions } from '@/enbox/hooks/use-permissions';
 import {
   useDeleteIdentity,
   useExportIdentity,
@@ -35,8 +37,22 @@ export default function IdentityDetailsPage() {
 
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
   const { data: profile, isLoading: profileLoading } = useProfile(did);
+  const { data: protocols } = useProtocols(did);
+  const { data: permissions } = usePermissions(did);
   const deleteIdentity = useDeleteIdentity();
   const exportIdentity = useExportIdentity();
+
+  const tabLabels = useMemo(() => {
+    const protocolCount = protocols?.length ?? 0;
+    const permissionCount = permissions?.length ?? 0;
+    return [
+      'Overview',
+      protocolCount > 0 ? `Protocols (${protocolCount})` : 'Protocols',
+      'Wallets',
+      permissionCount > 0 ? `Permissions (${permissionCount})` : 'Permissions',
+      'Activity',
+    ];
+  }, [protocols, permissions]);
 
   const identity = useMemo(
     () => identities?.find((id: any) => id.did.uri === did),
@@ -49,6 +65,7 @@ export default function IdentityDetailsPage() {
   const [qrOpen, setQrOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [qrCopied, setQrCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   async function handleCopyDid() {
     const ok = await copyToClipboard(did);
@@ -196,9 +213,9 @@ export default function IdentityDetailsPage() {
 
       {/* Tabs */}
       <TabList>
-        {TABS.map((label, index) => (
+        {tabLabels.map((label, index) => (
           <Tab
-            key={label}
+            key={TABS[index]}
             id={tabId(index)}
             panelId={panelId(index)}
             active={activeTab === index}
@@ -264,6 +281,43 @@ export default function IdentityDetailsPage() {
               {qrCopied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
             </button>
           </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const url = `${window.location.origin}/search/${encodeURIComponent(did)}`;
+              const ok = await copyToClipboard(url);
+              if (ok) {
+                setLinkCopied(true);
+                setTimeout(() => setLinkCopied(false), 2000);
+              }
+            }}
+            className="text-xs text-text-tertiary hover:text-accent transition-colors"
+          >
+            {linkCopied ? 'Link copied!' : 'Copy profile link'}
+          </button>
+
+          {typeof navigator !== 'undefined' && navigator.share && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className="w-full"
+              onClick={async () => {
+                try {
+                  await navigator.share({
+                    title: profile?.displayName || 'Enbox Identity',
+                    text: did,
+                    url: `${window.location.origin}/search/${encodeURIComponent(did)}`,
+                  });
+                } catch {
+                  // User cancelled share sheet
+                }
+              }}
+            >
+              <Share2 size={14} />
+              Share
+            </Button>
+          )}
 
           <p className="text-xs text-text-ghost text-center">
             Scan this QR code or copy the DID to share this identity.

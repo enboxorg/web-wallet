@@ -9,4 +9,6 @@ export interface NavItem {
   icon: ReactNode;
   /** Optional section group label, e.g. "Identity", "Connect", "Settings" */
   section?: string;
+  /** Show a notification dot badge on this item. */
+  badge?: boolean;
 }
