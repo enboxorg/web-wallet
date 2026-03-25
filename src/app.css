@@ -112,7 +112,7 @@
   --content-width: 1080px;
   --content-narrow: 720px;
   --content-wide: 1280px;
-  --content-gutter: clamp(1.25rem, 5vw, 3rem);
+  --content-gutter: clamp(1rem, 4vw, 3rem);
 
   /* ---- Radii ---- */
   --radius-sm: 4px;
@@ -312,6 +312,7 @@
     scroll-behavior: smooth;
     color-scheme: dark;
     background: var(--surface-0);
+    -webkit-tap-highlight-color: transparent;
   }
 
   html[data-theme='light'] {
@@ -326,6 +327,12 @@
     color: var(--text-primary);
     background: var(--surface-0);
     overflow-x: hidden;
+    overscroll-behavior: contain;
+  }
+
+  /* Prevent double-tap zoom on interactive elements */
+  button, a, [role="tab"], [role="button"] {
+    touch-action: manipulation;
   }
 
   #root {
@@ -356,6 +363,13 @@
     outline-offset: 2px;
   }
 
+  /* Prevent iOS Safari auto-zoom on input focus (triggered when font < 16px) */
+  @media (hover: none) and (pointer: coarse) {
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+  }
+
   a {
     color: var(--accent);
     text-decoration: none;
@@ -364,6 +378,18 @@
   a:hover {
     color: var(--accent-hover);
   }
+}
+
+/* ============================================================
+   SCROLLBAR-NONE UTILITY (for horizontal tab scrolling etc.)
+   ============================================================ */
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
 }
 
 /* ============================================================

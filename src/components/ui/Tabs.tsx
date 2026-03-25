@@ -31,7 +31,12 @@ export function TabList({ children, className }: TabListProps) {
     <div
       role="tablist"
       onKeyDown={handleKeyDown}
-      className={cn('flex gap-1 border-b border-border-subtle', className)}
+      className={cn(
+        'flex gap-1 border-b border-border-subtle',
+        'overflow-x-auto scrollbar-none',
+        className,
+      )}
+      style={{ WebkitOverflowScrolling: 'touch' }}
     >
       {children}
     </div>
@@ -57,7 +62,7 @@ export function Tab({ id, panelId, active, onClick, children, className }: TabPr
       tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={cn(
-        'relative px-4 py-2.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]',
+        'relative shrink-0 px-4 py-2.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
         active
           ? 'text-accent'

@@ -43,6 +43,10 @@ export function AvatarUpload({
       >
         <Camera className="h-5 w-5 text-white" />
       </div>
+      {/* Always-visible camera badge for touch devices */}
+      <span className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-surface-glass backdrop-blur-sm p-1.5 text-text-secondary shadow-md pointer-events-none">
+        <Camera size={12} />
+      </span>
       <input
         ref={inputRef}
         type="file"

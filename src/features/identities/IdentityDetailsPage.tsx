@@ -120,7 +120,7 @@ export default function IdentityDetailsPage() {
           {/* Back arrow — visible on mobile/tablet, hidden on desktop (sidebar handles nav) */}
           <Link
             to="/"
-            className="mt-1.5 rounded-lg p-1.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors lg:hidden"
+            className="mt-1.5 rounded-lg p-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors lg:hidden"
             aria-label="Back to identities"
           >
             <ArrowLeft className="h-5 w-5" />

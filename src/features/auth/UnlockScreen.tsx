@@ -28,6 +28,7 @@ export function UnlockScreen({ onUnlock, onForgotPin, error, isLoading }: Unlock
         'flex min-h-screen items-center justify-center bg-surface-0 px-4',
         'animate-[fadeIn_0.3s_ease-out]',
       )}
+      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
     >
       <div className="flex w-full max-w-sm flex-col items-center gap-8">
         <EnboxLogo size="lg" />
