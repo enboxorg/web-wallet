@@ -1,16 +1,32 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import Scanner from 'qr-scanner';
-import { Camera, CameraOff, Upload, Check, X, Zap, ZapOff } from 'lucide-react';
-import { EnboxConnectProtocol, type EnboxConnectRequest, type ConnectPermissionRequest } from '@enbox/agent';
+import {
+  CameraOff,
+  Check,
+  X,
+  Zap,
+  ZapOff,
+  Link2,
+  Copy,
+  ImageUp,
+  SwitchCamera,
+} from 'lucide-react';
+import {
+  EnboxConnectProtocol,
+  type EnboxConnectRequest,
+  type ConnectPermissionRequest,
+} from '@enbox/agent';
 import { CryptoUtils } from '@enbox/crypto';
 
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { truncateDid } from '@/lib/utils';
+import { getProtocolName } from '@/lib/protocol-names';
 
 type Phase = 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
 
@@ -37,6 +53,7 @@ export default function AppConnectPage() {
   const [selectedDid, setSelectedDid] = useState('');
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
+  const [pinCopied, setPinCopied] = useState(false);
 
   // Build identity options for the selector
   const identityOptions = (identities ?? []).map((id: any) => ({
@@ -65,14 +82,14 @@ export default function AppConnectPage() {
 
     (async () => {
       try {
-        if (!await Scanner.hasCamera()) {
+        if (!(await Scanner.hasCamera())) {
           setCameraError(true);
           return;
         }
 
         const scanner = new Scanner(videoRef.current!, handleScanResult, {
           preferredCamera: 'environment',
-          highlightScanRegion: true,
+          highlightScanRegion: false,
           maxScansPerSecond: 5,
         });
         scannerRef.current = scanner;
@@ -152,11 +169,13 @@ export default function AppConnectPage() {
     navigate('/');
   }
 
-  function handleCameraChange(cameraId: string) {
-    if (cameraId !== selectedCamera) {
-      scannerRef.current?.setCamera(cameraId);
-      setSelectedCamera(cameraId);
-    }
+  function handleCameraSwitch() {
+    if (cameras.length < 2) return;
+    const currentIdx = cameras.findIndex((c) => c.id === selectedCamera);
+    const nextIdx = (currentIdx + 1) % cameras.length;
+    const nextCamera = cameras[nextIdx];
+    scannerRef.current?.setCamera(nextCamera.id);
+    setSelectedCamera(nextCamera.id);
   }
 
   async function toggleFlash() {
@@ -164,83 +183,100 @@ export default function AppConnectPage() {
     setFlashOn(scannerRef.current?.isFlashOn() ?? false);
   }
 
+  async function handleCopyPin() {
+    try {
+      await navigator.clipboard.writeText(pin);
+      setPinCopied(true);
+      setTimeout(() => setPinCopied(false), 2000);
+    } catch {
+      // Clipboard API may not be available
+    }
+  }
+
   // ── Render ───────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto max-w-xl space-y-6">
-      <div>
-        <h1 className="text-[length:var(--text-2xl)] font-semibold text-text-primary">
-          App Connect
-        </h1>
-        <p className="mt-1 text-sm text-text-secondary">
-          Scan a QR code to connect with an application.
-        </p>
-      </div>
-
-      {/* Authorizing */}
-      {phase === 'authorizing' && <Loader message="Authorizing..." />}
-
-      {/* Error */}
-      {phase === 'error' && (
-        <div className="rounded-lg border border-error/30 bg-error/5 p-6 text-center">
-          <p className="text-sm text-error">{errorMessage}</p>
-          <Button variant="secondary" className="mt-4" onClick={() => { setPhase('scanning'); setErrorMessage(''); }}>
-            Try Again
-          </Button>
-        </div>
-      )}
-
-      {/* Camera / Scanner */}
+    <div className="-mx-[var(--content-gutter)] -mt-6 lg:mx-0 lg:mt-0">
+      {/* ─── Scanning phase ─────────────────────────────────────── */}
       {phase === 'scanning' && (
-        <div className="space-y-4">
+        <div className="animate-[fadeIn_0.3s_ease-out]">
           {cameraError ? (
-            <div className="flex flex-col items-center gap-3 rounded-lg border border-border-default bg-surface-1 p-8 text-center">
-              <CameraOff className="h-12 w-12 text-text-ghost" />
+            <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
+              <CameraOff className="h-16 w-16 text-text-ghost" />
               <p className="text-sm text-text-secondary">
                 No camera found. Make sure a camera is connected to your device.
               </p>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="mt-2 text-sm font-medium text-accent hover:underline min-h-[44px] inline-flex items-center"
+              >
+                Scan from image instead
+              </button>
             </div>
           ) : (
-            <div className="relative overflow-hidden rounded-lg border border-border-default bg-black">
-              {cameras.length > 1 && (
-                <div className="p-2">
-                  <Select
-                    label="Camera"
-                    options={cameras.map((c) => ({ value: c.id, label: c.label }))}
-                    value={selectedCamera}
-                    onChange={(e) => handleCameraChange(e.target.value)}
-                  />
+            <div className="flex flex-col items-center">
+              {/* Full-bleed camera viewfinder */}
+              <div className="relative w-full bg-black" style={{ minHeight: '70vh' }}>
+                <video
+                  ref={videoRef}
+                  className="h-full w-full object-cover absolute inset-0"
+                  style={{ minHeight: '70vh' }}
+                />
+
+                {/* Loading state */}
+                {!cameraReady && (
+                  <div className="absolute inset-0 flex items-center justify-center z-20">
+                    <Loader message="Starting camera..." />
+                  </div>
+                )}
+
+                {/* Scan target overlay */}
+                <div className="absolute inset-0 pointer-events-none z-10">
+                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-52 w-52 rounded-2xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]" />
                 </div>
-              )}
-              <video
-                ref={videoRef}
-                className="w-full object-cover"
-                style={{ minHeight: 300 }}
-              />
-              {!cameraReady && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <Loader message="Starting camera..." />
+
+                {/* Floating camera controls */}
+                <div className="absolute bottom-6 left-4 right-4 flex justify-between items-center z-20">
+                  <button
+                    type="button"
+                    disabled={!hasFlash}
+                    onClick={toggleFlash}
+                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm text-white transition-colors hover:bg-black/70 disabled:opacity-30"
+                    aria-label="Toggle flash"
+                  >
+                    {flashOn ? <Zap className="h-5 w-5" /> : <ZapOff className="h-5 w-5" />}
+                  </button>
+
+                  {cameras.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={handleCameraSwitch}
+                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm text-white transition-colors hover:bg-black/70"
+                      aria-label="Switch camera"
+                    >
+                      <SwitchCamera className="h-5 w-5" />
+                    </button>
+                  )}
                 </div>
-              )}
-              <div className="absolute bottom-3 left-3 right-3 flex justify-between">
-                <button
-                  type="button"
-                  disabled={!hasFlash}
-                  onClick={toggleFlash}
-                  className="rounded-full bg-black/50 p-2 text-white transition-colors hover:bg-black/70 disabled:opacity-30"
-                  aria-label="Toggle flash"
-                >
-                  {flashOn ? <Zap className="h-5 w-5" /> : <ZapOff className="h-5 w-5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="rounded-full bg-black/50 p-2 text-white transition-colors hover:bg-black/70"
-                  aria-label="Scan from file"
-                >
-                  <Upload className="h-5 w-5" />
-                </button>
               </div>
+
+              {/* Instruction pill */}
+              <div className="py-4">
+                <span className="inline-flex items-center rounded-full bg-surface-2 px-4 py-2 text-sm text-text-secondary">
+                  Point at a QR code
+                </span>
+              </div>
+
+              {/* Upload fallback link */}
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="mb-4 text-sm font-medium text-accent hover:underline min-h-[44px] inline-flex items-center gap-1.5"
+              >
+                <ImageUp className="h-4 w-4" />
+                Scan from image
+              </button>
             </div>
           )}
 
@@ -251,29 +287,75 @@ export default function AppConnectPage() {
             onChange={handleFileUpload}
             hidden
           />
-
-          {/* Always show the file button as fallback */}
-          {cameraError && (
-            <Button variant="secondary" className="w-full" onClick={() => fileInputRef.current?.click()}>
-              <Upload className="h-4 w-4" />
-              Scan from file
-            </Button>
-          )}
         </div>
       )}
 
-      {/* Connect request */}
+      {/* ─── Authorizing phase ──────────────────────────────────── */}
+      {phase === 'authorizing' && (
+        <div className="animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0">
+          <Loader message="Authorizing..." />
+        </div>
+      )}
+
+      {/* ─── Error phase ────────────────────────────────────────── */}
+      {phase === 'error' && (
+        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-8 lg:px-0 space-y-4 max-w-lg mx-auto">
+          <ErrorAlert message={errorMessage} />
+          <Button
+            variant="secondary"
+            className="w-full min-h-[44px]"
+            onClick={() => {
+              setPhase('scanning');
+              setErrorMessage('');
+            }}
+          >
+            Try Again
+          </Button>
+        </div>
+      )}
+
+      {/* ─── Request phase ──────────────────────────────────────── */}
       {phase === 'request' && connectionRequest && (
-        <div className="space-y-6 rounded-lg border border-border-default bg-surface-1 p-6">
-          {/* Origin */}
-          <div className="flex flex-col items-center gap-2 text-center">
-            <Camera className="h-8 w-8 text-accent" />
-            <p className="text-sm text-text-secondary">
-              <span className="font-medium text-text-primary">
-                {connectionRequest.appName || truncateDid(connectionRequest.clientDid)}
-              </span>{' '}
-              is requesting access
+        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-6 lg:px-0 max-w-lg mx-auto space-y-6">
+          {/* App identity */}
+          <div className="flex flex-col items-center gap-3 text-center">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+              <Link2 className="h-8 w-8" />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-text-primary">
+                {connectionRequest.appName || 'Unknown App'}
+              </h2>
+              {connectionRequest.appName && (
+                <p className="mt-0.5 text-xs text-text-ghost font-mono truncate max-w-[280px]">
+                  {truncateDid(connectionRequest.clientDid)}
+                </p>
+              )}
+            </div>
+            <p className="text-sm text-text-secondary">wants to connect</p>
+          </div>
+
+          {/* Permissions as chips */}
+          <div className="space-y-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
+              Permissions
             </p>
+            <div className="flex flex-wrap gap-2">
+              {connectionRequest.permissionRequests.map(
+                (perm: ConnectPermissionRequest, i: number) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-medium text-text-secondary"
+                  >
+                    {getProtocolName(perm.protocolDefinition.protocol)}
+                    <span className="text-text-ghost">
+                      ({perm.permissionScopes.length} scope
+                      {perm.permissionScopes.length !== 1 ? 's' : ''})
+                    </span>
+                  </span>
+                ),
+              )}
+            </div>
           </div>
 
           {/* Identity selector */}
@@ -285,37 +367,28 @@ export default function AppConnectPage() {
               onChange={(e) => setSelectedDid(e.target.value)}
             />
           ) : (
-            <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center">
+            <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center">
               <p className="text-xs text-warning">
                 No identities found. Create an identity first.
               </p>
             </div>
           )}
 
-          {/* Requested permissions */}
-          <div>
-            <h3 className="mb-2 text-sm font-medium text-text-secondary">Requested Permissions</h3>
-            <ul className="space-y-2">
-              {connectionRequest.permissionRequests.map((perm: ConnectPermissionRequest, i: number) => (
-                <li key={i} className="rounded-md border border-border-default bg-surface-2 px-3 py-2">
-                  <p className="text-xs font-mono text-text-secondary truncate">
-                    {perm.protocolDefinition.protocol}
-                  </p>
-                  <p className="mt-1 text-xs text-text-ghost">
-                    {perm.permissionScopes.length} scope{perm.permissionScopes.length !== 1 ? 's' : ''}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {/* Actions */}
-          <div className="flex gap-3">
-            <Button variant="danger" className="flex-1" onClick={handleDeny}>
+          {/* Action buttons — stacked on mobile */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:gap-3">
+            <Button
+              variant="danger"
+              className="w-full min-h-[44px] sm:flex-1"
+              onClick={handleDeny}
+            >
               <X className="h-4 w-4" />
               Deny
             </Button>
-            <Button className="flex-1" onClick={handleApprove} disabled={!selectedDid}>
+            <Button
+              className="w-full min-h-[44px] sm:flex-1"
+              onClick={handleApprove}
+              disabled={!selectedDid}
+            >
               <Check className="h-4 w-4" />
               Approve
             </Button>
@@ -323,16 +396,36 @@ export default function AppConnectPage() {
         </div>
       )}
 
-      {/* PIN display */}
+      {/* ─── PIN phase ──────────────────────────────────────────── */}
       {phase === 'pin' && (
-        <div className="flex flex-col items-center gap-4 rounded-lg border border-border-default bg-surface-1 p-8 text-center">
-          <p className="text-4xl font-bold tracking-[0.3em] text-text-primary">{pin}</p>
-          <p className="text-sm text-text-secondary">
-            Enter this PIN in the requesting application
-          </p>
-          <Button className="mt-4" onClick={() => navigate('/')}>
-            Done
-          </Button>
+        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-12 lg:px-0 max-w-lg mx-auto">
+          <div className="flex flex-col items-center gap-6 text-center">
+            {/* Glowing PIN display */}
+            <div className="relative">
+              <div className="absolute -inset-4 rounded-2xl bg-accent/20 blur-xl animate-pulse" />
+              <p className="relative text-5xl font-bold tracking-[0.4em] text-text-primary tabular-nums">
+                {pin}
+              </p>
+            </div>
+
+            <p className="text-sm text-text-secondary">
+              Enter this PIN in the requesting application
+            </p>
+
+            {/* Copy button */}
+            <button
+              type="button"
+              onClick={handleCopyPin}
+              className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline min-h-[44px]"
+            >
+              <Copy className="h-4 w-4" />
+              {pinCopied ? 'Copied!' : 'Copy PIN'}
+            </button>
+
+            <Button className="w-full min-h-[44px] mt-2" onClick={() => navigate('/')}>
+              Done
+            </Button>
+          </div>
         </div>
       )}
     </div>
