@@ -29,11 +29,11 @@ export default defineConfig({
         'src/main.tsx',
       ],
       thresholds: {
-        // Current baseline — raise as coverage improves
-        statements: 19,
-        branches: 20,
-        functions: 24,
-        lines: 19,
+        // Baseline — raise as coverage improves
+        statements: 25,
+        branches: 29,
+        functions: 30,
+        lines: 25,
       },
     },
   },
