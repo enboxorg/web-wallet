@@ -17,6 +17,7 @@ export function PinInput({
   autoFocus = false,
 }: PinInputProps) {
   const [values, setValues] = useState<string[]>(Array(length).fill(''));
+  const [complete, setComplete] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -28,6 +29,7 @@ export function PinInput({
   // Reset on error change (allow re-entry)
   useEffect(() => {
     if (error) {
+      setComplete(false);
       setValues(Array(length).fill(''));
       requestAnimationFrame(() => inputRefs.current[0]?.focus());
     }
@@ -97,7 +99,8 @@ export function PinInput({
       }
 
       if (next.every((v) => v !== '')) {
-        onComplete(next.join(''));
+        setComplete(true);
+        setTimeout(() => onComplete(next.join('')), 200);
       }
     };
 
@@ -129,7 +132,8 @@ export function PinInput({
       }
 
       if (digit && next.every((v) => v !== '')) {
-        onComplete(next.join(''));
+        setComplete(true);
+        setTimeout(() => onComplete(next.join('')), 200);
       }
     },
     [values, length, onComplete, focusInput],
@@ -167,7 +171,8 @@ export function PinInput({
       setValues(next);
 
       if (pasted.length === length) {
-        onComplete(next.join(''));
+        setComplete(true);
+        setTimeout(() => onComplete(next.join('')), 200);
       } else {
         focusInput(Math.min(pasted.length, length - 1));
       }
@@ -182,6 +187,7 @@ export function PinInput({
       className={cn(
         'flex gap-3 justify-center cursor-text',
         error && 'animate-[shake_0.4s_ease-in-out]',
+        complete && 'animate-[pulse-glow_0.3s_ease-out]',
       )}
     >
       {Array.from({ length }).map((_, i) => (

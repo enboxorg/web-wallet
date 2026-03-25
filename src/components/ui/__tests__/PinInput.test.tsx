@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { PinInput } from '../PinInput';
 
@@ -27,7 +27,9 @@ describe('PinInput', () => {
     await user.keyboard('3');
     await user.keyboard('4');
 
-    expect(onComplete).toHaveBeenCalledWith('1234');
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalledWith('1234');
+    });
   });
 
   it('only accepts digits', async () => {
@@ -57,7 +59,7 @@ describe('PinInput', () => {
     expect(inputs[1]).toHaveValue('');
   });
 
-  it('supports paste of full PIN', () => {
+  it('supports paste of full PIN', async () => {
     const onComplete = vi.fn();
     render(<PinInput onComplete={onComplete} />);
     const inputs = screen.getAllByRole('textbox');
@@ -66,7 +68,9 @@ describe('PinInput', () => {
       clipboardData: { getData: () => '5678' },
     });
 
-    expect(onComplete).toHaveBeenCalledWith('5678');
+    await waitFor(() => {
+      expect(onComplete).toHaveBeenCalledWith('5678');
+    });
   });
 
   it('ignores non-digit characters in paste', () => {

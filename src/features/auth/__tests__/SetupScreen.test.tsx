@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SetupScreen } from '../SetupScreen';
 
@@ -24,41 +24,63 @@ describe('SetupScreen', () => {
     expect(screen.getAllByRole('textbox')).toHaveLength(4);
   });
 
-  it('advances to step 2 after entering PIN', () => {
+  it('advances to step 2 after entering PIN', async () => {
     render(<SetupScreen {...defaults} />);
     enterPin('1234');
 
-    expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
-    expect(screen.getByText(/Enter your PIN again/)).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+      expect(screen.getByText(/Enter your PIN again/)).toBeInTheDocument();
+    });
   });
 
-  it('shows error on PIN mismatch in step 2', () => {
+  it('shows error on PIN mismatch in step 2', async () => {
     render(<SetupScreen {...defaults} />);
     enterPin('1234');
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
 
     // Enter a different PIN for confirmation
     enterPin('5678');
 
-    expect(screen.getByRole('alert')).toHaveTextContent('PINs do not match');
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('PINs do not match');
+    });
   });
 
-  it('advances to step 3 when PINs match', () => {
+  it('advances to step 3 when PINs match', async () => {
     render(<SetupScreen {...defaults} />);
     enterPin('1234');
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
+
     enterPin('1234');
 
-    expect(screen.getByText('DWN Endpoints')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('DWN Endpoints')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument();
+    });
   });
 
-  it('shows default DWN endpoints as chips', () => {
+  it('shows default DWN endpoints as chips', async () => {
     render(<SetupScreen {...defaults} />);
     enterPin('1234');
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
+
     enterPin('1234');
 
-    // Endpoints are displayed without protocol prefix
-    expect(screen.getByText('enbox-dwn.fly.dev')).toBeInTheDocument();
-    expect(screen.getByText('dev.aws.dwn.enbox.id')).toBeInTheDocument();
+    await waitFor(() => {
+      // Endpoints are displayed without protocol prefix
+      expect(screen.getByText('enbox-dwn.fly.dev')).toBeInTheDocument();
+      expect(screen.getByText('dev.aws.dwn.enbox.id')).toBeInTheDocument();
+    });
   });
 
   it('calls onSetup with PIN and endpoints on submit', async () => {
@@ -67,7 +89,16 @@ describe('SetupScreen', () => {
     render(<SetupScreen {...defaults} onSetup={onSetup} />);
 
     enterPin('4321');
+
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
+
     enterPin('4321');
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Set up' })).toBeInTheDocument();
+    });
 
     await user.click(screen.getByRole('button', { name: 'Set up' }));
     expect(onSetup).toHaveBeenCalledWith('4321', expect.any(Array));
@@ -79,7 +110,9 @@ describe('SetupScreen', () => {
     render(<SetupScreen {...defaults} />);
 
     enterPin('1234');
-    expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
 
     await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByText('Welcome to Enbox')).toBeInTheDocument();
@@ -90,30 +123,46 @@ describe('SetupScreen', () => {
     render(<SetupScreen {...defaults} />);
 
     enterPin('1234');
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
+
     enterPin('1234');
-    expect(screen.getByText('DWN Endpoints')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('DWN Endpoints')).toBeInTheDocument();
+    });
 
     await user.click(screen.getByRole('button', { name: 'Back' }));
     expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
   });
 
-  it('shows loader when isLoading is true at endpoints step', () => {
+  it('shows loader when isLoading is true at endpoints step', async () => {
     render(<SetupScreen {...defaults} isLoading />);
 
     // Navigate to endpoints step
     enterPin('1234');
-    enterPin('1234');
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
 
-    expect(screen.getByText('Setting up your wallet...')).toBeInTheDocument();
+    enterPin('1234');
+    await waitFor(() => {
+      expect(screen.getByText('Setting up your wallet...')).toBeInTheDocument();
+    });
   });
 
-  it('displays error in endpoints step', () => {
+  it('displays error in endpoints step', async () => {
     render(<SetupScreen {...defaults} error="Connection failed" />);
 
     enterPin('1234');
-    enterPin('1234');
+    await waitFor(() => {
+      expect(screen.getByText('Confirm PIN')).toBeInTheDocument();
+    });
 
-    expect(screen.getByRole('alert')).toHaveTextContent('Connection failed');
+    enterPin('1234');
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toHaveTextContent('Connection failed');
+    });
   });
 
   it('renders the Enbox logo', () => {

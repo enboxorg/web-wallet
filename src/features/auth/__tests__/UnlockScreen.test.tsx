@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { UnlockScreen } from '../UnlockScreen';
 
@@ -32,10 +32,12 @@ describe('UnlockScreen', () => {
     await userEvent.setup().click(inputs[0]);
     await userEvent.setup().keyboard('1234');
 
-    expect(onUnlock).toHaveBeenCalledWith('1234');
+    await waitFor(() => {
+      expect(onUnlock).toHaveBeenCalledWith('1234');
+    });
   });
 
-  it('calls onUnlock when PIN is pasted', () => {
+  it('calls onUnlock when PIN is pasted', async () => {
     const onUnlock = vi.fn();
     render(<UnlockScreen {...defaults} onUnlock={onUnlock} />);
 
@@ -44,7 +46,9 @@ describe('UnlockScreen', () => {
       clipboardData: { getData: () => '9876' },
     });
 
-    expect(onUnlock).toHaveBeenCalledWith('9876');
+    await waitFor(() => {
+      expect(onUnlock).toHaveBeenCalledWith('9876');
+    });
   });
 
   it('displays error message when error prop is set', () => {

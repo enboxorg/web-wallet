@@ -1,5 +1,5 @@
 import { Suspense, useState, useCallback, useEffect } from 'react';
-import { Routes, Route } from 'react-router';
+import { Routes, Route, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'sonner';
 
@@ -63,7 +63,7 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
   );
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-0 px-4">
+    <div className="flex min-h-screen items-center justify-center bg-surface-0 px-4 animate-[fadeIn_0.3s_ease-out]">
       <div className="w-full max-w-md">
         <SetupIdentityStep
           seed={seed}
@@ -205,20 +205,33 @@ function AuthGate() {
     <>
       <DragDropOverlay />
       <AppShell sidebarItems={sidebarItems} bottomTabItems={bottomTabItems}>
-        <Suspense fallback={<Loader message="Loading..." />}>
-          <Routes>
-            {routes.map((route) => (
-              <Route
-                key={route.path ?? 'index'}
-                index={route.index}
-                path={route.path}
-                element={route.element}
-              />
-            ))}
-          </Routes>
-        </Suspense>
+        <AnimatedRoutes />
       </AppShell>
     </>
+  );
+}
+
+/** Renders routes with a fade-in animation on route changes. */
+function AnimatedRoutes() {
+  const location = useLocation();
+  // Use first path segment as key so sub-routes don't re-trigger the animation
+  const routeKey = location.pathname.split('/').slice(0, 2).join('/');
+
+  return (
+    <Suspense fallback={<Loader message="Loading..." />}>
+      <div key={routeKey} className="animate-[fadeIn_0.2s_ease-out]">
+        <Routes>
+          {routes.map((route) => (
+            <Route
+              key={route.path ?? 'index'}
+              index={route.index}
+              path={route.path}
+              element={route.element}
+            />
+          ))}
+        </Routes>
+      </div>
+    </Suspense>
   );
 }
 
