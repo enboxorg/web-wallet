@@ -147,7 +147,11 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const hasFragment = globalThis.location?.hash?.length > 1;
       const cachedEndpoint = localStorage.getItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT);
 
-      if (!hasFragment && !cachedEndpoint) {
+      // Only attempt local DWN discovery on desktop. On mobile/touch
+      // devices there's no local DWN, and the dwn:// URL open triggers
+      // a blocked popup warning in mobile browsers.
+      const isTouchDevice = 'ontouchstart' in globalThis || navigator.maxTouchPoints > 0;
+      if (!hasFragment && !cachedEndpoint && !isTouchDevice) {
         requestLocalDwnDiscovery();
         await new Promise<void>((resolve) => setTimeout(resolve, DWN_DISCOVERY_TIMEOUT_MS));
         if (cancelled) return;
