@@ -10,9 +10,10 @@
 
 <p align="center">
   <a href="https://github.com/enboxorg/web-wallet/actions/workflows/ci.yml"><img src="https://github.com/enboxorg/web-wallet/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
-  <a href="https://codecov.io/gh/enboxorg/web-wallet"><img src="https://codecov.io/gh/enboxorg/web-wallet/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://enbox-wallet.pages.dev"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live Demo"></a>
   <a href="https://github.com/enboxorg/web-wallet/blob/main/LICENSE"><img src="https://img.shields.io/github/license/enboxorg/web-wallet" alt="License"></a>
+  <img src="https://img.shields.io/badge/tests-449-blue" alt="Tests">
+  <img src="https://img.shields.io/badge/coverage-26%25-yellow" alt="Coverage">
 </p>
 
 <p align="center">
@@ -22,6 +23,11 @@
   <a href="#testing">Testing</a> &bull;
   <a href="#architecture">Architecture</a>
 </p>
+
+---
+
+> [!WARNING]
+> **This software is experimental and under active development.** It has not been independently audited for security. The cryptographic primitives and key management are provided by the underlying `@enbox/*` SDK, which is also pre-release. **Do not use this wallet to manage sensitive or high-value credentials in production.** APIs, storage formats, and recovery mechanisms may change without notice between versions.
 
 ---
 
@@ -132,7 +138,7 @@ npx playwright test --ui          # Interactive mode
 
 ### Coverage
 
-Coverage is tracked via [Codecov](https://codecov.io/gh/enboxorg/web-wallet) and enforced in CI:
+Coverage is enforced in CI via thresholds and reported as PR comments via [vitest-coverage-report-action](https://github.com/davelosert/vitest-coverage-report-action):
 
 | Metric | Threshold | Current |
 |--------|-----------|---------|
@@ -223,7 +229,7 @@ Every push triggers:
 
 1. **Lint** -- ESLint + testing-library plugin
 2. **Typecheck** -- `tsc --noEmit`
-3. **Unit tests** -- Vitest with v8 coverage + Codecov upload
+3. **Unit tests** -- Vitest with v8 coverage (PR comments with per-file breakdown)
 4. **E2E tests** -- Playwright in real Chromium (with failure screenshots)
 5. **Build** -- Vite production build
 6. **Deploy** -- Cloudflare Pages (main branch only, both theme variants)
@@ -234,7 +240,6 @@ Every push triggers:
 |--------|------------|
 | `CLOUDFLARE_API_TOKEN` | Cloudflare API token with Pages:Edit |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account ID |
-| `CODECOV_TOKEN` | Codecov upload token ([get one here](https://codecov.io)) |
 
 ## Contributing
 
