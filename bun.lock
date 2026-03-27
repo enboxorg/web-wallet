@@ -5,15 +5,15 @@
     "": {
       "name": "@enbox/dweb-wallet",
       "dependencies": {
-        "@enbox/agent": "^0.5.12",
-        "@enbox/api": "^0.6.7",
-        "@enbox/auth": "^0.6.15",
-        "@enbox/browser": "^0.1.19",
+        "@enbox/agent": "^0.5.13",
+        "@enbox/api": "^0.6.8",
+        "@enbox/auth": "^0.6.16",
+        "@enbox/browser": "^0.1.20",
         "@enbox/common": "^0.1.0",
         "@enbox/crypto": "^0.1.0",
         "@enbox/dids": "^0.1.0",
-        "@enbox/dwn-clients": "^0.2.5",
-        "@enbox/protocols": "^0.2.34",
+        "@enbox/dwn-clients": "^0.2.6",
+        "@enbox/protocols": "^0.2.35",
         "@tanstack/react-query": "^5.80.7",
         "clsx": "^2.1.1",
         "lucide-react": "^0.513.0",
@@ -266,13 +266,13 @@
 
     "@emnapi/runtime": ["@emnapi/runtime@1.9.1", "", { "dependencies": { "tslib": "^2.4.0" } }, "sha512-VYi5+ZVLhpgK4hQ0TAjiQiZ6ol0oe4mBx7mVv7IflsiEp0OWoVsp/+f9Vc1hOhE0TtkORVrI1GvzyreqpgWtkA=="],
 
-    "@enbox/agent": ["@enbox/agent@0.5.12", "", { "dependencies": { "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "@enbox/dids": "0.1.0", "@enbox/dwn-clients": "0.2.5", "@enbox/dwn-sdk-js": "0.3.1", "@scure/bip39": "1.2.2", "abstract-level": "1.0.4", "ed25519-keygen": "0.4.11", "level": "8.0.1", "ms": "2.1.3", "ulidx": "2.1.0" } }, "sha512-/2D2lm1my1uyap4Rk13sb6wd6uYcVK56UqXPljdYGC82EMcSgL4tQh0AgT75CV2ZMl9HcH16hnrfmj5pjsJzzQ=="],
+    "@enbox/agent": ["@enbox/agent@0.5.13", "", { "dependencies": { "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "@enbox/dids": "0.1.0", "@enbox/dwn-clients": "0.2.6", "@enbox/dwn-sdk-js": "0.3.2", "@scure/bip39": "1.2.2", "abstract-level": "1.0.4", "ed25519-keygen": "0.4.11", "level": "8.0.1", "ms": "2.1.3", "ulidx": "2.1.0" } }, "sha512-28Hj/gYZUF969SRsK0BDaB/VEwke3sNtFLxAA43PjUkErovZfgCutLTEHkcznVtRuLXHD+06kdN6GLlfw5x+1w=="],
 
-    "@enbox/api": ["@enbox/api@0.6.7", "", { "dependencies": { "@enbox/agent": "0.5.12", "@enbox/auth": "0.6.15", "@enbox/common": "0.1.0", "@enbox/dwn-clients": "0.2.5" } }, "sha512-vTHPK7VWs/p1tkfXL3jr1is0TY7p88atwlZ8R+weMrH2PYRhS+Y0sm9aKmsxGrdMijs1U++ord8XaWiPKehuig=="],
+    "@enbox/api": ["@enbox/api@0.6.8", "", { "dependencies": { "@enbox/agent": "0.5.13", "@enbox/auth": "0.6.16", "@enbox/common": "0.1.0", "@enbox/dwn-clients": "0.2.6" } }, "sha512-Sn5nss8YvmSX2NQOiFwt0ptv8MKKbDkDIajGFeaR7eYTTLHyGFBWTPJV8OrCSMoJLyx5uqiAGmXBaL7OKdGCYA=="],
 
-    "@enbox/auth": ["@enbox/auth@0.6.15", "", { "dependencies": { "@enbox/agent": "0.5.12", "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "@enbox/dids": "0.1.0", "@enbox/dwn-clients": "0.2.5", "@enbox/dwn-sdk-js": "0.3.1", "level": "8.0.1" } }, "sha512-gKG4EGwpozOnufc3HDlMElT/CNGSy/61euSqoaF9S52A+a6asO5JmMIZ2fDzrFt69RjCFZ27oRDrsmzioNL0iw=="],
+    "@enbox/auth": ["@enbox/auth@0.6.16", "", { "dependencies": { "@enbox/agent": "0.5.13", "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "@enbox/dids": "0.1.0", "@enbox/dwn-clients": "0.2.6", "@enbox/dwn-sdk-js": "0.3.2", "level": "8.0.1" } }, "sha512-pxsi1ZEIpiuolgf4Gp31w5OBNZgGk2q9ijp4sIMhSXmdo0Y6ltKeBFkMvtu+l/QIfy/vlIHtrV30rv8VtFSUsQ=="],
 
-    "@enbox/browser": ["@enbox/browser@0.1.19", "", { "dependencies": { "@enbox/agent": "0.5.12", "@enbox/auth": "0.6.15", "@enbox/dids": "0.1.0" } }, "sha512-pPYdSmxs3G4fFxlWg/84BcSPxi+0mcofnJx+Yp1YWJThutINdBn5gf9hqshMhqlbiTzpyysnnuInCHiR2ig9/g=="],
+    "@enbox/browser": ["@enbox/browser@0.1.20", "", { "dependencies": { "@enbox/agent": "0.5.13", "@enbox/auth": "0.6.16", "@enbox/dids": "0.1.0" } }, "sha512-4y3MjVdFnI24HTNzl3XtZMjQvG8BKWZzyqEO5WFwmTaNSE3vlaJ3mh4NdYNf501VaCIDm42rUnZQS75Fcta9zA=="],
 
     "@enbox/common": ["@enbox/common@0.1.0", "", { "dependencies": { "@isaacs/ttlcache": "1.4.1", "level": "8.0.1", "multiformats": "11.0.2" } }, "sha512-rb4Fpz+vrPhDCFm93DfufV1PMztzNRztVeY/4DkXd0mUY3/5AE5EsCChmGL042m1GDlUtUL8O0jcOt+Zg5VbSA=="],
 
@@ -280,11 +280,11 @@
 
     "@enbox/dids": ["@enbox/dids@0.1.0", "", { "dependencies": { "@decentralized-identity/ion-sdk": "1.0.4", "@dnsquery/dns-packet": "6.1.1", "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "abstract-level": "1.0.4", "bencode": "4.0.0", "level": "8.0.1", "ms": "2.1.3" } }, "sha512-Agiw2NQw+CS2vYsoay/haq4ORsDCRHWcrYnDGigSiHrNckS0y0su0gPF1shZ/rXEdFj+vmSeToZPw5by+P/wCg=="],
 
-    "@enbox/dwn-clients": ["@enbox/dwn-clients@0.2.5", "", { "dependencies": { "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "@enbox/dwn-sdk-js": "0.3.1", "ms": "2.1.3" } }, "sha512-Wh/rYZj/D3yWdBqt5+J21LjmKLFdbDMq59YyaVV9XNBCXZNEGNfRSYk5CUdV+dbZmglYzj5QQ8UJFnStJBrdGg=="],
+    "@enbox/dwn-clients": ["@enbox/dwn-clients@0.2.6", "", { "dependencies": { "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "@enbox/dwn-sdk-js": "0.3.2", "ms": "2.1.3" } }, "sha512-5MiuiNsZsnCV7dz5SEElWUNsymuXrw0EsnjJOMC0ivvOU4uPABnERrSHFm+RAX7J4RjRGSqlO8hIYVhkOPuUVQ=="],
 
-    "@enbox/dwn-sdk-js": ["@enbox/dwn-sdk-js@0.3.1", "", { "dependencies": { "@enbox/crypto": "0.1.0", "@enbox/dids": "0.1.0", "@ipld/dag-cbor": "9.0.5", "@js-temporal/polyfill": "0.4.4", "@noble/ciphers": "0.5.3", "@noble/curves": "1.3.0", "@noble/ed25519": "2.0.0", "@noble/secp256k1": "2.0.0", "abstract-level": "1.0.4", "ajv": "8.18.0", "interface-blockstore": "5.2.3", "interface-store": "5.1.2", "ipfs-unixfs-exporter": "13.1.5", "ipfs-unixfs-importer": "15.1.5", "level": "8.0.1", "lodash": "4.17.21", "lru-cache": "9.1.2", "mitt": "3.0.1", "multiformats": "11.0.2", "uint8arrays": "5.1.0", "ulidx": "2.1.0" } }, "sha512-8LNu5pdsA2xTUQN/uSMEiGa5Jn3j9XhLy4nI6uELuhNXAgcpRi7AJUMK8if65ogT0djSw1oRd1EKCtIn8RG3xA=="],
+    "@enbox/dwn-sdk-js": ["@enbox/dwn-sdk-js@0.3.2", "", { "dependencies": { "@enbox/crypto": "0.1.0", "@enbox/dids": "0.1.0", "@ipld/dag-cbor": "9.0.5", "@js-temporal/polyfill": "0.4.4", "@noble/ciphers": "0.5.3", "@noble/curves": "1.3.0", "@noble/ed25519": "2.0.0", "@noble/secp256k1": "2.0.0", "abstract-level": "1.0.4", "ajv": "8.18.0", "interface-blockstore": "5.2.3", "interface-store": "5.1.2", "ipfs-unixfs-exporter": "13.1.5", "ipfs-unixfs-importer": "15.1.5", "level": "8.0.1", "lodash": "4.17.21", "lru-cache": "9.1.2", "mitt": "3.0.1", "multiformats": "11.0.2", "uint8arrays": "5.1.0", "ulidx": "2.1.0" } }, "sha512-AC7kfq8sfjCxgiQ38f+nDnw2OwnLuZqaoK451CUb6VlR+5iPdyjNcDfwjiVYkaCh7l6pNx3TKccvUMB2dJ+d+w=="],
 
-    "@enbox/protocols": ["@enbox/protocols@0.2.34", "", { "dependencies": { "@enbox/api": "0.6.7", "@enbox/dwn-sdk-js": "0.3.1" } }, "sha512-CsAnj7imQaS23L5vbcJ/4j0FtVwB+IMUr77oUcp/aZ4/v85kup01hR1U2u5xUAoTXjMVPEouBThmezRhFi54EA=="],
+    "@enbox/protocols": ["@enbox/protocols@0.2.35", "", { "dependencies": { "@enbox/api": "0.6.8", "@enbox/dwn-sdk-js": "0.3.2" } }, "sha512-d0eWlhyThOzv5+3RJrKDVR4VDvvkwd7rS5fvBJkddNQm1TmbFiEI+FN3XgIl5t6JjSn0rCq7rn7FklVU7WCO7w=="],
 
     "@esbuild/aix-ppc64": ["@esbuild/aix-ppc64@0.25.12", "", { "os": "aix", "cpu": "ppc64" }, "sha512-Hhmwd6CInZ3dwpuGTF8fJG6yoWmsToE+vYgD4nytZVxcu1ulHpUQRAB1UJ8+N1Am3Mz4+xOByoQoSZf4D+CpkA=="],
 
