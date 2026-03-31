@@ -1,5 +1,5 @@
 /// <reference lib="webworker" />
-import { precacheAndRoute, cleanupOutdatedCaches } from 'workbox-precaching';
+import { precacheAndRoute, cleanupOutdatedCaches, matchPrecache } from 'workbox-precaching';
 import { registerRoute, NavigationRoute } from 'workbox-routing';
 
 declare const self: ServiceWorkerGlobalScope;
@@ -10,8 +10,7 @@ cleanupOutdatedCaches();
 
 // SPA fallback: serve index.html for all navigation requests
 const navigationHandler = async () => {
-  const cache = await caches.open('workbox-precache-v2');
-  const cachedResponse = await cache.match('/index.html');
+  const cachedResponse = await matchPrecache('/index.html');
   return cachedResponse || fetch('/index.html');
 };
 
