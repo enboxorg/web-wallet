@@ -81,8 +81,9 @@ const DWebConnect: React.FC = () => {
       setReturningGrants(true);
 
       window.opener.postMessage({
-        type: 'dweb-connect-authorization-response',
-        delegateDid: delegatePortableDid,
+        type         : 'dweb-connect-authorization-response',
+        delegateDid  : delegatePortableDid,
+        connectedDid : did,
         grants
       }, origin);
 

@@ -137,11 +137,18 @@ interface IdentityContextProps {
 
 export const IdentitiesContext = createContext<IdentityContextProps | null>(null);
 
+/** Protocols that each identity DID should be registered to sync. */
+const IDENTITY_SYNC_PROTOCOLS = [
+  SocialGraphDefinition.protocol,
+  ProfileDefinition.protocol,
+  ConnectDefinition.protocol,
+];
+
 export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { agent } = useAgent();
-  const [ loadingIdentities, setLoadingIdentities ] = useState<boolean>(false);
+  const loadingRef = useRef(false);
   const [ identities, setIdentities ] = useState<Identity[]>([]);
   const [ selectedIdentity, setSelectedIdentity ] = useState<Identity | undefined>();
   const [ protocols, setProtocols ] = useState<DwnProtocolDefinition[]>([]);
@@ -183,17 +190,55 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const loadIdentities = useCallback(async () => {
     if (!agent) return;
-    if (loadingIdentities) return;
-    setLoadingIdentities(true);
+    if (loadingRef.current) return;
+    loadingRef.current = true;
 
     try {
-      const identities = await agent.identity.list() || [];
-      const parsedIdentities = await Promise.all(identities.map(loadProfileFromBearerIdentity(agent)));
+      const bearerIdentities = await agent.identity.list() || [];
+
+      // Register any identity DIDs that aren't yet registered for sync.
+      // This handles identities discovered via agent-DID sync on a restored
+      // wallet — they need their own sync registrations so that profile,
+      // avatar, hero, and wallet records are pulled from remote DWNs.
+      let newRegistrations = false;
+      for (const id of bearerIdentities) {
+        const existing = await agent.sync.getIdentityOptions(id.did.uri);
+        if (!existing) {
+          try {
+            await agent.sync.registerIdentity({
+              did     : id.did.uri,
+              options : { protocols: IDENTITY_SYNC_PROTOCOLS },
+            });
+            newRegistrations = true;
+          } catch {
+            // Already registered (race condition) — ignore.
+          }
+        }
+      }
+
+      // If we registered new identities, restart sync so their profile
+      // records (avatar, hero, social data) are fetched before we try to
+      // load them from the local DWN.
+      if (newRegistrations) {
+        try {
+          await agent.sync.stopSync();
+          await agent.sync.sync('pull');
+        } catch (e) {
+          console.info('IdentitiesContext: sync pull for new identities failed:', e);
+        }
+        // Always restart live sync — even if the pull failed above the
+        // subscriptions need to be reopened for the new registrations.
+        agent.sync.startSync({ mode: 'live', interval: '5m' });
+      }
+
+      const parsedIdentities = await Promise.all(
+        bearerIdentities.map(loadProfileFromBearerIdentity(agent)),
+      );
       setIdentities(parsedIdentities);
     } finally {
-      setLoadingIdentities(false);
+      loadingRef.current = false;
     }
-  }, [ agent, loadingIdentities ]);
+  }, [ agent ]);
 
   const loadSelectedIdentity = useCallback(async () => {
     if (!selectedIdentity || !agent) {
@@ -556,6 +601,31 @@ export const IdentitiesProvider: React.FC<{ children: React.ReactNode }> = ({
       loadIdentities();
     }
   }, [agent]);
+
+  // Re-check identities when sync pulls new records from remote DWNs.
+  // This ensures that identities created on another device (e.g. the primary
+  // wallet) appear in this wallet without requiring a manual page refresh.
+  useEffect(() => {
+    if (!agent) return;
+
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const unsub = agent.sync.on((event) => {
+      if (event.type === 'checkpoint:pull-advance') {
+        // Debounce to avoid rapid-fire reloads when many records arrive.
+        if (debounceTimer) { clearTimeout(debounceTimer); }
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null;
+          loadIdentities();
+        }, 500);
+      }
+    });
+
+    return () => {
+      unsub();
+      if (debounceTimer) { clearTimeout(debounceTimer); }
+    };
+  }, [agent, loadIdentities]);
 
   useEffect(() => {
     if (selectedIdentity && agent) {

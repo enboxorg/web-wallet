@@ -89,6 +89,16 @@ export const AgentProvider: React.FC<{ children: React.ReactNode }> = ({
     setIsConnecting(true);
     try {
         await enboxAgent.start({ password });
+
+        // Eager pull before rendering children: ensures identity metadata
+        // created on other devices is available when loadIdentities() runs
+        // on mount. The "Connecting…" spinner stays visible during this.
+        try {
+          await enboxAgent.sync.sync('pull');
+        } catch {
+          // May fail if no identities registered yet — continue.
+        }
+
         setEnboxAgent(enboxAgent);
         setUnlocked(true);
         enboxAgent.sync.startSync({ mode: 'live', interval: '5m' });
