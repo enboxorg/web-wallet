@@ -13,10 +13,10 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@enbox/agent": "^0.5.14",
-    "@enbox/api": "^0.6.9",
-    "@enbox/auth": "^0.6.17",
-    "@enbox/browser": "^0.1.21",
+    "@enbox/agent": "^0.5.15",
+    "@enbox/api": "^0.6.10",
+    "@enbox/auth": "^0.6.18",
+    "@enbox/browser": "^0.1.22",
     "@enbox/common": "^0.1.0",
     "@enbox/crypto": "^0.1.0",
     "@enbox/dids": "^0.1.0",
