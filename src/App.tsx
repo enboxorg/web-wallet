@@ -20,6 +20,7 @@ import { SetupIdentityStep } from '@/features/auth/SetupIdentityStep';
 import { RestoreWalletPage } from '@/features/auth/RestoreWalletPage';
 import { sidebarItems, bottomTabItems } from '@/nav-items';
 import { routes } from '@/routes';
+import DWebConnectPage from '@/features/connect/DWebConnectPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -87,6 +88,7 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
  * 5. Unlocked, has identities → App shell with routes
  */
 function AuthGate() {
+  const location = useLocation();
   const { initialized, unlocked, firstTime, connect, unlock, lock, restore, error, isLoading } = useAuth();
   const setPhrase = useBackupSeedStore((s) => s.setPhrase);
   const needsBackup = useBackupSeedStore((s) => !!s.phrase);
@@ -209,6 +211,15 @@ function AuthGate() {
       <CreateFirstIdentity
         onDone={() => setIdentitySkipped(true)}
       />
+    );
+  }
+
+  // DWeb Connect popup — render without the app shell (no sidebar/tabs)
+  if (location.pathname === '/dweb-connect') {
+    return (
+      <Suspense fallback={<Loader message="Loading..." />}>
+        <DWebConnectPage />
+      </Suspense>
     );
   }
 
