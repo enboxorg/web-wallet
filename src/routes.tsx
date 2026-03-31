@@ -25,6 +25,7 @@ export const routes: RouteObject[] = [
   { path: 'search/:did', element: <SearchPage /> },
   { path: 'connect/app', element: <AppConnectPage /> },
   { path: 'connect/dweb', element: <DWebConnectPage /> },
+  { path: 'dweb-connect', element: <DWebConnectPage /> },
   { path: 'settings', element: <SettingsPage /> },
   { path: 'settings/security', element: <SecurityPage /> },
   { path: 'settings/backup', element: <BackupPage /> },
