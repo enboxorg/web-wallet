@@ -111,7 +111,7 @@ export default function DWebConnectPage() {
         };
         setPendingRequest(req);
         setOrigin(event.origin);
-        setPermissions(event.data.permissionRequests ?? []);
+        setPermissions(event.data.permissions ?? event.data.permissionRequests ?? []);
         setPhase('request');
       }
     }
@@ -123,7 +123,7 @@ export default function DWebConnectPage() {
     if (buffered) {
       setPendingRequest(buffered);
       setOrigin(buffered.origin);
-      setPermissions((buffered.data as any)?.permissionRequests ?? []);
+      setPermissions((buffered.data as any)?.permissions ?? (buffered.data as any)?.permissionRequests ?? []);
       setPhase('request');
     }
 
