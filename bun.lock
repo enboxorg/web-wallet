@@ -5,10 +5,10 @@
     "": {
       "name": "@enbox/dweb-wallet",
       "dependencies": {
-        "@enbox/agent": "0.6.1",
-        "@enbox/api": "0.6.13",
-        "@enbox/auth": "0.6.21",
-        "@enbox/browser": "0.1.25",
+        "@enbox/agent": "^0.6.1",
+        "@enbox/api": "^0.6.13",
+        "@enbox/auth": "^0.6.21",
+        "@enbox/browser": "^0.1.26",
         "@enbox/common": "^0.1.0",
         "@enbox/crypto": "^0.1.0",
         "@enbox/dids": "^0.1.0",
@@ -272,7 +272,7 @@
 
     "@enbox/auth": ["@enbox/auth@0.6.21", "", { "dependencies": { "@enbox/agent": "0.6.1", "@enbox/common": "0.1.0", "@enbox/crypto": "0.1.0", "@enbox/dids": "0.1.0", "@enbox/dwn-clients": "0.3.0", "@enbox/dwn-sdk-js": "0.3.2", "level": "8.0.1" } }, "sha512-4CEmcOprE24XZ/edqHFW6EYe2d8oDUmZUM0nZ7HNsAqgTKgCLUDVgeKfv3hgm2nKzgFiX+c9GevWQAkd75ECMA=="],
 
-    "@enbox/browser": ["@enbox/browser@0.1.25", "", { "dependencies": { "@enbox/agent": "0.6.1", "@enbox/auth": "0.6.21", "@enbox/dids": "0.1.0" } }, "sha512-Z5kqGUla9+8762x6mXF74Y2rc31ww3vRd1kYEBqUh/dXq7H2lRQVUdCw8wL1YOcxQWG4etzk1ohAy9JMD8KrSw=="],
+    "@enbox/browser": ["@enbox/browser@0.1.26", "", { "dependencies": { "@enbox/agent": "0.6.1", "@enbox/auth": "0.6.21", "@enbox/dids": "0.1.0" } }, "sha512-1sFuZRC1Y9Loz6n9Tc8ODKYVNidLC7jFKxV4y8OPg6CfckIVsfXCa4hv7Q0CHczw06m7Lc7ccsShRROgQHJnlg=="],
 
     "@enbox/common": ["@enbox/common@0.1.0", "", { "dependencies": { "@isaacs/ttlcache": "1.4.1", "level": "8.0.1", "multiformats": "11.0.2" } }, "sha512-rb4Fpz+vrPhDCFm93DfufV1PMztzNRztVeY/4DkXd0mUY3/5AE5EsCChmGL042m1GDlUtUL8O0jcOt+Zg5VbSA=="],
 
