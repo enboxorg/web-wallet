@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Globe, Check, X, AlertCircle } from 'lucide-react';
-import { DwnInterface, type DwnProtocolDefinition, EnboxConnectProtocol, type ConnectPermissionRequest, getDwnServiceEndpointUrls } from '@enbox/agent';
+import { EnboxConnectProtocol, type ConnectPermissionRequest } from '@enbox/agent';
 import { DidJwk } from '@enbox/dids';
 
 import { Button } from '@/components/ui/Button';
@@ -10,65 +10,9 @@ import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
 import { truncateDid } from '@/lib/utils';
+import { prepareProtocol } from './protocol-install';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
-
-/**
- * Install a protocol on the local DWN and ALL remote DWN endpoints.
- *
- * `agent.sendDwnRequest()` returns after the first successful endpoint,
- * so we resolve the DID's endpoints ourselves and send to each one
- * individually. This ensures the protocol is available on every endpoint
- * the sync engine will target.
- */
-async function prepareProtocol(
-  selectedDid: string,
-  agent: any,
-  protocolDefinition: DwnProtocolDefinition,
-): Promise<void> {
-  const queryResult = await agent.processDwnRequest({
-    author: selectedDid,
-    messageType: DwnInterface.ProtocolsQuery,
-    target: selectedDid,
-    messageParams: { filter: { protocol: protocolDefinition.protocol } },
-  });
-
-  if (queryResult.reply.status.code !== 200) {
-    throw new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`);
-  }
-
-  let configureMessage: any;
-
-  if (!queryResult.reply.entries?.length) {
-    // Install new protocol: build the message, process locally, then send to all remotes
-    const { message } = await agent.processDwnRequest({
-      author: selectedDid,
-      target: selectedDid,
-      messageType: DwnInterface.ProtocolsConfigure,
-      messageParams: { definition: protocolDefinition },
-    });
-    configureMessage = message;
-  } else {
-    configureMessage = queryResult.reply.entries![0];
-  }
-
-  // Send to ALL DWN endpoints so every remote the sync engine targets has the protocol.
-  const dwnEndpoints = await getDwnServiceEndpointUrls(selectedDid, agent.did);
-  await Promise.all(dwnEndpoints.map(async (endpoint: string) => {
-    try {
-      const reply = await agent.rpc.sendDwnRequest({
-        dwnUrl    : endpoint,
-        targetDid : selectedDid,
-        message   : configureMessage,
-      });
-      if (reply.status.code !== 202 && reply.status.code !== 409) {
-        console.warn(`prepareProtocol: endpoint ${endpoint} rejected protocol: ${reply.status.detail}`);
-      }
-    } catch (err) {
-      console.warn(`prepareProtocol: failed to send to ${endpoint}:`, err);
-    }
-  }));
-}
 
 export default function DWebConnectPage() {
   const agent = useAgent();
