@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Globe, Check, X, AlertCircle } from 'lucide-react';
-import { DwnInterface, type DwnProtocolDefinition, EnboxConnectProtocol, type ConnectPermissionRequest, getDwnServiceEndpointUrls } from '@enbox/agent';
+import {
+  DwnInterface,
+  type DwnProtocolDefinition,
+  EnboxConnectProtocol,
+  type ConnectPermissionRequest,
+  getDwnServiceEndpointUrls,
+} from '@enbox/agent';
+import { Ed25519 } from '@enbox/crypto';
 import { DidJwk } from '@enbox/dids';
 
 import { Button } from '@/components/ui/Button';
@@ -39,17 +46,38 @@ async function prepareProtocol(
 
   let configureMessage: any;
 
+  const needsEncryption = Object.values(protocolDefinition.types ?? {})
+    .some((type: any) => type?.encryptionRequired === true);
+
   if (!queryResult.reply.entries?.length) {
-    // Install new protocol: build the message, process locally, then send to all remotes
+    // Install new protocol with encryption if any type requires it.
     const { message } = await agent.processDwnRequest({
-      author: selectedDid,
-      target: selectedDid,
-      messageType: DwnInterface.ProtocolsConfigure,
-      messageParams: { definition: protocolDefinition },
+      author        : selectedDid,
+      target        : selectedDid,
+      messageType   : DwnInterface.ProtocolsConfigure,
+      messageParams : { definition: protocolDefinition },
+      encryption    : needsEncryption || undefined,
     });
     configureMessage = message;
   } else {
-    configureMessage = queryResult.reply.entries![0];
+    const existingDef = queryResult.reply.entries![0].descriptor.definition;
+    const firstStructKey = Object.keys(existingDef.structure ?? {})[0];
+    const hasEncryptionKeys = firstStructKey
+      && (existingDef.structure as any)[firstStructKey]?.$encryption !== undefined;
+
+    if (needsEncryption && !hasEncryptionKeys) {
+      // Existing definition lacks $encryption keys — re-install with encryption.
+      const { message } = await agent.processDwnRequest({
+        author        : selectedDid,
+        target        : selectedDid,
+        messageType   : DwnInterface.ProtocolsConfigure,
+        messageParams : { definition: protocolDefinition },
+        encryption    : true,
+      });
+      configureMessage = message;
+    } else {
+      configureMessage = queryResult.reply.entries![0];
+    }
   }
 
   // Send to ALL DWN endpoints so every remote the sync engine targets has the protocol.
@@ -150,6 +178,18 @@ export default function DWebConnectPage() {
       const delegateBearerDid = await DidJwk.create();
       const delegatePortableDid = await delegateBearerDid.export();
 
+      // Add X25519 private key derived from the delegate's Ed25519 key.
+      // The delegate agent needs both Ed25519 (signing) and X25519 (encryption)
+      // keys for encrypted protocol operations.
+      const delegateEdPrivateKey = delegatePortableDid.privateKeys![0];
+      const delegateX25519PrivateKey = await Ed25519.convertPrivateKeyToX25519({
+        privateKey: delegateEdPrivateKey,
+      });
+      delegatePortableDid.privateKeys!.push(delegateX25519PrivateKey);
+
+      const allGrants: any[] = [];
+      const allDecryptionKeys: any[] = [];
+
       const delegateGrantPromises = permissions.map(async (permissionRequest) => {
         const { protocolDefinition, permissionScopes } = permissionRequest;
 
@@ -163,6 +203,22 @@ export default function DWebConnectPage() {
 
         await prepareProtocol(selectedDid, agent, protocolDefinition);
 
+        // Derive scoped decryption keys for single-party encrypted protocols.
+        const hasEncryptedTypes = Object.values(protocolDefinition.types ?? {})
+          .some((type: any) => type?.encryptionRequired === true);
+
+        if (hasEncryptedTypes) {
+          try {
+            const keys = await EnboxConnectProtocol.deriveScopedDecryptionKeys(
+              agent, selectedDid,
+              protocolDefinition.protocol, permissionScopes, protocolDefinition,
+            );
+            allDecryptionKeys.push(...keys);
+          } catch (err) {
+            console.warn('Failed to derive scoped decryption keys:', err);
+          }
+        }
+
         return EnboxConnectProtocol.createPermissionGrants(
           selectedDid,
           delegateBearerDid,
@@ -172,15 +228,23 @@ export default function DWebConnectPage() {
       });
 
       const grants = (await Promise.all(delegateGrantPromises)).flat();
+      allGrants.push(...grants);
 
       setStatusMessage('Returning grants...');
 
       window.opener.postMessage(
         {
-          type: 'dweb-connect-authorization-response',
-          delegateDid: delegatePortableDid,
-          connectedDid: selectedDid,
-          grants,
+          type                        : 'dweb-connect-authorization-response',
+          delegateDid                 : delegatePortableDid,
+          connectedDid                : selectedDid,
+          grants                      : allGrants,
+          delegateDecryptionKeys      : allDecryptionKeys.length > 0 ? allDecryptionKeys : undefined,
+          // delegateContextKeys and delegateMultiPartyProtocols are for multi-party
+          // protocols (roles/shared contexts). Not yet needed for single-party
+          // protocols like cashu-wallet.
+          delegateContextKeys         : undefined,
+          delegateMultiPartyProtocols : undefined,
+          sessionRevocations          : undefined,
         },
         origin,
       );
