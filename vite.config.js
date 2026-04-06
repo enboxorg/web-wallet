@@ -31,10 +31,11 @@ export default defineConfig({
                 config: true,
             },
             manifest: {
-                name: 'Enbox',
+                name: 'Enbox Wallet',
                 short_name: 'Enbox',
-                description: 'Your Digital Identity Wallet',
-                theme_color: '#ff6b8a',
+                description: 'Your digital identity wallet — manage DIDs, protocols, and encrypted data',
+                theme_color: '#0a0a0f',
+                background_color: '#0a0a0f',
             },
             injectManifest: {
                 maximumFileSizeToCacheInBytes: 5000000,

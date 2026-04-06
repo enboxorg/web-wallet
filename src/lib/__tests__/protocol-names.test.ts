@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { getProtocolName } from '../protocol-names';
+import { getProtocolName, getProtocolInfo, getScopeColor } from '../protocol-names';
 
 describe('getProtocolName', () => {
   // ── Known protocol URIs ───────────────────────────────────────────
@@ -23,55 +23,97 @@ describe('getProtocolName', () => {
     ).toBe('Connect');
   });
 
-  // ── Unknown URIs fall back to last path segment ───────────────────
+  it('returns "Cashu Wallet" for the cashu-wallet protocol URI', () => {
+    expect(
+      getProtocolName('https://enbox.id/protocols/cashu-wallet'),
+    ).toBe('Cashu Wallet');
+  });
 
-  it('returns the last path segment for an unknown URI', () => {
+  it('returns "Cashu Transfers" for the cashu-transfer protocol URI', () => {
+    expect(
+      getProtocolName('https://enbox.id/protocols/cashu-transfer'),
+    ).toBe('Cashu Transfers');
+  });
+
+  // ── Unknown URIs fall back to title-cased last path segment ───────
+
+  it('returns the title-cased last path segment for an unknown URI', () => {
     expect(
       getProtocolName('https://example.com/protocols/messaging'),
-    ).toBe('messaging');
+    ).toBe('Messaging');
   });
 
-  it('returns the last segment for a deep path', () => {
+  it('returns the title-cased last segment with hyphens replaced by spaces', () => {
     expect(
       getProtocolName('https://example.com/a/b/c/my-protocol'),
-    ).toBe('my-protocol');
+    ).toBe('My Protocol');
   });
 
-  it('returns the last segment for a URI with no known mapping', () => {
+  it('returns a title-cased fallback for an unknown protocol foundation URI', () => {
     expect(
       getProtocolName('https://identity.foundation/protocols/unknown-proto'),
-    ).toBe('unknown-proto');
+    ).toBe('Unknown Proto');
   });
 
   // ── Edge cases ────────────────────────────────────────────────────
 
-  it('returns the full URI when there are no slashes', () => {
-    // uri.split('/') → ['just-a-string'], last element is the whole thing
-    expect(getProtocolName('just-a-string')).toBe('just-a-string');
+  it('title-cases the full string when there are no slashes', () => {
+    expect(getProtocolName('just-a-string')).toBe('Just A String');
   });
 
   it('returns the URI itself for an empty string (no segments)', () => {
-    // ''.split('/') → [''], last element is '', fallback to uri ('')
     expect(getProtocolName('')).toBe('');
   });
 
-  it('returns the URI when the last segment is empty (trailing slash)', () => {
-    // 'https://example.com/foo/'.split('/') → [..., ''], last is ''
-    // fallback: '' || uri → returns the full URI
+  it('returns the title-cased URI when the last segment is empty (trailing slash)', () => {
+    // '...foo/'.split('/') → [..., ''], last is '' → fallback to full URI, title-cased
     expect(
       getProtocolName('https://example.com/foo/'),
-    ).toBe('https://example.com/foo/');
+    ).toBe('Https://Example.Com/Foo/');
   });
 
   it('handles a URI that is just a slash', () => {
-    // '/'.split('/') → ['', ''], last is '' → fallback to '/'
     expect(getProtocolName('/')).toBe('/');
   });
 
   it('handles a URI with query parameters (no special parsing)', () => {
-    // The function does simple split on '/', so query params stay on the last segment
     expect(
       getProtocolName('https://example.com/proto?version=2'),
-    ).toBe('proto?version=2');
+    ).toBe('Proto?Version=2');
+  });
+});
+
+describe('getProtocolInfo', () => {
+  it('returns full info for a known protocol', () => {
+    const info = getProtocolInfo('https://enbox.id/protocols/cashu-wallet');
+    expect(info.name).toBe('Cashu Wallet');
+    expect(info.description).toContain('ecash');
+  });
+
+  it('returns a sensible fallback for an unknown protocol', () => {
+    const info = getProtocolInfo('https://example.com/my-thing');
+    expect(info.name).toBe('My Thing');
+    expect(info.description).toContain('https://example.com/my-thing');
+  });
+});
+
+describe('getScopeColor', () => {
+  it('returns green for read-like scopes', () => {
+    expect(getScopeColor('Read')).toBe('green');
+    expect(getScopeColor('Query')).toBe('green');
+    expect(getScopeColor('Subscribe')).toBe('green');
+  });
+
+  it('returns amber for write-like scopes', () => {
+    expect(getScopeColor('Write')).toBe('amber');
+    expect(getScopeColor('Configure')).toBe('amber');
+  });
+
+  it('returns red for delete', () => {
+    expect(getScopeColor('Delete')).toBe('red');
+  });
+
+  it('returns gray for unknown scopes', () => {
+    expect(getScopeColor('SomethingElse')).toBe('gray');
   });
 });
