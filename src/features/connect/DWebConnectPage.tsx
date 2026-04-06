@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Globe, Check, X, AlertCircle } from 'lucide-react';
 import { EnboxConnectProtocol, type ConnectPermissionRequest } from '@enbox/agent';
+import { encryptPostMessagePayload, generateEphemeralKeyPair } from '@enbox/browser';
 import { Ed25519 } from '@enbox/crypto';
 import { DidJwk } from '@enbox/dids';
 
@@ -151,16 +152,43 @@ export default function DWebConnectPage() {
 
       setStatusMessage('Returning grants...');
 
-      window.opener.postMessage(
-        {
-          type                   : 'dweb-connect-authorization-response',
-          delegateDid            : delegatePortableDid,
-          connectedDid           : selectedDid,
-          grants                 : allGrants,
-          delegateDecryptionKeys : allDecryptionKeys.length > 0 ? allDecryptionKeys : undefined,
-        },
-        origin,
-      );
+      const responsePayload: Record<string, unknown> = {
+        delegateDid            : delegatePortableDid,
+        connectedDid           : selectedDid,
+        grants                 : allGrants,
+        delegateDecryptionKeys : allDecryptionKeys.length > 0 ? allDecryptionKeys : undefined,
+      };
+
+      // If the dapp sent an ephemeral public key, encrypt the response
+      // so private key material is not exposed as plaintext in postMessage.
+      const dappEphemeralKey = (_pendingRequest?.data as any)?.ephemeralPublicKey as string | undefined;
+      if (dappEphemeralKey) {
+        try {
+          const walletEphemeral = await generateEphemeralKeyPair();
+          const encryptedPayload = await encryptPostMessagePayload(
+            responsePayload,
+            walletEphemeral.keyPair,
+            walletEphemeral.publicKeyBase64url,
+            dappEphemeralKey,
+          );
+          window.opener.postMessage(
+            { type: 'dweb-connect-authorization-response', encryptedPayload },
+            origin,
+          );
+        } catch (encErr) {
+          console.warn('Failed to encrypt connect response, falling back to plaintext:', encErr);
+          window.opener.postMessage(
+            { type: 'dweb-connect-authorization-response', ...responsePayload },
+            origin,
+          );
+        }
+      } else {
+        // Dapp does not support encrypted channel — send plaintext.
+        window.opener.postMessage(
+          { type: 'dweb-connect-authorization-response', ...responsePayload },
+          origin,
+        );
+      }
 
       setPhase('done');
 
