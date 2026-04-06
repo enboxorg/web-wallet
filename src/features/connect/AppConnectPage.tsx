@@ -15,7 +15,6 @@ import {
 import {
   EnboxConnectProtocol,
   type EnboxConnectRequest,
-  type ConnectPermissionRequest,
 } from '@enbox/agent';
 import { CryptoUtils } from '@enbox/crypto';
 
