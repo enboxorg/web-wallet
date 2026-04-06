@@ -24,10 +24,10 @@ import { Dialog } from '@/components/ui/Dialog';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
+import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { truncateDid } from '@/lib/utils';
-import { getProtocolName } from '@/lib/protocol-names';
 
 type Phase = 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
 
@@ -350,28 +350,8 @@ export default function AppConnectPage() {
             <p className="text-sm text-text-secondary">wants to connect</p>
           </div>
 
-          {/* Permissions as chips */}
-          <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-              Permissions
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {connectionRequest.permissionRequests.map(
-                (perm: ConnectPermissionRequest, i: number) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center gap-1.5 rounded-full bg-surface-2 px-3 py-1.5 text-xs font-medium text-text-secondary"
-                  >
-                    {getProtocolName(perm.protocolDefinition.protocol)}
-                    <span className="text-text-ghost">
-                      ({perm.permissionScopes.length} scope
-                      {perm.permissionScopes.length !== 1 ? 's' : ''})
-                    </span>
-                  </span>
-                ),
-              )}
-            </div>
-          </div>
+          {/* Permissions — rich display */}
+          <PermissionDisplay permissions={connectionRequest.permissionRequests} />
 
           {/* Identity selector */}
           {identityOptions.length > 0 ? (

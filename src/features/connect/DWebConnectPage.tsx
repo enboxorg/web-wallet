@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Globe, Check, X, AlertCircle } from 'lucide-react';
+import { Globe, Check, X, AlertCircle, Import } from 'lucide-react';
 import { EnboxConnectProtocol, type ConnectPermissionRequest } from '@enbox/agent';
 import { encryptPostMessagePayload, generateEphemeralKeyPair } from '@enbox/browser';
 import { Ed25519 } from '@enbox/crypto';
@@ -8,6 +8,7 @@ import { DidJwk } from '@enbox/dids';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
+import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
@@ -25,6 +26,9 @@ export default function DWebConnectPage() {
   const [_pendingRequest, setPendingRequest] = useState<DWebConnectRequest | null>(null);
   const [permissions, setPermissions] = useState<ConnectPermissionRequest[]>([]);
   const [origin, setOrigin] = useState('');
+  const [appName, setAppName] = useState<string | undefined>();
+  const [appIcon, setAppIcon] = useState<string | undefined>();
+  const [hasPortableIdentity, setHasPortableIdentity] = useState(false);
   const [selectedDid, setSelectedDid] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -46,24 +50,31 @@ export default function DWebConnectPage() {
 
   // Not opened as a popup
   useEffect(() => {
-    if (!isPopup) setPhase('not-popup');
+    if (!isPopup) { setPhase('not-popup'); }
   }, [isPopup]);
 
   // Listen for postMessage events and check the store buffer
   useEffect(() => {
-    if (!isPopup) return;
+    if (!isPopup) { return; }
+
+    function applyRequest(req: DWebConnectRequest) {
+      const data = req.data as any;
+      setPendingRequest(req);
+      setOrigin(req.origin);
+      setPermissions(data?.permissions ?? data?.permissionRequests ?? []);
+      setAppName(data?.appName);
+      setAppIcon(data?.appIcon);
+      setHasPortableIdentity(!!data?.portableIdentity);
+      setPhase('request');
+    }
 
     function handleMessage(event: MessageEvent) {
       if (event.data?.type === 'dweb-connect-authorization-request') {
-        const req: DWebConnectRequest = {
-          origin: event.origin,
-          data: event.data,
-          timestamp: Date.now(),
-        };
-        setPendingRequest(req);
-        setOrigin(event.origin);
-        setPermissions(event.data.permissions ?? event.data.permissionRequests ?? []);
-        setPhase('request');
+        applyRequest({
+          origin    : event.origin,
+          data      : event.data,
+          timestamp : Date.now(),
+        });
       }
     }
 
@@ -71,12 +82,7 @@ export default function DWebConnectPage() {
 
     // Check for buffered requests
     const buffered = consumeRequest();
-    if (buffered) {
-      setPendingRequest(buffered);
-      setOrigin(buffered.origin);
-      setPermissions((buffered.data as any)?.permissions ?? (buffered.data as any)?.permissionRequests ?? []);
-      setPhase('request');
-    }
+    if (buffered) { applyRequest(buffered); }
 
     // Signal to opener that the wallet is ready
     window.opener?.postMessage({ type: 'dweb-connect-loaded' }, '*');
@@ -87,12 +93,21 @@ export default function DWebConnectPage() {
   // ── Approve flow ──────────────────────────────────────────────
 
   async function handleApprove() {
-    if (!agent || !selectedDid || !origin) return;
+    if (!agent || !selectedDid || !origin) { return; }
 
     setPhase('connecting');
-    setStatusMessage('Creating delegate...');
+    setStatusMessage(hasPortableIdentity ? 'Importing identity...' : 'Creating delegate...');
 
     try {
+      // If the dapp is exporting a portable identity, import it first.
+      const requestData = _pendingRequest?.data as any;
+      if (hasPortableIdentity && requestData?.portableIdentity) {
+        await agent.identity.import({
+          portableIdentity: requestData.portableIdentity,
+        });
+        setStatusMessage('Creating delegate...');
+      }
+
       const delegateBearerDid = await DidJwk.create();
       const delegatePortableDid = await delegateBearerDid.export();
 
@@ -161,7 +176,7 @@ export default function DWebConnectPage() {
 
       // If the dapp sent an ephemeral public key, encrypt the response
       // so private key material is not exposed as plaintext in postMessage.
-      const dappEphemeralKey = (_pendingRequest?.data as any)?.ephemeralPublicKey as string | undefined;
+      const dappEphemeralKey = (requestData)?.ephemeralPublicKey as string | undefined;
       if (dappEphemeralKey) {
         try {
           const walletEphemeral = await generateEphemeralKeyPair();
@@ -207,6 +222,15 @@ export default function DWebConnectPage() {
     }
     window.close();
   }
+
+  // ── Derived display values ────────────────────────────────────
+
+  /** Resolve the icon to show: dapp-provided, or Google favicon fallback. */
+  const displayIcon = appIcon
+    || (origin ? `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${origin}&size=128` : undefined);
+
+  /** Display name: dapp-provided appName, or bare origin. */
+  const displayName = appName || origin;
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -262,20 +286,43 @@ export default function DWebConnectPage() {
       {/* Connect request UI */}
       {phase === 'request' && (
         <div className="flex flex-1 flex-col gap-6">
-          {/* Origin */}
-          <div className="flex flex-col items-center gap-2 text-center">
-            {origin && (
+          {/* App identity */}
+          <div className="flex flex-col items-center gap-3 text-center">
+            {displayIcon && (
               <img
-                src={`https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${origin}&size=128`}
+                src={displayIcon}
                 alt=""
-                className="h-10 w-10 rounded"
+                className="h-12 w-12 rounded-xl"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
               />
             )}
+            <div>
+              <p className="text-base font-semibold text-text-primary">
+                {displayName}
+              </p>
+              {appName && origin && (
+                <p className="mt-0.5 text-xs text-text-ghost truncate max-w-[280px]">
+                  {origin}
+                </p>
+              )}
+            </div>
             <p className="text-sm text-text-secondary">
-              <span className="font-medium text-text-primary">{origin}</span>
-              {' '}is requesting permissions
+              {hasPortableIdentity
+                ? 'wants to transfer an identity and connect'
+                : 'is requesting permissions'}
             </p>
           </div>
+
+          {/* Import indicator */}
+          {hasPortableIdentity && (
+            <div className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2">
+              <Import className="h-4 w-4 text-blue-400 shrink-0" />
+              <p className="text-xs text-blue-300">
+                This app wants to export a local identity to your wallet.
+                The identity will be imported and the app will reconnect as a delegate.
+              </p>
+            </div>
+          )}
 
           {/* Identity selector */}
           {identityOptions.length > 0 ? (
@@ -293,24 +340,8 @@ export default function DWebConnectPage() {
             </div>
           )}
 
-          {/* Permissions */}
-          {permissions.length > 0 && (
-            <div>
-              <h3 className="mb-2 text-sm font-medium text-text-secondary">Requested Permissions</h3>
-              <ul className="space-y-2">
-                {permissions.map((perm, i) => (
-                  <li key={i} className="rounded-md border border-border-default bg-surface-2 px-3 py-2">
-                    <p className="text-xs font-mono text-text-secondary truncate">
-                      {perm.protocolDefinition.protocol}
-                    </p>
-                    <p className="mt-1 text-xs text-text-ghost">
-                      {perm.permissionScopes.length} scope{perm.permissionScopes.length !== 1 ? 's' : ''}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* Permissions — rich display */}
+          <PermissionDisplay permissions={permissions} />
 
           {/* Actions */}
           <div className="mt-auto flex gap-3 pt-4">
@@ -320,7 +351,7 @@ export default function DWebConnectPage() {
             </Button>
             <Button className="flex-1" onClick={handleApprove} disabled={!selectedDid}>
               <Check className="h-4 w-4" />
-              Approve
+              {hasPortableIdentity ? 'Import & Connect' : 'Approve'}
             </Button>
           </div>
         </div>
