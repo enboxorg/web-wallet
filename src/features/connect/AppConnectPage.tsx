@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useBlocker } from 'react-router';
+import { useNavigate } from 'react-router';
 import Scanner from 'qr-scanner';
 import {
   CameraOff,
@@ -19,7 +19,7 @@ import {
 import { CryptoUtils } from '@enbox/crypto';
 
 import { Button } from '@/components/ui/Button';
-import { Dialog } from '@/components/ui/Dialog';
+
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
@@ -79,8 +79,9 @@ export default function AppConnectPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [phase]);
 
-  const shouldBlock = phase === 'request' || phase === 'authorizing';
-  const blocker = useBlocker(shouldBlock);
+  // NOTE: useBlocker is not available with <BrowserRouter> — it requires
+  // createBrowserRouter (data router). The beforeunload handler above is
+  // the navigation guard we can use without a data router.
 
   // ── Camera setup ────────────────────────────────────────────────
 
@@ -456,19 +457,7 @@ export default function AppConnectPage() {
         </div>
       )}
 
-      {blocker.state === 'blocked' && (
-        <Dialog open onClose={() => blocker.reset?.()} title="Leave connection?">
-          <div className="space-y-4">
-            <p className="text-sm text-text-secondary">
-              You're in the middle of connecting with an app. Leaving will cancel the connection.
-            </p>
-            <div className="flex justify-end gap-3">
-              <Button variant="ghost" size="sm" onClick={() => blocker.reset?.()}>Stay</Button>
-              <Button variant="danger" size="sm" onClick={() => blocker.proceed?.()}>Leave</Button>
-            </div>
-          </div>
-        </Dialog>
-      )}
+
     </div>
   );
 }
