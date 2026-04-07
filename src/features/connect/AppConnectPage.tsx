@@ -364,7 +364,7 @@ export default function AppConnectPage() {
 
       {/* ─── Request phase ──────────────────────────────────────── */}
       {phase === 'request' && connectionRequest && (
-        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-6 lg:px-0 max-w-lg mx-auto space-y-6">
+        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-6 pb-24 lg:px-0 lg:pb-6 max-w-lg mx-auto space-y-6">
           {/* App identity */}
           <div className="flex flex-col items-center gap-3 text-center">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10 text-accent">
