@@ -1,10 +1,13 @@
 import { defineConfig } from 'vite';
+import fs from 'fs';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import svgr from 'vite-plugin-svgr';
 import tailwindcss from '@tailwindcss/vite';
 import nodePolyfills from 'vite-plugin-node-stdlib-browser';
 import { VitePWA } from 'vite-plugin-pwa';
+var authPkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'node_modules/@enbox/auth/package.json'), 'utf-8'));
+var authVersion = authPkg.version;
 export default defineConfig({
     base: '/',
     resolve: {
@@ -14,6 +17,7 @@ export default defineConfig({
     },
     define: {
         global: 'globalThis',
+        '__ENBOX_AUTH_SDK_VERSION__': JSON.stringify(authVersion),
     },
     plugins: [
         tailwindcss(),

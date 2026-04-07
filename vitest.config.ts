@@ -7,6 +7,9 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  define: {
+    '__ENBOX_AUTH_SDK_VERSION__': JSON.stringify('test'),
+  },
   test: {
     globals: true,
     environment: 'happy-dom',

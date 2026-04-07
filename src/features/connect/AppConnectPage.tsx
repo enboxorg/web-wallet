@@ -211,7 +211,23 @@ export default function AppConnectPage() {
     }
   }
 
-  function handleDeny() {
+  async function handleDeny() {
+    // Submit a denial response to the relay so the dapp stops polling
+    // immediately instead of timing out after 5 minutes.
+    if (connectionRequest) {
+      try {
+        await fetch(connectionRequest.callbackUrl, {
+          method  : 'POST',
+          headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body    : new URLSearchParams({
+            id_token : 'DENIED',
+            state    : connectionRequest.state,
+          }).toString(),
+        });
+      } catch {
+        // Best-effort — navigate home regardless.
+      }
+    }
     navigate('/');
   }
 
