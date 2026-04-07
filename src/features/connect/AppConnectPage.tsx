@@ -90,40 +90,71 @@ export default function AppConnectPage() {
   }, []);
 
   useEffect(() => {
-    if (phase !== 'scanning' || !videoRef.current || scannerRef.current) return;
+    if (phase !== 'scanning' || !videoRef.current) return;
+
+    // If a previous scanner is still attached (e.g. React strict mode
+    // double-mount), destroy it first to release the camera.
+    if (scannerRef.current) {
+      scannerRef.current.destroy();
+      scannerRef.current = undefined;
+    }
 
     let cancelled = false;
+    const videoEl = videoRef.current;
+
+    // Ensure attributes required for inline playback on iOS Safari.
+    // qr-scanner sets these in its constructor, but React may re-render
+    // the element between construction and start().
+    videoEl.setAttribute('playsinline', '');
+    videoEl.setAttribute('muted', '');
+    videoEl.muted = true;
 
     (async () => {
       try {
-        if (!(await Scanner.hasCamera())) {
+        const hasCamera = await Scanner.hasCamera();
+        if (cancelled) return;
+        if (!hasCamera) {
           setCameraError(true);
           return;
         }
 
-        const scanner = new Scanner(videoRef.current!, handleScanResult, {
-          preferredCamera: 'environment',
-          highlightScanRegion: false,
-          maxScansPerSecond: 5,
+        const scanner = new Scanner(videoEl, handleScanResult, {
+          preferredCamera       : 'environment',
+          highlightScanRegion   : false,
+          highlightCodeOutline  : false,
+          maxScansPerSecond     : 5,
+          // Use the library's default return type (detailed scan result).
+          returnDetailedScanResult: true,
         });
+        if (cancelled) {
+          scanner.destroy();
+          return;
+        }
         scannerRef.current = scanner;
 
+        // List cameras (passing true requests labels, which needs permission).
         const cameraList = await Scanner.listCameras(true);
-        if (!cancelled) {
-          setCameras([...cameraList, { id: 'environment', label: 'Environment' }]);
-          await scanner.start();
-          setHasFlash(await scanner.hasFlash());
-          setCameraReady(true);
-        }
-      } catch {
+        if (cancelled) { scanner.destroy(); scannerRef.current = undefined; return; }
+
+        setCameras([...cameraList, { id: 'environment', label: 'Environment' }]);
+
+        await scanner.start();
+        if (cancelled) { scanner.destroy(); scannerRef.current = undefined; return; }
+
+        setHasFlash(await scanner.hasFlash());
+        setCameraReady(true);
+      } catch (err) {
+        console.warn('[wallet] Camera init failed:', err);
         if (!cancelled) setCameraError(true);
       }
     })();
 
     return () => {
       cancelled = true;
-      scannerRef.current?.stop();
-      scannerRef.current = undefined;
+      if (scannerRef.current) {
+        scannerRef.current.destroy();
+        scannerRef.current = undefined;
+      }
     };
   }, [phase, handleScanResult]);
 
@@ -234,6 +265,8 @@ export default function AppConnectPage() {
               <div className="relative w-full bg-black" style={{ minHeight: '70vh' }}>
                 <video
                   ref={videoRef}
+                  playsInline
+                  muted
                   className="h-full w-full object-cover absolute inset-0"
                   style={{ minHeight: '70vh' }}
                 />
