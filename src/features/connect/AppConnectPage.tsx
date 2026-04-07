@@ -24,6 +24,7 @@ import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
+import { prepareProtocol } from './protocol-install';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { truncateDid } from '@/lib/utils';
@@ -200,6 +201,14 @@ export default function AppConnectPage() {
 
     setPhase('authorizing');
     try {
+      // Install protocols on ALL DWN endpoints before creating grants.
+      // The agent's internal prepareProtocol only sends to the first
+      // successful endpoint, which leaves the protocol missing on others.
+      // The wallet's prepareProtocol sends to all endpoints via Promise.all.
+      for (const perm of connectionRequest.permissionRequests) {
+        await prepareProtocol(selectedDid, agent, perm.protocolDefinition);
+      }
+
       const generatedPin = CryptoUtils.randomPin({ length: 4 });
       setPin(generatedPin);
       await EnboxConnectProtocol.submitConnectResponse(selectedDid, connectionRequest, generatedPin, agent);
