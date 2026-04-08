@@ -15,8 +15,8 @@
   "dependencies": {
     "@enbox/agent": "^0.6.4",
     "@enbox/api": "^0.6.16",
-    "@enbox/auth": "^0.6.27",
-    "@enbox/browser": "^0.3.5",
+    "@enbox/auth": "^0.6.28",
+    "@enbox/browser": "^0.3.6",
     "@enbox/common": "^0.1.0",
     "@enbox/crypto": "^0.1.0",
     "@enbox/dids": "^0.1.0",
