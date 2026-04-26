@@ -123,14 +123,19 @@ jobs:
           NODE_ENV: production
           VITE_PRODUCT_THEME: ${{ matrix.theme }}
 
+      # NOTE: cloudflare/pages-action@v1 is deprecated and pins Wrangler v2,
+      # which mangles multi-line / non-ASCII commit messages and causes the
+      # Pages API to reject them with `Invalid commit message [code: 8000111]`
+      # (see cloudflare/workers-sdk#11749 / #12882). Wrangler 4.x includes
+      # the fix, so we use wrangler-action@v3 with a pinned Wrangler 4.
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/pages-action@v1
+        uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          projectName: ${{ matrix.project }}
-          directory: dist
-          branch: main
+          wranglerVersion: '4'
+          command: pages deploy dist --project-name=${{ matrix.project }} --branch=main
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
 
   # Build-only job for PRs and non-main branches (no deploy)
   build:
