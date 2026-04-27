@@ -200,6 +200,29 @@ export default function AppConnectPage() {
     if (!agent || !connectionRequest || !selectedDid) return;
 
     setPhase('authorizing');
+
+    // Wall-time bisection for the "Authorizing" UI hang. Mirrors the
+    // [connect.perf] instrumentation in @enbox/agent submitConnectResponse
+    // so the full critical path (prepareProtocol fan-out + submit) can be
+    // analysed from a single browser console session.
+    const handleApproveStart = performance.now();
+    const numProtocols = connectionRequest.permissionRequests.length;
+    console.log(
+      `[connect.perf] handleApprove start (protocols=${numProtocols})`,
+    );
+
+    const timed = async <T,>(label: string, fn: () => Promise<T>): Promise<T> => {
+      const start = performance.now();
+      try {
+        const result = await fn();
+        console.log(`[connect.perf] ${label} ok in ${(performance.now() - start).toFixed(1)}ms`);
+        return result;
+      } catch (err) {
+        console.log(`[connect.perf] ${label} fail in ${(performance.now() - start).toFixed(1)}ms`);
+        throw err;
+      }
+    };
+
     try {
       // Install protocols on ALL DWN endpoints before creating grants.
       // The agent's internal prepareProtocol only sends to the first
@@ -211,17 +234,39 @@ export default function AppConnectPage() {
       // fan-out, so doing them sequentially multiplied wall-time by the
       // number of permissions and was the dominant cause of the
       // "Authorizing..." UI hang on slow connections.
-      await Promise.all(
-        connectionRequest.permissionRequests.map((perm) =>
-          prepareProtocol(selectedDid, agent, perm.protocolDefinition),
+      await timed(
+        `prepareProtocol.fanout (protocols=${numProtocols})`,
+        () => Promise.all(
+          connectionRequest.permissionRequests.map((perm) =>
+            prepareProtocol(selectedDid, agent, perm.protocolDefinition),
+          ),
         ),
       );
 
       const generatedPin = CryptoUtils.randomPin({ length: 4 });
       setPin(generatedPin);
-      await EnboxConnectProtocol.submitConnectResponse(selectedDid, connectionRequest, generatedPin, agent);
+      await timed(
+        'submitConnectResponse',
+        () => EnboxConnectProtocol.submitConnectResponse(
+          selectedDid,
+          connectionRequest,
+          generatedPin,
+          agent,
+        ),
+      );
       setPhase('pin');
+
+      const totalElapsed = performance.now() - handleApproveStart;
+      console.log(
+        `[connect.perf] handleApprove total ${totalElapsed.toFixed(1)}ms `
+        + `(protocols=${numProtocols})`,
+      );
     } catch (err) {
+      const totalElapsed = performance.now() - handleApproveStart;
+      console.log(
+        `[connect.perf] handleApprove fail total ${totalElapsed.toFixed(1)}ms `
+        + `(protocols=${numProtocols})`,
+      );
       console.error('Authorization error:', err);
       setErrorMessage((err as Error).message || 'Failed to authorize connection.');
       setPhase('error');
