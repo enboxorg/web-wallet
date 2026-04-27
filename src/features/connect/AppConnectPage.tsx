@@ -205,9 +205,17 @@ export default function AppConnectPage() {
       // The agent's internal prepareProtocol only sends to the first
       // successful endpoint, which leaves the protocol missing on others.
       // The wallet's prepareProtocol sends to all endpoints via Promise.all.
-      for (const perm of connectionRequest.permissionRequests) {
-        await prepareProtocol(selectedDid, agent, perm.protocolDefinition);
-      }
+      //
+      // Run prepareProtocol for each requested permission in parallel —
+      // each call independently performs DID resolution + per-endpoint
+      // fan-out, so doing them sequentially multiplied wall-time by the
+      // number of permissions and was the dominant cause of the
+      // "Authorizing..." UI hang on slow connections.
+      await Promise.all(
+        connectionRequest.permissionRequests.map((perm) =>
+          prepareProtocol(selectedDid, agent, perm.protocolDefinition),
+        ),
+      );
 
       const generatedPin = CryptoUtils.randomPin({ length: 4 });
       setPin(generatedPin);
