@@ -75,42 +75,14 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // ── Post-session: ensure DWN tenant registration ─────────────────
 
   const ensurePostSession = useCallback(async (agent: EnboxAgent) => {
-    // Register all DIDs as tenants on remote DWN endpoints
+    // Register all DIDs as tenants on remote DWN endpoints.
+    // The SDK's vaultConnect() handles DWN registration when registration
+    // options are provided, but we also run it here to cover restoreSession()
+    // which does not re-register tenants.
     try {
       await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
     } catch (err) {
       console.warn('EnboxAuthProvider: DWN tenant registration failed:', err);
-    }
-
-    // Register the agent DID for sync. The SDK only registers identity
-    // DIDs, not the agent DID. But identity metadata and DID private
-    // keys are stored as DWN records in the agent DID's local DWN.
-    // Without this registration, those records never get pushed to the
-    // remote, making seed-phrase recovery impossible.
-    //
-    // Since the SDK's connect/restoreSession already started sync before
-    // we get here, registerIdentity only writes to the DB — the live
-    // push subscription wasn't opened for the agent DID. We restart
-    // sync so it picks up the new registration and opens a subscription.
-    //
-    // TODO(@enbox/auth): registerIdentity() should open a live push
-    // subscription when sync is already running. And the agent DID
-    // should be registered automatically.
-    let needsSyncRestart = false;
-    try {
-      await agent.sync.registerIdentity({ did: agent.agentDid.uri });
-      needsSyncRestart = true;
-    } catch {
-      // Already registered — no restart needed, subscription exists
-    }
-
-    if (needsSyncRestart) {
-      try {
-        await agent.sync.stopSync();
-        await agent.sync.startSync({ mode: 'live', interval: '5m' });
-      } catch (err) {
-        console.warn('[ensurePostSession] Sync restart failed:', err);
-      }
     }
   }, []);
 

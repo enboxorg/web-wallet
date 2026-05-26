@@ -75,7 +75,13 @@ export async function createIdentity(
 
   const did: string = identity.did.uri;
 
-  // 2. Register identity DID for sync
+  // 2. Register identity as DWN tenant on remote endpoints.
+  //    Must happen before sync registration — with live sync active,
+  //    registerIdentity hot-adds a subscription that needs the DID
+  //    to be a recognised tenant on the remote DWN.
+  await ensureRegistration(agent, params.dwnEndpoints);
+
+  // 3. Register identity DID for sync
   try {
     await agent.sync.registerIdentity({
       did,
@@ -90,9 +96,6 @@ export async function createIdentity(
   } catch {
     // Already registered
   }
-
-  // 3. Register identity as DWN tenant on remote endpoints
-  await ensureRegistration(agent, params.dwnEndpoints);
 
   // 4. Install protocols locally and send to remote directly.
   // protocol.send() handles remote installation sequentially in the
@@ -261,6 +264,10 @@ export async function importIdentity(
   const identity = await agent.identity.import({ portableIdentity });
   const did = identity.did.uri;
 
+  // Register imported identity as DWN tenant on remote endpoints.
+  // Must happen before sync registration (see createIdentity).
+  await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
+
   // Register for sync
   try {
     await agent.sync.registerIdentity({
@@ -279,9 +286,6 @@ export async function importIdentity(
 
   // Install protocols
   await installProtocols(agent, did);
-
-  // Register imported identity as DWN tenant on remote endpoints
-  await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
 
   // Create wallet record
   try {
