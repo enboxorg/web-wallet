@@ -269,14 +269,15 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       // --- Post-recovery: pull original identities ---
       //
-      // The vault is re-derived with the same agent DID. Identity
-      // metadata and keys are stored in the agent DID's DWN on the
-      // remote. We need to:
-      // 1. Register agent DID for sync + as DWN tenant
-      // 2. Pull → recovers identity metadata from agent DID's DWN
-      // 3. Register recovered identity DIDs for sync + as tenants
+      // The vault is re-derived with the same agent DID. The SDK's
+      // vaultConnect() already registered the agent DID for sync with
+      // the IdentityProtocol + JwkProtocol and started live sync. We
+      // need to:
+      // 1. Stop live sync for controlled sequential pulls
+      // 2. Pull → recovers identity metadata + keys from agent DID's DWN
+      // 3. Register recovered identity DIDs as DWN tenants, then for sync
       // 4. Pull again → recovers profile data for each identity
-      // 5. Install protocols, restart sync
+      // 5. Install protocols, push, restart sync
 
       try {
         await ensureRegistration(agent, endpoints);
@@ -284,19 +285,23 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         // Stop SDK-managed sync for controlled sequential pulls
         await agent.sync.stopSync();
 
-        // Register agent DID for sync (SDK doesn't do this automatically)
-        try { await agent.sync.registerIdentity({ did: agentDid }); } catch { /* already registered */ }
-
-        // Pull 1: recover identity metadata
+        // Pull 1: recover identity metadata (agent DID already registered by SDK)
         await agent.sync.sync('pull');
 
         let identities = await agent.identity.list();
 
-        // Register all recovered identity DIDs for sync + as DWN tenants
-        for (const identity of identities) {
-          try { await agent.sync.registerIdentity({ did: identity.did.uri }); } catch { /* already registered */ }
-        }
+        // Register recovered identity DIDs as DWN tenants first, then for sync.
+        // Tenant registration must come before sync registration — with live
+        // sync stopped this is just for correctness when sync restarts.
         await ensureRegistration(agent, endpoints);
+        for (const identity of identities) {
+          try {
+            await agent.sync.registerIdentity({
+              did: identity.did.uri,
+              options: { protocols: 'all' },
+            });
+          } catch { /* already registered */ }
+        }
 
         // Pull 2: recover profile data for each identity DID
         await agent.sync.sync('pull');
