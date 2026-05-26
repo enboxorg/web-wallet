@@ -2,13 +2,11 @@
  * EnboxAuthProvider — core authentication provider for the wallet.
  *
  * DESIGN PRINCIPLE: Let the SDK manage sync. The SDK's AuthManager handles
- * identity registration, sync start/stop, and WebSocket push/pull
- * automatically when sync is NOT set to 'off'. We only intervene for:
- * - Post-connect DWN tenant registration (the SDK handles this too when
- *   registration callbacks are provided, but we also do it manually to
- *   ensure all identity DIDs are registered as tenants)
- * - Seed phrase restore (importFromPhrase needs post-recovery sync to
- *   pull back original identities and their data)
+ * identity registration, sync start/stop, WebSocket push/pull, agent DID
+ * sync (for seed phrase recovery), and identity recovery from remote DWNs
+ * automatically. We only intervene for:
+ * - Post-session DWN tenant registration (restoreSession does not
+ *   re-register tenants, so we do it on every unlock)
  * - Inactivity auto-lock timer
  * - Session PIN caching for same-tab refresh persistence
  */
@@ -21,7 +19,6 @@ import { useAuthStore } from '@/stores/auth-store';
 import { getAutoLockTimeout, SESSION_PIN_KEY, STORAGE_KEYS } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { ensureRegistration, getStoredTokens, storeTokens } from './registration';
-import { installProtocols } from './protocols';
 import type { EnboxAgent } from './types';
 
 // ── Local DWN discovery ────────────────────────────────────────────
@@ -65,7 +62,7 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 // ── Provider ───────────────────────────────────────────────────────
 
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const authManagerRef = useRef<any>(null);  
+  const authManagerRef = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -75,48 +72,19 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // ── Post-session: ensure DWN tenant registration ─────────────────
 
   const ensurePostSession = useCallback(async (agent: EnboxAgent) => {
-    // Register all DIDs as tenants on remote DWN endpoints
+    // Register all DIDs as tenants on remote DWN endpoints.
+    // The SDK's vaultConnect() handles this when registration options are
+    // provided, but restoreSession() does not re-register tenants.
     try {
       await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
     } catch (err) {
       console.warn('EnboxAuthProvider: DWN tenant registration failed:', err);
     }
-
-    // Register the agent DID for sync. The SDK only registers identity
-    // DIDs, not the agent DID. But identity metadata and DID private
-    // keys are stored as DWN records in the agent DID's local DWN.
-    // Without this registration, those records never get pushed to the
-    // remote, making seed-phrase recovery impossible.
-    //
-    // Since the SDK's connect/restoreSession already started sync before
-    // we get here, registerIdentity only writes to the DB — the live
-    // push subscription wasn't opened for the agent DID. We restart
-    // sync so it picks up the new registration and opens a subscription.
-    //
-    // TODO(@enbox/auth): registerIdentity() should open a live push
-    // subscription when sync is already running. And the agent DID
-    // should be registered automatically.
-    let needsSyncRestart = false;
-    try {
-      await agent.sync.registerIdentity({ did: agent.agentDid.uri });
-      needsSyncRestart = true;
-    } catch {
-      // Already registered — no restart needed, subscription exists
-    }
-
-    if (needsSyncRestart) {
-      try {
-        await agent.sync.stopSync();
-        await agent.sync.startSync({ mode: 'live', interval: '5m' });
-      } catch (err) {
-        console.warn('[ensurePostSession] Sync restart failed:', err);
-      }
-    }
   }, []);
 
   // ── Auto-restore from cached session PIN ─────────────────────────
 
-  const tryAutoRestore = useCallback(async (auth: any): Promise<boolean> => {  
+  const tryAutoRestore = useCallback(async (auth: any): Promise<boolean> => {
     const cachedPin = getCachedSessionPin();
     if (!cachedPin) return false;
     if (auth.state !== 'locked') return false;
@@ -129,7 +97,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
-      // Run post-session tasks in the background — don't block the UI
       ensurePostSession(agent);
       return true;
     } catch {
@@ -157,9 +124,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (cancelled) return;
       }
 
-      // Let the SDK manage sync — do NOT pass sync: 'off'.
-      // The SDK will handle identity registration, sync start, and
-      // WebSocket push/pull automatically.
       const auth = await AuthManager.create({
         dwnEndpoints: DEFAULT_DWN_ENDPOINTS,
         registration: {
@@ -211,9 +175,9 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
-      // localConnect: initializes vault, creates agent DID, starts sync.
-      // We don't pass createIdentity: true because we handle identity
-      // creation separately in the onboarding UI.
+      // vaultConnect: initializes vault, creates agent DID, registers
+      // agent DID for sync, starts sync. We don't pass createIdentity
+      // because the wallet handles identity creation in its own UI.
       const session = await auth.connect({
         password,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
@@ -222,7 +186,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
       cacheSessionPin(password);
-      // Run post-session tasks in the background
       ensurePostSession(agent);
 
       return session.recoveryPhrase;
@@ -244,16 +207,12 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
-      // restoreSession: unlocks vault, finds existing identity, starts sync.
-      // Sync registrations persist in IndexedDB from the original connect.
       const session = await auth.restoreSession({ password });
       if (!session) throw new Error('Failed to restore session');
 
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
       cacheSessionPin(password);
-      // Run post-session tasks in the background — don't block the UI.
-      // DWN registration + sync restart aren't needed to show the app.
       ensurePostSession(agent);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unlock failed';
@@ -265,92 +224,26 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [setUnlocked, ensurePostSession]);
 
   // ── Restore (from recovery phrase) ───────────────────────────────
-  //
-  // TODO(@enbox/auth): importFromPhrase() creates a spurious "Default"
-  // identity before sync has a chance to pull the originals. The SDK
-  // should either skip identity creation when recoveryPhrase is given,
-  // or defer it until after sync pull. Until that's fixed, we use
-  // auth.connect({ recoveryPhrase }) instead, which re-derives the
-  // vault without creating an identity when createIdentity is not set.
 
   const restore = useCallback(async (recoveryPhrase: string, password: string, dwnEndpoints?: string[]): Promise<void> => {
     const auth = authManagerRef.current;
     if (!auth) throw new Error('AuthManager not ready');
 
-    const endpoints = dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS;
-
     setIsLoading(true);
     setError(null);
     try {
-      // Use connect() with recoveryPhrase instead of importFromPhrase().
-      // This re-derives the vault from the seed phrase (same agent DID)
-      // but does NOT create a spurious "Default" identity because we
-      // don't pass createIdentity: true.
+      // The SDK's vaultConnect handles the full recovery flow when a
+      // recoveryPhrase is provided: re-derives the vault, registers the
+      // agent DID for sync, pulls identity metadata + keys from the
+      // remote DWN, registers recovered identity DIDs as tenants and
+      // for sync, then pulls their profile data.
       const session = await auth.connect({
         password,
         recoveryPhrase,
-        dwnEndpoints: endpoints,
+        dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
       });
 
       const agent = session.agent as EnboxAgent;
-      const agentDid = agent.agentDid.uri;
-
-      // --- Post-recovery: pull original identities ---
-      //
-      // The vault is re-derived with the same agent DID. Identity
-      // metadata and keys are stored in the agent DID's DWN on the
-      // remote. We need to:
-      // 1. Register agent DID for sync + as DWN tenant
-      // 2. Pull → recovers identity metadata from agent DID's DWN
-      // 3. Register recovered identity DIDs for sync + as tenants
-      // 4. Pull again → recovers profile data for each identity
-      // 5. Install protocols, restart sync
-
-      try {
-        await ensureRegistration(agent, endpoints);
-
-        // Stop SDK-managed sync for controlled sequential pulls
-        await agent.sync.stopSync();
-
-        // Register agent DID for sync (SDK doesn't do this automatically)
-        try { await agent.sync.registerIdentity({ did: agentDid }); } catch { /* already registered */ }
-
-        // Pull 1: recover identity metadata
-        await agent.sync.sync('pull');
-
-        let identities = await agent.identity.list();
-
-        // Register all recovered identity DIDs for sync + as DWN tenants
-        for (const identity of identities) {
-          try { await agent.sync.registerIdentity({ did: identity.did.uri }); } catch { /* already registered */ }
-        }
-        await ensureRegistration(agent, endpoints);
-
-        // Pull 2: recover profile data for each identity DID
-        await agent.sync.sync('pull');
-
-        identities = await agent.identity.list();
-
-        // Install protocols locally for each recovered identity
-        for (const identity of identities) {
-          try {
-            await installProtocols(agent, identity.did.uri);
-          } catch (err) {
-            console.warn(`[restore] Protocol install for ${identity.did.uri}:`, err);
-          }
-        }
-
-        // Push protocol configs to remote
-        await agent.sync.sync('push');
-      } catch (syncErr) {
-        console.warn('[restore] Post-recovery sync error:', syncErr);
-      }
-
-      // Restart SDK-managed sync
-      agent.sync.startSync({ mode: 'live', interval: '5m' }).catch((err: unknown) => {
-        console.error('[restore] Sync restart failed:', err);
-      });
-
       setUnlocked(agent);
       cacheSessionPin(password);
     } catch (err) {
