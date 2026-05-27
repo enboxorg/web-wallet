@@ -17,21 +17,12 @@ import { Enbox, repository } from '@enbox/api';
 import {
   ProfileProtocol,
   ConnectProtocol,
-  SocialGraphDefinition,
-  ProfileDefinition,
-  ConnectDefinition,
 } from '@enbox/protocols';
 
 import type { EnboxAgent } from '../types';
-import { installProtocols } from '../protocols';
+import { IDENTITY_SYNC_PROTOCOLS, installProtocols } from '../protocols';
 import { ensureRegistration } from '../registration';
 import { DEFAULT_DWN_ENDPOINTS, WALLET_URL } from '@/lib/dwn-endpoints';
-
-const IDENTITY_SYNC_PROTOCOLS = [
-  SocialGraphDefinition.protocol,
-  ProfileDefinition.protocol,
-  ConnectDefinition.protocol,
-];
 
 async function registerIdentityForSync(agent: EnboxAgent, did: string): Promise<void> {
   try {
@@ -41,6 +32,37 @@ async function registerIdentityForSync(agent: EnboxAgent, did: string): Promise<
     });
   } catch {
     // Already registered
+  }
+}
+
+function assertDhtDidPublished(identity: any): void {
+  const did = identity?.did?.uri;
+  if (typeof did !== 'string' || !did.startsWith('did:dht:')) {
+    return;
+  }
+
+  if (identity?.did?.metadata?.published === false) {
+    throw new Error(`Failed to publish DID ${did} to the DHT gateway`);
+  }
+}
+
+async function deleteLocalIdentityBestEffort(agent: EnboxAgent, did: string): Promise<void> {
+  try {
+    await agent.sync.unregisterIdentity(did);
+  } catch {
+    // The identity may not have been registered for sync yet.
+  }
+
+  try {
+    await agent.identity.delete({ didUri: did });
+  } catch {
+    // Best-effort cleanup only.
+  }
+
+  try {
+    await agent.did.delete({ didUri: did, tenant: agent.agentDid.uri });
+  } catch {
+    // Best-effort cleanup only.
   }
 }
 
@@ -60,48 +82,61 @@ export async function createIdentity(
   agent: EnboxAgent,
   params: CreateIdentityParams,
 ) {
+  let identity: any | undefined;
+
   // 1. Create the DID + identity
-  const identity = await agent.identity.create({
-    store: true,
-    didMethod: 'dht',
-    didOptions: {
-      services: [
-        {
-          id: 'dwn',
-          type: 'DecentralizedWebNode',
-          serviceEndpoint: params.dwnEndpoints,
-          enc: '#enc',
-          sig: '#sig',
-        },
-      ],
-      verificationMethods: [
-        {
-          algorithm: 'Ed25519',
-          id: 'sig',
-          purposes: ['assertionMethod', 'authentication'],
-        },
-        {
-          algorithm: 'X25519',
-          id: 'enc',
-          purposes: ['keyAgreement'],
-        },
-      ],
-    },
-    metadata: { name: params.persona },
-  });
+  try {
+    identity = await agent.identity.create({
+      store: true,
+      didMethod: 'dht',
+      didOptions: {
+        services: [
+          {
+            id: 'dwn',
+            type: 'DecentralizedWebNode',
+            serviceEndpoint: params.dwnEndpoints,
+            enc: '#enc',
+            sig: '#sig',
+          },
+        ],
+        verificationMethods: [
+          {
+            algorithm: 'Ed25519',
+            id: 'sig',
+            purposes: ['assertionMethod', 'authentication'],
+          },
+          {
+            algorithm: 'X25519',
+            id: 'enc',
+            purposes: ['keyAgreement'],
+          },
+        ],
+      },
+      metadata: { name: params.persona },
+    });
+
+    const did: string = identity.did.uri;
+    assertDhtDidPublished(identity);
+
+    // 2. Register identity as DWN tenant on remote endpoints.
+    //    Must happen before sync registration — with live sync active,
+    //    registerIdentity hot-adds a subscription that requires the DID
+    //    to be a recognised tenant on the remote DWN.
+    await ensureRegistration(agent, params.dwnEndpoints);
+
+    // 3. Install protocols locally and on every configured DWN endpoint before
+    //    registering live sync. This avoids a race where independent per-protocol
+    //    sync links push Profile before SocialGraph on a fresh remote tenant.
+    await installProtocols(agent, did, params.dwnEndpoints);
+  } catch (error) {
+    const did = identity?.did?.uri;
+    if (did) {
+      await deleteLocalIdentityBestEffort(agent, did);
+    }
+    throw error;
+  }
 
   const did: string = identity.did.uri;
-
-  // 2. Register identity as DWN tenant on remote endpoints.
-  //    Must happen before sync registration — with live sync active,
-  //    registerIdentity hot-adds a subscription that requires the DID
-  //    to be a recognised tenant on the remote DWN.
-  await ensureRegistration(agent, params.dwnEndpoints);
-
-  // 3. Install protocols locally and on every configured DWN endpoint before
-  //    registering live sync. This avoids a race where independent per-protocol
-  //    sync links push Profile before SocialGraph on a fresh remote tenant.
-  await installProtocols(agent, did, params.dwnEndpoints);
 
   // 4. Register identity DID for sync after protocol bootstrap is complete.
   await registerIdentityForSync(agent, did);
@@ -265,12 +300,17 @@ export async function importIdentity(
   const identity = await agent.identity.import({ portableIdentity });
   const did = identity.did.uri;
 
-  // Register imported identity as DWN tenant before sync (same reason as createIdentity)
-  await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
+  try {
+    // Register imported identity as DWN tenant before sync (same reason as createIdentity)
+    await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
 
-  // Install protocols before registering sync so composed protocols are
-  // present on every remote endpoint before live record replication starts.
-  await installProtocols(agent, did, DEFAULT_DWN_ENDPOINTS);
+    // Install protocols before registering sync so composed protocols are
+    // present on every remote endpoint before live record replication starts.
+    await installProtocols(agent, did, DEFAULT_DWN_ENDPOINTS);
+  } catch (error) {
+    await deleteLocalIdentityBestEffort(agent, did);
+    throw error;
+  }
 
   // Register for sync
   await registerIdentityForSync(agent, did);
