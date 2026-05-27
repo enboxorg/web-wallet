@@ -71,6 +71,11 @@ vi.mock('@enbox/protocols', () => ({
 }));
 
 vi.mock('../../protocols', () => ({
+  IDENTITY_SYNC_PROTOCOLS: [
+    'https://identity.foundation/protocols/social-graph',
+    'https://identity.foundation/protocols/profile',
+    'https://identity.foundation/protocols/connect',
+  ],
   installProtocols: mocks.installProtocols,
 }));
 
@@ -83,22 +88,27 @@ vi.mock('@/lib/dwn-endpoints', () => ({
   WALLET_URL: 'https://wallet.example',
 }));
 
-function createAgent(did = 'did:dht:new') {
+function createAgent(did = 'did:dht:new', didMetadata?: Record<string, unknown>) {
   return {
     agentDid: { uri: 'did:dht:agent' },
     identity: {
       create: vi.fn(async () => {
         mocks.calls.push('identity:create');
-        return { did: { uri: did } };
+        return { did: { uri: did, metadata: didMetadata } };
       }),
       get: vi.fn(async () => undefined),
       import: vi.fn(async () => {
         mocks.calls.push('identity:import');
-        return { did: { uri: did } };
+        return { did: { uri: did, metadata: didMetadata } };
       }),
+      delete: vi.fn(async () => { mocks.calls.push('identity:delete'); }),
+    },
+    did: {
+      delete: vi.fn(async () => { mocks.calls.push('did:delete'); }),
     },
     sync: {
       registerIdentity: vi.fn(async () => { mocks.calls.push('sync:register'); }),
+      unregisterIdentity: vi.fn(async () => { mocks.calls.push('sync:unregister'); }),
     },
   };
 }
@@ -141,6 +151,39 @@ describe('identity mutations', () => {
       'wallet:create',
       'wallet:send',
     ]);
+  });
+
+  it('aborts and cleans up the local identity if the DHT publish failed', async () => {
+    const did = 'did:dht:unpublished';
+    const agent = createAgent(did, { published: false });
+
+    await expect(createIdentity(agent, {
+      persona: 'Personal',
+      displayName: 'Alice',
+      dwnEndpoints: ['https://fly.example/dwn'],
+    })).rejects.toThrow(`Failed to publish DID ${did}`);
+
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
+    expect(mocks.installProtocols).not.toHaveBeenCalled();
+    expect(agent.identity.delete).toHaveBeenCalledWith({ didUri: did });
+    expect(agent.did.delete).toHaveBeenCalledWith({ didUri: did, tenant: 'did:dht:agent' });
+  });
+
+  it('cleans up the local identity when required protocol bootstrap fails', async () => {
+    const did = 'did:dht:failed-bootstrap';
+    const agent = createAgent(did);
+    mocks.installProtocols.mockRejectedValueOnce(new Error('bootstrap failed'));
+
+    await expect(createIdentity(agent, {
+      persona: 'Personal',
+      displayName: 'Alice',
+      dwnEndpoints: ['https://fly.example/dwn'],
+    })).rejects.toThrow('bootstrap failed');
+
+    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
+    expect(mocks.profileRepo.profile.set).not.toHaveBeenCalled();
+    expect(agent.identity.delete).toHaveBeenCalledWith({ didUri: did });
+    expect(agent.did.delete).toHaveBeenCalledWith({ didUri: did, tenant: 'did:dht:agent' });
   });
 
   it('uses the same protocol-before-sync bootstrap when importing an identity', async () => {

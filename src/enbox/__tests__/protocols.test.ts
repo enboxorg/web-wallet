@@ -75,6 +75,18 @@ vi.mock('@enbox/protocols', () => ({
 describe('installProtocols', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.configureResults.social.mockResolvedValue({
+      status: { code: 202, detail: 'Accepted' },
+      protocol: mocks.protocolObjects.social,
+    });
+    mocks.configureResults.profile.mockResolvedValue({
+      status: { code: 202, detail: 'Accepted' },
+      protocol: mocks.protocolObjects.profile,
+    });
+    mocks.configureResults.connect.mockResolvedValue({
+      status: { code: 202, detail: 'Accepted' },
+      protocol: mocks.protocolObjects.connect,
+    });
   });
 
   it('sends each newly configured protocol to every DWN endpoint in dependency order', async () => {
@@ -113,5 +125,112 @@ describe('installProtocols', () => {
     expect(mocks.protocolObjects.social.send).not.toHaveBeenCalled();
     expect(mocks.protocolObjects.profile.send).not.toHaveBeenCalled();
     expect(mocks.protocolObjects.connect.send).not.toHaveBeenCalled();
+  });
+
+  it('remote-sends existing local protocols so a missed endpoint can be repaired', async () => {
+    mocks.configureResults.social.mockResolvedValue({
+      status: { code: 200, detail: 'OK' },
+      protocol: mocks.protocolObjects.social,
+    });
+    mocks.configureResults.profile.mockResolvedValue({
+      status: { code: 200, detail: 'OK' },
+      protocol: mocks.protocolObjects.profile,
+    });
+    mocks.configureResults.connect.mockResolvedValue({
+      status: { code: 200, detail: 'OK' },
+      protocol: mocks.protocolObjects.connect,
+    });
+
+    const agent = {
+      rpc: {
+        sendDwnRequest: vi.fn(async () => ({
+          status: { code: 409, detail: 'Conflict' },
+        })),
+      },
+    };
+
+    await installProtocols(agent, 'did:dht:alice', ['https://fly.example/dwn']);
+
+    expect(agent.rpc.sendDwnRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('retries an endpoint protocol chain when the remote DWN cannot resolve a newly published DID yet', async () => {
+    vi.useFakeTimers();
+
+    const calls: string[] = [];
+    const agent = {
+      rpc: {
+        sendDwnRequest: vi.fn(async ({ dwnUrl, message }) => {
+          const protocol = message.descriptor.definition.protocol;
+          calls.push(`${dwnUrl}:${protocol}`);
+
+          if (
+            dwnUrl === 'https://fly.example/dwn' &&
+            protocol === mocks.definitions.social.protocol &&
+            calls.filter((call) => call === `${dwnUrl}:${protocol}`).length === 1
+          ) {
+            return {
+              status: {
+                code: 401,
+                detail: 'GeneralJwsVerifierGetPublicKeyNotFound: Pkarr record not found',
+              },
+            };
+          }
+
+          return { status: { code: 202, detail: 'Accepted' } };
+        }),
+      },
+    };
+
+    try {
+      const result = installProtocols(agent, 'did:dht:alice', [
+        'https://aws.example/dwn',
+        'https://fly.example/dwn',
+      ]);
+
+      await vi.advanceTimersByTimeAsync(1_000);
+      await result;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(calls.filter((call) => call.startsWith('https://fly.example/dwn:'))).toEqual([
+      `https://fly.example/dwn:${mocks.definitions.social.protocol}`,
+      `https://fly.example/dwn:${mocks.definitions.social.protocol}`,
+      `https://fly.example/dwn:${mocks.definitions.profile.protocol}`,
+      `https://fly.example/dwn:${mocks.definitions.connect.protocol}`,
+    ]);
+  });
+
+  it('throws on non-retryable remote protocol failures before writing downstream protocols to that endpoint', async () => {
+    const calls: string[] = [];
+    const agent = {
+      rpc: {
+        sendDwnRequest: vi.fn(async ({ dwnUrl, message }) => {
+          const protocol = message.descriptor.definition.protocol;
+          calls.push(`${dwnUrl}:${protocol}`);
+
+          if (dwnUrl === 'https://fly.example/dwn') {
+            return {
+              status: {
+                code: 400,
+                detail: 'ProtocolsConfigureInvalidDefinition',
+              },
+            };
+          }
+
+          return { status: { code: 202, detail: 'Accepted' } };
+        }),
+      },
+    };
+
+    await expect(installProtocols(agent, 'did:dht:alice', [
+      'https://aws.example/dwn',
+      'https://fly.example/dwn',
+    ])).rejects.toThrow('Failed to install required protocols');
+
+    expect(calls.filter((call) => call.startsWith('https://fly.example/dwn:'))).toEqual([
+      `https://fly.example/dwn:${mocks.definitions.social.protocol}`,
+    ]);
   });
 });
