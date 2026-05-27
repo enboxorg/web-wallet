@@ -42,6 +42,7 @@ const REQUIRED_PROTOCOLS = [
 export async function installProtocols(
   agent: EnboxAgent,
   did: string,
+  dwnEndpoints: string[],
 ): Promise<void> {
   const enbox = new Enbox({ agent, connectedDid: did });
 
@@ -57,23 +58,32 @@ export async function installProtocols(
       );
     }
 
-    // Protocol installed successfully
-
-    // Send to the remote DWN so record.send() works for this protocol.
-    // Only send if newly configured (202). If already exists (200),
-    // skip the remote send — it's already on the remote (and sending a
-    // pulled protocol back causes IPLD encoding errors on undefined values).
+    // Send the protocol configure message to every configured owner DWN
+    // before records are written. protocol.send(did) only succeeds against
+    // the first reachable DWN endpoint, which is not enough for identities
+    // that advertise both AWS and Fly.
     if (protocol && status.code === 202) {
-      try {
-        const { status: sendStatus } = await protocol.send(did);
-        if (sendStatus.code >= 300) {
+      const message = protocol.toJSON();
+      await Promise.all(dwnEndpoints.map(async (endpoint) => {
+        try {
+          const reply = await agent.rpc.sendDwnRequest({
+            dwnUrl: endpoint,
+            targetDid: did,
+            message,
+          });
+          if (reply.status.code !== 202 && reply.status.code !== 409) {
+            console.warn(
+              `Protocol remote send for ${definition.protocol} to ${endpoint}: ` +
+              `${reply.status.code} ${reply.status.detail}`,
+            );
+          }
+        } catch (sendErr) {
           console.warn(
-            `Protocol remote send for ${definition.protocol}: ${sendStatus.code} ${sendStatus.detail}`,
+            `Protocol remote send failed for ${definition.protocol} to ${endpoint}:`,
+            sendErr,
           );
         }
-      } catch (sendErr) {
-        console.warn(`Protocol remote send failed for ${definition.protocol}:`, sendErr);
-      }
+      }));
     }
   }
 }
