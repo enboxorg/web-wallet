@@ -27,6 +27,23 @@ import { installProtocols } from '../protocols';
 import { ensureRegistration } from '../registration';
 import { DEFAULT_DWN_ENDPOINTS, WALLET_URL } from '@/lib/dwn-endpoints';
 
+const IDENTITY_SYNC_PROTOCOLS = [
+  SocialGraphDefinition.protocol,
+  ProfileDefinition.protocol,
+  ConnectDefinition.protocol,
+];
+
+async function registerIdentityForSync(agent: EnboxAgent, did: string): Promise<void> {
+  try {
+    await agent.sync.registerIdentity({
+      did,
+      options: { protocols: IDENTITY_SYNC_PROTOCOLS },
+    });
+  } catch {
+    // Already registered
+  }
+}
+
 // ── Create identity ────────────────────────────────────────────────
 
 export interface CreateIdentityParams {
@@ -81,29 +98,13 @@ export async function createIdentity(
   //    to be a recognised tenant on the remote DWN.
   await ensureRegistration(agent, params.dwnEndpoints);
 
-  // 3. Register identity DID for sync
-  try {
-    await agent.sync.registerIdentity({
-      did,
-      options: {
-        protocols: [
-          SocialGraphDefinition.protocol,
-          ProfileDefinition.protocol,
-          ConnectDefinition.protocol,
-        ],
-      },
-    });
-  } catch {
-    // Already registered
-  }
+  // 3. Install protocols locally and on every configured DWN endpoint before
+  //    registering live sync. This avoids a race where independent per-protocol
+  //    sync links push Profile before SocialGraph on a fresh remote tenant.
+  await installProtocols(agent, did, params.dwnEndpoints);
 
-  // 4. Install protocols locally and send to remote directly.
-  // protocol.send() handles remote installation sequentially in the
-  // correct dependency order (SocialGraph before Profile).
-  // The sync engine may also push ProtocolsConfigure messages — if they
-  // arrive out of order, the remote will reject them, but since the
-  // protocols are already installed via direct send, this is harmless.
-  await installProtocols(agent, did);
+  // 4. Register identity DID for sync after protocol bootstrap is complete.
+  await registerIdentityForSync(agent, did);
 
   // 5. Set profile social data
   const enbox = new Enbox({ agent, connectedDid: did });
@@ -267,24 +268,12 @@ export async function importIdentity(
   // Register imported identity as DWN tenant before sync (same reason as createIdentity)
   await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
 
-  // Register for sync
-  try {
-    await agent.sync.registerIdentity({
-      did,
-      options: {
-        protocols: [
-          SocialGraphDefinition.protocol,
-          ProfileDefinition.protocol,
-          ConnectDefinition.protocol,
-        ],
-      },
-    });
-  } catch {
-    // Already registered
-  }
+  // Install protocols before registering sync so composed protocols are
+  // present on every remote endpoint before live record replication starts.
+  await installProtocols(agent, did, DEFAULT_DWN_ENDPOINTS);
 
-  // Install protocols
-  await installProtocols(agent, did);
+  // Register for sync
+  await registerIdentityForSync(agent, did);
 
   // Create wallet record
   try {
