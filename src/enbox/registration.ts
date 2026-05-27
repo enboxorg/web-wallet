@@ -3,7 +3,7 @@
  *
  * After a session is restored the agent DID and every identity DID must be
  * registered as tenants on the configured remote DWN endpoints.
- * AuthManager.connect() handles this for first-time setup, but
+ * AuthManager.connectVault() handles this for first-time setup, but
  * restoreSession() does NOT — so we run it manually after every unlock.
  *
  * Supports the provider-auth-v0 flow (authorize → token exchange) and

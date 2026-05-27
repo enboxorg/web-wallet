@@ -48,12 +48,15 @@ describe('auth-store', () => {
   });
 
   describe('setUnlocked', () => {
-    it('sets unlocked=true and stores the agent', () => {
+    it('sets initialized=true, unlocked=true, firstTime=false, and stores the agent', () => {
       const fakeAgent = { id: 'agent-1' };
+      useAuthStore.getState().setInitialized(true, true);
       useAuthStore.getState().setUnlocked(fakeAgent);
 
       const state = useAuthStore.getState();
+      expect(state.initialized).toBe(true);
       expect(state.unlocked).toBe(true);
+      expect(state.firstTime).toBe(false);
       expect(state.agent).toBe(fakeAgent);
     });
 
@@ -78,14 +81,14 @@ describe('auth-store', () => {
       expect(state.agent).toBeNull();
     });
 
-    it('does not affect initialized or firstTime', () => {
-      useAuthStore.getState().setInitialized(true, true);
+    it('does not affect initialized or current firstTime value', () => {
+      useAuthStore.getState().setInitialized(true, false);
       useAuthStore.getState().setUnlocked({ id: 'agent' });
       useAuthStore.getState().lock();
 
       const state = useAuthStore.getState();
       expect(state.initialized).toBe(true);
-      expect(state.firstTime).toBe(true);
+      expect(state.firstTime).toBe(false);
     });
   });
 

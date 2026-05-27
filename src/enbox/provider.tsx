@@ -44,7 +44,11 @@ function clearSessionPin(): void {
 export interface EnboxAuthContextValue {
   connect: (password: string, dwnEndpoints?: string[]) => Promise<string | undefined>;
   unlock: (password: string) => Promise<void>;
-  restore: (recoveryPhrase: string, password: string, dwnEndpoints?: string[]) => Promise<void>;
+  restore: (
+    recoveryPhrase: string,
+    password: string,
+    dwnEndpoints?: string[],
+  ) => Promise<void>;
   lock: () => void;
   error: string | null;
   isLoading: boolean;
@@ -62,7 +66,7 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 // ── Provider ───────────────────────────────────────────────────────
 
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const authManagerRef = useRef<any>(null);
+  const authManagerRef = useRef<AuthManager | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -73,7 +77,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const ensurePostSession = useCallback(async (agent: EnboxAgent) => {
     // Register all DIDs as tenants on remote DWN endpoints.
-    // The SDK's vaultConnect() handles this when registration options are
+    // The SDK's connectVault() handles this when registration options are
     // provided, but restoreSession() does not re-register tenants.
     try {
       await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
@@ -84,7 +88,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ── Auto-restore from cached session PIN ─────────────────────────
 
-  const tryAutoRestore = useCallback(async (auth: any): Promise<boolean> => {
+  const tryAutoRestore = useCallback(async (auth: AuthManager): Promise<boolean> => {
     const cachedPin = getCachedSessionPin();
     if (!cachedPin) return false;
     if (auth.state !== 'locked') return false;
@@ -175,10 +179,10 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
-      // vaultConnect: initializes vault, creates agent DID, registers
-      // agent DID for sync, starts sync. We don't pass createIdentity
-      // because the wallet handles identity creation in its own UI.
-      const session = await auth.connect({
+      // connectVault initializes the vault, creates/registers the agent DID,
+      // and starts sync. We intentionally skip createIdentity because the
+      // wallet handles identity creation in its own UI.
+      const session = await auth.connectVault({
         password,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
       });
@@ -225,19 +229,18 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ── Restore (from recovery phrase) ───────────────────────────────
 
-  const restore = useCallback(async (recoveryPhrase: string, password: string, dwnEndpoints?: string[]): Promise<void> => {
+  const restore = useCallback(async (
+    recoveryPhrase: string,
+    password: string,
+    dwnEndpoints?: string[],
+  ): Promise<void> => {
     const auth = authManagerRef.current;
     if (!auth) throw new Error('AuthManager not ready');
 
     setIsLoading(true);
     setError(null);
     try {
-      // The SDK's vaultConnect handles the full recovery flow when a
-      // recoveryPhrase is provided: re-derives the vault, registers the
-      // agent DID for sync, pulls identity metadata + keys from the
-      // remote DWN, registers recovered identity DIDs as tenants and
-      // for sync, then pulls their profile data.
-      const session = await auth.connect({
+      const session = await auth.restoreFromPhrase({
         password,
         recoveryPhrase,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
@@ -246,6 +249,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
       cacheSessionPin(password);
+      ensurePostSession(agent);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Restore failed';
       setError(msg);
@@ -253,7 +257,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       setIsLoading(false);
     }
-  }, [setUnlocked]);
+  }, [setUnlocked, ensurePostSession]);
 
   // ── Lock ─────────────────────────────────────────────────────────
 

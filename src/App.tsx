@@ -145,6 +145,8 @@ function AuthGate() {
   const handleRestore = useCallback(
     async (phrase: string, pin: string, dwnEndpoints: string[]) => {
       await restore(phrase, pin, dwnEndpoints);
+      setForgotPin(false);
+      setShowRestore(false);
     },
     [restore],
   );
@@ -156,6 +158,16 @@ function AuthGate() {
 
   // Wallet is locked — show setup or unlock screen
   if (!unlocked) {
+    if (forgotPin) {
+      return (
+        <RestoreWalletPage
+          onRestore={handleRestore}
+          isLoading={isLoading}
+          error={error}
+          onBack={() => setForgotPin(false)}
+        />
+      );
+    }
     if (firstTime) {
       if (showRestore) {
         return (
@@ -173,16 +185,6 @@ function AuthGate() {
           onSwitchToRestore={() => setShowRestore(true)}
           isLoading={isLoading}
           error={error}
-        />
-      );
-    }
-    if (forgotPin) {
-      return (
-        <RestoreWalletPage
-          onRestore={handleRestore}
-          isLoading={isLoading}
-          error={error}
-          onBack={() => setForgotPin(false)}
         />
       );
     }

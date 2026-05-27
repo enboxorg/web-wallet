@@ -36,8 +36,8 @@ export function SeedPhraseBackup({ phrase, onDone }: SeedPhraseBackupProps) {
 
         <div className="w-full rounded-lg border border-warning/30 bg-warning/5 p-4">
           <p className="text-sm text-warning text-center">
-            Write these words down and store them safely. This is the only way to
-            recover your wallet.
+            Write these words down and store them safely. They restore your wallet
+            vault and can recover identities synced to your configured DWNs.
           </p>
         </div>
 

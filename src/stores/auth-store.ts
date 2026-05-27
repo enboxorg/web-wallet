@@ -37,7 +37,7 @@ export const useAuthStore = create<AuthStore>()((set) => ({
     set({ initialized: value, firstTime }),
 
   setUnlocked: (agent) =>
-    set({ unlocked: true, agent }),
+    set({ initialized: true, unlocked: true, firstTime: false, agent }),
 
   lock: () =>
     set({ unlocked: false, agent: null }),

@@ -103,14 +103,15 @@ export default function BackupPage() {
 
         <p className="text-sm text-text-secondary">
           Export your identities as a portable JSON file. This is the <strong className="text-text-primary">most
-          reliable way</strong> to back up your wallet — it preserves your exact DIDs, private keys,
-          and all associated data.
+          explicit way</strong> to back up your identity keys and metadata without depending on
+          remote DWN recovery.
         </p>
 
         <div className="flex items-center gap-3 rounded-lg bg-surface-2 p-3">
           <Upload className="h-4 w-4 text-text-tertiary shrink-0" />
           <p className="text-xs text-text-tertiary">
-            To restore, use <strong>Import Identities</strong> from the sidebar after setting up a new wallet.
+            To restore a JSON backup, use <strong>Import Identities</strong> from the sidebar after
+            unlocking or restoring your wallet.
           </p>
         </div>
 
@@ -153,9 +154,9 @@ export default function BackupPage() {
                 <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                 <div className="text-sm text-warning space-y-1">
                   <p>
-                    <strong>Important:</strong> The recovery phrase restores your <em>wallet vault</em> but
-                    does not preserve your identity DIDs or profile data. For a full backup,
-                    use <strong>Export Identities</strong> above.
+                    <strong>Important:</strong> The recovery phrase restores your <em>wallet vault</em> and
+                    can recover identities that have synced to your configured remote DWNs.
+                    Keep a JSON export as an extra backup for identity keys and metadata.
                   </p>
                   <p>
                     Once confirmed, this phrase will be permanently removed from the app.
