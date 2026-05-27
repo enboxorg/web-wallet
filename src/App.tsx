@@ -144,9 +144,11 @@ function AuthGate() {
 
   const handleRestore = useCallback(
     async (phrase: string, pin: string, dwnEndpoints: string[]) => {
-      await restore(phrase, pin, dwnEndpoints, { resetLocalVault: forgotPin });
+      await restore(phrase, pin, dwnEndpoints);
+      setForgotPin(false);
+      setShowRestore(false);
     },
-    [forgotPin, restore],
+    [restore],
   );
 
   // Still initialising the AuthManager

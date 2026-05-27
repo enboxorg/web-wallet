@@ -7,8 +7,6 @@
  * automatically. We only intervene for:
  * - Post-session DWN tenant registration (restoreSession does not
  *   re-register tenants, so we do it on every unlock)
- * - Forgot-PIN recovery, where the existing local vault must be reset
- *   before a recovery phrase can initialize it with a new PIN
  * - Inactivity auto-lock timer
  * - Session PIN caching for same-tab refresh persistence
  */
@@ -41,21 +39,6 @@ function clearSessionPin(): void {
   try { sessionStorage.removeItem(SESSION_PIN_KEY); } catch { /* noop */ }
 }
 
-function clearAuthSessionStorage(): void {
-  try {
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i);
-      if (key?.startsWith('enbox:enbox:auth:') && key !== STORAGE_KEYS.LOCAL_DWN_ENDPOINT) {
-        keysToRemove.push(key);
-      }
-    }
-    for (const key of keysToRemove) {
-      localStorage.removeItem(key);
-    }
-  } catch { /* noop */ }
-}
-
 // ── Context ────────────────────────────────────────────────────────
 
 export interface EnboxAuthContextValue {
@@ -65,7 +48,6 @@ export interface EnboxAuthContextValue {
     recoveryPhrase: string,
     password: string,
     dwnEndpoints?: string[],
-    options?: RestoreOptions,
   ) => Promise<void>;
   lock: () => void;
   error: string | null;
@@ -73,54 +55,6 @@ export interface EnboxAuthContextValue {
 }
 
 const EnboxAuthContext = createContext<EnboxAuthContextValue | null>(null);
-
-export interface RestoreOptions {
-  resetLocalVault?: boolean;
-}
-
-type ClearableStore = {
-  clear: () => Promise<void>;
-};
-
-type RuntimeVault = {
-  _store?: ClearableStore;
-  _contentEncryptionKey?: unknown;
-  _cachedInitialized?: boolean;
-  _cachedPortableDid?: unknown;
-  lock: () => Promise<void>;
-};
-
-type RuntimeSecretStore = {
-  _store?: ClearableStore;
-};
-
-async function resetLocalVaultForPhraseRestore(auth: AuthManager): Promise<void> {
-  const agent = auth.agent as EnboxAgent;
-
-  await agent.sync.stopSync(2_000).catch(() => {});
-  await agent.sync.clear().catch(() => {});
-  agent.dwn.clearDelegateDecryptionKeys();
-
-  const vault = agent.vault as unknown as RuntimeVault;
-  const secretStore = agent.secrets as unknown as RuntimeSecretStore;
-
-  await vault.lock().catch(() => {});
-  if (!vault._store) {
-    throw new Error('Local vault reset is unavailable in this SDK version.');
-  }
-
-  await Promise.all([
-    vault._store.clear(),
-    secretStore._store?.clear?.() ?? Promise.resolve(),
-  ]);
-
-  vault._contentEncryptionKey = undefined;
-  vault._cachedInitialized = undefined;
-  vault._cachedPortableDid = undefined;
-
-  clearAuthSessionStorage();
-  clearSessionPin();
-}
 
 // eslint-disable-next-line react-refresh/only-export-components
 export function useEnboxAuth(): EnboxAuthContextValue {
@@ -143,7 +77,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const ensurePostSession = useCallback(async (agent: EnboxAgent) => {
     // Register all DIDs as tenants on remote DWN endpoints.
-    // The SDK's vaultConnect() handles this when registration options are
+    // The SDK's connectVault() handles this when registration options are
     // provided, but restoreSession() does not re-register tenants.
     try {
       await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
@@ -245,10 +179,10 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
-      // vaultConnect: initializes vault, creates agent DID, registers
-      // agent DID for sync, starts sync. We don't pass createIdentity
-      // because the wallet handles identity creation in its own UI.
-      const session = await auth.connect({
+      // connectVault initializes the vault, creates/registers the agent DID,
+      // and starts sync. We intentionally skip createIdentity because the
+      // wallet handles identity creation in its own UI.
+      const session = await auth.connectVault({
         password,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
       });
@@ -299,7 +233,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     recoveryPhrase: string,
     password: string,
     dwnEndpoints?: string[],
-    options?: RestoreOptions,
   ): Promise<void> => {
     const auth = authManagerRef.current;
     if (!auth) throw new Error('AuthManager not ready');
@@ -307,14 +240,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
-      if (options?.resetLocalVault) {
-        await resetLocalVaultForPhraseRestore(auth);
-      }
-
-      // connectVault bypasses the generic connect() session-restore probe.
-      // For phrase recovery, we always want the explicit vault path so a
-      // stale previous-session marker cannot intercept the recovery attempt.
-      const session = await auth.connectVault({
+      const session = await auth.restoreFromPhrase({
         password,
         recoveryPhrase,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
@@ -325,16 +251,13 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       cacheSessionPin(password);
       ensurePostSession(agent);
     } catch (err) {
-      if (options?.resetLocalVault) {
-        setInitialized(true, true);
-      }
       const msg = err instanceof Error ? err.message : 'Restore failed';
       setError(msg);
       throw err;
     } finally {
       setIsLoading(false);
     }
-  }, [setInitialized, setUnlocked, ensurePostSession]);
+  }, [setUnlocked, ensurePostSession]);
 
   // ── Lock ─────────────────────────────────────────────────────────
 

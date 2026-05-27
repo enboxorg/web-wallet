@@ -60,13 +60,27 @@ function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
     state,
     agent,
     connect: vi.fn(),
-    connectVault: vi.fn().mockResolvedValue({ agent }),
+    connectVault: vi.fn().mockResolvedValue({ agent, recoveryPhrase: TEST_PHRASE }),
+    restoreFromPhrase: vi.fn().mockResolvedValue({ agent }),
     restoreSession: vi.fn(),
     lock: vi.fn().mockResolvedValue(undefined),
   };
 }
 
-function RestoreButton({ resetLocalVault = false }: { resetLocalVault?: boolean }) {
+function ConnectButton() {
+  const { connect } = useEnboxAuth();
+
+  return (
+    <button
+      type="button"
+      onClick={() => connect('1234', TEST_ENDPOINTS)}
+    >
+      Connect
+    </button>
+  );
+}
+
+function RestoreButton() {
   const { restore } = useEnboxAuth();
 
   return (
@@ -76,7 +90,6 @@ function RestoreButton({ resetLocalVault = false }: { resetLocalVault?: boolean 
         TEST_PHRASE,
         '1234',
         TEST_ENDPOINTS,
-        resetLocalVault ? { resetLocalVault: true } : undefined,
       )}
     >
       Restore
@@ -98,7 +111,30 @@ describe('EnboxAuthProvider restore flow', () => {
     });
   });
 
-  it('uses explicit vault restore instead of generic connect', async () => {
+  it('uses explicit vault connect for first-time setup', async () => {
+    const user = userEvent.setup();
+    const auth = createAuth();
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <ConnectButton />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+
+    await waitFor(() => {
+      expect(auth.connectVault).toHaveBeenCalledWith({
+        password     : '1234',
+        dwnEndpoints : TEST_ENDPOINTS,
+      });
+    });
+    expect(auth.connect).not.toHaveBeenCalled();
+  });
+
+  it('uses restoreFromPhrase instead of generic connect', async () => {
     const user = userEvent.setup();
     const auth = createAuth();
     authMocks.create.mockResolvedValue(auth);
@@ -113,16 +149,17 @@ describe('EnboxAuthProvider restore flow', () => {
     await user.click(screen.getByRole('button', { name: 'Restore' }));
 
     await waitFor(() => {
-      expect(auth.connectVault).toHaveBeenCalledWith({
+      expect(auth.restoreFromPhrase).toHaveBeenCalledWith({
         password       : '1234',
         recoveryPhrase : TEST_PHRASE,
         dwnEndpoints   : TEST_ENDPOINTS,
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
+    expect(auth.connectVault).not.toHaveBeenCalled();
   });
 
-  it('resets local vault state before forgot-PIN phrase restore', async () => {
+  it('lets the SDK reset the local vault password for forgot-PIN phrase restore', async () => {
     const user = userEvent.setup();
     const auth = createAuth('locked');
     authMocks.create.mockResolvedValue(auth);
@@ -131,22 +168,22 @@ describe('EnboxAuthProvider restore flow', () => {
 
     render(
       <EnboxAuthProvider>
-        <RestoreButton resetLocalVault />
+        <RestoreButton />
       </EnboxAuthProvider>,
     );
 
     await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
     await user.click(screen.getByRole('button', { name: 'Restore' }));
 
-    await waitFor(() => expect(auth.connectVault).toHaveBeenCalled());
-    expect(auth.agent.sync.stopSync).toHaveBeenCalledWith(2_000);
-    expect(auth.agent.sync.clear).toHaveBeenCalled();
-    expect(auth.agent.dwn.clearDelegateDecryptionKeys).toHaveBeenCalled();
-    expect(auth.agent.vault.lock).toHaveBeenCalled();
-    expect(auth.agent.vault._store.clear).toHaveBeenCalled();
-    expect(auth.agent.secrets._store.clear).toHaveBeenCalled();
+    await waitFor(() => expect(auth.restoreFromPhrase).toHaveBeenCalled());
+    expect(auth.agent.sync.stopSync).not.toHaveBeenCalled();
+    expect(auth.agent.sync.clear).not.toHaveBeenCalled();
+    expect(auth.agent.dwn.clearDelegateDecryptionKeys).not.toHaveBeenCalled();
+    expect(auth.agent.vault.lock).not.toHaveBeenCalled();
+    expect(auth.agent.vault._store.clear).not.toHaveBeenCalled();
+    expect(auth.agent.secrets._store.clear).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(SESSION_PIN_KEY)).toBe('1234');
-    expect(localStorage.getItem('enbox:enbox:auth:previouslyConnected')).toBeNull();
+    expect(localStorage.getItem('enbox:enbox:auth:previouslyConnected')).toBe('true');
     expect(localStorage.getItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT)).toBe('http://127.0.0.1:55500');
   });
 });
