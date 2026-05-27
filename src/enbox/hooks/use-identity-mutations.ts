@@ -17,13 +17,42 @@ import {
   type UpdateDwnEndpointsParams,
 } from '../mutations/identity-mutations';
 
+type IdentityLike = {
+  did?: {
+    uri?: string;
+  };
+};
+
+function getIdentityDid(identity: unknown): string | undefined {
+  if (typeof identity !== 'object' || identity === null) return undefined;
+  const did = (identity as IdentityLike).did?.uri;
+  return typeof did === 'string' ? did : undefined;
+}
+
+function upsertIdentity(existing: unknown, identity: unknown): unknown[] {
+  const current = Array.isArray(existing) ? existing : [];
+  const did = getIdentityDid(identity);
+  if (!did) return current;
+
+  const index = current.findIndex((item) => getIdentityDid(item) === did);
+  if (index === -1) return [...current, identity];
+
+  return current.map((item, itemIndex) =>
+    itemIndex === index ? identity : item
+  );
+}
+
 export function useCreateIdentity() {
   const agent = useAgent();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: (params: CreateIdentityParams) => createIdentity(agent, params),
-    onSuccess: () => {
+    onSuccess: (identity) => {
+      queryClient.setQueryData(
+        queryKeys.identities.all,
+        (existing) => upsertIdentity(existing, identity),
+      );
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
     },
   });
