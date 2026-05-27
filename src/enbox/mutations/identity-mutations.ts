@@ -76,36 +76,19 @@ export async function createIdentity(
   const did: string = identity.did.uri;
 
   // 2. Register identity as DWN tenant on remote endpoints.
-  //    Must happen before sync registration — with live sync active,
-  //    registerIdentity hot-adds a subscription that requires the DID
-  //    to be a recognised tenant on the remote DWN.
   await ensureRegistration(agent, params.dwnEndpoints);
 
-  // 3. Register identity DID for sync
-  try {
-    await agent.sync.registerIdentity({
-      did,
-      options: {
-        protocols: [
-          SocialGraphDefinition.protocol,
-          ProfileDefinition.protocol,
-          ConnectDefinition.protocol,
-        ],
-      },
-    });
-  } catch {
-    // Already registered
-  }
-
-  // 4. Install protocols locally and send to remote directly.
-  // protocol.send() handles remote installation sequentially in the
-  // correct dependency order (SocialGraph before Profile).
-  // The sync engine may also push ProtocolsConfigure messages — if they
-  // arrive out of order, the remote will reject them, but since the
-  // protocols are already installed via direct send, this is harmless.
+  // 3. Install protocols locally and send to remote directly.
+  //    This must happen BEFORE sync registration. With live sync active,
+  //    registerIdentity hot-adds a subscription that immediately starts
+  //    pushing local messages. If protocols haven't been sent to the
+  //    remote yet, the sync engine pushes them out of dependency order
+  //    (Profile before SocialGraph) → 400 "composed protocol not installed".
   await installProtocols(agent, did);
 
-  // 5. Set profile social data
+  // 4. Write profile data and send directly to remote.
+  //    All records are written and sent before sync registration so the
+  //    remote has everything by the time sync starts reconciling.
   const enbox = new Enbox({ agent, connectedDid: did });
   const repo = repository(enbox.using(ProfileProtocol));
 
@@ -121,7 +104,6 @@ export async function createIdentity(
   });
   await profileRecord!.send();
 
-  // 6. Set avatar if provided
   if (params.avatar && profileRecord) {
     const ctxId = profileRecord.contextId as string;
     const { record: avatarRecord } = await repo.profile.avatar.set(ctxId, {
@@ -130,7 +112,6 @@ export async function createIdentity(
     await avatarRecord!.send();
   }
 
-  // 7. Set hero if provided
   if (params.hero && profileRecord) {
     const ctxId = profileRecord.contextId as string;
     const { record: heroRecord } = await repo.profile.hero.set(ctxId, {
@@ -139,7 +120,6 @@ export async function createIdentity(
     await heroRecord!.send();
   }
 
-  // 8. Create wallet record
   try {
     const connect = enbox.using(ConnectProtocol);
     const { records: existingWallets } = await connect.records.query('wallet');
@@ -151,6 +131,25 @@ export async function createIdentity(
     }
   } catch (err) {
     console.warn('Failed to create wallet record:', err);
+  }
+
+  // 5. Register identity DID for sync LAST.
+  //    By this point all protocols are installed and all records are sent
+  //    to the remote. The sync engine's initial reconciliation finds
+  //    everything in sync — no out-of-order pushes.
+  try {
+    await agent.sync.registerIdentity({
+      did,
+      options: {
+        protocols: [
+          SocialGraphDefinition.protocol,
+          ProfileDefinition.protocol,
+          ConnectDefinition.protocol,
+        ],
+      },
+    });
+  } catch {
+    // Already registered
   }
 
   return identity;
@@ -264,10 +263,26 @@ export async function importIdentity(
   const identity = await agent.identity.import({ portableIdentity });
   const did = identity.did.uri;
 
-  // Register imported identity as DWN tenant before sync (same reason as createIdentity)
+  // Register as DWN tenant, install protocols, write records — all before
+  // sync registration (same reasoning as createIdentity).
   await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
+  await installProtocols(agent, did);
 
-  // Register for sync
+  try {
+    const enbox = new Enbox({ agent, connectedDid: did });
+    const connect = enbox.using(ConnectProtocol);
+    const { records: existingWallets } = await connect.records.query('wallet');
+    if (existingWallets.length === 0) {
+      const { record: walletRecord } = await connect.records.create('wallet', {
+        data: { webWallets: [WALLET_URL] },
+      });
+      await walletRecord!.send();
+    }
+  } catch (err) {
+    console.warn('Failed to create wallet record on import:', err);
+  }
+
+  // Register for sync last.
   try {
     await agent.sync.registerIdentity({
       did,
@@ -281,24 +296,6 @@ export async function importIdentity(
     });
   } catch {
     // Already registered
-  }
-
-  // Install protocols
-  await installProtocols(agent, did);
-
-  // Create wallet record
-  try {
-    const enbox = new Enbox({ agent, connectedDid: did });
-    const connect = enbox.using(ConnectProtocol);
-    const { records: existingWallets } = await connect.records.query('wallet');
-    if (existingWallets.length === 0) {
-      const { record: walletRecord } = await connect.records.create('wallet', {
-        data: { webWallets: [WALLET_URL] },
-      });
-      await walletRecord!.send();
-    }
-  } catch (err) {
-    console.warn('Failed to create wallet record on import:', err);
   }
 
   return identity;
