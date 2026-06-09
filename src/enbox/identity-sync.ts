@@ -120,7 +120,7 @@ async function applySyncOptions(agent: EnboxAgent, did: string): Promise<boolean
  * Ensure every locally known identity is registered for the wallet's scoped
  * sync protocols. This is required when another wallet creates an identity:
  * the current wallet may first learn only the identity metadata via the agent
- * DID, then must opt into profile/social/connect replication for that new DID.
+ * DID, then must opt into profile/social/connect replication for that DID.
  */
 export async function reconcileIdentitySync(
   agent: EnboxAgent,

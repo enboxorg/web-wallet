@@ -14,21 +14,86 @@ import type { EnboxAgent, IdentityProfile } from '../types';
 
 // ── Blob URL lifecycle management ──────────────────────────────────
 
-/** Track active blob URLs per DID so we can revoke them on refetch. */
-const _activeBlobUrls = new Map<string, string[]>();
+type ProfileImageSlot = 'avatar' | 'hero';
+type ProfileImageRecord = {
+  id?: unknown;
+  dataCid?: unknown;
+  dataSize?: unknown;
+  timestamp?: unknown;
+  data: { blob(): Promise<Blob> };
+};
+type CachedProfileImageUrl = {
+  key: string;
+  url: string;
+};
 
-function revokePreviousUrls(did: string): void {
-  const urls = _activeBlobUrls.get(did);
-  if (urls) {
-    urls.forEach((url) => { try { URL.revokeObjectURL(url); } catch {} });
-  }
-  _activeBlobUrls.set(did, []);
+const _profileImageUrls = new Map<string, Partial<Record<ProfileImageSlot, CachedProfileImageUrl>>>();
+const BLOB_URL_REVOKE_DELAY_MS = 60_000;
+
+function imageRecordCacheKey(record: ProfileImageRecord): string {
+  return [record.id, record.dataCid, record.dataSize, record.timestamp]
+    .filter((part): part is string | number =>
+      typeof part === 'string' || typeof part === 'number'
+    )
+    .join('|');
 }
 
-function trackBlobUrl(did: string, url: string): void {
-  const urls = _activeBlobUrls.get(did) ?? [];
-  urls.push(url);
-  _activeBlobUrls.set(did, urls);
+function revokeObjectUrlLater(url: string): void {
+  setTimeout(() => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      // Best-effort cleanup only.
+    }
+  }, BLOB_URL_REVOKE_DELAY_MS);
+}
+
+function setCachedImageUrl(
+  did: string,
+  slot: ProfileImageSlot,
+  next: CachedProfileImageUrl,
+): void {
+  const cache = _profileImageUrls.get(did) ?? {};
+  const previous = cache[slot];
+
+  cache[slot] = next;
+  _profileImageUrls.set(did, cache);
+
+  if (previous && previous.url !== next.url) {
+    revokeObjectUrlLater(previous.url);
+  }
+}
+
+function clearCachedImageUrl(did: string, slot: ProfileImageSlot): void {
+  const cache = _profileImageUrls.get(did);
+  const previous = cache?.[slot];
+  if (!cache || !previous) {
+    return;
+  }
+
+  delete cache[slot];
+  if (!cache.avatar && !cache.hero) {
+    _profileImageUrls.delete(did);
+  }
+  revokeObjectUrlLater(previous.url);
+}
+
+async function getCachedImageUrl(
+  did: string,
+  slot: ProfileImageSlot,
+  record: ProfileImageRecord,
+): Promise<string> {
+  const key = imageRecordCacheKey(record);
+  const cached = _profileImageUrls.get(did)?.[slot];
+
+  if (key && cached?.key === key) {
+    return cached.url;
+  }
+
+  const blob = await record.data.blob();
+  const url = URL.createObjectURL(blob);
+  setCachedImageUrl(did, slot, { key: key || url, url });
+  return url;
 }
 
 // ── Identity list ──────────────────────────────────────────────────
@@ -45,16 +110,13 @@ export async function fetchIdentities(agent: EnboxAgent) {
  * Resolve the full profile for a DID: social data, avatar blob URL,
  * and hero blob URL.
  *
- * Callers are responsible for revoking the returned object URLs when
- * they are no longer needed.
+ * Profile image object URLs are cached by DID and image record so React can
+ * safely render across query refetches without losing the underlying blob.
  */
 export async function fetchProfile(
   agent: EnboxAgent,
   did: string,
 ): Promise<IdentityProfile> {
-  // Revoke any blob URLs from a previous fetch for this DID
-  revokePreviousUrls(did);
-
   const enbox = new Enbox({ agent, connectedDid: did });
   const repo = repository(enbox.using(ProfileProtocol));
 
@@ -73,18 +135,21 @@ export async function fetchProfile(
     const contextId = profileRecord.contextId as string;
     const avatarRecord = await repo.profile.avatar.get(contextId);
     if (avatarRecord) {
-      const blob: Blob = await avatarRecord.data.blob();
-      avatarUrl = URL.createObjectURL(blob);
-      trackBlobUrl(did, avatarUrl);
+      avatarUrl = await getCachedImageUrl(did, 'avatar', avatarRecord);
+    } else {
+      clearCachedImageUrl(did, 'avatar');
     }
 
     // Hero image
     const heroRecord = await repo.profile.hero.get(contextId);
     if (heroRecord) {
-      const blob: Blob = await heroRecord.data.blob();
-      heroUrl = URL.createObjectURL(blob);
-      trackBlobUrl(did, heroUrl);
+      heroUrl = await getCachedImageUrl(did, 'hero', heroRecord);
+    } else {
+      clearCachedImageUrl(did, 'hero');
     }
+  } else {
+    clearCachedImageUrl(did, 'avatar');
+    clearCachedImageUrl(did, 'hero');
   }
 
   return {
