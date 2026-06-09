@@ -4,25 +4,22 @@ import { reconcileIdentitySync } from '../identity-sync';
 
 const mocks = vi.hoisted(() => ({
   ensureRegistration: vi.fn(),
-}));
-
-vi.mock('../registration', () => ({
-  ensureRegistration: mocks.ensureRegistration,
-}));
-
-vi.mock('../protocols', () => ({
-  IDENTITY_SYNC_PROTOCOLS: [
+  identitySyncProtocols: [
     'https://identity.foundation/protocols/social-graph',
     'https://identity.foundation/protocols/profile',
     'https://identity.foundation/protocols/connect',
   ],
 }));
 
-const desiredProtocols = [
-  'https://identity.foundation/protocols/social-graph',
-  'https://identity.foundation/protocols/profile',
-  'https://identity.foundation/protocols/connect',
-];
+const desiredProtocols = mocks.identitySyncProtocols;
+
+vi.mock('../registration', () => ({
+  ensureRegistration: mocks.ensureRegistration,
+}));
+
+vi.mock('../protocols', () => ({
+  IDENTITY_SYNC_PROTOCOLS: mocks.identitySyncProtocols,
+}));
 
 function createAgent(existingOptions: Record<string, unknown> = {}) {
   return {
