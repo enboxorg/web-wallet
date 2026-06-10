@@ -6,7 +6,6 @@ import { Toaster, toast } from 'sonner';
 import { EnboxAuthProvider } from '@/enbox/provider';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { useIdentities } from '@/enbox/hooks/use-identities';
-import { useIdentitySyncReconciliation } from '@/enbox/hooks/use-identity-sync-reconciliation';
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { useSyncQueryInvalidation } from '@/enbox/hooks/use-sync-query-invalidation';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
@@ -115,7 +114,6 @@ function AuthGate() {
   // Only query identities when unlocked
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
   useSyncQueryInvalidation();
-  useIdentitySyncReconciliation(identities);
 
   // Compute backup-needed badge for nav items (must be before early returns)
   const sidebarWithBadges = useMemo(() =>

@@ -6,13 +6,8 @@ const mocks = vi.hoisted(() => {
   const calls: string[] = [];
   const connectProtocol = Symbol('ConnectProtocol');
 
-  const profileRecord = {
-    contextId: 'profile-context',
-    send: vi.fn(async () => { calls.push('profile:send'); }),
-  };
-  const walletRecord = {
-    send: vi.fn(async () => { calls.push('wallet:send'); }),
-  };
+  const profileRecord = { contextId: 'profile-context' };
+  const walletRecord = {};
   const profileRepo = {
     profile: {
       set: vi.fn(async () => {
@@ -71,11 +66,6 @@ vi.mock('@enbox/protocols', () => ({
 }));
 
 vi.mock('../../protocols', () => ({
-  IDENTITY_SYNC_PROTOCOLS: [
-    'https://identity.foundation/protocols/social-graph',
-    'https://identity.foundation/protocols/profile',
-    'https://identity.foundation/protocols/connect',
-  ],
   installProtocols: mocks.installProtocols,
 }));
 
@@ -119,7 +109,7 @@ describe('identity mutations', () => {
     vi.clearAllMocks();
   });
 
-  it('bootstraps protocols on every endpoint before live sync and profile writes', async () => {
+  it('installs protocols locally before live sync and profile writes', async () => {
     const did = 'did:dht:new';
     const dwnEndpoints = ['https://aws.example/dwn', 'https://fly.example/dwn'];
     const agent = createAgent(did);
@@ -130,16 +120,10 @@ describe('identity mutations', () => {
       dwnEndpoints,
     });
 
-    expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did, dwnEndpoints);
+    expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did);
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
-      options: {
-        protocols: [
-          'https://identity.foundation/protocols/social-graph',
-          'https://identity.foundation/protocols/profile',
-          'https://identity.foundation/protocols/connect',
-        ],
-      },
+      options: { protocols: 'all' },
     });
     expect(mocks.calls).toEqual([
       'identity:create',
@@ -147,9 +131,7 @@ describe('identity mutations', () => {
       'protocols:install',
       'sync:register',
       'profile:set',
-      'profile:send',
       'wallet:create',
-      'wallet:send',
     ]);
   });
 
@@ -186,25 +168,16 @@ describe('identity mutations', () => {
     expect(agent.did.delete).toHaveBeenCalledWith({ didUri: did, tenant: 'did:dht:agent' });
   });
 
-  it('uses the same protocol-before-sync bootstrap when importing an identity', async () => {
+  it('uses the same local protocol-before-sync setup when importing an identity', async () => {
     const did = 'did:dht:imported';
     const agent = createAgent(did);
 
     await importIdentity(agent, { portableDid: { uri: did } });
 
-    expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did, [
-      'https://aws.example/dwn',
-      'https://fly.example/dwn',
-    ]);
+    expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did);
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
-      options: {
-        protocols: [
-          'https://identity.foundation/protocols/social-graph',
-          'https://identity.foundation/protocols/profile',
-          'https://identity.foundation/protocols/connect',
-        ],
-      },
+      options: { protocols: 'all' },
     });
     expect(mocks.calls).toEqual([
       'identity:import',
@@ -212,7 +185,6 @@ describe('identity mutations', () => {
       'protocols:install',
       'sync:register',
       'wallet:create',
-      'wallet:send',
     ]);
   });
 });

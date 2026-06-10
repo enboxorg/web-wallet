@@ -114,4 +114,43 @@ describe('useSyncQueryInvalidation', () => {
       queryKey: queryKeys.identities.profile('did:dht:identity'),
     });
   });
+
+  it('invalidates queries when reconcile admits remote messages', () => {
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    let listener: ((event: any) => void) | undefined;
+
+    useAuthStore.setState({
+      initialized: true,
+      unlocked: true,
+      firstTime: false,
+      agent: {
+        agentDid: { uri: 'did:dht:agent' },
+        sync: {
+          on: vi.fn((nextListener) => {
+            listener = nextListener;
+            return vi.fn();
+          }),
+        },
+      },
+    });
+
+    renderHook(() => useSyncQueryInvalidation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    act(() => {
+      listener?.({
+        type: 'reconcile:applied',
+        tenantDid: 'did:dht:identity',
+        protocol: 'https://identity.foundation/protocols/profile',
+        messageCids: ['bafy123'],
+      });
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.profile('did:dht:identity'),
+    });
+  });
 });

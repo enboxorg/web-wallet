@@ -89,45 +89,19 @@ describe('installProtocols', () => {
     });
   });
 
-  it('sends each newly configured protocol to every DWN endpoint in dependency order', async () => {
-    const agent = {
-      rpc: {
-        sendDwnRequest: vi.fn(async () => ({
-          status: { code: 202, detail: 'Accepted' },
-        })),
-      },
-    };
-    const endpoints = ['https://aws.example/dwn', 'https://fly.example/dwn'];
+  it('configures required protocols locally in dependency order', async () => {
+    await installProtocols({}, 'did:dht:alice');
 
-    await installProtocols(agent, 'did:dht:alice', endpoints);
-
-    expect(agent.rpc.sendDwnRequest).toHaveBeenCalledTimes(6);
-    expect(agent.rpc.sendDwnRequest).toHaveBeenNthCalledWith(1, {
-      dwnUrl: endpoints[0],
-      targetDid: 'did:dht:alice',
-      message: { descriptor: { definition: mocks.definitions.social } },
-    });
-    expect(agent.rpc.sendDwnRequest).toHaveBeenNthCalledWith(2, {
-      dwnUrl: endpoints[1],
-      targetDid: 'did:dht:alice',
-      message: { descriptor: { definition: mocks.definitions.social } },
-    });
-    expect(agent.rpc.sendDwnRequest).toHaveBeenNthCalledWith(3, {
-      dwnUrl: endpoints[0],
-      targetDid: 'did:dht:alice',
-      message: { descriptor: { definition: mocks.definitions.profile } },
-    });
-    expect(agent.rpc.sendDwnRequest).toHaveBeenNthCalledWith(5, {
-      dwnUrl: endpoints[0],
-      targetDid: 'did:dht:alice',
-      message: { descriptor: { definition: mocks.definitions.connect } },
-    });
+    expect(mocks.configureResults.social.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.configureResults.profile.mock.invocationCallOrder[0]);
+    expect(mocks.configureResults.profile.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.configureResults.connect.mock.invocationCallOrder[0]);
     expect(mocks.protocolObjects.social.send).not.toHaveBeenCalled();
     expect(mocks.protocolObjects.profile.send).not.toHaveBeenCalled();
     expect(mocks.protocolObjects.connect.send).not.toHaveBeenCalled();
   });
 
-  it('remote-sends existing local protocols so a missed endpoint can be repaired', async () => {
+  it('accepts existing local protocols as installed', async () => {
     mocks.configureResults.social.mockResolvedValue({
       status: { code: 200, detail: 'OK' },
       protocol: mocks.protocolObjects.social,
@@ -141,96 +115,22 @@ describe('installProtocols', () => {
       protocol: mocks.protocolObjects.connect,
     });
 
-    const agent = {
-      rpc: {
-        sendDwnRequest: vi.fn(async () => ({
-          status: { code: 409, detail: 'Conflict' },
-        })),
-      },
-    };
+    await installProtocols({}, 'did:dht:alice');
 
-    await installProtocols(agent, 'did:dht:alice', ['https://fly.example/dwn']);
-
-    expect(agent.rpc.sendDwnRequest).toHaveBeenCalledTimes(3);
+    expect(mocks.configureResults.social).toHaveBeenCalledOnce();
+    expect(mocks.configureResults.profile).toHaveBeenCalledOnce();
+    expect(mocks.configureResults.connect).toHaveBeenCalledOnce();
   });
 
-  it('retries an endpoint protocol chain when the remote DWN cannot resolve a newly published DID yet', async () => {
-    vi.useFakeTimers();
+  it('throws on local protocol configuration failures before downstream protocols', async () => {
+    mocks.configureResults.social.mockResolvedValue({
+      status: { code: 400, detail: 'ProtocolsConfigureInvalidDefinition' },
+      protocol: undefined,
+    });
 
-    const calls: string[] = [];
-    const agent = {
-      rpc: {
-        sendDwnRequest: vi.fn(async ({ dwnUrl, message }) => {
-          const protocol = message.descriptor.definition.protocol;
-          calls.push(`${dwnUrl}:${protocol}`);
-
-          if (
-            dwnUrl === 'https://fly.example/dwn' &&
-            protocol === mocks.definitions.social.protocol &&
-            calls.filter((call) => call === `${dwnUrl}:${protocol}`).length === 1
-          ) {
-            return {
-              status: {
-                code: 401,
-                detail: 'GeneralJwsVerifierGetPublicKeyNotFound: Pkarr record not found',
-              },
-            };
-          }
-
-          return { status: { code: 202, detail: 'Accepted' } };
-        }),
-      },
-    };
-
-    try {
-      const result = installProtocols(agent, 'did:dht:alice', [
-        'https://aws.example/dwn',
-        'https://fly.example/dwn',
-      ]);
-
-      await vi.advanceTimersByTimeAsync(1_000);
-      await result;
-    } finally {
-      vi.useRealTimers();
-    }
-
-    expect(calls.filter((call) => call.startsWith('https://fly.example/dwn:'))).toEqual([
-      `https://fly.example/dwn:${mocks.definitions.social.protocol}`,
-      `https://fly.example/dwn:${mocks.definitions.social.protocol}`,
-      `https://fly.example/dwn:${mocks.definitions.profile.protocol}`,
-      `https://fly.example/dwn:${mocks.definitions.connect.protocol}`,
-    ]);
-  });
-
-  it('throws on non-retryable remote protocol failures before writing downstream protocols to that endpoint', async () => {
-    const calls: string[] = [];
-    const agent = {
-      rpc: {
-        sendDwnRequest: vi.fn(async ({ dwnUrl, message }) => {
-          const protocol = message.descriptor.definition.protocol;
-          calls.push(`${dwnUrl}:${protocol}`);
-
-          if (dwnUrl === 'https://fly.example/dwn') {
-            return {
-              status: {
-                code: 400,
-                detail: 'ProtocolsConfigureInvalidDefinition',
-              },
-            };
-          }
-
-          return { status: { code: 202, detail: 'Accepted' } };
-        }),
-      },
-    };
-
-    await expect(installProtocols(agent, 'did:dht:alice', [
-      'https://aws.example/dwn',
-      'https://fly.example/dwn',
-    ])).rejects.toThrow('Failed to install required protocols');
-
-    expect(calls.filter((call) => call.startsWith('https://fly.example/dwn:'))).toEqual([
-      `https://fly.example/dwn:${mocks.definitions.social.protocol}`,
-    ]);
+    await expect(installProtocols({}, 'did:dht:alice')).rejects.toThrow(
+      'Failed to install protocol https://identity.foundation/protocols/social-graph',
+    );
+    expect(mocks.configureResults.profile).not.toHaveBeenCalled();
   });
 });
