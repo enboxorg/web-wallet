@@ -66,7 +66,12 @@ vi.mock('@enbox/protocols', () => ({
 }));
 
 vi.mock('../../protocols', () => ({
-  installProtocols: mocks.installProtocols,
+  IDENTITY_SYNC_PROTOCOLS : [
+    'https://identity.foundation/protocols/social-graph',
+    'https://identity.foundation/protocols/profile',
+    'https://identity.foundation/protocols/connect',
+  ],
+  installProtocols        : mocks.installProtocols,
 }));
 
 vi.mock('../../registration', () => ({
@@ -123,7 +128,13 @@ describe('identity mutations', () => {
     expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did);
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
-      options: { protocols: 'all' },
+      options: {
+        protocols: [
+          'https://identity.foundation/protocols/social-graph',
+          'https://identity.foundation/protocols/profile',
+          'https://identity.foundation/protocols/connect',
+        ],
+      },
     });
     expect(mocks.calls).toEqual([
       'identity:create',
@@ -177,7 +188,13 @@ describe('identity mutations', () => {
     expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did);
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
-      options: { protocols: 'all' },
+      options: {
+        protocols: [
+          'https://identity.foundation/protocols/social-graph',
+          'https://identity.foundation/protocols/profile',
+          'https://identity.foundation/protocols/connect',
+        ],
+      },
     });
     expect(mocks.calls).toEqual([
       'identity:import',

@@ -31,6 +31,10 @@ const REQUIRED_PROTOCOLS = [
   ConnectDefinition,
 ] as const;
 
+export const IDENTITY_SYNC_PROTOCOLS = REQUIRED_PROTOCOLS.map(
+  (definition) => definition.protocol,
+) as [string, ...string[]];
+
 function statusMessage(status: { code?: number; detail?: string } | undefined): string {
   return `${status?.code ?? 'unknown'} ${status?.detail ?? 'no status returned'}`;
 }

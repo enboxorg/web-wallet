@@ -2,11 +2,13 @@
  * EnboxAuthProvider — core authentication provider for the wallet.
  *
  * DESIGN PRINCIPLE: Let the SDK manage sync. The SDK's AuthManager handles
- * identity registration, sync start/stop, WebSocket push/pull, agent DID
- * sync (for seed phrase recovery), and identity recovery from remote DWNs
- * automatically. We only intervene for:
+ * sync start/stop, WebSocket push/pull, agent DID sync (for seed phrase
+ * recovery), and identity recovery from remote DWNs automatically. We only
+ * intervene for:
  * - Post-session DWN tenant registration (restoreSession does not
  *   re-register tenants, so we do it on every unlock)
+ * - Wallet-scoped identity DID sync registration when identities are
+ *   created/imported
  * - Inactivity auto-lock timer
  * - Session PIN caching for same-tab refresh persistence
  */
