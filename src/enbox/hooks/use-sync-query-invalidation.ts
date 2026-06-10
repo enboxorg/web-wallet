@@ -43,7 +43,7 @@ export function useSyncQueryInvalidation(): void {
     }
 
     const unsubscribe = agent.sync.on((event: any) => {
-      if (event?.type !== 'checkpoint:pull-advance') {
+      if (event?.type !== 'checkpoint:pull-advance' && event?.type !== 'reconcile:applied') {
         return;
       }
 

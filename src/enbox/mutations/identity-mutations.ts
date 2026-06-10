@@ -9,8 +9,7 @@
  * The SDK manages sync automatically. We only:
  * - Register new identity DIDs for sync
  * - Register DIDs as DWN tenants
- * - Install protocols locally and send them to the remote directly
- * - Send individual records to the remote via record.send()
+ * - Install protocols locally before writing records
  */
 
 import { Enbox, repository } from '@enbox/api';
@@ -20,7 +19,7 @@ import {
 } from '@enbox/protocols';
 
 import type { EnboxAgent } from '../types';
-import { IDENTITY_SYNC_PROTOCOLS, installProtocols } from '../protocols';
+import { installProtocols } from '../protocols';
 import { ensureRegistration } from '../registration';
 import { DEFAULT_DWN_ENDPOINTS, WALLET_URL } from '@/lib/dwn-endpoints';
 
@@ -28,7 +27,7 @@ async function registerIdentityForSync(agent: EnboxAgent, did: string): Promise<
   try {
     await agent.sync.registerIdentity({
       did,
-      options: { protocols: IDENTITY_SYNC_PROTOCOLS },
+      options: { protocols: 'all' },
     });
   } catch {
     // Already registered
@@ -124,10 +123,9 @@ export async function createIdentity(
     //    to be a recognised tenant on the remote DWN.
     await ensureRegistration(agent, params.dwnEndpoints);
 
-    // 3. Install protocols locally and on every configured DWN endpoint before
-    //    registering live sync. This avoids a race where independent per-protocol
-    //    sync links push Profile before SocialGraph on a fresh remote tenant.
-    await installProtocols(agent, did, params.dwnEndpoints);
+    // 3. Install protocols locally before writing records. Remote propagation
+    //    is handled by sync through replicated admission dependencies.
+    await installProtocols(agent, did);
   } catch (error) {
     const did = identity?.did?.uri;
     if (did) {
@@ -155,24 +153,21 @@ export async function createIdentity(
     data: socialData,
     published: true,
   });
-  await profileRecord!.send();
 
   // 6. Set avatar if provided
   if (params.avatar && profileRecord) {
     const ctxId = profileRecord.contextId as string;
-    const { record: avatarRecord } = await repo.profile.avatar.set(ctxId, {
+    await repo.profile.avatar.set(ctxId, {
       data: params.avatar,
     });
-    await avatarRecord!.send();
   }
 
   // 7. Set hero if provided
   if (params.hero && profileRecord) {
     const ctxId = profileRecord.contextId as string;
-    const { record: heroRecord } = await repo.profile.hero.set(ctxId, {
+    await repo.profile.hero.set(ctxId, {
       data: params.hero,
     });
-    await heroRecord!.send();
   }
 
   // 8. Create wallet record
@@ -180,10 +175,9 @@ export async function createIdentity(
     const connect = enbox.using(ConnectProtocol);
     const { records: existingWallets } = await connect.records.query('wallet');
     if (existingWallets.length === 0) {
-      const { record: walletRecord } = await connect.records.create('wallet', {
+      await connect.records.create('wallet', {
         data: { webWallets: [WALLET_URL] },
       });
-      await walletRecord!.send();
     }
   } catch (err) {
     console.warn('Failed to create wallet record:', err);
@@ -228,36 +222,31 @@ export async function updateIdentityProfile(
     data: socialData,
     published: true,
   });
-  await profileRecord!.send();
 
   const ctxId = profileRecord?.contextId as string | undefined;
 
   if (params.avatar !== undefined && ctxId) {
     if (params.avatar) {
-      const { record: avatarRecord } = await repo.profile.avatar.set(ctxId, {
+      await repo.profile.avatar.set(ctxId, {
         data: params.avatar,
       });
-      await avatarRecord!.send();
     } else {
       const existing = await repo.profile.avatar.get(ctxId);
       if (existing) {
         await existing.delete();
-        await existing.send();
       }
     }
   }
 
   if (params.hero !== undefined && ctxId) {
     if (params.hero) {
-      const { record: heroRecord } = await repo.profile.hero.set(ctxId, {
+      await repo.profile.hero.set(ctxId, {
         data: params.hero,
       });
-      await heroRecord!.send();
     } else {
       const existing = await repo.profile.hero.get(ctxId);
       if (existing) {
         await existing.delete();
-        await existing.send();
       }
     }
   }
@@ -304,9 +293,8 @@ export async function importIdentity(
     // Register imported identity as DWN tenant before sync (same reason as createIdentity)
     await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
 
-    // Install protocols before registering sync so composed protocols are
-    // present on every remote endpoint before live record replication starts.
-    await installProtocols(agent, did, DEFAULT_DWN_ENDPOINTS);
+    // Install protocols locally before registering sync and writing records.
+    await installProtocols(agent, did);
   } catch (error) {
     await deleteLocalIdentityBestEffort(agent, did);
     throw error;
@@ -321,10 +309,9 @@ export async function importIdentity(
     const connect = enbox.using(ConnectProtocol);
     const { records: existingWallets } = await connect.records.query('wallet');
     if (existingWallets.length === 0) {
-      const { record: walletRecord } = await connect.records.create('wallet', {
+      await connect.records.create('wallet', {
         data: { webWallets: [WALLET_URL] },
       });
-      await walletRecord!.send();
     }
   } catch (err) {
     console.warn('Failed to create wallet record on import:', err);
