@@ -10,6 +10,12 @@ const TEST_PHRASE =
   'abandon ability able about above absent absorb abstract absurd abuse access accident';
 const TEST_ENDPOINTS = ['https://dwn.example'];
 
+const TEST_IDENTITY_SYNC_PROTOCOLS = vi.hoisted(() => [
+  'https://identity.foundation/protocols/social-graph',
+  'https://identity.foundation/protocols/profile',
+  'https://identity.foundation/protocols/connect',
+]);
+
 const authMocks = vi.hoisted(() => ({
   create: vi.fn(),
   requestLocalDwnDiscovery: vi.fn(),
@@ -20,6 +26,10 @@ vi.mock('@enbox/auth', () => ({
     create: authMocks.create,
   },
   requestLocalDwnDiscovery: authMocks.requestLocalDwnDiscovery,
+}));
+
+vi.mock('../protocols', () => ({
+  IDENTITY_SYNC_PROTOCOLS: TEST_IDENTITY_SYNC_PROTOCOLS,
 }));
 
 function createAgent() {
@@ -132,6 +142,23 @@ describe('EnboxAuthProvider restore flow', () => {
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
+  });
+
+  it('configures wallet identity protocol sync for auth-managed recovery', async () => {
+    const auth = createAuth();
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => {
+      expect(authMocks.create).toHaveBeenCalledWith(expect.objectContaining({
+        identitySyncProtocols: TEST_IDENTITY_SYNC_PROTOCOLS,
+      }));
+    });
   });
 
   it('uses restoreFromPhrase instead of generic connect', async () => {
