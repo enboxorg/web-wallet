@@ -19,7 +19,7 @@ import {
 } from '@enbox/protocols';
 
 import type { EnboxAgent } from '../types';
-import { installProtocols } from '../protocols';
+import { IDENTITY_SYNC_PROTOCOLS, installProtocols } from '../protocols';
 import { ensureRegistration } from '../registration';
 import { DEFAULT_DWN_ENDPOINTS, WALLET_URL } from '@/lib/dwn-endpoints';
 
@@ -27,7 +27,7 @@ async function registerIdentityForSync(agent: EnboxAgent, did: string): Promise<
   try {
     await agent.sync.registerIdentity({
       did,
-      options: { protocols: 'all' },
+      options: { protocols: IDENTITY_SYNC_PROTOCOLS },
     });
   } catch {
     // Already registered

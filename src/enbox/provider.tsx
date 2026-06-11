@@ -2,11 +2,13 @@
  * EnboxAuthProvider — core authentication provider for the wallet.
  *
  * DESIGN PRINCIPLE: Let the SDK manage sync. The SDK's AuthManager handles
- * identity registration, sync start/stop, WebSocket push/pull, agent DID
- * sync (for seed phrase recovery), and identity recovery from remote DWNs
- * automatically. We only intervene for:
+ * sync start/stop, WebSocket push/pull, agent DID sync (for seed phrase
+ * recovery), and identity recovery from remote DWNs automatically. We only
+ * intervene for:
  * - Post-session DWN tenant registration (restoreSession does not
  *   re-register tenants, so we do it on every unlock)
+ * - Wallet-scoped identity DID sync registration when identities are
+ *   created/imported
  * - Inactivity auto-lock timer
  * - Session PIN caching for same-tab refresh persistence
  */
@@ -18,6 +20,7 @@ import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { getAutoLockTimeout, SESSION_PIN_KEY, STORAGE_KEYS } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
 import { ensureRegistration, getStoredTokens, storeTokens } from './registration';
 import type { EnboxAgent } from './types';
 
@@ -130,6 +133,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const auth = await AuthManager.create({
         dwnEndpoints: DEFAULT_DWN_ENDPOINTS,
+        identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
         registration: {
           onSuccess: () => {},
           onFailure: (err: unknown) => console.warn('EnboxAuthProvider: DWN registration failed:', err),

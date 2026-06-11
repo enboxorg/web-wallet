@@ -8,6 +8,14 @@ import { queryKeys } from '../queries/query-keys';
 
 const INVALIDATION_DEBOUNCE_MS = 250;
 
+function eventIncludesProtocol(event: any, protocol: string): boolean {
+  if (event?.protocol === protocol) {
+    return true;
+  }
+
+  return Array.isArray(event?.protocols) && event.protocols.includes(protocol);
+}
+
 export function useSyncQueryInvalidation(): void {
   const agent = useAuthStore((state) => state.agent);
   const queryClient = useQueryClient();
@@ -52,7 +60,7 @@ export function useSyncQueryInvalidation(): void {
         scheduleFlush();
       }
 
-      if (event.protocol === ProfileDefinition.protocol && typeof event.tenantDid === 'string') {
+      if (eventIncludesProtocol(event, ProfileDefinition.protocol) && typeof event.tenantDid === 'string') {
         pendingProfileDids.add(event.tenantDid);
         scheduleFlush();
       }
