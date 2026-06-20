@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { useAuthStore } from '@/stores/auth-store';
@@ -63,7 +64,10 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
           }
         } while (rerunRef.current);
       } catch (error) {
-        console.warn('Identity sync reconciliation failed:', error);
+        console.error('Identity sync reconciliation failed:', error);
+        toast.error(
+          'Failed to set up sync for a new identity. It may not appear until the next sync.',
+        );
       } finally {
         runningRef.current = false;
       }

@@ -41,7 +41,7 @@ describe('reconcileIdentitySync', () => {
     mocks.ensureRegistration.mockResolvedValue(undefined);
   });
 
-  it('registers a newly discovered identity and pulls its existing records', async () => {
+  it('registers a newly discovered identity for scoped sync without driving a manual pull', async () => {
     const identity = { did: { uri: 'did:dht:new' }, metadata: { name: 'New' } };
     const agent = createAgent();
 
@@ -52,7 +52,7 @@ describe('reconcileIdentitySync', () => {
       did: 'did:dht:new',
       options: { protocols: desiredProtocols },
     });
-    expect(agent.sync.sync).toHaveBeenCalledWith('pull');
+    expect(agent.sync.sync).not.toHaveBeenCalled();
     expect(result.changedDids).toEqual(['did:dht:new']);
   });
 
@@ -69,7 +69,7 @@ describe('reconcileIdentitySync', () => {
       did: 'did:dht:existing',
       options: { protocols: desiredProtocols },
     });
-    expect(agent.sync.sync).toHaveBeenCalledWith('pull');
+    expect(agent.sync.sync).not.toHaveBeenCalled();
     expect(result.changedDids).toEqual(['did:dht:existing']);
   });
 

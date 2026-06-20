@@ -9,6 +9,7 @@ import { useIdentitySyncReconciliation } from '../use-identity-sync-reconciliati
 
 const mocks = vi.hoisted(() => ({
   reconcileIdentitySync: vi.fn(),
+  toastError: vi.fn(),
 }));
 
 vi.mock('../../identity-sync', () => ({
@@ -19,6 +20,10 @@ vi.mock('../../identity-sync', () => ({
 
 vi.mock('@/lib/dwn-endpoints', () => ({
   DEFAULT_DWN_ENDPOINTS: ['https://fly.example/dwn', 'https://aws.example/dwn'],
+}));
+
+vi.mock('sonner', () => ({
+  toast: { error: mocks.toastError },
 }));
 
 function createQueryClient() {
@@ -85,5 +90,17 @@ describe('useIdentitySyncReconciliation', () => {
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.profile('did:dht:new'),
     });
+  });
+
+  it('surfaces a reconciliation failure instead of swallowing it', async () => {
+    const queryClient = createQueryClient();
+    const identities = [{ did: { uri: 'did:dht:new' }, metadata: { name: 'New' } }];
+    mocks.reconcileIdentitySync.mockRejectedValue(new Error('boom'));
+
+    renderHook(() => useIdentitySyncReconciliation(identities), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
   });
 });

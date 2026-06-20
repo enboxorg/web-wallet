@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+
+import { useAuthStore } from '@/stores/auth-store';
 import { OfflineBanner } from '../OfflineBanner';
 
 describe('OfflineBanner', () => {
@@ -15,6 +17,7 @@ describe('OfflineBanner', () => {
       writable: true,
       configurable: true,
     });
+    useAuthStore.setState({ agent: null });
   });
 
   it('returns null when online', () => {
@@ -83,5 +86,18 @@ describe('OfflineBanner', () => {
     });
     fireEvent(window, new Event('online'));
     expect(screen.queryByText(/offline/i)).not.toBeInTheDocument();
+  });
+
+  it('warns when the browser is online but sync cannot reach the server', () => {
+    Object.defineProperty(navigator, 'onLine', {
+      value: true,
+      writable: true,
+      configurable: true,
+    });
+    useAuthStore.setState({
+      agent: { sync: { connectivityState: 'offline', on: () => () => {} } },
+    });
+    render(<OfflineBanner />);
+    expect(screen.getByText(/can't reach the sync server/i)).toBeInTheDocument();
   });
 });
