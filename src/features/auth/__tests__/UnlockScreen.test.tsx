@@ -76,4 +76,50 @@ describe('UnlockScreen', () => {
     render(<UnlockScreen {...defaults} />);
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
+
+  it('shows passkey unlock when a passkey is configured and available', () => {
+    render(
+      <UnlockScreen
+        {...defaults}
+        passkeyConfigured
+        passkeyAvailable
+        onUnlockWithPasskey={vi.fn().mockResolvedValue(undefined)}
+      />,
+    );
+
+    expect(screen.getByText('Use your passkey to continue')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /unlock with passkey/i })).toBeInTheDocument();
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+  });
+
+  it('calls onUnlockWithPasskey when the passkey button is clicked', async () => {
+    const onUnlockWithPasskey = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+
+    render(
+      <UnlockScreen
+        {...defaults}
+        passkeyConfigured
+        passkeyAvailable
+        onUnlockWithPasskey={onUnlockWithPasskey}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /unlock with passkey/i }));
+    expect(onUnlockWithPasskey).toHaveBeenCalledOnce();
+  });
+
+  it('does not show PIN input when a passkey wallet is unavailable on this device', () => {
+    render(
+      <UnlockScreen
+        {...defaults}
+        passkeyConfigured
+        passkeyAvailable={false}
+        passkeySupportChecked
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(/passkeys are unavailable/i);
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+  });
 });

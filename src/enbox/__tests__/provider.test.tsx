@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { EnboxAuthProvider, useEnboxAuth } from '../provider';
-import { STORAGE_KEYS, SESSION_PIN_KEY } from '@/lib/constants';
+import { SESSION_PIN_KEY, SESSION_VAULT_PASSWORD_KEY, STORAGE_KEYS } from '@/lib/constants';
 import { useAuthStore } from '@/stores/auth-store';
 
 const TEST_PHRASE =
@@ -211,7 +211,8 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(auth.agent.vault.lock).not.toHaveBeenCalled();
     expect(auth.agent.vault._store.clear).not.toHaveBeenCalled();
     expect(auth.agent.secrets._store.clear).not.toHaveBeenCalled();
-    expect(sessionStorage.getItem(SESSION_PIN_KEY)).toBe('1234');
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
+    expect(sessionStorage.getItem(SESSION_PIN_KEY)).toBeNull();
     expect(localStorage.getItem('enbox:enbox:auth:previouslyConnected')).toBe('true');
     expect(localStorage.getItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT)).toBe('http://127.0.0.1:55500');
   });

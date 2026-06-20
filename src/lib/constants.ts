@@ -34,6 +34,12 @@ export const SYNC_INTERVAL = '5m';
 /** PIN length for wallet lock/unlock. */
 export const PIN_LENGTH = 4;
 
+/** Local storage key for the configured wallet unlock method. */
+export const AUTH_METHOD_STORAGE_KEY = 'enbox:auth:method';
+
+/** Local storage key for the encrypted passkey vault credential. */
+export const PASSKEY_CREDENTIAL_STORAGE_KEY = 'enbox:auth:passkeyCredential';
+
 /** Local storage keys. */
 export const STORAGE_KEYS = {
   IDENTITIES: 'identities',
@@ -43,11 +49,14 @@ export const STORAGE_KEYS = {
 } as const;
 
 /**
- * Session storage key for the cached PIN.
+ * Session storage key for the cached vault password.
  *
  * sessionStorage is tab-scoped: survives same-tab refresh but is cleared
  * when the tab closes, and is never shared with other tabs or popups.
- * This lets returning users skip PIN re-entry on page refresh while
+ * This lets returning users skip unlock re-entry on page refresh while
  * still requiring it for new tabs and after inactivity timeout.
  */
+export const SESSION_VAULT_PASSWORD_KEY = 'enbox:session:vaultPassword';
+
+/** @deprecated Use `SESSION_VAULT_PASSWORD_KEY` instead. */
 export const SESSION_PIN_KEY = 'enbox:session:pin';

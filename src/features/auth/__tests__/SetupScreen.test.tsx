@@ -1,6 +1,23 @@
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+
+const passkeyMocks = vi.hoisted(() => ({
+  canCheckPasskeySupport: vi.fn(() => false),
+  isPasskeySupported: vi.fn().mockResolvedValue(false),
+  markPinAuthMethod: vi.fn(),
+  preparePasskeyVaultPassword: vi.fn(),
+  storePasskeyCredential: vi.fn(),
+}));
+
+vi.mock('@/lib/passkeys', () => ({
+  canCheckPasskeySupport: passkeyMocks.canCheckPasskeySupport,
+  isPasskeySupported: passkeyMocks.isPasskeySupported,
+  markPinAuthMethod: passkeyMocks.markPinAuthMethod,
+  preparePasskeyVaultPassword: passkeyMocks.preparePasskeyVaultPassword,
+  storePasskeyCredential: passkeyMocks.storePasskeyCredential,
+}));
+
 import { SetupScreen } from '../SetupScreen';
 
 describe('SetupScreen', () => {
@@ -16,6 +33,12 @@ describe('SetupScreen', () => {
       clipboardData: { getData: () => digits },
     });
   }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    passkeyMocks.canCheckPasskeySupport.mockReturnValue(false);
+    passkeyMocks.isPasskeySupported.mockResolvedValue(false);
+  });
 
   it('renders step 1: create PIN', () => {
     render(<SetupScreen {...defaults} />);
@@ -103,6 +126,50 @@ describe('SetupScreen', () => {
     await user.click(screen.getByRole('button', { name: 'Set up' }));
     expect(onSetup).toHaveBeenCalledWith('4321', expect.any(Array));
     expect(onSetup.mock.calls[0][1]).toContain('https://enbox-dwn.fly.dev');
+    expect(passkeyMocks.markPinAuthMethod).toHaveBeenCalledOnce();
+  });
+
+  it('defaults to passkey setup when passkeys are supported', async () => {
+    passkeyMocks.canCheckPasskeySupport.mockReturnValue(true);
+    passkeyMocks.isPasskeySupported.mockResolvedValue(true);
+
+    render(<SetupScreen {...defaults} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /use passkey/i })).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: /use pin instead/i })).toBeInTheDocument();
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+  });
+
+  it('creates and stores a passkey credential before passkey setup', async () => {
+    const onSetup = vi.fn().mockResolvedValue(undefined);
+    const credential = {
+      version: 1,
+      credentialId: 'credential-id',
+      salt: 'salt',
+      iv: 'iv',
+      wrappedVaultPassword: 'wrapped',
+      createdAt: '2026-06-20T00:00:00.000Z',
+    };
+    passkeyMocks.canCheckPasskeySupport.mockReturnValue(true);
+    passkeyMocks.isPasskeySupported.mockResolvedValue(true);
+    passkeyMocks.preparePasskeyVaultPassword.mockResolvedValue({
+      password: 'vault-password',
+      credential,
+    });
+
+    const user = userEvent.setup();
+    render(<SetupScreen {...defaults} onSetup={onSetup} />);
+
+    await user.click(await screen.findByRole('button', { name: /use passkey/i }));
+    await user.click(screen.getByRole('button', { name: /create passkey and set up/i }));
+
+    await waitFor(() => {
+      expect(onSetup).toHaveBeenCalledWith('vault-password', expect.any(Array));
+    });
+    expect(passkeyMocks.storePasskeyCredential).toHaveBeenCalledWith(credential);
+    expect(passkeyMocks.markPinAuthMethod).not.toHaveBeenCalled();
   });
 
   it('back button in step 2 returns to step 1', async () => {
