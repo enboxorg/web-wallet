@@ -5,12 +5,16 @@
  * directly inside TanStack Query `queryFn` callbacks.
  */
 
+import { Effect } from 'effect';
 import { DwnApi } from '@enbox/api/advanced';
 import { Enbox, repository } from '@enbox/api';
 import { ConnectProtocol, ProfileProtocol } from '@enbox/protocols';
 import { getDwnServiceEndpointUrls } from '@enbox/agent';
 
 import type { EnboxAgent, IdentityProfile } from '../types';
+import { sdkError } from '../effect/errors';
+import { CurrentAgent, currentAgentLayer } from '../effect/services';
+import { runEnboxPromise } from '../effect/runtime';
 
 // ── Blob URL lifecycle management ──────────────────────────────────
 
@@ -78,30 +82,68 @@ function clearCachedImageUrl(did: string, slot: ProfileImageSlot): void {
   revokeObjectUrlLater(previous.url);
 }
 
-async function getCachedImageUrl(
+function getCachedImageUrlEffect(
   did: string,
   slot: ProfileImageSlot,
   record: ProfileImageRecord,
-): Promise<string> {
+) {
   const key = imageRecordCacheKey(record);
   const cached = _profileImageUrls.get(did)?.[slot];
 
   if (key && cached?.key === key) {
-    return cached.url;
+    return Effect.succeed(cached.url);
   }
 
-  const blob = await record.data.blob();
-  const url = URL.createObjectURL(blob);
-  setCachedImageUrl(did, slot, { key: key || url, url });
-  return url;
+  return Effect.tryPromise({
+    try: async () => {
+      const blob = await record.data.blob();
+      const url = URL.createObjectURL(blob);
+      setCachedImageUrl(did, slot, { key: key || url, url });
+      return url;
+    },
+    catch: sdkError(`profile.${slot}.blob`),
+  });
+}
+
+function createEnboxEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* Effect.try({
+      try: () => new Enbox({ agent, connectedDid: did }),
+      catch: sdkError('enbox.create'),
+    });
+  });
+}
+
+function createDwnApiEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* Effect.try({
+      try: () => new DwnApi({ agent, connectedDid: did }),
+      catch: sdkError('dwnApi.create'),
+    });
+  });
 }
 
 // ── Identity list ──────────────────────────────────────────────────
 
 /** List all identities managed by the agent. Returns `BearerIdentity[]`. */
 export async function fetchIdentities(agent: EnboxAgent) {
-  const identities = await agent.identity.list();
-  return identities;
+  return runEnboxPromise(
+    fetchIdentitiesEffect().pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+export function fetchIdentitiesEffect() {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* Effect.tryPromise({
+      try: async () => agent.identity.list(),
+      catch: sdkError('identity.list'),
+    });
+  });
 }
 
 // ── Profile ────────────────────────────────────────────────────────
@@ -117,96 +159,169 @@ export async function fetchProfile(
   agent: EnboxAgent,
   did: string,
 ): Promise<IdentityProfile> {
-  const enbox = new Enbox({ agent, connectedDid: did });
-  const repo = repository(enbox.using(ProfileProtocol));
+  return runEnboxPromise(
+    fetchProfileEffect(did).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
 
-  const profileRecord = await repo.profile.get();
-  const hasProfileRecord = profileRecord !== undefined;
+export function fetchProfileEffect(did: string) {
+  return Effect.gen(function* () {
+    const enbox = yield* createEnboxEffect(did);
+    const repo = repository(enbox.using(ProfileProtocol));
 
-  let socialData: { displayName: string; tagline?: string; bio?: string } = {
-    displayName: '',
-  };
-  let avatarUrl: string | undefined;
-  let heroUrl: string | undefined;
+    const profileRecord = yield* Effect.tryPromise({
+      try: async () => repo.profile.get(),
+      catch: sdkError('profile.get'),
+    });
+    const hasProfileRecord = profileRecord !== undefined;
 
-  if (profileRecord) {
-    socialData = await profileRecord.data.json();
+    let socialData: { displayName: string; tagline?: string; bio?: string } = {
+      displayName: '',
+    };
+    let avatarUrl: string | undefined;
+    let heroUrl: string | undefined;
 
-    // Avatar
-    const contextId = profileRecord.contextId as string;
-    const avatarRecord = await repo.profile.avatar.get(contextId);
-    if (avatarRecord) {
-      avatarUrl = await getCachedImageUrl(did, 'avatar', avatarRecord);
+    if (profileRecord) {
+      socialData = yield* Effect.tryPromise({
+        try: async () => profileRecord.data.json(),
+        catch: sdkError('profile.data.json'),
+      });
+
+      // Avatar
+      const contextId = profileRecord.contextId as string;
+      const avatarRecord = yield* Effect.tryPromise({
+        try: async () => repo.profile.avatar.get(contextId),
+        catch: sdkError('profile.avatar.get'),
+      });
+      if (avatarRecord) {
+        avatarUrl = yield* getCachedImageUrlEffect(did, 'avatar', avatarRecord);
+      } else {
+        clearCachedImageUrl(did, 'avatar');
+      }
+
+      // Hero image
+      const heroRecord = yield* Effect.tryPromise({
+        try: async () => repo.profile.hero.get(contextId),
+        catch: sdkError('profile.hero.get'),
+      });
+      if (heroRecord) {
+        heroUrl = yield* getCachedImageUrlEffect(did, 'hero', heroRecord);
+      } else {
+        clearCachedImageUrl(did, 'hero');
+      }
     } else {
       clearCachedImageUrl(did, 'avatar');
-    }
-
-    // Hero image
-    const heroRecord = await repo.profile.hero.get(contextId);
-    if (heroRecord) {
-      heroUrl = await getCachedImageUrl(did, 'hero', heroRecord);
-    } else {
       clearCachedImageUrl(did, 'hero');
     }
-  } else {
-    clearCachedImageUrl(did, 'avatar');
-    clearCachedImageUrl(did, 'hero');
-  }
 
-  return {
-    did,
-    displayName: socialData.displayName,
-    tagline: socialData.tagline,
-    bio: socialData.bio,
-    avatarUrl,
-    heroUrl,
-    hasProfileRecord,
-  };
+    return {
+      did,
+      displayName: socialData.displayName,
+      tagline: socialData.tagline,
+      bio: socialData.bio,
+      avatarUrl,
+      heroUrl,
+      hasProfileRecord,
+    };
+  });
 }
 
 // ── Protocols ──────────────────────────────────────────────────────
 
 /** Installed protocol definitions for the given DID. */
 export async function fetchProtocols(agent: EnboxAgent, did: string) {
-  const dwn = new DwnApi({ agent, connectedDid: did });
-  const { protocols } = await dwn.protocols.query({});
-  return protocols.map((p: any) => ({
-    uri: p.definition.protocol as string,
-    published: (p.definition.published ?? false) as boolean,
-    definition: p.definition,
-  }));
+  return runEnboxPromise(
+    fetchProtocolsEffect(did).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+export function fetchProtocolsEffect(did: string) {
+  return Effect.gen(function* () {
+    const dwn = yield* createDwnApiEffect(did);
+    const { protocols } = yield* Effect.tryPromise({
+      try: async () => dwn.protocols.query({}),
+      catch: sdkError('protocols.query'),
+    });
+    return protocols.map((p: any) => ({
+      uri: p.definition.protocol as string,
+      published: (p.definition.published ?? false) as boolean,
+      definition: p.definition,
+    }));
+  });
 }
 
 // ── Permissions ────────────────────────────────────────────────────
 
 /** Permission grants stored in the DWN for the given DID. */
 export async function fetchPermissions(agent: EnboxAgent, did: string) {
-  const dwn = new DwnApi({ agent, connectedDid: did });
-  const grants = await dwn.permissions.queryGrants();
-  return grants;
+  return runEnboxPromise(
+    fetchPermissionsEffect(did).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+export function fetchPermissionsEffect(did: string) {
+  return Effect.gen(function* () {
+    const dwn = yield* createDwnApiEffect(did);
+    return yield* Effect.tryPromise({
+      try: async () => dwn.permissions.queryGrants(),
+      catch: sdkError('permissions.queryGrants'),
+    });
+  });
 }
 
 // ── Wallets ────────────────────────────────────────────────────────
 
 /** Wallet records stored via the Connect protocol. */
 export async function fetchWallets(agent: EnboxAgent, did: string) {
-  const enbox = new Enbox({ agent, connectedDid: did });
-  const connect = enbox.using(ConnectProtocol);
-  const { records } = await connect.records.query('wallet');
-  const wallets = await Promise.all(
-    records.map(async (r: any) => {
-      const data = await r.data.json();
-      return data;
-    }),
+  return runEnboxPromise(
+    fetchWalletsEffect(did).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
   );
-  return wallets;
+}
+
+export function fetchWalletsEffect(did: string) {
+  return Effect.gen(function* () {
+    const enbox = yield* createEnboxEffect(did);
+    const connect = enbox.using(ConnectProtocol);
+    const { records } = yield* Effect.tryPromise({
+      try: async () => connect.records.query('wallet'),
+      catch: sdkError('wallet.records.query'),
+    });
+    return yield* Effect.forEach(records, (r: any) =>
+      Effect.tryPromise({
+        try: async () => r.data.json(),
+        catch: sdkError('wallet.record.json'),
+      })
+    );
+  });
 }
 
 // ── DWN endpoints ──────────────────────────────────────────────────
 
 /** Resolve the DWN service endpoint URLs from the DID document. */
 export async function fetchDwnEndpoints(agent: EnboxAgent, did: string) {
-  return getDwnServiceEndpointUrls(did, agent.did);
+  return runEnboxPromise(
+    fetchDwnEndpointsEffect(did).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+export function fetchDwnEndpointsEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* Effect.tryPromise({
+      try: async () => getDwnServiceEndpointUrls(did, agent.did),
+      catch: sdkError('did.getDwnServiceEndpointUrls'),
+    });
+  });
 }
 
 // ── Activity ───────────────────────────────────────────────────────
@@ -228,22 +343,36 @@ export async function fetchActivity(
   did: string,
   limit = 50,
 ): Promise<ActivityRecord[]> {
-  const dwn = new DwnApi({ agent, connectedDid: did });
+  return runEnboxPromise(
+    fetchActivityEffect(did, limit).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
 
-  const { records } = await dwn.records.query({
-    filter: {},
-    dateSort: 'createdDescending' as any,  
-    pagination: { limit },
+export function fetchActivityEffect(did: string, limit = 50) {
+  return Effect.gen(function* () {
+    const dwn = yield* createDwnApiEffect(did);
+
+    const { records } = yield* Effect.tryPromise({
+      try: async () =>
+        dwn.records.query({
+          filter: {},
+          dateSort: 'createdDescending' as any,
+          pagination: { limit },
+        }),
+      catch: sdkError('records.query.activity'),
+    });
+
+    return records.map((r: any) => ({
+      id: r.id,
+      protocol: r.protocol,
+      protocolPath: r.protocolPath,
+      schema: r.schema,
+      dataFormat: r.dataFormat,
+      dateCreated: r.dateCreated,
+      author: r.author,
+      published: r.published,
+    }));
   });
-
-  return records.map((r: any) => ({
-    id: r.id,
-    protocol: r.protocol,
-    protocolPath: r.protocolPath,
-    schema: r.schema,
-    dataFormat: r.dataFormat,
-    dateCreated: r.dateCreated,
-    author: r.author,
-    published: r.published,
-  }));
 }

@@ -1,8 +1,13 @@
+import { Effect } from 'effect';
+
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 
-import { ensureRegistration } from './registration';
+import { ensureRegistrationEffect } from './registration';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
 import type { EnboxAgent } from './types';
+import { sdkError } from './effect/errors';
+import { CurrentAgent, enboxLiveLayer } from './effect/services';
+import { runEnboxPromise } from './effect/runtime';
 
 type SyncIdentityOptions = {
   delegateDid?: string;
@@ -42,46 +47,64 @@ function sameProtocolScope(existing: SyncIdentityOptions | undefined): boolean {
   );
 }
 
-async function getSyncOptions(
-  agent: EnboxAgent,
-  did: string,
-): Promise<SyncIdentityOptions | undefined> {
-  if (typeof agent.sync.getIdentityOptions !== 'function') {
-    return undefined;
-  }
+function getSyncOptionsEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
 
-  return agent.sync.getIdentityOptions(did);
+    if (typeof agent.sync.getIdentityOptions !== 'function') {
+      return undefined;
+    }
+
+    return yield* Effect.tryPromise({
+      try: async (): Promise<SyncIdentityOptions | undefined> =>
+        agent.sync.getIdentityOptions(did),
+      catch: sdkError('sync.getIdentityOptions'),
+    });
+  });
 }
 
-async function applySyncOptions(agent: EnboxAgent, did: string): Promise<boolean> {
-  const existing = await getSyncOptions(agent, did);
-  const options = {
-    ...(existing?.delegateDid && { delegateDid: existing.delegateDid }),
-    protocols: IDENTITY_SYNC_PROTOCOLS,
-  };
+function applySyncOptionsEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    const existing = yield* getSyncOptionsEffect(did);
+    const options = {
+      ...(existing?.delegateDid && { delegateDid: existing.delegateDid }),
+      protocols: IDENTITY_SYNC_PROTOCOLS,
+    };
 
-  if (sameProtocolScope(existing)) {
-    return false;
-  }
+    if (sameProtocolScope(existing)) {
+      return false;
+    }
 
-  if (existing && typeof agent.sync.updateIdentityOptions === 'function') {
-    await agent.sync.updateIdentityOptions({ did, options });
-    return true;
-  }
-
-  try {
-    await agent.sync.registerIdentity({ did, options });
-    return true;
-  } catch (error) {
-    if (
-      getErrorMessage(error).includes('already registered') &&
-      typeof agent.sync.updateIdentityOptions === 'function'
-    ) {
-      await agent.sync.updateIdentityOptions({ did, options });
+    if (existing && typeof agent.sync.updateIdentityOptions === 'function') {
+      yield* Effect.tryPromise({
+        try: async () => agent.sync.updateIdentityOptions({ did, options }),
+        catch: sdkError('sync.updateIdentityOptions'),
+      });
       return true;
     }
-    throw error;
-  }
+
+    const registered = yield* Effect.tryPromise({
+      try: async () => agent.sync.registerIdentity({ did, options }),
+      catch: sdkError('sync.registerIdentity'),
+    }).pipe(
+      Effect.as(true),
+      Effect.catchAll((error) => {
+        if (
+          getErrorMessage(error).includes('already registered') &&
+          typeof agent.sync.updateIdentityOptions === 'function'
+        ) {
+          return Effect.tryPromise({
+            try: async () => agent.sync.updateIdentityOptions({ did, options }),
+            catch: sdkError('sync.updateIdentityOptions'),
+          }).pipe(Effect.as(true));
+        }
+        return Effect.fail(error);
+      }),
+    );
+
+    return registered;
+  });
 }
 
 /**
@@ -97,31 +120,44 @@ export async function reconcileIdentitySync(
   identities: unknown[],
   dwnEndpoints: string[] = DEFAULT_DWN_ENDPOINTS,
 ): Promise<IdentitySyncReconcileResult> {
-  const dids = [...new Set(identities.map(getIdentityDid).filter(Boolean) as string[])];
-  if (dids.length === 0) {
-    return { changedDids: [] };
-  }
+  return runEnboxPromise(
+    reconcileIdentitySyncEffect(identities, dwnEndpoints).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
 
-  const didsToChange: string[] = [];
-  for (const did of dids) {
-    const existing = await getSyncOptions(agent, did);
-    if (!sameProtocolScope(existing)) {
-      didsToChange.push(did);
+export function reconcileIdentitySyncEffect(
+  identities: unknown[],
+  dwnEndpoints: string[] = DEFAULT_DWN_ENDPOINTS,
+) {
+  return Effect.gen(function* () {
+    const dids = [...new Set(identities.map(getIdentityDid).filter(Boolean) as string[])];
+    if (dids.length === 0) {
+      return { changedDids: [] };
     }
-  }
 
-  if (didsToChange.length === 0) {
-    return { changedDids: [] };
-  }
-
-  await ensureRegistration(agent, dwnEndpoints);
-
-  const changedDids: string[] = [];
-  for (const did of didsToChange) {
-    if (await applySyncOptions(agent, did)) {
-      changedDids.push(did);
+    const didsToChange: string[] = [];
+    for (const did of dids) {
+      const existing = yield* getSyncOptionsEffect(did);
+      if (!sameProtocolScope(existing)) {
+        didsToChange.push(did);
+      }
     }
-  }
 
-  return { changedDids };
+    if (didsToChange.length === 0) {
+      return { changedDids: [] };
+    }
+
+    yield* ensureRegistrationEffect(dwnEndpoints);
+
+    const changedDids: string[] = [];
+    for (const did of didsToChange) {
+      if (yield* applySyncOptionsEffect(did)) {
+        changedDids.push(did);
+      }
+    }
+
+    return { changedDids };
+  });
 }

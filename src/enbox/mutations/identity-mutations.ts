@@ -12,6 +12,7 @@
  * - Install protocols locally before writing records
  */
 
+import { Effect } from 'effect';
 import { Enbox, repository } from '@enbox/api';
 import {
   ProfileProtocol,
@@ -19,50 +20,131 @@ import {
 } from '@enbox/protocols';
 
 import type { EnboxAgent } from '../types';
-import { IDENTITY_SYNC_PROTOCOLS, installProtocols } from '../protocols';
-import { ensureRegistration } from '../registration';
+import { IDENTITY_SYNC_PROTOCOLS, installProtocolsEffect } from '../protocols';
+import { ensureRegistrationEffect } from '../registration';
 import { DEFAULT_DWN_ENDPOINTS, WALLET_URL } from '@/lib/dwn-endpoints';
+import {
+  DuplicateIdentityError,
+  IdentityNotFoundError,
+  IdentityPublishError,
+  sdkError,
+} from '../effect/errors';
+import { CurrentAgent, enboxLiveLayer } from '../effect/services';
+import { runEnboxPromise } from '../effect/runtime';
 
-async function registerIdentityForSync(agent: EnboxAgent, did: string): Promise<void> {
-  try {
-    await agent.sync.registerIdentity({
-      did,
-      options: { protocols: IDENTITY_SYNC_PROTOCOLS },
-    });
-  } catch {
-    // Already registered
-  }
+function registerIdentityForSyncEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    yield* Effect.tryPromise({
+      try: () =>
+        agent.sync.registerIdentity({
+          did,
+          options: { protocols: IDENTITY_SYNC_PROTOCOLS },
+        }),
+      catch: sdkError('sync.registerIdentity'),
+    }).pipe(Effect.catchAll(() => Effect.void));
+  });
 }
 
-function assertDhtDidPublished(identity: any): void {
+function assertDhtDidPublishedEffect(identity: any) {
   const did = identity?.did?.uri;
   if (typeof did !== 'string' || !did.startsWith('did:dht:')) {
-    return;
+    return Effect.void;
   }
 
   if (identity?.did?.metadata?.published === false) {
-    throw new Error(`Failed to publish DID ${did} to the DHT gateway`);
+    return Effect.fail(
+      new IdentityPublishError({
+        did,
+        message: `Failed to publish DID ${did} to the DHT gateway`,
+      }),
+    );
   }
+
+  return Effect.void;
 }
 
-async function deleteLocalIdentityBestEffort(agent: EnboxAgent, did: string): Promise<void> {
-  try {
-    await agent.sync.unregisterIdentity(did);
-  } catch {
-    // The identity may not have been registered for sync yet.
-  }
+function deleteLocalIdentityBestEffortEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
 
-  try {
-    await agent.identity.delete({ didUri: did });
-  } catch {
-    // Best-effort cleanup only.
-  }
+    yield* Effect.tryPromise({
+      try: () => agent.sync.unregisterIdentity(did),
+      catch: sdkError('sync.unregisterIdentity'),
+    }).pipe(Effect.catchAll(() => Effect.void));
 
-  try {
-    await agent.did.delete({ didUri: did, tenant: agent.agentDid.uri });
-  } catch {
-    // Best-effort cleanup only.
-  }
+    yield* Effect.tryPromise({
+      try: () => agent.identity.delete({ didUri: did }),
+      catch: sdkError('identity.delete'),
+    }).pipe(Effect.catchAll(() => Effect.void));
+
+    yield* Effect.tryPromise({
+      try: () => agent.did.delete({ didUri: did, tenant: agent.agentDid.uri }),
+      catch: sdkError('did.delete'),
+    }).pipe(Effect.catchAll(() => Effect.void));
+  });
+}
+
+function createEnboxEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* Effect.try({
+      try: () => new Enbox({ agent, connectedDid: did }),
+      catch: sdkError('enbox.create'),
+    });
+  });
+}
+
+function createWalletRecordBestEffortEffect(did: string, warningPrefix: string) {
+  return Effect.gen(function* () {
+    const enbox = yield* createEnboxEffect(did);
+    const connect = enbox.using(ConnectProtocol);
+    const { records: existingWallets } = yield* Effect.tryPromise({
+      try: () => connect.records.query('wallet'),
+      catch: sdkError('connect.wallet.query'),
+    });
+
+    if (existingWallets.length === 0) {
+      yield* Effect.tryPromise({
+        try: () =>
+          connect.records.create('wallet', {
+            data: { webWallets: [WALLET_URL] },
+          }),
+        catch: sdkError('connect.wallet.create'),
+      });
+    }
+  }).pipe(
+    Effect.catchAll((err) =>
+      Effect.sync(() => {
+        console.warn(warningPrefix, err);
+      })
+    ),
+  );
+}
+
+function getIdentityEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* Effect.tryPromise({
+      try: async (): Promise<any> => agent.identity.get({ didUri: did }),
+      catch: sdkError('identity.get'),
+    });
+  });
+}
+
+function getRequiredIdentityEffect(did: string) {
+  return Effect.gen(function* () {
+    const identity = yield* getIdentityEffect(did);
+    if (!identity) {
+      return yield* Effect.fail(
+        new IdentityNotFoundError({
+          did,
+          message: 'Identity not found',
+        }),
+      );
+    }
+    return identity;
+  });
 }
 
 // ── Create identity ────────────────────────────────────────────────
@@ -81,109 +163,129 @@ export async function createIdentity(
   agent: EnboxAgent,
   params: CreateIdentityParams,
 ) {
-  let identity: any | undefined;
+  return runEnboxPromise(
+    createIdentityEffect(params).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
+
+export function createIdentityEffect(params: CreateIdentityParams) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    let createdIdentity: any | undefined;
 
   // 1. Create the DID + identity
-  try {
-    identity = await agent.identity.create({
-      store: true,
-      didMethod: 'dht',
-      didOptions: {
-        services: [
-          {
-            id: 'dwn',
-            type: 'DecentralizedWebNode',
-            serviceEndpoint: params.dwnEndpoints,
-            enc: '#enc',
-            sig: '#sig',
-          },
-        ],
-        verificationMethods: [
-          {
-            algorithm: 'Ed25519',
-            id: 'sig',
-            purposes: ['assertionMethod', 'authentication'],
-          },
-          {
-            algorithm: 'X25519',
-            id: 'enc',
-            purposes: ['keyAgreement'],
-          },
-        ],
-      },
-      metadata: { name: params.persona },
-    });
+    const identity = yield* Effect.gen(function* () {
+      createdIdentity = yield* Effect.tryPromise({
+        try: () =>
+          agent.identity.create({
+            store: true,
+            didMethod: 'dht',
+            didOptions: {
+              services: [
+                {
+                  id: 'dwn',
+                  type: 'DecentralizedWebNode',
+                  serviceEndpoint: params.dwnEndpoints,
+                  enc: '#enc',
+                  sig: '#sig',
+                },
+              ],
+              verificationMethods: [
+                {
+                  algorithm: 'Ed25519',
+                  id: 'sig',
+                  purposes: ['assertionMethod', 'authentication'],
+                },
+                {
+                  algorithm: 'X25519',
+                  id: 'enc',
+                  purposes: ['keyAgreement'],
+                },
+              ],
+            },
+            metadata: { name: params.persona },
+          }),
+        catch: sdkError('identity.create'),
+      });
+
+      const did: string = createdIdentity.did.uri;
+      yield* assertDhtDidPublishedEffect(createdIdentity);
+
+      // 2. Register identity as DWN tenant on remote endpoints.
+      //    Must happen before sync registration — with live sync active,
+      //    registerIdentity hot-adds a subscription that requires the DID
+      //    to be a recognised tenant on the remote DWN.
+      yield* ensureRegistrationEffect(params.dwnEndpoints);
+
+      // 3. Install protocols locally before writing records. Remote propagation
+      //    is handled by sync through replicated admission dependencies.
+      yield* installProtocolsEffect(did);
+
+      return createdIdentity;
+    }).pipe(
+      Effect.tapError(() => {
+        const did = createdIdentity?.did?.uri;
+        return did ? deleteLocalIdentityBestEffortEffect(did) : Effect.void;
+      }),
+    );
 
     const did: string = identity.did.uri;
-    assertDhtDidPublished(identity);
 
-    // 2. Register identity as DWN tenant on remote endpoints.
-    //    Must happen before sync registration — with live sync active,
-    //    registerIdentity hot-adds a subscription that requires the DID
-    //    to be a recognised tenant on the remote DWN.
-    await ensureRegistration(agent, params.dwnEndpoints);
+    // 4. Register identity DID for sync after protocol bootstrap is complete.
+    yield* registerIdentityForSyncEffect(did);
 
-    // 3. Install protocols locally before writing records. Remote propagation
-    //    is handled by sync through replicated admission dependencies.
-    await installProtocols(agent, did);
-  } catch (error) {
-    const did = identity?.did?.uri;
-    if (did) {
-      await deleteLocalIdentityBestEffort(agent, did);
-    }
-    throw error;
-  }
+    // 5. Set profile social data
+    const enbox = yield* createEnboxEffect(did);
+    const repo = repository(enbox.using(ProfileProtocol));
 
-  const did: string = identity.did.uri;
+    const socialData = {
+      displayName: params.displayName,
+      ...(params.tagline && { tagline: params.tagline }),
+      ...(params.bio && { bio: params.bio }),
+    };
 
-  // 4. Register identity DID for sync after protocol bootstrap is complete.
-  await registerIdentityForSync(agent, did);
-
-  // 5. Set profile social data
-  const enbox = new Enbox({ agent, connectedDid: did });
-  const repo = repository(enbox.using(ProfileProtocol));
-
-  const socialData = {
-    displayName: params.displayName,
-    ...(params.tagline && { tagline: params.tagline }),
-    ...(params.bio && { bio: params.bio }),
-  };
-
-  const { record: profileRecord } = await repo.profile.set({
-    data: socialData,
-    published: true,
-  });
-
-  // 6. Set avatar if provided
-  if (params.avatar && profileRecord) {
-    const ctxId = profileRecord.contextId as string;
-    await repo.profile.avatar.set(ctxId, {
-      data: params.avatar,
+    const { record: profileRecord } = yield* Effect.tryPromise({
+      try: () =>
+        repo.profile.set({
+          data: socialData,
+          published: true,
+        }),
+      catch: sdkError('profile.set'),
     });
-  }
 
-  // 7. Set hero if provided
-  if (params.hero && profileRecord) {
-    const ctxId = profileRecord.contextId as string;
-    await repo.profile.hero.set(ctxId, {
-      data: params.hero,
-    });
-  }
-
-  // 8. Create wallet record
-  try {
-    const connect = enbox.using(ConnectProtocol);
-    const { records: existingWallets } = await connect.records.query('wallet');
-    if (existingWallets.length === 0) {
-      await connect.records.create('wallet', {
-        data: { webWallets: [WALLET_URL] },
+    // 6. Set avatar if provided
+    if (params.avatar && profileRecord) {
+      const ctxId = profileRecord.contextId as string;
+      const avatar = params.avatar;
+      yield* Effect.tryPromise({
+        try: () =>
+          repo.profile.avatar.set(ctxId, {
+            data: avatar,
+          }),
+        catch: sdkError('profile.avatar.set'),
       });
     }
-  } catch (err) {
-    console.warn('Failed to create wallet record:', err);
-  }
 
-  return identity;
+    // 7. Set hero if provided
+    if (params.hero && profileRecord) {
+      const ctxId = profileRecord.contextId as string;
+      const hero = params.hero;
+      yield* Effect.tryPromise({
+        try: () =>
+          repo.profile.hero.set(ctxId, {
+            data: hero,
+          }),
+        catch: sdkError('profile.hero.set'),
+      });
+    }
+
+    // 8. Create wallet record
+    yield* createWalletRecordBestEffortEffect(did, 'Failed to create wallet record:');
+
+    return identity;
+  });
 }
 
 // ── Update profile ─────────────────────────────────────────────────
@@ -202,122 +304,203 @@ export async function updateIdentityProfile(
   agent: EnboxAgent,
   params: UpdateIdentityProfileParams,
 ) {
-  if (params.persona) {
-    await agent.identity.setMetadataName({
-      didUri: params.did,
-      name: params.persona,
+  return runEnboxPromise(
+    updateIdentityProfileEffect(params).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
+
+export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+
+    if (params.persona) {
+      yield* Effect.tryPromise({
+        try: () =>
+          agent.identity.setMetadataName({
+            didUri: params.did,
+            name: params.persona,
+          }),
+        catch: sdkError('identity.setMetadataName'),
+      });
+    }
+
+    const enbox = yield* createEnboxEffect(params.did);
+    const repo = repository(enbox.using(ProfileProtocol));
+
+    const socialData = {
+      displayName: params.displayName,
+      ...(params.tagline !== undefined && { tagline: params.tagline }),
+      ...(params.bio !== undefined && { bio: params.bio }),
+    };
+
+    const { record: profileRecord } = yield* Effect.tryPromise({
+      try: () =>
+        repo.profile.set({
+          data: socialData,
+          published: true,
+        }),
+      catch: sdkError('profile.set'),
     });
-  }
 
-  const enbox = new Enbox({ agent, connectedDid: params.did });
-  const repo = repository(enbox.using(ProfileProtocol));
+    const ctxId = profileRecord?.contextId as string | undefined;
 
-  const socialData = {
-    displayName: params.displayName,
-    ...(params.tagline !== undefined && { tagline: params.tagline }),
-    ...(params.bio !== undefined && { bio: params.bio }),
-  };
+    if (params.avatar !== undefined && ctxId) {
+      if (params.avatar) {
+        const avatar = params.avatar;
+        yield* Effect.tryPromise({
+          try: () =>
+            repo.profile.avatar.set(ctxId, {
+              data: avatar,
+            }),
+          catch: sdkError('profile.avatar.set'),
+        });
+      } else {
+        const existing = yield* Effect.tryPromise({
+          try: () => repo.profile.avatar.get(ctxId),
+          catch: sdkError('profile.avatar.get'),
+        });
+        if (existing) {
+          yield* Effect.tryPromise({
+            try: () => existing.delete(),
+            catch: sdkError('profile.avatar.delete'),
+          });
+        }
+      }
+    }
 
-  const { record: profileRecord } = await repo.profile.set({
-    data: socialData,
-    published: true,
+    if (params.hero !== undefined && ctxId) {
+      if (params.hero) {
+        const hero = params.hero;
+        yield* Effect.tryPromise({
+          try: () =>
+            repo.profile.hero.set(ctxId, {
+              data: hero,
+            }),
+          catch: sdkError('profile.hero.set'),
+        });
+      } else {
+        const existing = yield* Effect.tryPromise({
+          try: () => repo.profile.hero.get(ctxId),
+          catch: sdkError('profile.hero.get'),
+        });
+        if (existing) {
+          yield* Effect.tryPromise({
+            try: () => existing.delete(),
+            catch: sdkError('profile.hero.delete'),
+          });
+        }
+      }
+    }
   });
-
-  const ctxId = profileRecord?.contextId as string | undefined;
-
-  if (params.avatar !== undefined && ctxId) {
-    if (params.avatar) {
-      await repo.profile.avatar.set(ctxId, {
-        data: params.avatar,
-      });
-    } else {
-      const existing = await repo.profile.avatar.get(ctxId);
-      if (existing) {
-        await existing.delete();
-      }
-    }
-  }
-
-  if (params.hero !== undefined && ctxId) {
-    if (params.hero) {
-      await repo.profile.hero.set(ctxId, {
-        data: params.hero,
-      });
-    } else {
-      const existing = await repo.profile.hero.get(ctxId);
-      if (existing) {
-        await existing.delete();
-      }
-    }
-  }
 }
 
 // ── Delete identity ────────────────────────────────────────────────
 
 export async function deleteIdentity(agent: EnboxAgent, did: string) {
-  const identity = await agent.identity.get({ didUri: did });
-  if (!identity) throw new Error('Identity not found');
+  return runEnboxPromise(
+    deleteIdentityEffect(did).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
 
-  try {
-    await agent.sync.unregisterIdentity(did);
-  } catch {
-    // May not be registered
-  }
-  await agent.identity.delete({ didUri: did });
-  await agent.did.delete({ didUri: did, tenant: agent.agentDid.uri });
+export function deleteIdentityEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    yield* getRequiredIdentityEffect(did);
+
+    yield* Effect.tryPromise({
+      try: () => agent.sync.unregisterIdentity(did),
+      catch: sdkError('sync.unregisterIdentity'),
+    }).pipe(Effect.catchAll(() => Effect.void));
+
+    yield* Effect.tryPromise({
+      try: () => agent.identity.delete({ didUri: did }),
+      catch: sdkError('identity.delete'),
+    });
+
+    yield* Effect.tryPromise({
+      try: () => agent.did.delete({ didUri: did, tenant: agent.agentDid.uri }),
+      catch: sdkError('did.delete'),
+    });
+  });
 }
 
 // ── Export identity ────────────────────────────────────────────────
 
 export async function exportIdentity(agent: EnboxAgent, did: string) {
-  const identity = await agent.identity.get({ didUri: did });
-  if (!identity) throw new Error('Identity not found');
-  return identity.export();
+  return runEnboxPromise(
+    exportIdentityEffect(did).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
+
+export function exportIdentityEffect(did: string) {
+  return Effect.gen(function* () {
+    const identity = yield* getRequiredIdentityEffect(did);
+    return yield* Effect.tryPromise({
+      try: async () => identity.export(),
+      catch: sdkError('identity.export'),
+    });
+  });
 }
 
 // ── Import identity ────────────────────────────────────────────────
 
 export async function importIdentity(
   agent: EnboxAgent,
-  portableIdentity: any,  
+  portableIdentity: any,
 ) {
-  const existing = await agent.identity.get({
-    didUri: portableIdentity.portableDid?.uri,
-  });
-  if (existing) throw new Error('Identity already exists');
+  return runEnboxPromise(
+    importIdentityEffect(portableIdentity).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
 
-  const identity = await agent.identity.import({ portableIdentity });
-  const did = identity.did.uri;
-
-  try {
-    // Register imported identity as DWN tenant before sync (same reason as createIdentity)
-    await ensureRegistration(agent, DEFAULT_DWN_ENDPOINTS);
-
-    // Install protocols locally before registering sync and writing records.
-    await installProtocols(agent, did);
-  } catch (error) {
-    await deleteLocalIdentityBestEffort(agent, did);
-    throw error;
-  }
-
-  // Register for sync
-  await registerIdentityForSync(agent, did);
-
-  // Create wallet record
-  try {
-    const enbox = new Enbox({ agent, connectedDid: did });
-    const connect = enbox.using(ConnectProtocol);
-    const { records: existingWallets } = await connect.records.query('wallet');
-    if (existingWallets.length === 0) {
-      await connect.records.create('wallet', {
-        data: { webWallets: [WALLET_URL] },
-      });
+export function importIdentityEffect(portableIdentity: any) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    const existing = yield* getIdentityEffect(portableIdentity.portableDid?.uri);
+    if (existing) {
+      return yield* Effect.fail(
+        new DuplicateIdentityError({
+          did: portableIdentity.portableDid?.uri,
+          message: 'Identity already exists',
+        }),
+      );
     }
-  } catch (err) {
-    console.warn('Failed to create wallet record on import:', err);
-  }
 
-  return identity;
+    const identity = yield* Effect.tryPromise({
+      try: async (): Promise<any> => agent.identity.import({ portableIdentity }),
+      catch: sdkError('identity.import'),
+    });
+    const did = identity.did.uri;
+
+    yield* Effect.gen(function* () {
+      // Register imported identity as DWN tenant before sync (same reason as createIdentity)
+      yield* ensureRegistrationEffect(DEFAULT_DWN_ENDPOINTS);
+
+      // Install protocols locally before registering sync and writing records.
+      yield* installProtocolsEffect(did);
+    }).pipe(
+      Effect.tapError(() => deleteLocalIdentityBestEffortEffect(did)),
+    );
+
+    // Register for sync
+    yield* registerIdentityForSyncEffect(did);
+
+    // Create wallet record
+    yield* createWalletRecordBestEffortEffect(
+      did,
+      'Failed to create wallet record on import:',
+    );
+
+    return identity;
+  });
 }
 
 // ── Update DWN endpoints ───────────────────────────────────────────
@@ -331,8 +514,23 @@ export async function updateDwnEndpoints(
   agent: EnboxAgent,
   params: UpdateDwnEndpointsParams,
 ) {
-  await agent.identity.setDwnEndpoints({
-    didUri: params.did,
-    endpoints: params.endpoints,
+  return runEnboxPromise(
+    updateDwnEndpointsEffect(params).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
+
+export function updateDwnEndpointsEffect(params: UpdateDwnEndpointsParams) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    yield* Effect.tryPromise({
+      try: () =>
+        agent.identity.setDwnEndpoints({
+          didUri: params.did,
+          endpoints: params.endpoints,
+        }),
+      catch: sdkError('identity.setDwnEndpoints'),
+    });
   });
 }

@@ -2,17 +2,17 @@
   <strong>en</strong><span style="color: #ff6b8a">b</span><strong>ox</strong>
 </p>
 
-<h1 align="center">Enbox Web Wallet</h1>
+<h1 align="center">Enbox Effect Wallet</h1>
 
 <p align="center">
-  A decentralised identity wallet for managing DIDs, profiles, protocols, and permissions on the Enbox network.
+  A fork of the Enbox web wallet focused on applying Effect patterns to DWN and Enbox SDK integration.
 </p>
 
 <p align="center">
-  <a href="https://github.com/enboxorg/web-wallet/actions/workflows/ci.yml"><img src="https://github.com/enboxorg/web-wallet/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml"><img src="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://enbox-wallet.pages.dev"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live Demo"></a>
-  <a href="https://github.com/enboxorg/web-wallet/blob/main/LICENSE"><img src="https://img.shields.io/github/license/enboxorg/web-wallet" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-449-blue" alt="Tests">
+  <a href="https://github.com/enboxorg/effect-wallet/blob/main/LICENSE"><img src="https://img.shields.io/github/license/enboxorg/effect-wallet" alt="License"></a>
+  <img src="https://img.shields.io/badge/tests-492-blue" alt="Tests">
   <img src="https://img.shields.io/badge/coverage-26%25-yellow" alt="Coverage">
 </p>
 
@@ -51,6 +51,7 @@
 |-------|-----------|
 | UI | [Tailwind CSS v4](https://tailwindcss.com/) + [@enbox/ui](https://github.com/enboxorg/design) design tokens |
 | Framework | [React 18](https://react.dev/) + [TypeScript 5](https://www.typescriptlang.org/) |
+| Effects | [Effect 3](https://effect.website/) for Enbox/DWN side effects, typed failures, and service layers |
 | Client State | [Zustand 5](https://zustand.docs.pmnd.rs/) |
 | Server State | [TanStack Query v5](https://tanstack.com/query) |
 | Routing | [React Router v7](https://reactrouter.com/) |
@@ -169,7 +170,9 @@ src/
     search/                 # DID lookup with search history
     settings/               # Security, backup, settings hub
 
-  enbox/                    # SDK integration (designed for @enbox/react extraction)
+  enbox/                    # SDK integration (designed for Effect helper extraction)
+    effect/                 # Shared Effect runtime, typed errors, services, and layers
+    auth-effects.ts         # AuthManager creation/session Effect programs
     provider.tsx            # EnboxAuthProvider (AuthManager lifecycle + sync)
     hooks/                  # useAuth, useIdentities, useProfile, usePermissions
     queries/                # TanStack Query functions + key factories
@@ -185,17 +188,41 @@ src/
 
 ## Architecture
 
+### Effect Integration
+
+This fork keeps React, TanStack Query, and Zustand at the UI boundary, but moves Enbox SDK and DWN side effects into Effect programs. Public async functions remain available for existing hooks, while `*Effect` variants provide a future extraction path for an Enbox/Effect helper package.
+
+Current Effect boundaries:
+
+- `src/enbox/effect/errors.ts` defines typed failures for SDK, storage, DWN registration, protocol installation, and identity validation.
+- `src/enbox/effect/services.ts` defines `CurrentAgent` and `RegistrationTokenStore` services plus browser and memory-backed layers.
+- `src/enbox/auth-effects.ts` wraps AuthManager create/connect/unlock/restore/lock flows.
+- `src/enbox/registration.ts`, `protocols.ts`, `identity-sync.ts`, `queries/identity-queries.ts`, and `mutations/identity-mutations.ts` expose composable Effect programs with Promise adapters for React Query.
+
+The intended pattern is:
+
+```ts
+import { Effect } from 'effect'
+
+const program = createIdentityEffect(params)
+const result = await runEnboxPromise(
+  program.pipe(Effect.provide(enboxLiveLayer(agent))),
+)
+```
+
+Tests can swap the browser layer for `memoryRegistrationTokenStoreLayer` or direct service layers, which keeps DWN registration and token-refresh behavior deterministic.
+
 ### State Management
 
 | Type | Tool | Examples |
 |------|------|---------|
 | Client state | Zustand | Auth status, UI preferences, sidebar state |
-| Server/DWN state | TanStack Query | Identities, profiles, protocols, permissions |
+| Server/DWN state | TanStack Query over Effect adapters | Identities, profiles, protocols, permissions |
 | URL state | React Router v7 | Current page, identity DID params |
 
 ### SDK Integration Layer
 
-The `src/enbox/` directory is designed for future extraction into `@enbox/react`. It has zero imports from UI components or feature pages. All Enbox SDK interactions go through this layer:
+The `src/enbox/` directory is designed for future extraction into an Enbox/Effect helper library. It has zero imports from UI components or feature pages. All Enbox SDK interactions go through this layer:
 
 ```
 App.tsx

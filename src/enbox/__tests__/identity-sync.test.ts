@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Effect } from 'effect';
 
 import { reconcileIdentitySync } from '../identity-sync';
 
@@ -6,9 +7,15 @@ const mocks = vi.hoisted(() => ({
   ensureRegistration: vi.fn(),
 }));
 
-vi.mock('../registration', () => ({
-  ensureRegistration: mocks.ensureRegistration,
-}));
+vi.mock('../registration', async () => {
+  const { Effect } = await vi.importActual<typeof import('effect')>('effect');
+
+  mocks.ensureRegistration.mockImplementation(() => Effect.void);
+
+  return {
+    ensureRegistrationEffect: mocks.ensureRegistration,
+  };
+});
 
 vi.mock('../protocols', () => ({
   IDENTITY_SYNC_PROTOCOLS: [
@@ -38,7 +45,7 @@ function createAgent(existingOptions: Record<string, unknown> = {}) {
 describe('reconcileIdentitySync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.ensureRegistration.mockResolvedValue(undefined);
+    mocks.ensureRegistration.mockImplementation(() => Effect.void);
   });
 
   it('registers a newly discovered identity for scoped sync without driving a manual pull', async () => {
@@ -47,7 +54,7 @@ describe('reconcileIdentitySync', () => {
 
     const result = await reconcileIdentitySync(agent, [identity], ['https://dwn.example']);
 
-    expect(mocks.ensureRegistration).toHaveBeenCalledWith(agent, ['https://dwn.example']);
+    expect(mocks.ensureRegistration).toHaveBeenCalledWith(['https://dwn.example']);
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did: 'did:dht:new',
       options: { protocols: desiredProtocols },

@@ -1,5 +1,5 @@
 {
-  "name": "@enbox/dweb-wallet",
+  "name": "@enbox/effect-wallet",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -24,6 +24,7 @@
     "@enbox/protocols": "0.2.66",
     "@tanstack/react-query": "5.95.2",
     "clsx": "2.1.1",
+    "effect": "^3.21.4",
     "lucide-react": "0.513.0",
     "node-stdlib-browser": "1.3.1",
     "qr-scanner": "1.4.2",

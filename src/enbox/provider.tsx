@@ -15,7 +15,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
-import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
+import { requestLocalDwnDiscovery } from '@enbox/auth';
 
 import { useAuthStore } from '@/stores/auth-store';
 import {
@@ -25,9 +25,17 @@ import {
   STORAGE_KEYS,
 } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
-import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
-import { ensureRegistration, getStoredTokens, storeTokens } from './registration';
+import { ensureRegistration } from './registration';
 import type { EnboxAgent } from './types';
+import {
+  connectVaultEffect,
+  createWalletAuthManagerEffect,
+  lockAuthManagerEffect,
+  restoreFromPhraseEffect,
+  restoreSessionEffect,
+  type WalletAuthManager,
+} from './auth-effects';
+import { runEnboxPromise } from './effect/runtime';
 
 // ── Local DWN discovery ────────────────────────────────────────────
 
@@ -85,7 +93,7 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 // ── Provider ───────────────────────────────────────────────────────
 
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const authManagerRef = useRef<AuthManager | null>(null);
+  const authManagerRef = useRef<WalletAuthManager | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -107,13 +115,13 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ── Auto-restore from cached session vault password ──────────────
 
-  const tryAutoRestore = useCallback(async (auth: AuthManager): Promise<boolean> => {
+  const tryAutoRestore = useCallback(async (auth: WalletAuthManager): Promise<boolean> => {
     const cachedPassword = getCachedSessionPassword();
     if (!cachedPassword) return false;
     if (auth.state !== 'locked') return false;
 
     try {
-      const session = await auth.restoreSession({ password: cachedPassword });
+      const session = await runEnboxPromise(restoreSessionEffect(auth, cachedPassword));
       if (!session) {
         clearSessionPassword();
         return false;
@@ -147,27 +155,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (cancelled) return;
       }
 
-      const auth = await AuthManager.create({
-        dwnEndpoints: DEFAULT_DWN_ENDPOINTS,
-        identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-        registration: {
-          onSuccess: () => {},
-          onFailure: (err: unknown) => console.warn('EnboxAuthProvider: DWN registration failed:', err),
-          onProviderAuthRequired: async ({ authorizeUrl, state }: { authorizeUrl: string; state: string }) => {
-            const res = await fetch(authorizeUrl, { signal: AbortSignal.timeout(30_000) });
-            if (!res.ok) {
-              throw new Error(`Provider auth failed (${res.status}): ${await res.text()}`);
-            }
-            const { code, state: returnedState } = (await res.json()) as { code: string; state: string };
-            if (returnedState !== state) {
-              throw new Error('Provider auth state mismatch — possible CSRF');
-            }
-            return { code, state: returnedState };
-          },
-          registrationTokens: getStoredTokens(),
-          onRegistrationTokens: storeTokens,
-        },
-      } as Parameters<typeof AuthManager.create>[0]);
+      const auth = await runEnboxPromise(createWalletAuthManagerEffect());
 
       if (cancelled) return;
       authManagerRef.current = auth;
@@ -202,11 +190,9 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       // connectVault initializes the vault, creates/registers the agent DID,
       // and starts sync. We intentionally skip createIdentity because the
       // wallet handles identity creation in its own UI.
-      const session = await auth.connectVault({
-        password,
-        dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
-        identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-      } as Parameters<AuthManager['connectVault']>[0]);
+      const session = await runEnboxPromise(
+        connectVaultEffect(auth, password, dwnEndpoints),
+      );
 
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
@@ -232,7 +218,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
-      const session = await auth.restoreSession({ password });
+      const session = await runEnboxPromise(restoreSessionEffect(auth, password));
       if (!session) throw new Error('Failed to restore session');
 
       const agent = session.agent as EnboxAgent;
@@ -261,12 +247,9 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
-      const session = await auth.restoreFromPhrase({
-        password,
-        recoveryPhrase,
-        dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
-        identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-      } as Parameters<AuthManager['restoreFromPhrase']>[0]);
+      const session = await runEnboxPromise(
+        restoreFromPhraseEffect(auth, recoveryPhrase, password, dwnEndpoints),
+      );
 
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
@@ -287,7 +270,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     clearSessionPassword();
     const auth = authManagerRef.current;
     if (auth) {
-      auth.lock().catch((err: unknown) => {
+      runEnboxPromise(lockAuthManagerEffect(auth)).catch((err: unknown) => {
         console.warn('EnboxAuthProvider: Lock failed:', err);
       });
     }

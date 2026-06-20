@@ -10,11 +10,23 @@
  * falls back to proof-of-work registration.
  */
 
+import { Effect } from 'effect';
 import { DwnRegistrar } from '@enbox/dwn-clients';
 import type { ServerInfo } from '@enbox/dwn-clients';
 
 import { STORAGE_KEYS } from '@/lib/constants';
 import type { EnboxAgent, RegistrationTokenData } from './types';
+import {
+  CurrentAgent,
+  RegistrationTokenStore,
+  enboxLiveLayer,
+} from './effect/services';
+import {
+  DwnRegistrationError,
+  registrationError,
+  sdkError,
+} from './effect/errors';
+import { runEnboxPromise } from './effect/runtime';
 
 // ── Token persistence ──────────────────────────────────────────────
 
@@ -38,101 +50,136 @@ function isTokenExpired(token: RegistrationTokenData): boolean {
 
 // ── Provider-auth flow ─────────────────────────────────────────────
 
-async function obtainProviderAuthToken(
+function obtainProviderAuthTokenEffect(
   dwnEndpoint: string,
   providerAuth: NonNullable<ServerInfo['providerAuth']>,
-): Promise<RegistrationTokenData> {
-  const state = crypto.randomUUID();
-  const separator = providerAuth.authorizeUrl.includes('?') ? '&' : '?';
-  const authorizeUrl =
-    `${providerAuth.authorizeUrl}${separator}` +
-    `redirect_uri=${encodeURIComponent(dwnEndpoint)}` +
-    `&state=${encodeURIComponent(state)}`;
+) {
+  return Effect.gen(function* () {
+    const state = yield* Effect.sync(() => crypto.randomUUID());
+    const separator = providerAuth.authorizeUrl.includes('?') ? '&' : '?';
+    const authorizeUrl =
+      `${providerAuth.authorizeUrl}${separator}` +
+      `redirect_uri=${encodeURIComponent(dwnEndpoint)}` +
+      `&state=${encodeURIComponent(state)}`;
 
-  const res = await fetch(authorizeUrl, { signal: AbortSignal.timeout(30_000) });
-  if (!res.ok) {
-    throw new Error(`Provider auth authorize failed (${res.status}): ${await res.text()}`);
-  }
+    const authResponse = yield* Effect.tryPromise({
+      try: async () => {
+        const res = await fetch(authorizeUrl, { signal: AbortSignal.timeout(30_000) });
+        if (!res.ok) {
+          throw new Error(`Provider auth authorize failed (${res.status}): ${await res.text()}`);
+        }
+        return res.json() as Promise<{ code: string; state: string }>;
+      },
+      catch: registrationError('providerAuth.authorize', dwnEndpoint),
+    });
 
-  const { code, state: returnedState } = (await res.json()) as { code: string; state: string };
-  if (returnedState !== state) {
-    throw new Error('Provider auth state mismatch — possible CSRF');
-  }
+    if (authResponse.state !== state) {
+      return yield* Effect.fail(
+        new DwnRegistrationError({
+          operation: 'providerAuth.authorize',
+          endpoint: dwnEndpoint,
+          cause: authResponse,
+          message: 'Provider auth state mismatch - possible CSRF',
+        }),
+      );
+    }
 
-  const tokenResponse = await DwnRegistrar.exchangeAuthCode(
-    providerAuth.tokenUrl,
-    code,
-    dwnEndpoint,
-  );
+    const tokenResponse = yield* Effect.tryPromise({
+      try: () =>
+        DwnRegistrar.exchangeAuthCode(
+          providerAuth.tokenUrl,
+          authResponse.code,
+          dwnEndpoint,
+        ),
+      catch: registrationError('providerAuth.exchangeCode', dwnEndpoint),
+    });
 
-  return {
-    registrationToken: tokenResponse.registrationToken,
-    refreshToken: tokenResponse.refreshToken,
-    expiresAt: tokenResponse.expiresIn != null
-      ? Date.now() + tokenResponse.expiresIn * 1000
-      : undefined,
-    tokenUrl: providerAuth.tokenUrl,
-    refreshUrl: providerAuth.refreshUrl,
-  };
+    return {
+      registrationToken: tokenResponse.registrationToken,
+      refreshToken: tokenResponse.refreshToken,
+      expiresAt: tokenResponse.expiresIn != null
+        ? Date.now() + tokenResponse.expiresIn * 1000
+        : undefined,
+      tokenUrl: providerAuth.tokenUrl,
+      refreshUrl: providerAuth.refreshUrl,
+    } satisfies RegistrationTokenData;
+  });
 }
 
-async function ensureValidToken(
+function ensureValidTokenEffect(
   dwnEndpoint: string,
   providerAuth: NonNullable<ServerInfo['providerAuth']>,
   tokens: Record<string, RegistrationTokenData>,
-): Promise<RegistrationTokenData> {
-  let tokenData = tokens[dwnEndpoint];
+) {
+  return Effect.gen(function* () {
+    let tokenData = tokens[dwnEndpoint];
 
-  if (tokenData) {
-    if (isTokenExpired(tokenData) && tokenData.refreshUrl && tokenData.refreshToken) {
-      const refreshed = await DwnRegistrar.refreshRegistrationToken(
-        tokenData.refreshUrl,
-        tokenData.refreshToken,
-      );
-      tokenData = {
-        ...tokenData,
-        registrationToken: refreshed.registrationToken,
-        refreshToken: refreshed.refreshToken ?? tokenData.refreshToken,
-        expiresAt: refreshed.expiresIn
-          ? Date.now() + refreshed.expiresIn * 1000
-          : tokenData.expiresAt,
-      };
-    } else if (isTokenExpired(tokenData)) {
-      tokenData = await obtainProviderAuthToken(dwnEndpoint, providerAuth);
+    if (tokenData) {
+      if (isTokenExpired(tokenData) && tokenData.refreshUrl && tokenData.refreshToken) {
+        const refreshed = yield* Effect.tryPromise({
+          try: () =>
+            DwnRegistrar.refreshRegistrationToken(
+              tokenData.refreshUrl!,
+              tokenData.refreshToken!,
+            ),
+          catch: registrationError('providerAuth.refreshToken', dwnEndpoint),
+        });
+        tokenData = {
+          ...tokenData,
+          registrationToken: refreshed.registrationToken,
+          refreshToken: refreshed.refreshToken ?? tokenData.refreshToken,
+          expiresAt: refreshed.expiresIn
+            ? Date.now() + refreshed.expiresIn * 1000
+            : tokenData.expiresAt,
+        };
+      } else if (isTokenExpired(tokenData)) {
+        tokenData = yield* obtainProviderAuthTokenEffect(dwnEndpoint, providerAuth);
+      }
+    } else {
+      tokenData = yield* obtainProviderAuthTokenEffect(dwnEndpoint, providerAuth);
     }
-  } else {
-    tokenData = await obtainProviderAuthToken(dwnEndpoint, providerAuth);
-  }
 
-  tokens[dwnEndpoint] = tokenData;
-  return tokenData;
+    return {
+      ...tokens,
+      [dwnEndpoint]: tokenData,
+    };
+  });
 }
 
 // ── Public API ─────────────────────────────────────────────────────
 
-/**
- * Register a single DID with a single DWN endpoint.
- * Returns the (possibly updated) tokens map.
- */
-async function registerDidWithEndpoint(
+function registerDidWithEndpointEffect(
   dwnEndpoint: string,
   did: string,
   serverInfo: ServerInfo,
   tokens: Record<string, RegistrationTokenData>,
-): Promise<Record<string, RegistrationTokenData>> {
-  const updated = { ...tokens };
-  const requiresProviderAuth =
-    serverInfo.registrationRequirements?.includes('provider-auth-v0') &&
-    serverInfo.providerAuth !== undefined;
+) {
+  return Effect.gen(function* () {
+    let updated = { ...tokens };
+    const requiresProviderAuth =
+      serverInfo.registrationRequirements?.includes('provider-auth-v0') &&
+      serverInfo.providerAuth !== undefined;
 
-  if (requiresProviderAuth) {
-    const tokenData = await ensureValidToken(dwnEndpoint, serverInfo.providerAuth!, updated);
-    await DwnRegistrar.registerTenantWithToken(dwnEndpoint, did, tokenData.registrationToken);
-  } else {
-    await DwnRegistrar.registerTenant(dwnEndpoint, did);
-  }
+    if (requiresProviderAuth) {
+      updated = yield* ensureValidTokenEffect(dwnEndpoint, serverInfo.providerAuth!, updated);
+      yield* Effect.tryPromise({
+        try: () =>
+          DwnRegistrar.registerTenantWithToken(
+            dwnEndpoint,
+            did,
+            updated[dwnEndpoint].registrationToken,
+          ),
+        catch: registrationError('tenant.registerWithToken', dwnEndpoint, did),
+      });
+    } else {
+      yield* Effect.tryPromise({
+        try: () => DwnRegistrar.registerTenant(dwnEndpoint, did),
+        catch: registrationError('tenant.register', dwnEndpoint, did),
+      });
+    }
 
-  return updated;
+    return updated;
+  });
 }
 
 /**
@@ -143,30 +190,58 @@ export async function ensureRegistration(
   agent: EnboxAgent,
   dwnEndpoints: string[],
 ): Promise<void> {
-  const agentDid: string = agent.agentDid.uri;
-  const identities = await agent.identity.list();
+  await runEnboxPromise(
+    ensureRegistrationEffect(dwnEndpoints).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
 
-  const didsToRegister = new Set<string>([agentDid]);
-  for (const identity of identities) {
-    didsToRegister.add(identity.metadata.connectedDid ?? identity.did.uri);
-  }
+export function ensureRegistrationEffect(dwnEndpoints: string[]) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    const tokenStore = yield* RegistrationTokenStore;
 
-  let tokens = getStoredTokens();
+    const agentDid: string = agent.agentDid.uri;
+    const identities = yield* Effect.tryPromise({
+      try: async (): Promise<any[]> => agent.identity.list(),
+      catch: sdkError('identity.list'),
+    });
 
-  for (const endpoint of dwnEndpoints) {
-    try {
-      const serverInfo = await agent.rpc.getServerInfo(endpoint);
-      for (const did of didsToRegister) {
-        try {
-          tokens = await registerDidWithEndpoint(endpoint, did, serverInfo, tokens);
-        } catch (err) {
-          console.warn(`DWN registration of ${did} with ${endpoint} failed:`, err);
-        }
-      }
-    } catch (err) {
-      console.warn(`Could not reach DWN endpoint ${endpoint} for registration:`, err);
+    const didsToRegister = new Set<string>([agentDid]);
+    for (const identity of identities) {
+      didsToRegister.add(identity.metadata.connectedDid ?? identity.did.uri);
     }
-  }
 
-  storeTokens(tokens);
+    let tokens = yield* tokenStore.get;
+
+    for (const endpoint of dwnEndpoints) {
+      const serverInfo = yield* Effect.tryPromise({
+        try: async (): Promise<ServerInfo> => agent.rpc.getServerInfo(endpoint),
+        catch: registrationError('serverInfo.get', endpoint),
+      }).pipe(
+        Effect.catchAll((err) =>
+          Effect.sync(() => {
+            console.warn(`Could not reach DWN endpoint ${endpoint} for registration:`, err);
+            return undefined;
+          })
+        ),
+      );
+
+      if (!serverInfo) continue;
+
+      for (const did of didsToRegister) {
+        tokens = yield* registerDidWithEndpointEffect(endpoint, did, serverInfo, tokens).pipe(
+          Effect.catchAll((err) =>
+            Effect.sync(() => {
+              console.warn(`DWN registration of ${did} with ${endpoint} failed:`, err);
+              return tokens;
+            })
+          ),
+        );
+      }
+    }
+
+    yield* tokenStore.set(tokens);
+  });
 }

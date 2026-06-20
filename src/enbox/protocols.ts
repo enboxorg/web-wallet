@@ -15,9 +15,13 @@
  * locally, while still leaving remote propagation to normal sync.
  */
 
+import { Effect } from 'effect';
 import { Enbox, defineProtocol } from '@enbox/api';
 import { ProfileDefinition, SocialGraphDefinition, ConnectDefinition } from '@enbox/protocols';
 import type { EnboxAgent } from './types';
+import { ProtocolInstallationError, sdkError } from './effect/errors';
+import { CurrentAgent, currentAgentLayer } from './effect/services';
+import { runEnboxPromise } from './effect/runtime';
 
 /**
  * All protocols the wallet requires for every identity.
@@ -39,25 +43,46 @@ function statusMessage(status: { code?: number; detail?: string } | undefined): 
   return `${status?.code ?? 'unknown'} ${status?.detail ?? 'no status returned'}`;
 }
 
-async function configureLocalProtocols(
-  agent: EnboxAgent,
-  did: string,
-): Promise<void> {
-  const enbox = new Enbox({ agent, connectedDid: did });
-
-  for (const definition of REQUIRED_PROTOCOLS) {
-    const typed = enbox.using(defineProtocol(definition));
-    const result = await typed.configure();
+function configureLocalProtocolEffect(
+  enbox: Enbox,
+  definition: typeof REQUIRED_PROTOCOLS[number],
+) {
+  return Effect.gen(function* () {
+    const result = yield* Effect.tryPromise({
+      try: async () => {
+        const typed = enbox.using(defineProtocol(definition));
+        return typed.configure();
+      },
+      catch: sdkError(`protocol.configure:${definition.protocol}`),
+    });
     const status = result?.status;
     const protocol = result?.protocol;
 
     if (!status || status.code >= 300 || !protocol) {
-      throw new Error(
-        `Failed to install protocol ${definition.protocol}: ${statusMessage(status)}`,
+      return yield* Effect.fail(
+        new ProtocolInstallationError({
+          protocol: definition.protocol,
+          statusCode: status?.code,
+          statusDetail: status?.detail,
+          cause: result,
+          message: `Failed to install protocol ${definition.protocol}: ${statusMessage(status)}`,
+        }),
       );
     }
+  });
+}
 
-  }
+export function installProtocolsEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    const enbox = new Enbox({ agent, connectedDid: did });
+
+    yield* Effect.forEach(
+      REQUIRED_PROTOCOLS,
+      (definition) => configureLocalProtocolEffect(enbox, definition),
+      { discard: true },
+    );
+  });
 }
 
 /**
@@ -70,5 +95,9 @@ export async function installProtocols(
   agent: EnboxAgent,
   did: string,
 ): Promise<void> {
-  await configureLocalProtocols(agent, did);
+  await runEnboxPromise(
+    installProtocolsEffect(did).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
 }

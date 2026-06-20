@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Effect } from 'effect';
 
 import { createIdentity, importIdentity } from '../identity-mutations';
 
@@ -47,8 +48,8 @@ const mocks = vi.hoisted(() => {
       };
     }),
     repository: vi.fn(() => profileRepo),
-    ensureRegistration: vi.fn(async () => { calls.push('registration:ensure'); }),
-    installProtocols: vi.fn(async () => { calls.push('protocols:install'); }),
+    ensureRegistration: vi.fn(),
+    installProtocols: vi.fn(),
   };
 });
 
@@ -65,18 +66,38 @@ vi.mock('@enbox/protocols', () => ({
   ConnectDefinition: { protocol: 'https://identity.foundation/protocols/connect' },
 }));
 
-vi.mock('../../protocols', () => ({
-  IDENTITY_SYNC_PROTOCOLS : [
-    'https://identity.foundation/protocols/social-graph',
-    'https://identity.foundation/protocols/profile',
-    'https://identity.foundation/protocols/connect',
-  ],
-  installProtocols        : mocks.installProtocols,
-}));
+vi.mock('../../protocols', async () => {
+  const effect = await vi.importActual<typeof import('effect')>('effect');
 
-vi.mock('../../registration', () => ({
-  ensureRegistration: mocks.ensureRegistration,
-}));
+  mocks.installProtocols.mockImplementation(() =>
+    effect.Effect.sync(() => {
+      mocks.calls.push('protocols:install');
+    })
+  );
+
+  return {
+    IDENTITY_SYNC_PROTOCOLS : [
+      'https://identity.foundation/protocols/social-graph',
+      'https://identity.foundation/protocols/profile',
+      'https://identity.foundation/protocols/connect',
+    ],
+    installProtocolsEffect : mocks.installProtocols,
+  };
+});
+
+vi.mock('../../registration', async () => {
+  const effect = await vi.importActual<typeof import('effect')>('effect');
+
+  mocks.ensureRegistration.mockImplementation(() =>
+    effect.Effect.sync(() => {
+      mocks.calls.push('registration:ensure');
+    })
+  );
+
+  return {
+    ensureRegistrationEffect: mocks.ensureRegistration,
+  };
+});
 
 vi.mock('@/lib/dwn-endpoints', () => ({
   DEFAULT_DWN_ENDPOINTS: ['https://aws.example/dwn', 'https://fly.example/dwn'],
@@ -125,7 +146,7 @@ describe('identity mutations', () => {
       dwnEndpoints,
     });
 
-    expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did);
+    expect(mocks.installProtocols).toHaveBeenCalledWith(did);
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
       options: {
@@ -165,7 +186,9 @@ describe('identity mutations', () => {
   it('cleans up the local identity when required protocol bootstrap fails', async () => {
     const did = 'did:dht:failed-bootstrap';
     const agent = createAgent(did);
-    mocks.installProtocols.mockRejectedValueOnce(new Error('bootstrap failed'));
+    mocks.installProtocols.mockImplementationOnce(() =>
+      Effect.fail(new Error('bootstrap failed'))
+    );
 
     await expect(createIdentity(agent, {
       persona: 'Personal',
@@ -185,7 +208,7 @@ describe('identity mutations', () => {
 
     await importIdentity(agent, { portableDid: { uri: did } });
 
-    expect(mocks.installProtocols).toHaveBeenCalledWith(agent, did);
+    expect(mocks.installProtocols).toHaveBeenCalledWith(did);
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
       options: {
