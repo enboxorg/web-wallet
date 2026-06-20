@@ -18,18 +18,8 @@ export type IdentitySyncReconcileResult = {
   changedDids: string[];
 };
 
-const SYNC_PULL_RETRY_DELAYS_MS = [0, 500, 1_500, 3_000];
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function isSyncInProgress(error: unknown): boolean {
-  return getErrorMessage(error).includes('Sync operation is already in progress');
 }
 
 export function getIdentityDid(identity: unknown): string | undefined {
@@ -50,28 +40,6 @@ function sameProtocolScope(existing: SyncIdentityOptions | undefined): boolean {
   return IDENTITY_SYNC_PROTOCOLS.every((protocol) =>
     existing.protocols.includes(protocol)
   );
-}
-
-async function pullWithRetry(agent: EnboxAgent): Promise<void> {
-  let lastError: unknown;
-
-  for (const delayMs of SYNC_PULL_RETRY_DELAYS_MS) {
-    if (delayMs > 0) {
-      await sleep(delayMs);
-    }
-
-    try {
-      await agent.sync.sync('pull');
-      return;
-    } catch (error) {
-      lastError = error;
-      if (!isSyncInProgress(error)) {
-        throw error;
-      }
-    }
-  }
-
-  throw lastError;
 }
 
 async function getSyncOptions(
@@ -120,8 +88,9 @@ async function applySyncOptions(agent: EnboxAgent, did: string): Promise<boolean
  * Ensure every locally known identity is registered for the wallet's scoped
  * sync protocols. When another wallet creates an identity, this wallet first
  * learns only the identity metadata through the agent DID, then must opt into
- * profile/social/connect replication for that new DID and pull its existing
- * records.
+ * profile/social/connect replication for that new DID. Registering the scope is
+ * enough: the SDK's sync engine hot-adds the link and pulls the identity's
+ * existing records on its own, so the wallet does not drive a manual pull.
  */
 export async function reconcileIdentitySync(
   agent: EnboxAgent,
@@ -152,10 +121,6 @@ export async function reconcileIdentitySync(
     if (await applySyncOptions(agent, did)) {
       changedDids.push(did);
     }
-  }
-
-  if (changedDids.length > 0) {
-    await pullWithRetry(agent);
   }
 
   return { changedDids };
