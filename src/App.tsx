@@ -13,7 +13,7 @@ import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import {
   hasStoredPasskeyCredential,
-  isPasskeySupported,
+  isPasskeyUnlockAvailable,
   unlockWithStoredPasskey,
 } from '@/lib/passkeys';
 
@@ -197,7 +197,7 @@ function AuthGate() {
 
     let cancelled = false;
     setPasskeySupportChecked(false);
-    isPasskeySupported().then((supported) => {
+    isPasskeyUnlockAvailable().then((supported) => {
       if (cancelled) return;
       setPasskeyAvailable(supported);
       setPasskeySupportChecked(true);

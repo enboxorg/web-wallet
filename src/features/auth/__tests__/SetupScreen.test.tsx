@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 const passkeyMocks = vi.hoisted(() => ({
   canCheckPasskeySupport: vi.fn(() => false),
   isPasskeySupported: vi.fn().mockResolvedValue(false),
+  isPasskeyVaultUnsupportedError: vi.fn(() => false),
   markPinAuthMethod: vi.fn(),
   preparePasskeyVaultPassword: vi.fn(),
   storePasskeyCredential: vi.fn(),
@@ -13,6 +14,7 @@ const passkeyMocks = vi.hoisted(() => ({
 vi.mock('@/lib/passkeys', () => ({
   canCheckPasskeySupport: passkeyMocks.canCheckPasskeySupport,
   isPasskeySupported: passkeyMocks.isPasskeySupported,
+  isPasskeyVaultUnsupportedError: passkeyMocks.isPasskeyVaultUnsupportedError,
   markPinAuthMethod: passkeyMocks.markPinAuthMethod,
   preparePasskeyVaultPassword: passkeyMocks.preparePasskeyVaultPassword,
   storePasskeyCredential: passkeyMocks.storePasskeyCredential,
@@ -38,6 +40,7 @@ describe('SetupScreen', () => {
     vi.clearAllMocks();
     passkeyMocks.canCheckPasskeySupport.mockReturnValue(false);
     passkeyMocks.isPasskeySupported.mockResolvedValue(false);
+    passkeyMocks.isPasskeyVaultUnsupportedError.mockReturnValue(false);
   });
 
   it('renders step 1: create PIN', () => {
@@ -170,6 +173,26 @@ describe('SetupScreen', () => {
     });
     expect(passkeyMocks.storePasskeyCredential).toHaveBeenCalledWith(credential);
     expect(passkeyMocks.markPinAuthMethod).not.toHaveBeenCalled();
+  });
+
+  it('falls back to PIN creation when the passkey provider cannot secure the vault', async () => {
+    const error = new Error('This browser or passkey provider cannot secure the wallet vault. Create a PIN instead.');
+    passkeyMocks.canCheckPasskeySupport.mockReturnValue(true);
+    passkeyMocks.isPasskeySupported.mockResolvedValue(true);
+    passkeyMocks.preparePasskeyVaultPassword.mockRejectedValue(error);
+    passkeyMocks.isPasskeyVaultUnsupportedError.mockImplementation((value) => value === error);
+
+    const user = userEvent.setup();
+    render(<SetupScreen {...defaults} />);
+
+    await user.click(await screen.findByRole('button', { name: /use passkey/i }));
+    await user.click(screen.getByRole('button', { name: /create passkey and set up/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/create a pin to secure your wallet/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('alert')).toHaveTextContent(/cannot secure the wallet vault/i);
+    expect(screen.getAllByRole('textbox')).toHaveLength(4);
   });
 
   it('back button in step 2 returns to step 1', async () => {

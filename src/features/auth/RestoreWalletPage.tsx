@@ -10,6 +10,7 @@ import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import {
   canCheckPasskeySupport,
   isPasskeySupported,
+  isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
   preparePasskeyVaultPassword,
   storePasskeyCredential,
@@ -107,7 +108,14 @@ export function RestoreWalletPage({ onRestore, isLoading, error, onBack }: Resto
       await onRestore(phrase, prepared.password, DEFAULT_DWN_ENDPOINTS);
       storePasskeyCredential(prepared.credential);
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Failed to restore wallet');
+      const message = err instanceof Error ? err.message : 'Failed to restore wallet';
+      setLocalError(message);
+      if (isPasskeyVaultUnsupportedError(err)) {
+        setPasskeySupport('unsupported');
+        setAuthMethod('pin');
+        setPin('');
+        setStep('create-pin');
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -252,6 +260,12 @@ export function RestoreWalletPage({ onRestore, isLoading, error, onBack }: Resto
               onComplete={handlePinCreated}
               autoFocus
             />
+
+            {localError && (
+              <p className="max-w-xs text-center text-sm text-error" role="alert">
+                {localError}
+              </p>
+            )}
 
             <Button variant="ghost" onClick={handleBack}>
               Back

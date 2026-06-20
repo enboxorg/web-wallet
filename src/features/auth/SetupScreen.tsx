@@ -9,6 +9,7 @@ import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import {
   canCheckPasskeySupport,
   isPasskeySupported,
+  isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
   preparePasskeyVaultPassword,
   storePasskeyCredential,
@@ -137,7 +138,14 @@ export function SetupScreen({ onSetup, isLoading, error, onSwitchToRestore }: Se
         markPinAuthMethod();
       }
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : 'Failed to set up wallet');
+      const message = err instanceof Error ? err.message : 'Failed to set up wallet';
+      setLocalError(message);
+      if (authMethod === 'passkey' && isPasskeyVaultUnsupportedError(err)) {
+        setPasskeySupport('unsupported');
+        setAuthMethod('pin');
+        setPin('');
+        setStep('create-pin');
+      }
     } finally {
       setLocalLoading(false);
     }
@@ -175,6 +183,7 @@ export function SetupScreen({ onSetup, isLoading, error, onSwitchToRestore }: Se
               <StepCreatePin
                 onComplete={handlePinCreated}
                 onBack={passkeySupported ? handleBack : undefined}
+                error={localError}
               />
             )}
 
@@ -284,9 +293,11 @@ function StepSecurityMethod({
 function StepCreatePin({
   onComplete,
   onBack,
+  error,
 }: {
   onComplete: (pin: string) => void;
   onBack?: () => void;
+  error?: string | null;
 }) {
   return (
     <div className="flex flex-col items-center gap-6">
@@ -304,6 +315,12 @@ function StepCreatePin({
         onComplete={onComplete}
         autoFocus
       />
+
+      {error && (
+        <p className="max-w-xs text-center text-sm text-error" role="alert">
+          {error}
+        </p>
+      )}
 
       {onBack && (
         <Button variant="ghost" onClick={onBack}>

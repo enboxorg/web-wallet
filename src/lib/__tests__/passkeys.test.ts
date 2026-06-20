@@ -1,10 +1,11 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   canCheckPasskeySupport,
   clearPasskeyCredential,
   getStoredAuthMethod,
   hasStoredPasskeyCredential,
+  isPasskeySupported,
   markPinAuthMethod,
   storePasskeyCredential,
 } from '../passkeys';
@@ -25,6 +26,10 @@ const credential = {
 describe('passkeys', () => {
   beforeEach(() => {
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('reports passkey checks unavailable when WebAuthn is missing', () => {
@@ -57,4 +62,35 @@ describe('passkeys', () => {
     expect(localStorage.getItem(AUTH_METHOD_STORAGE_KEY)).toBe('pin');
     expect(getStoredAuthMethod()).toBe('pin');
   });
+
+  it('does not report passkey support when the PRF extension is unavailable', async () => {
+    stubWebAuthnCapabilities({ 'extension:prf': false });
+
+    expect(canCheckPasskeySupport()).toBe(true);
+    await expect(isPasskeySupported()).resolves.toBe(false);
+  });
+
+  it('reports passkey support when a platform authenticator and PRF extension are available', async () => {
+    stubWebAuthnCapabilities({ 'extension:prf': true });
+
+    await expect(isPasskeySupported()).resolves.toBe(true);
+  });
 });
+
+function stubWebAuthnCapabilities(capabilities: Record<string, boolean>) {
+  vi.stubGlobal('isSecureContext', true);
+  vi.stubGlobal('PublicKeyCredential', {
+    isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(true),
+    getClientCapabilities: vi.fn().mockResolvedValue(capabilities),
+  });
+  vi.stubGlobal('navigator', {
+    credentials: {
+      create: vi.fn(),
+      get: vi.fn(),
+    },
+  });
+  vi.stubGlobal('crypto', {
+    subtle: {},
+    getRandomValues: vi.fn(),
+  });
+}
