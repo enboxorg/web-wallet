@@ -40,6 +40,10 @@ vi.mock('@/enbox/hooks/use-identities', () => ({
   useIdentities: () => ({ data: [], isLoading: false }),
 }));
 
+vi.mock('@/enbox/hooks/use-identity-sync-reconciliation', () => ({
+  useIdentitySyncReconciliation: vi.fn(),
+}));
+
 vi.mock('@/enbox/hooks/use-identity-mutations', () => ({
   useCreateIdentity: () => ({ mutateAsync: vi.fn() }),
 }));
