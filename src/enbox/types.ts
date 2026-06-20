@@ -17,6 +17,7 @@ export interface IdentityProfile {
   bio?: string;
   avatarUrl?: string;
   heroUrl?: string;
+  hasProfileRecord?: boolean;
 }
 
 /** Shape of a persisted registration token for a single DWN endpoint. */

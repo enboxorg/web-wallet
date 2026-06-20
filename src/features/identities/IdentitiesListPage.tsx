@@ -19,12 +19,16 @@ function IdentityCardWithProfile({ identity }: { identity: any }) {
   const { data: profile, isLoading } = useProfile(did);
   const { data: permissions } = usePermissions(did);
   const navigate = useNavigate();
+  const isProfileHydrating =
+    isLoading ||
+    profile?.hasProfileRecord === false ||
+    (profile?.hasProfileRecord === true && profile.avatarUrl === undefined);
 
   const appCount = permissions
     ? new Set(permissions.map((p: any) => p.grantee)).size
     : 0;
 
-  if (isLoading) {
+  if (isProfileHydrating) {
     return <IdentityCardSkeleton />;
   }
 

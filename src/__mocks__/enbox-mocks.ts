@@ -34,6 +34,7 @@ export function createMockProfile(overrides?: Partial<{
   bio: string;
   avatarUrl: string | null;
   heroUrl: string | null;
+  hasProfileRecord: boolean;
 }>) {
   return {
     did: overrides?.did ?? 'did:dht:test123456789abcdefghijklmnopqrstuvwxyz',
@@ -42,6 +43,7 @@ export function createMockProfile(overrides?: Partial<{
     bio: overrides?.bio ?? 'A test identity for unit tests.',
     avatarUrl: overrides?.avatarUrl ?? null,
     heroUrl: overrides?.heroUrl ?? null,
+    hasProfileRecord: overrides?.hasProfileRecord ?? true,
   };
 }
 

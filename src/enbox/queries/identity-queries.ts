@@ -121,6 +121,7 @@ export async function fetchProfile(
   const repo = repository(enbox.using(ProfileProtocol));
 
   const profileRecord = await repo.profile.get();
+  const hasProfileRecord = profileRecord !== undefined;
 
   let socialData: { displayName: string; tagline?: string; bio?: string } = {
     displayName: '',
@@ -159,6 +160,7 @@ export async function fetchProfile(
     bio: socialData.bio,
     avatarUrl,
     heroUrl,
+    hasProfileRecord,
   };
 }
 
