@@ -1,6 +1,10 @@
 export function IdentityCardSkeleton() {
   return (
-    <div className="flex flex-col overflow-hidden rounded-lg border border-border-default bg-surface-1 w-full">
+    <div
+      role="status"
+      aria-label="Loading identity profile"
+      className="flex flex-col overflow-hidden rounded-lg border border-border-default bg-surface-1 w-full"
+    >
       {/* Hero area */}
       <div className="h-28 w-full bg-surface-2 animate-pulse" />
 

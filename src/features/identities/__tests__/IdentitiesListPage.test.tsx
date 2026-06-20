@@ -25,6 +25,8 @@ const mockProfiles: Record<string, ReturnType<typeof createMockProfile>> = {
   }),
 };
 
+const profileOverrides: Record<string, { data: unknown; isLoading: boolean }> = {};
+
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
@@ -40,8 +42,8 @@ vi.mock('@/enbox/hooks/use-identities', () => ({
 
 vi.mock('@/enbox/hooks/use-profile', () => ({
   useProfile: (did: string) => ({
-    data: mockProfiles[did] ?? null,
-    isLoading: false,
+    data: profileOverrides[did]?.data ?? mockProfiles[did] ?? null,
+    isLoading: profileOverrides[did]?.isLoading ?? false,
   }),
 }));
 
@@ -70,6 +72,9 @@ import IdentitiesListPage from '../IdentitiesListPage';
 describe('IdentitiesListPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    for (const did of Object.keys(profileOverrides)) {
+      delete profileOverrides[did];
+    }
   });
 
   it('renders the page heading', () => {
@@ -89,6 +94,40 @@ describe('IdentitiesListPage', () => {
     renderWithProviders(<IdentitiesListPage />);
     expect(screen.getByText('Builder')).toBeInTheDocument();
     expect(screen.getByText('Developer')).toBeInTheDocument();
+  });
+
+  it('shows a loading card while the profile record has not synced yet', () => {
+    profileOverrides['did:dht:alice111'] = {
+      data: {
+        did: 'did:dht:alice111',
+        displayName: '',
+        hasProfileRecord: false,
+      },
+      isLoading: false,
+    };
+
+    renderWithProviders(<IdentitiesListPage />);
+
+    expect(screen.getByRole('status', { name: /loading identity profile/i })).toBeInTheDocument();
+    expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+    expect(screen.getByText('Bob Work')).toBeInTheDocument();
+  });
+
+  it('shows a loading card while the profile avatar has not synced yet', () => {
+    profileOverrides['did:dht:alice111'] = {
+      data: {
+        ...mockProfiles['did:dht:alice111'],
+        avatarUrl: undefined,
+        hasProfileRecord: true,
+      },
+      isLoading: false,
+    };
+
+    renderWithProviders(<IdentitiesListPage />);
+
+    expect(screen.getByRole('status', { name: /loading identity profile/i })).toBeInTheDocument();
+    expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+    expect(screen.getByText('Bob Work')).toBeInTheDocument();
   });
 
   it('renders a create identity link', () => {

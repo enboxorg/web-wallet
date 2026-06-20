@@ -107,6 +107,19 @@ describe('fetchProfile', () => {
     expect(revokeObjectUrl).not.toHaveBeenCalled();
   });
 
+  it('marks profiles without a local profile record as not hydrated', async () => {
+    mocks.repo.profile.get.mockResolvedValue(undefined);
+    mocks.repo.profile.avatar.get.mockResolvedValue(undefined);
+    mocks.repo.profile.hero.get.mockResolvedValue(undefined);
+
+    const profile = await fetchProfile({}, 'did:dht:pending');
+
+    expect(profile.hasProfileRecord).toBe(false);
+    expect(profile.displayName).toBe('');
+    expect(profile.avatarUrl).toBeUndefined();
+    expect(profile.heroUrl).toBeUndefined();
+  });
+
   it('delays revoking replaced object URLs so rendered images do not break during refetch', async () => {
     const profileRecord = createProfileRecord();
     const firstAvatar = createImageRecord('avatar-record-1', 'avatar-cid-1');
