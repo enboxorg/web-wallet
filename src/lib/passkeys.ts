@@ -19,6 +19,13 @@ export interface PreparedPasskeyVault {
   credential: StoredPasskeyCredential;
 }
 
+export class PasskeyVaultUnsupportedError extends Error {
+  constructor(message = 'This browser or passkey provider cannot secure the wallet vault. Create a PIN instead.') {
+    super(message);
+    this.name = 'PasskeyVaultUnsupportedError';
+  }
+}
+
 const PASSKEY_RP_NAME = 'Enbox Wallet';
 const PASSKEY_USER_NAME = 'wallet@enbox.local';
 const PASSKEY_USER_DISPLAY_NAME = 'Enbox Wallet';
@@ -28,8 +35,32 @@ const VAULT_PASSWORD_BYTES = 32;
 const WEBAUTHN_SALT_BYTES = 32;
 const WEBAUTHN_CHALLENGE_BYTES = 32;
 
+/**
+ * Returns true only when the browser reports both platform passkeys and the
+ * WebAuthn PRF extension required to encrypt the local vault password.
+ */
 export async function isPasskeySupported(): Promise<boolean> {
   if (!canCheckPasskeySupport()) return false;
+
+  try {
+    const [hasPlatformAuthenticator, capabilities] = await Promise.all([
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+      PublicKeyCredential.getClientCapabilities(),
+    ]);
+    return hasPlatformAuthenticator && capabilities['extension:prf'] === true;
+  } catch {
+    return false;
+  }
+}
+
+export function canCheckPasskeySupport(): boolean {
+  if (globalThis.isSecureContext === false) return false;
+  return hasWebAuthnRuntime() && typeof PublicKeyCredential.getClientCapabilities === 'function';
+}
+
+export async function isPasskeyUnlockAvailable(): Promise<boolean> {
+  if (!hasWebAuthnRuntime()) return false;
+  if (globalThis.isSecureContext === false) return false;
 
   try {
     return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
@@ -38,9 +69,8 @@ export async function isPasskeySupported(): Promise<boolean> {
   }
 }
 
-export function canCheckPasskeySupport(): boolean {
-  if (globalThis.isSecureContext === false) return false;
-  return hasWebAuthnRuntime();
+export function isPasskeyVaultUnsupportedError(error: unknown): boolean {
+  return error instanceof PasskeyVaultUnsupportedError;
 }
 
 export function getStoredAuthMethod(): WalletAuthMethod | null {
@@ -83,7 +113,7 @@ export function markPinAuthMethod(): void {
 
 export async function preparePasskeyVaultPassword(): Promise<PreparedPasskeyVault> {
   if (!(await isPasskeySupported())) {
-    throw new Error('Passkeys are not available on this device. Use a PIN instead.');
+    throw new PasskeyVaultUnsupportedError();
   }
 
   const password = randomBase64Url(VAULT_PASSWORD_BYTES);
@@ -110,7 +140,7 @@ export async function unlockWithStoredPasskey(): Promise<string> {
   if (!stored) {
     throw new Error('No passkey is set up for this wallet.');
   }
-  if (!(await isPasskeySupported())) {
+  if (!(await isPasskeyUnlockAvailable())) {
     throw new Error('Passkeys are not available on this device.');
   }
 
@@ -199,7 +229,7 @@ async function getPrfOutputFromCredential(
 
   const extensionResults = credential.getClientExtensionResults();
   if (extensionResults.prf?.enabled === false) {
-    throw new Error('This passkey cannot secure the wallet vault. Use a PIN instead.');
+    throw new PasskeyVaultUnsupportedError();
   }
 
   return getPrfOutputForCredentialId(credential.rawId, salt);
@@ -240,7 +270,9 @@ async function getPrfOutputForCredentialId(
   const credential = await navigator.credentials.get({ publicKey });
   const output = getPrfOutput(asPublicKeyCredential(credential));
   if (!output) {
-    throw new Error('This passkey cannot unlock the wallet vault. Use your recovery phrase to restore access.');
+    throw new PasskeyVaultUnsupportedError(
+      'This passkey cannot unlock the wallet vault. Use your recovery phrase to restore access.',
+    );
   }
   return output;
 }
