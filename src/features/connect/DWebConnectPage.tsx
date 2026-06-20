@@ -1,9 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Globe, Check, X, AlertCircle, Import } from 'lucide-react';
-import { EnboxConnectProtocol, type ConnectPermissionRequest } from '@enbox/agent';
-import { encryptPostMessagePayload, generateEphemeralKeyPair } from '@enbox/browser';
-import { Ed25519 } from '@enbox/crypto';
-import { DidJwk } from '@enbox/dids';
+import type { ConnectPermissionRequest } from '@enbox/agent';
 
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -14,6 +11,13 @@ import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
 import { truncateDid } from '@/lib/utils';
 import { prepareProtocol } from './protocol-install';
+import {
+  createDelegateDid,
+  createPermissionGrants,
+  deriveScopedDecryptionKeys,
+  encryptDWebConnectResponse,
+  importPortableIdentity,
+} from './connect-effects';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
@@ -102,23 +106,11 @@ export default function DWebConnectPage() {
       // If the dapp is exporting a portable identity, import it first.
       const requestData = _pendingRequest?.data as any;
       if (hasPortableIdentity && requestData?.portableIdentity) {
-        await agent.identity.import({
-          portableIdentity: requestData.portableIdentity,
-        });
+        await importPortableIdentity(requestData.portableIdentity, agent);
         setStatusMessage('Creating delegate...');
       }
 
-      const delegateBearerDid = await DidJwk.create();
-      const delegatePortableDid = await delegateBearerDid.export();
-
-      // Add X25519 private key derived from the delegate's Ed25519 key.
-      // The delegate agent needs both Ed25519 (signing) and X25519
-      // (encryption key agreement) for encrypted protocol operations.
-      const delegateEdPrivateKey = delegatePortableDid.privateKeys![0];
-      const delegateX25519PrivateKey = await Ed25519.convertPrivateKeyToX25519({
-        privateKey: delegateEdPrivateKey,
-      });
-      delegatePortableDid.privateKeys!.push(delegateX25519PrivateKey);
+      const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
 
       const allGrants: any[] = [];
       const allDecryptionKeys: any[] = [];
@@ -144,9 +136,10 @@ export default function DWebConnectPage() {
 
         if (hasEncryptedTypes) {
           try {
-            const keys = await EnboxConnectProtocol.deriveScopedDecryptionKeys(
-              agent, selectedDid,
-              protocolDefinition.protocol, permissionScopes, protocolDefinition,
+            const keys = await deriveScopedDecryptionKeys(
+              selectedDid,
+              permissionRequest,
+              agent,
             );
             allDecryptionKeys.push(...keys);
           } catch (err) {
@@ -154,11 +147,11 @@ export default function DWebConnectPage() {
           }
         }
 
-        return EnboxConnectProtocol.createPermissionGrants(
+        return createPermissionGrants(
           selectedDid,
           delegateBearerDid,
-          agent,
           permissionScopes,
+          agent,
         );
       });
 
@@ -179,11 +172,8 @@ export default function DWebConnectPage() {
       const dappEphemeralKey = (requestData)?.ephemeralPublicKey as string | undefined;
       if (dappEphemeralKey) {
         try {
-          const walletEphemeral = await generateEphemeralKeyPair();
-          const encryptedPayload = await encryptPostMessagePayload(
+          const encryptedPayload = await encryptDWebConnectResponse(
             responsePayload,
-            walletEphemeral.keyPair,
-            walletEphemeral.publicKeyBase64url,
             dappEphemeralKey,
           );
           window.opener.postMessage(

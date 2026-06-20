@@ -1,4 +1,9 @@
+import { Effect } from 'effect';
 import { DwnInterface, type DwnProtocolDefinition, getDwnServiceEndpointUrls } from '@enbox/agent';
+
+import { sdkError } from '@/enbox/effect/errors';
+import { runEnboxPromise } from '@/enbox/effect/runtime';
+import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 
 type ProtocolQueryReply = {
   status: { code: number; detail: string };
@@ -63,15 +68,34 @@ export async function prepareProtocol(
   agent: PrepareProtocolAgent,
   protocolDefinition: DwnProtocolDefinition,
 ): Promise<void> {
-  const queryResult = await agent.processDwnRequest({
-    author: selectedDid,
-    messageType: DwnInterface.ProtocolsQuery,
-    target: selectedDid,
-    messageParams: { filter: { protocol: protocolDefinition.protocol } },
-  });
+  await runEnboxPromise(
+    prepareProtocolEffect(selectedDid, protocolDefinition).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+export function prepareProtocolEffect(
+  selectedDid: string,
+  protocolDefinition: DwnProtocolDefinition,
+) {
+  return Effect.gen(function* () {
+    const agent = (yield* CurrentAgent) as PrepareProtocolAgent;
+    const queryResult = yield* Effect.tryPromise({
+      try: async () =>
+        agent.processDwnRequest({
+          author: selectedDid,
+          messageType: DwnInterface.ProtocolsQuery,
+          target: selectedDid,
+          messageParams: { filter: { protocol: protocolDefinition.protocol } },
+        }),
+      catch: sdkError('connect.protocol.query'),
+    });
 
   if (queryResult.reply.status.code !== 200) {
-    throw new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`);
+      return yield* Effect.fail(
+        new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`),
+      );
   }
 
   const existingEntry = queryResult.reply.entries?.[0];
@@ -82,31 +106,53 @@ export async function prepareProtocol(
   let configureMessage: unknown;
 
   if (!existingEntry || missingEncryption) {
-    const { message } = await agent.processDwnRequest({
-      author: selectedDid,
-      target: selectedDid,
-      messageType: DwnInterface.ProtocolsConfigure,
-      messageParams: { definition: protocolDefinition },
-      encryption: needsEncryption || undefined,
+      const { message } = yield* Effect.tryPromise({
+        try: async () =>
+          agent.processDwnRequest({
+            author: selectedDid,
+            target: selectedDid,
+            messageType: DwnInterface.ProtocolsConfigure,
+            messageParams: { definition: protocolDefinition },
+            encryption: needsEncryption || undefined,
+          }),
+        catch: sdkError('connect.protocol.configure'),
     });
     configureMessage = message;
   } else {
     configureMessage = existingEntry;
   }
 
-  const dwnEndpoints = await getDwnServiceEndpointUrls(selectedDid, agent.did as any);
-  await Promise.all(dwnEndpoints.map(async (endpoint: string) => {
-    try {
-      const reply = await agent.rpc.sendDwnRequest({
-        dwnUrl: endpoint,
-        targetDid: selectedDid,
-        message: configureMessage,
-      });
-      if (reply.status.code !== 202 && reply.status.code !== 409) {
-        console.warn(`prepareProtocol: endpoint ${endpoint} rejected protocol: ${reply.status.detail}`);
-      }
-    } catch (err) {
-      console.warn(`prepareProtocol: failed to send to ${endpoint}:`, err);
-    }
-  }));
+    const dwnEndpoints = yield* Effect.tryPromise({
+      try: async () => getDwnServiceEndpointUrls(selectedDid, agent.did as any),
+      catch: sdkError('connect.protocol.resolveDwnEndpoints'),
+    });
+
+    yield* Effect.forEach(
+      dwnEndpoints,
+      (endpoint: string) =>
+        Effect.tryPromise({
+          try: async () =>
+            agent.rpc.sendDwnRequest({
+              dwnUrl: endpoint,
+              targetDid: selectedDid,
+              message: configureMessage,
+            }),
+          catch: sdkError('connect.protocol.sendConfigure'),
+        }).pipe(
+          Effect.tap((reply) =>
+            Effect.sync(() => {
+              if (reply.status.code !== 202 && reply.status.code !== 409) {
+                console.warn(`prepareProtocol: endpoint ${endpoint} rejected protocol: ${reply.status.detail}`);
+              }
+            })
+          ),
+          Effect.catchAll((err) =>
+            Effect.sync(() => {
+              console.warn(`prepareProtocol: failed to send to ${endpoint}:`, err);
+            })
+          ),
+        ),
+      { concurrency: 'unbounded', discard: true },
+    );
+  });
 }

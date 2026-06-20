@@ -2,8 +2,6 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Search, AlertCircle, UserCheck } from 'lucide-react';
-import { Enbox } from '@enbox/api';
-import { ProfileDefinition } from '@enbox/protocols';
 
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -13,6 +11,7 @@ import { PublicIdentityCard } from '@/components/identity/PublicIdentityCard';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { truncateDid } from '@/lib/utils';
 import type { IdentityProfile } from '@/enbox/types';
+import { fetchPublicProfile } from './public-profile';
 
 const SEARCH_HISTORY_KEY = 'enbox:searchHistory';
 const MAX_HISTORY = 5;
@@ -30,76 +29,6 @@ function addToSearchHistory(did: string): void {
     history.unshift(did);
     localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
   } catch {}
-}
-
-/** Lazily-created anonymous Enbox instance for reading public DWN data. */
-let _anonApi: ReturnType<typeof Enbox.anonymous> | undefined;
-function getAnonymousApi() {
-  if (!_anonApi) _anonApi = Enbox.anonymous();
-  return _anonApi;
-}
-
-/** Fetch a public profile via anonymous DWN reads. */
-async function fetchPublicProfile(did: string): Promise<IdentityProfile> {
-  const { dwn } = getAnonymousApi();
-
-  let displayName = '';
-  let tagline: string | undefined;
-  let bio: string | undefined;
-  let avatarUrl: string | undefined;
-  let heroUrl: string | undefined;
-
-  // Fetch profile social data
-  const { records: profileRecords } = await dwn.records.query({
-    from: did,
-    filter: {
-      protocol: ProfileDefinition.protocol,
-      protocolPath: 'profile',
-    },
-  });
-
-  if (profileRecords.length > 0) {
-    const social = await profileRecords[0].data.json() as Record<string, string | undefined>;
-    displayName = social.displayName ?? '';
-    tagline = social.tagline;
-    bio = social.bio;
-  }
-
-  // Fetch avatar
-  try {
-    const { records: avatarRecords } = await dwn.records.query({
-      from: did,
-      filter: {
-        protocol: ProfileDefinition.protocol,
-        protocolPath: 'profile/avatar',
-      },
-    });
-    if (avatarRecords.length > 0) {
-      const blob: Blob = await avatarRecords[0].data.blob();
-      avatarUrl = URL.createObjectURL(blob);
-    }
-  } catch {
-    // Avatar not available
-  }
-
-  // Fetch hero
-  try {
-    const { records: heroRecords } = await dwn.records.query({
-      from: did,
-      filter: {
-        protocol: ProfileDefinition.protocol,
-        protocolPath: 'profile/hero',
-      },
-    });
-    if (heroRecords.length > 0) {
-      const blob: Blob = await heroRecords[0].data.blob();
-      heroUrl = URL.createObjectURL(blob);
-    }
-  } catch {
-    // Hero not available
-  }
-
-  return { did, displayName, tagline, bio, avatarUrl, heroUrl };
 }
 
 export default function SearchPage() {

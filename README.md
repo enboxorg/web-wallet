@@ -12,7 +12,7 @@
   <a href="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml"><img src="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://enbox-wallet.pages.dev"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live Demo"></a>
   <a href="https://github.com/enboxorg/effect-wallet/blob/main/LICENSE"><img src="https://img.shields.io/github/license/enboxorg/effect-wallet" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-492-blue" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-499-blue" alt="Tests">
   <img src="https://img.shields.io/badge/coverage-26%25-yellow" alt="Coverage">
 </p>
 
@@ -198,6 +198,7 @@ Current Effect boundaries:
 - `src/enbox/effect/services.ts` defines `CurrentAgent` and `RegistrationTokenStore` services plus browser and memory-backed layers.
 - `src/enbox/auth-effects.ts` wraps AuthManager create/connect/unlock/restore/lock flows.
 - `src/enbox/registration.ts`, `protocols.ts`, `identity-sync.ts`, `queries/identity-queries.ts`, and `mutations/identity-mutations.ts` expose composable Effect programs with Promise adapters for React Query.
+- `src/features/connect/connect-effects.ts`, `protocol-install.ts`, and `src/features/search/public-profile.ts` keep feature-level Enbox/DWN side effects behind Effect adapters.
 
 The intended pattern is:
 

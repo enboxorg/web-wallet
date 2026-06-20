@@ -13,10 +13,8 @@ import {
   SwitchCamera,
 } from 'lucide-react';
 import {
-  EnboxConnectProtocol,
   type EnboxConnectRequest,
 } from '@enbox/agent';
-import { CryptoUtils } from '@enbox/crypto';
 
 import { Button } from '@/components/ui/Button';
 
@@ -25,6 +23,12 @@ import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
 import { prepareProtocol } from './protocol-install';
+import {
+  denyConnectRequest,
+  fetchConnectRequest,
+  generatePin,
+  submitConnectResponse,
+} from './connect-effects';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { truncateDid } from '@/lib/utils';
@@ -186,7 +190,7 @@ export default function AppConnectPage() {
         throw new Error('Invalid connection URI: missing request_uri or encryption_key');
       }
 
-      const request = await EnboxConnectProtocol.getConnectRequest(requestUri, encryptionKey);
+      const request = await fetchConnectRequest(requestUri, encryptionKey);
       setConnectionRequest(request);
       setPhase('request');
     } catch (err) {
@@ -217,9 +221,9 @@ export default function AppConnectPage() {
         ),
       );
 
-      const generatedPin = CryptoUtils.randomPin({ length: 4 });
+      const generatedPin = await generatePin(4);
       setPin(generatedPin);
-      await EnboxConnectProtocol.submitConnectResponse(selectedDid, connectionRequest, generatedPin, agent);
+      await submitConnectResponse(selectedDid, connectionRequest, generatedPin, agent);
       setPhase('pin');
     } catch (err) {
       console.error('Authorization error:', err);
@@ -233,14 +237,7 @@ export default function AppConnectPage() {
     // immediately instead of timing out after 5 minutes.
     if (connectionRequest) {
       try {
-        await fetch(connectionRequest.callbackUrl, {
-          method  : 'POST',
-          headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body    : new URLSearchParams({
-            id_token : 'DENIED',
-            state    : connectionRequest.state,
-          }).toString(),
-        });
+        await denyConnectRequest(connectionRequest.callbackUrl, connectionRequest.state);
       } catch {
         // Best-effort — navigate home regardless.
       }
