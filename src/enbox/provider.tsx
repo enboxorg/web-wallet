@@ -10,7 +10,7 @@
  * - Wallet-scoped identity DID sync registration when identities are
  *   created/imported
  * - Inactivity auto-lock timer
- * - Session PIN caching for same-tab refresh persistence
+ * - Session vault password caching for same-tab refresh persistence
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
@@ -18,7 +18,12 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
 
 import { useAuthStore } from '@/stores/auth-store';
-import { getAutoLockTimeout, SESSION_PIN_KEY, STORAGE_KEYS } from '@/lib/constants';
+import {
+  getAutoLockTimeout,
+  SESSION_PIN_KEY,
+  SESSION_VAULT_PASSWORD_KEY,
+  STORAGE_KEYS,
+} from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
 import { ensureRegistration, getStoredTokens, storeTokens } from './registration';
@@ -28,18 +33,29 @@ import type { EnboxAgent } from './types';
 
 const DWN_DISCOVERY_TIMEOUT_MS = 3_000;
 
-// ── Session PIN helpers ────────────────────────────────────────────
+// ── Session vault password helpers ─────────────────────────────────
 
-function cacheSessionPin(pin: string): void {
-  try { sessionStorage.setItem(SESSION_PIN_KEY, pin); } catch { /* noop */ }
+function cacheSessionPassword(password: string): void {
+  try {
+    sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, password);
+    sessionStorage.removeItem(SESSION_PIN_KEY);
+  } catch { /* noop */ }
 }
 
-function getCachedSessionPin(): string | null {
-  try { return sessionStorage.getItem(SESSION_PIN_KEY); } catch { return null; }
+function getCachedSessionPassword(): string | null {
+  try {
+    return sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)
+      ?? sessionStorage.getItem(SESSION_PIN_KEY);
+  } catch {
+    return null;
+  }
 }
 
-function clearSessionPin(): void {
-  try { sessionStorage.removeItem(SESSION_PIN_KEY); } catch { /* noop */ }
+function clearSessionPassword(): void {
+  try {
+    sessionStorage.removeItem(SESSION_VAULT_PASSWORD_KEY);
+    sessionStorage.removeItem(SESSION_PIN_KEY);
+  } catch { /* noop */ }
 }
 
 // ── Context ────────────────────────────────────────────────────────
@@ -89,17 +105,17 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, []);
 
-  // ── Auto-restore from cached session PIN ─────────────────────────
+  // ── Auto-restore from cached session vault password ──────────────
 
   const tryAutoRestore = useCallback(async (auth: AuthManager): Promise<boolean> => {
-    const cachedPin = getCachedSessionPin();
-    if (!cachedPin) return false;
+    const cachedPassword = getCachedSessionPassword();
+    if (!cachedPassword) return false;
     if (auth.state !== 'locked') return false;
 
     try {
-      const session = await auth.restoreSession({ password: cachedPin });
+      const session = await auth.restoreSession({ password: cachedPassword });
       if (!session) {
-        clearSessionPin();
+        clearSessionPassword();
         return false;
       }
       const agent = session.agent as EnboxAgent;
@@ -107,7 +123,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       ensurePostSession(agent);
       return true;
     } catch {
-      clearSessionPin();
+      clearSessionPassword();
       return false;
     }
   }, [setUnlocked, ensurePostSession]);
@@ -151,7 +167,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           registrationTokens: getStoredTokens(),
           onRegistrationTokens: storeTokens,
         },
-      });
+      } as Parameters<typeof AuthManager.create>[0]);
 
       if (cancelled) return;
       authManagerRef.current = auth;
@@ -190,11 +206,11 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         password,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-      });
+      } as Parameters<AuthManager['connectVault']>[0]);
 
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
-      cacheSessionPin(password);
+      cacheSessionPassword(password);
       ensurePostSession(agent);
 
       return session.recoveryPhrase;
@@ -221,7 +237,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
-      cacheSessionPin(password);
+      cacheSessionPassword(password);
       ensurePostSession(agent);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unlock failed';
@@ -250,11 +266,11 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         recoveryPhrase,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-      });
+      } as Parameters<AuthManager['restoreFromPhrase']>[0]);
 
       const agent = session.agent as EnboxAgent;
       setUnlocked(agent);
-      cacheSessionPin(password);
+      cacheSessionPassword(password);
       ensurePostSession(agent);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Restore failed';
@@ -268,7 +284,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   // ── Lock ─────────────────────────────────────────────────────────
 
   const lock = useCallback(() => {
-    clearSessionPin();
+    clearSessionPassword();
     const auth = authManagerRef.current;
     if (auth) {
       auth.lock().catch((err: unknown) => {

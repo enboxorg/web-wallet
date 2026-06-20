@@ -11,6 +11,11 @@ import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { useSyncQueryInvalidation } from '@/enbox/hooks/use-sync-query-invalidation';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import {
+  hasStoredPasskeyCredential,
+  isPasskeySupported,
+  unlockWithStoredPasskey,
+} from '@/lib/passkeys';
 
 import { Loader } from '@/components/ui/Loader';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
@@ -84,7 +89,7 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
  *
  * Flow:
  * 1. Not initialized → Loader
- * 2. First time → SetupScreen (PIN) or RestoreWalletPage
+ * 2. First time → SetupScreen (passkey when available, otherwise PIN) or RestoreWalletPage
  * 3. Returning user, locked → UnlockScreen
  * 4. Unlocked, no identities → CreateFirstIdentity (full-screen)
  * 5. Unlocked, has identities → App shell with routes
@@ -111,6 +116,10 @@ function AuthGate() {
   const [forgotPin, setForgotPin] = useState(false);
   // Allow user to skip identity creation and go straight to the app
   const [identitySkipped, setIdentitySkipped] = useState(false);
+  const [authUiError, setAuthUiError] = useState<string | null>(null);
+  const [passkeyConfigured, setPasskeyConfigured] = useState(false);
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+  const [passkeySupportChecked, setPasskeySupportChecked] = useState(true);
 
   // Only query identities when unlocked
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
@@ -130,6 +139,7 @@ function AuthGate() {
 
   const handleSetup = useCallback(
     async (pin: string, dwnEndpoints: string[]) => {
+      setAuthUiError(null);
       const recoveryPhrase = await connect(pin, dwnEndpoints);
       if (recoveryPhrase) {
         setPhrase(recoveryPhrase);
@@ -141,19 +151,62 @@ function AuthGate() {
 
   const handleUnlock = useCallback(
     async (pin: string) => {
+      setAuthUiError(null);
       await unlock(pin);
     },
     [unlock],
   );
 
+  const handlePasskeyUnlock = useCallback(async () => {
+    setAuthUiError(null);
+    try {
+      const password = await unlockWithStoredPasskey();
+      await unlock(password);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Passkey unlock failed';
+      setAuthUiError(message);
+      throw err;
+    }
+  }, [unlock]);
+
   const handleRestore = useCallback(
     async (phrase: string, pin: string, dwnEndpoints: string[]) => {
+      setAuthUiError(null);
       await restore(phrase, pin, dwnEndpoints);
       setForgotPin(false);
       setShowRestore(false);
     },
     [restore],
   );
+
+  useEffect(() => {
+    if (unlocked || firstTime) {
+      setPasskeyConfigured(false);
+      setPasskeyAvailable(false);
+      setPasskeySupportChecked(true);
+      return;
+    }
+
+    const configured = hasStoredPasskeyCredential();
+    setPasskeyConfigured(configured);
+    if (!configured) {
+      setPasskeyAvailable(false);
+      setPasskeySupportChecked(true);
+      return;
+    }
+
+    let cancelled = false;
+    setPasskeySupportChecked(false);
+    isPasskeySupported().then((supported) => {
+      if (cancelled) return;
+      setPasskeyAvailable(supported);
+      setPasskeySupportChecked(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [firstTime, unlocked]);
 
   // Still initialising the AuthManager
   if (!initialized) {
@@ -167,7 +220,7 @@ function AuthGate() {
         <RestoreWalletPage
           onRestore={handleRestore}
           isLoading={isLoading}
-          error={error}
+          error={authUiError ?? error}
           onBack={() => setForgotPin(false)}
         />
       );
@@ -178,7 +231,7 @@ function AuthGate() {
           <RestoreWalletPage
             onRestore={handleRestore}
             isLoading={isLoading}
-            error={error}
+            error={authUiError ?? error}
             onBack={() => setShowRestore(false)}
           />
         );
@@ -188,16 +241,20 @@ function AuthGate() {
           onSetup={handleSetup}
           onSwitchToRestore={() => setShowRestore(true)}
           isLoading={isLoading}
-          error={error}
+          error={authUiError ?? error}
         />
       );
     }
     return (
       <UnlockScreen
         onUnlock={handleUnlock}
+        onUnlockWithPasskey={handlePasskeyUnlock}
         onForgotPin={() => setForgotPin(true)}
-        error={error}
+        error={authUiError ?? error}
         isLoading={isLoading}
+        passkeyConfigured={passkeyConfigured}
+        passkeyAvailable={passkeyAvailable}
+        passkeySupportChecked={passkeySupportChecked}
       />
     );
   }

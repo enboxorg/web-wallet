@@ -6,17 +6,23 @@ interface PageHeaderProps {
   title: string;
   description?: string;
   backTo?: string;
+  onBack?: () => boolean | void;
   actions?: React.ReactNode;
   className?: string;
 }
 
-export function PageHeader({ title, description, backTo, actions, className }: PageHeaderProps) {
+export function PageHeader({ title, description, backTo, onBack, actions, className }: PageHeaderProps) {
   return (
     <div className={cn('flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between', className)}>
       <div className="flex items-start gap-3">
         {backTo && (
           <Link
             to={backTo}
+            onClick={(event) => {
+              if (onBack?.() === false) {
+                event.preventDefault();
+              }
+            }}
             className="mt-0.5 rounded-lg p-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
             aria-label="Back"
           >

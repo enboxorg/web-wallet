@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, type FormEvent } from 'react';
-import { useParams, useNavigate, useBlocker, Link } from 'react-router';
+import { useParams, useNavigate, Link } from 'react-router';
 import { UserX } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -8,7 +8,6 @@ import { useProfile } from '@/enbox/hooks/use-profile';
 import { useDwnEndpoints } from '@/enbox/hooks/use-dwn-endpoints';
 import { useUpdateIdentityProfile, useUpdateDwnEndpoints } from '@/enbox/hooks/use-identity-mutations';
 
-import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
@@ -29,6 +28,7 @@ export default function EditIdentityPage() {
   const { data: currentEndpoints, isLoading: endpointsLoading } = useDwnEndpoints(did);
   const updateProfile = useUpdateIdentityProfile();
   const updateEndpoints = useUpdateDwnEndpoints();
+  const detailsPath = `/identity/${encodeURIComponent(did)}`;
 
   const identity = useMemo(
     () => identities?.find((id: any) => id.did.uri === did),
@@ -104,9 +104,6 @@ export default function EditIdentityPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [isDirty]);
 
-  // Block in-app navigation via React Router
-  const blocker = useBlocker(isDirty);
-
   function handleAvatarUpload(file: File) {
     setAvatarFile(file);
     setAvatarChanged(true);
@@ -146,11 +143,22 @@ export default function EditIdentityPage() {
       }
 
       toast.success('Profile updated');
-      navigate(`/identity/${encodeURIComponent(did)}`);
+      navigate(detailsPath);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to update profile',
       );
+    }
+  }
+
+  function confirmDiscardChanges(): boolean {
+    if (!isDirty) return true;
+    return window.confirm('You have unsaved changes. Discard them and leave?');
+  }
+
+  function handleCancel() {
+    if (confirmDiscardChanges()) {
+      navigate(detailsPath);
     }
   }
 
@@ -178,7 +186,8 @@ export default function EditIdentityPage() {
       <PageHeader
         title="Edit Identity"
         description="Update your identity profile."
-        backTo={`/identity/${encodeURIComponent(did)}`}
+        backTo={detailsPath}
+        onBack={confirmDiscardChanges}
       />
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -255,7 +264,7 @@ export default function EditIdentityPage() {
             type="button"
             variant="ghost"
             className="w-full sm:w-auto"
-            onClick={() => navigate(`/identity/${encodeURIComponent(did)}`)}
+            onClick={handleCancel}
           >
             Cancel
           </Button>
@@ -265,27 +274,6 @@ export default function EditIdentityPage() {
         </div>
       </form>
 
-      {blocker.state === 'blocked' && (
-        <Dialog
-          open
-          onClose={() => blocker.reset?.()}
-          title="Discard changes?"
-        >
-          <div className="space-y-4">
-            <p className="text-sm text-text-secondary">
-              You have unsaved changes. Are you sure you want to leave?
-            </p>
-            <div className="flex justify-end gap-3">
-              <Button variant="ghost" size="sm" onClick={() => blocker.reset?.()}>
-                Stay
-              </Button>
-              <Button variant="danger" size="sm" onClick={() => blocker.proceed?.()}>
-                Discard
-              </Button>
-            </div>
-          </div>
-        </Dialog>
-      )}
     </div>
   );
 }
