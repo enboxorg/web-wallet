@@ -189,6 +189,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const session = await auth.connectVault({
         password,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
+        identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
       });
 
       const agent = session.agent as EnboxAgent;
@@ -248,6 +249,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         password,
         recoveryPhrase,
         dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
+        identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
       });
 
       const agent = session.agent as EnboxAgent;

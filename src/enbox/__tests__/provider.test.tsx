@@ -137,8 +137,9 @@ describe('EnboxAuthProvider restore flow', () => {
 
     await waitFor(() => {
       expect(auth.connectVault).toHaveBeenCalledWith({
-        password     : '1234',
-        dwnEndpoints : TEST_ENDPOINTS,
+        password              : '1234',
+        dwnEndpoints          : TEST_ENDPOINTS,
+        identitySyncProtocols : TEST_IDENTITY_SYNC_PROTOCOLS,
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
@@ -177,9 +178,10 @@ describe('EnboxAuthProvider restore flow', () => {
 
     await waitFor(() => {
       expect(auth.restoreFromPhrase).toHaveBeenCalledWith({
-        password       : '1234',
-        recoveryPhrase : TEST_PHRASE,
-        dwnEndpoints   : TEST_ENDPOINTS,
+        password              : '1234',
+        recoveryPhrase        : TEST_PHRASE,
+        dwnEndpoints          : TEST_ENDPOINTS,
+        identitySyncProtocols : TEST_IDENTITY_SYNC_PROTOCOLS,
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
