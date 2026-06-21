@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@enbox/effect-wallet",
+      "name": "@enbox/dweb-wallet",
       "dependencies": {
         "@enbox/agent": "0.8.1",
         "@enbox/api": "0.6.39",

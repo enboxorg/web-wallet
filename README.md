@@ -2,16 +2,16 @@
   <strong>en</strong><span style="color: #ff6b8a">b</span><strong>ox</strong>
 </p>
 
-<h1 align="center">Enbox Effect Wallet</h1>
+<h1 align="center">Enbox Web Wallet</h1>
 
 <p align="center">
-  A fork of the Enbox web wallet focused on applying Effect patterns to DWN and Enbox SDK integration.
+  A decentralised identity wallet for managing DIDs, profiles, protocols, and permissions on the Enbox network.
 </p>
 
 <p align="center">
-  <a href="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml"><img src="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/enboxorg/web-wallet/actions/workflows/ci.yml"><img src="https://github.com/enboxorg/web-wallet/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://enbox-wallet.pages.dev"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live Demo"></a>
-  <a href="https://github.com/enboxorg/effect-wallet/blob/main/LICENSE"><img src="https://img.shields.io/github/license/enboxorg/effect-wallet" alt="License"></a>
+  <a href="https://github.com/enboxorg/web-wallet/blob/main/LICENSE"><img src="https://img.shields.io/github/license/enboxorg/web-wallet" alt="License"></a>
   <img src="https://img.shields.io/badge/tests-509-blue" alt="Tests">
   <img src="https://img.shields.io/badge/coverage-26%25-yellow" alt="Coverage">
 </p>
