@@ -3,6 +3,7 @@ import {
   UserPlus,
   Download,
   Search,
+  Network,
   QrCode,
   Shield,
   KeyRound,
@@ -31,6 +32,12 @@ export const sidebarItems: NavItem[] = [
     path: '/identities/import',
     label: 'Import',
     icon: <Download size={20} />,
+    section: 'Identity',
+  },
+  {
+    path: '/social',
+    label: 'Social Graph',
+    icon: <Network size={20} />,
     section: 'Identity',
   },
   {
@@ -74,6 +81,11 @@ export const bottomTabItems: NavItem[] = [
     path: '/search',
     label: 'Search',
     icon: <Search size={22} />,
+  },
+  {
+    path: '/social',
+    label: 'Social',
+    icon: <Network size={22} />,
   },
   {
     path: '/connect/app',
