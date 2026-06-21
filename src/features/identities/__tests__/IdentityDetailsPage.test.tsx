@@ -81,6 +81,47 @@ vi.mock('@/enbox/hooks/use-identity-mutations', () => ({
   useExportIdentity: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
+vi.mock('@/enbox/hooks/use-social-graph', () => ({
+  useSocialGraph: () => ({
+    data: {
+      friends: [
+        {
+          id: 'friend-1',
+          did: 'did:dht:friend1',
+          alias: 'Friend One',
+          note: 'Trusted contact',
+          recipient: 'did:dht:friend1',
+        },
+      ],
+      groups: [
+        {
+          id: 'group-1',
+          contextId: 'group-context',
+          name: 'Builders',
+          members: [
+            {
+              id: 'member-1',
+              did: 'did:dht:friend1',
+              alias: 'Friend One',
+            },
+          ],
+        },
+      ],
+      blocks: [],
+    },
+    isLoading: false,
+    isError: false,
+  }),
+  useAddSocialFriend: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveSocialFriend: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useCreateSocialGroup: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useDeleteSocialGroup: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useAddSocialGroupMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRemoveSocialGroupMember: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useBlockSocialDid: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUnblockSocialDid: () => ({ mutateAsync: vi.fn(), isPending: false }),
+}));
+
 vi.mock('@/enbox/hooks/use-agent', () => ({
   useAgent: () => ({ agentDid: { uri: 'did:dht:agent' } }),
 }));
@@ -135,6 +176,7 @@ describe('IdentityDetailsPage', () => {
     expect(screen.getByRole('tab', { name: /overview/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /protocols/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /wallets/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /social/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /permissions/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /activity/i })).toBeInTheDocument();
   });
@@ -178,6 +220,17 @@ describe('IdentityDetailsPage', () => {
 
     // Should show the grantee DID (truncated — contains "app1")
     expect(screen.getByText(/app1/)).toBeInTheDocument();
+  });
+
+  it('switches to social tab and shows social graph records', async () => {
+    const { user } = renderWithProviders(<IdentityDetailsPage />, {
+      initialRoute: route,
+    });
+
+    await user.click(screen.getByRole('tab', { name: /social/i }));
+
+    expect(screen.getAllByText('Friend One').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('Builders')).toBeInTheDocument();
   });
 
   it('supports keyboard tab navigation with ArrowRight', async () => {

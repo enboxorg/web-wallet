@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Globe, Check, X, AlertCircle, Import } from 'lucide-react';
 import type { ConnectPermissionRequest } from '@enbox/agent';
 
@@ -18,6 +18,11 @@ import {
   encryptDWebConnectResponse,
   importPortableIdentity,
 } from './connect-effects';
+import {
+  isDWebConnectRequestEvent,
+  referrerOrigin,
+  sanitizeDWebConnectRequest,
+} from './dweb-connect-messages';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
@@ -28,11 +33,14 @@ export default function DWebConnectPage() {
 
   const [phase, setPhase] = useState<Phase>('waiting');
   const [_pendingRequest, setPendingRequest] = useState<DWebConnectRequest | null>(null);
+  const activeOriginRef = useRef('');
+  const hasAcceptedRequestRef = useRef(false);
   const [permissions, setPermissions] = useState<ConnectPermissionRequest[]>([]);
   const [origin, setOrigin] = useState('');
   const [appName, setAppName] = useState<string | undefined>();
   const [appIcon, setAppIcon] = useState<string | undefined>();
   const [hasPortableIdentity, setHasPortableIdentity] = useState(false);
+  const [requestedDid, setRequestedDid] = useState('');
   const [selectedDid, setSelectedDid] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -40,17 +48,27 @@ export default function DWebConnectPage() {
   const isPopup = useMemo(() => !!window.opener, []);
 
   // Build identity options
-  const identityOptions = (identities ?? []).map((id: any) => ({
+  const identityOptions: Array<{ value: string; label: string }> = (identities ?? []).map((id: any) => ({
     value: id.did.uri as string,
     label: id.metadata?.name ?? truncateDid(id.did.uri),
   }));
 
-  // Auto-select first identity
+  // Auto-select requested identity when owned, otherwise first identity.
   useEffect(() => {
-    if (!selectedDid && identityOptions.length > 0) {
+    if (identityOptions.length === 0) return;
+
+    const requested = requestedDid
+      && identityOptions.some((option) => option.value === requestedDid);
+    if (requested && selectedDid !== requestedDid) {
+      setSelectedDid(requestedDid);
+      return;
+    }
+
+    const selectedExists = identityOptions.some((option) => option.value === selectedDid);
+    if (!selectedDid || !selectedExists) {
       setSelectedDid(identityOptions[0].value);
     }
-  }, [identityOptions, selectedDid]);
+  }, [identityOptions, requestedDid, selectedDid]);
 
   // Not opened as a popup
   useEffect(() => {
@@ -62,18 +80,38 @@ export default function DWebConnectPage() {
     if (!isPopup) { return; }
 
     function applyRequest(req: DWebConnectRequest) {
-      const data = req.data as any;
+      if (hasAcceptedRequestRef.current) {
+        return;
+      }
+
+      const sanitized = sanitizeDWebConnectRequest(req);
+      if (!sanitized) {
+        setErrorMessage('Invalid DWeb Connect request.');
+        setPhase('error');
+        return;
+      }
+
+      if (activeOriginRef.current && activeOriginRef.current !== sanitized.origin) {
+        return;
+      }
+
+      activeOriginRef.current = sanitized.origin;
+      hasAcceptedRequestRef.current = true;
       setPendingRequest(req);
-      setOrigin(req.origin);
-      setPermissions(data?.permissions ?? data?.permissionRequests ?? []);
-      setAppName(data?.appName);
-      setAppIcon(data?.appIcon);
-      setHasPortableIdentity(!!data?.portableIdentity);
+      setOrigin(sanitized.origin);
+      setPermissions(sanitized.permissions);
+      setAppName(sanitized.appName);
+      setAppIcon(sanitized.appIcon);
+      setRequestedDid(sanitized.requestedDid ?? '');
+      setHasPortableIdentity(!!sanitized.portableIdentity);
       setPhase('request');
     }
 
     function handleMessage(event: MessageEvent) {
-      if (event.data?.type === 'dweb-connect-authorization-request') {
+      if (
+        event.data?.type === 'dweb-connect-authorization-request'
+        && isDWebConnectRequestEvent(event, window.opener, activeOriginRef.current)
+      ) {
         applyRequest({
           origin    : event.origin,
           data      : event.data,
@@ -89,7 +127,10 @@ export default function DWebConnectPage() {
     if (buffered) { applyRequest(buffered); }
 
     // Signal to opener that the wallet is ready
-    window.opener?.postMessage({ type: 'dweb-connect-loaded' }, '*');
+    window.opener?.postMessage(
+      { type: 'dweb-connect-loaded' },
+      referrerOrigin(document.referrer) ?? '*',
+    );
 
     return () => window.removeEventListener('message', handleMessage);
   }, [isPopup, consumeRequest]);
@@ -169,7 +210,10 @@ export default function DWebConnectPage() {
 
       // If the dapp sent an ephemeral public key, encrypt the response
       // so private key material is not exposed as plaintext in postMessage.
-      const dappEphemeralKey = (requestData)?.ephemeralPublicKey as string | undefined;
+      const sanitizedRequest = _pendingRequest
+        ? sanitizeDWebConnectRequest(_pendingRequest)
+        : undefined;
+      const dappEphemeralKey = sanitizedRequest?.ephemeralPublicKey;
       if (dappEphemeralKey) {
         try {
           const encryptedPayload = await encryptDWebConnectResponse(
@@ -208,7 +252,10 @@ export default function DWebConnectPage() {
 
   function handleDeny() {
     if (origin && window.opener) {
-      window.opener.postMessage({ type: 'dweb-connect-authorization-response' }, origin);
+      window.opener.postMessage(
+        { type: 'dweb-connect-authorization-response', error: 'denied' },
+        origin,
+      );
     }
     window.close();
   }
