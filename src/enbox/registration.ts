@@ -15,6 +15,7 @@ import { DwnRegistrar } from '@enbox/dwn-clients';
 import type { ServerInfo } from '@enbox/dwn-clients';
 
 import { STORAGE_KEYS } from '@/lib/constants';
+import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
 import type { EnboxAgent, RegistrationTokenData } from './types';
 import {
   CurrentAgent,
@@ -25,22 +26,42 @@ import {
   DwnRegistrationError,
   registrationError,
   sdkError,
+  storageError,
 } from './effect/errors';
-import { runEnboxPromise } from './effect/runtime';
+import { runEnboxPromise, runEnboxSync } from './effect/runtime';
 
 // ── Token persistence ──────────────────────────────────────────────
 
 export function getStoredTokens(): Record<string, RegistrationTokenData> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEYS.REGISTRATION_TOKENS);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+  return runEnboxSync(getStoredTokensEffect());
 }
 
 export function storeTokens(tokens: Record<string, RegistrationTokenData>): void {
-  localStorage.setItem(STORAGE_KEYS.REGISTRATION_TOKENS, JSON.stringify(tokens));
+  runEnboxSync(storeTokensEffect(tokens));
+}
+
+export function getStoredTokensEffect() {
+  return localStorageGetEffect(STORAGE_KEYS.REGISTRATION_TOKENS).pipe(
+    Effect.flatMap((raw) =>
+      Effect.try({
+        try: () => raw ? JSON.parse(raw) as Record<string, RegistrationTokenData> : {},
+        catch: storageError('registrationTokens.parse'),
+      })
+    ),
+    Effect.catchAll(() => Effect.succeed({})),
+  );
+}
+
+export function storeTokensEffect(tokens: Record<string, RegistrationTokenData>) {
+  return Effect.try({
+    try: () => JSON.stringify(tokens),
+    catch: storageError('registrationTokens.stringify'),
+  }).pipe(
+    Effect.flatMap((serialized) =>
+      localStorageSetEffect(STORAGE_KEYS.REGISTRATION_TOKENS, serialized)
+    ),
+    Effect.catchAll(() => Effect.void),
+  );
 }
 
 function isTokenExpired(token: RegistrationTokenData): boolean {

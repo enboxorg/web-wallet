@@ -8,6 +8,8 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { AUTO_LOCK_OPTIONS, AUTO_LOCK_STORAGE_KEY, getAutoLockTimeout } from '@/lib/constants';
 import { cn } from '@/lib/utils';
+import { runEnboxSync } from '@/enbox/effect/runtime';
+import { localStorageSetEffect } from '@/lib/browser-effects';
 
 export default function SecurityPage() {
   const { lock } = useAuth();
@@ -16,7 +18,7 @@ export default function SecurityPage() {
 
   const handleAutoLockChange = useCallback((value: string) => {
     const ms = parseInt(value, 10);
-    try { localStorage.setItem(AUTO_LOCK_STORAGE_KEY, String(ms)); } catch {}
+    runEnboxSync(localStorageSetEffect(AUTO_LOCK_STORAGE_KEY, String(ms)));
     setAutoLockMs(ms);
     toast.success('Auto-lock timeout updated');
   }, []);

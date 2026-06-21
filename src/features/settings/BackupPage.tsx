@@ -10,6 +10,10 @@ import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useExportIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
+import { runEnboxSync } from '@/enbox/effect/runtime';
+import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
+
+const LAST_EXPORT_STORAGE_KEY = 'enbox:lastExportTimestamp';
 
 export default function BackupPage() {
   const phrase = useBackupSeedStore((s) => s.phrase);
@@ -19,9 +23,9 @@ export default function BackupPage() {
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [lastExport, setLastExport] = useState<string | null>(() => {
-    try { return localStorage.getItem('enbox:lastExportTimestamp'); } catch { return null; }
-  });
+  const [lastExport, setLastExport] = useState<string | null>(() =>
+    runEnboxSync(localStorageGetEffect(LAST_EXPORT_STORAGE_KEY))
+  );
 
   const handleCopy = useCallback(async () => {
     if (!phrase) return;
@@ -67,7 +71,7 @@ export default function BackupPage() {
         `Exported ${exported.length} ${exported.length === 1 ? 'identity' : 'identities'}`,
       );
       const now = Date.now().toString();
-      localStorage.setItem('enbox:lastExportTimestamp', now);
+      runEnboxSync(localStorageSetEffect(LAST_EXPORT_STORAGE_KEY, now));
       setLastExport(now);
     } catch (err) {
       toast.error(

@@ -31,7 +31,7 @@ import {
 } from './connect-effects';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
-import { truncateDid } from '@/lib/utils';
+import { copyToClipboard, truncateDid } from '@/lib/utils';
 
 type Phase = 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
 
@@ -260,12 +260,10 @@ export default function AppConnectPage() {
   }
 
   async function handleCopyPin() {
-    try {
-      await navigator.clipboard.writeText(pin);
+    const copied = await copyToClipboard(pin);
+    if (copied) {
       setPinCopied(true);
       setTimeout(() => setPinCopied(false), 2000);
-    } catch {
-      // Clipboard API may not be available
     }
   }
 

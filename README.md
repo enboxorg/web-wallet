@@ -12,7 +12,7 @@
   <a href="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml"><img src="https://github.com/enboxorg/effect-wallet/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
   <a href="https://enbox-wallet.pages.dev"><img src="https://img.shields.io/badge/demo-live-brightgreen" alt="Live Demo"></a>
   <a href="https://github.com/enboxorg/effect-wallet/blob/main/LICENSE"><img src="https://img.shields.io/github/license/enboxorg/effect-wallet" alt="License"></a>
-  <img src="https://img.shields.io/badge/tests-499-blue" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-509-blue" alt="Tests">
   <img src="https://img.shields.io/badge/coverage-26%25-yellow" alt="Coverage">
 </p>
 
@@ -101,12 +101,12 @@ The wallet uses a comprehensive testing pyramid:
        / 26 \     Real browser, real CSS, accessibility audits
       /------\
      /        \
-    /   419    \  Unit/Integration — Vitest + Testing Library
+    /   509    \  Unit/Integration — Vitest + Testing Library
    /            \ Components, hooks, stores, user flows
   /______________\
 ```
 
-### Unit & Integration Tests (419 tests)
+### Unit & Integration Tests (509 tests; 499 passing, 10 skipped)
 
 Run with [Vitest](https://vitest.dev/) + [happy-dom](https://github.com/nicedayfor/happy-dom) + [Testing Library](https://testing-library.com/):
 
@@ -181,7 +181,7 @@ src/
     registration.ts         # DWN tenant registration
 
   stores/                   # Zustand (auth, UI, backup seed, drag-drop)
-  lib/                      # Pure utilities (identity generators, protocol names)
+  lib/                      # Utilities, browser Effect adapters, passkeys
   __mocks__/                # Test mock factories (identities, profiles, agents)
   e2e/                      # Playwright E2E + accessibility specs
 ```
@@ -199,6 +199,8 @@ Current Effect boundaries:
 - `src/enbox/auth-effects.ts` wraps AuthManager create/connect/unlock/restore/lock flows.
 - `src/enbox/registration.ts`, `protocols.ts`, `identity-sync.ts`, `queries/identity-queries.ts`, and `mutations/identity-mutations.ts` expose composable Effect programs with Promise adapters for React Query.
 - `src/features/connect/connect-effects.ts`, `protocol-install.ts`, and `src/features/search/public-profile.ts` keep feature-level Enbox/DWN side effects behind Effect adapters.
+- `src/lib/passkeys.ts` wraps WebAuthn, PRF, WebCrypto, IndexedDB, and passkey credential persistence behind Effect programs while preserving the existing public async API.
+- `src/lib/browser-effects.ts` centralizes browser storage, clipboard/share, endpoint health, random UUID, and service worker registration effects used by stores, settings, search history, provider session cache, and bootstrap code.
 
 The intended pattern is:
 

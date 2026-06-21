@@ -1,4 +1,10 @@
 import { create } from 'zustand';
+import { runEnboxSync } from '@/enbox/effect/runtime';
+import {
+  localStorageGetEffect,
+  localStorageRemoveEffect,
+  localStorageSetEffect,
+} from '@/lib/browser-effects';
 
 const STORAGE_KEY = 'enbox:recovery-phrase';
 
@@ -23,11 +29,7 @@ export interface BackupSeedActions {
 export type BackupSeedStore = BackupSeedState & BackupSeedActions;
 
 function loadPhrase(): string | null {
-  try {
-    return localStorage.getItem(STORAGE_KEY);
-  } catch {
-    return null;
-  }
+  return runEnboxSync(localStorageGetEffect(STORAGE_KEY));
 }
 
 export const useBackupSeedStore = create<BackupSeedStore>()((set) => ({
@@ -35,20 +37,12 @@ export const useBackupSeedStore = create<BackupSeedStore>()((set) => ({
   backedUp: loadPhrase() === null,
 
   setPhrase: (phrase) => {
-    try {
-      localStorage.setItem(STORAGE_KEY, phrase);
-    } catch {
-      // Storage unavailable — phrase will be in-memory only
-    }
+    runEnboxSync(localStorageSetEffect(STORAGE_KEY, phrase));
     set({ phrase, backedUp: false });
   },
 
   confirmBackup: () => {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-    } catch {
-      // noop
-    }
+    runEnboxSync(localStorageRemoveEffect(STORAGE_KEY));
     set({ phrase: null, backedUp: true });
   },
 }));

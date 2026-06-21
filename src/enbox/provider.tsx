@@ -15,8 +15,6 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 
-import { requestLocalDwnDiscovery } from '@enbox/auth';
-
 import { useAuthStore } from '@/stores/auth-store';
 import {
   getAutoLockTimeout,
@@ -25,17 +23,24 @@ import {
   STORAGE_KEYS,
 } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import {
+  localStorageGetEffect,
+  sessionStorageGetEffect,
+  sessionStorageRemoveEffect,
+  sessionStorageSetEffect,
+} from '@/lib/browser-effects';
 import { ensureRegistration } from './registration';
 import type { EnboxAgent } from './types';
 import {
   connectVaultEffect,
   createWalletAuthManagerEffect,
   lockAuthManagerEffect,
+  requestLocalDwnDiscoveryEffect,
   restoreFromPhraseEffect,
   restoreSessionEffect,
   type WalletAuthManager,
 } from './auth-effects';
-import { runEnboxPromise } from './effect/runtime';
+import { runEnboxPromise, runEnboxSync } from './effect/runtime';
 
 // ── Local DWN discovery ────────────────────────────────────────────
 
@@ -44,26 +49,18 @@ const DWN_DISCOVERY_TIMEOUT_MS = 3_000;
 // ── Session vault password helpers ─────────────────────────────────
 
 function cacheSessionPassword(password: string): void {
-  try {
-    sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, password);
-    sessionStorage.removeItem(SESSION_PIN_KEY);
-  } catch { /* noop */ }
+  runEnboxSync(sessionStorageSetEffect(SESSION_VAULT_PASSWORD_KEY, password));
+  runEnboxSync(sessionStorageRemoveEffect(SESSION_PIN_KEY));
 }
 
 function getCachedSessionPassword(): string | null {
-  try {
-    return sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)
-      ?? sessionStorage.getItem(SESSION_PIN_KEY);
-  } catch {
-    return null;
-  }
+  return runEnboxSync(sessionStorageGetEffect(SESSION_VAULT_PASSWORD_KEY))
+    ?? runEnboxSync(sessionStorageGetEffect(SESSION_PIN_KEY));
 }
 
 function clearSessionPassword(): void {
-  try {
-    sessionStorage.removeItem(SESSION_VAULT_PASSWORD_KEY);
-    sessionStorage.removeItem(SESSION_PIN_KEY);
-  } catch { /* noop */ }
+  runEnboxSync(sessionStorageRemoveEffect(SESSION_VAULT_PASSWORD_KEY));
+  runEnboxSync(sessionStorageRemoveEffect(SESSION_PIN_KEY));
 }
 
 // ── Context ────────────────────────────────────────────────────────
@@ -143,14 +140,14 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     async function init() {
       const hasFragment = globalThis.location?.hash?.length > 1;
-      const cachedEndpoint = localStorage.getItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT);
+      const cachedEndpoint = runEnboxSync(localStorageGetEffect(STORAGE_KEYS.LOCAL_DWN_ENDPOINT));
 
       // Only attempt local DWN discovery on desktop. On mobile/touch
       // devices there's no local DWN, and the dwn:// URL open triggers
       // a blocked popup warning in mobile browsers.
       const isTouchDevice = 'ontouchstart' in globalThis || navigator.maxTouchPoints > 0;
       if (!hasFragment && !cachedEndpoint && !isTouchDevice) {
-        requestLocalDwnDiscovery();
+        runEnboxSync(requestLocalDwnDiscoveryEffect());
         await new Promise<void>((resolve) => setTimeout(resolve, DWN_DISCOVERY_TIMEOUT_MS));
         if (cancelled) return;
       }

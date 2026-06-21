@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import { STORAGE_KEYS } from '@/lib/constants';
+import { runEnboxSync } from '@/enbox/effect/runtime';
+import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
 
 export type Theme = 'dark' | 'light';
 
@@ -19,8 +21,7 @@ export interface UIActions {
 export type UIStore = UIState & UIActions;
 
 function getInitialTheme(): Theme {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEYS.THEME);
+  const stored = runEnboxSync(localStorageGetEffect(STORAGE_KEYS.THEME));
     if (stored === 'light' || stored === 'dark') {
       // Apply immediately so the DOM matches before first paint
       if (typeof document !== 'undefined') {
@@ -28,9 +29,6 @@ function getInitialTheme(): Theme {
       }
       return stored;
     }
-  } catch {
-    // localStorage may be unavailable (SSR, privacy mode, etc.)
-  }
   return 'dark';
 }
 
@@ -41,11 +39,7 @@ function getInitialSidebarOpen(): boolean {
 }
 
 function applyTheme(theme: Theme): void {
-  try {
-    localStorage.setItem(STORAGE_KEYS.THEME, theme);
-  } catch {
-    // ignore
-  }
+  runEnboxSync(localStorageSetEffect(STORAGE_KEYS.THEME, theme));
   if (typeof document !== 'undefined') {
     document.documentElement.setAttribute('data-theme', theme);
   }

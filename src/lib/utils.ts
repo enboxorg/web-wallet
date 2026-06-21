@@ -1,5 +1,8 @@
 import { clsx, type ClassValue } from 'clsx';
 
+import { runEnboxPromise } from '@/enbox/effect/runtime';
+import { copyToClipboardEffect } from './browser-effects';
+
 /**
  * Merge class names with clsx. Tailwind v4 handles specificity natively,
  * so we don't need tailwind-merge.
@@ -32,12 +35,7 @@ export function truncateDid(did: string, chars = 8): string {
  * Copy text to clipboard. Returns true on success.
  */
 export async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    return false;
-  }
+  return runEnboxPromise(copyToClipboardEffect(text));
 }
 
 /**
@@ -64,4 +62,3 @@ export function formatRelativeTime(date: Date | string | number): string {
 
   return new Date(timestamp).toLocaleDateString();
 }
-

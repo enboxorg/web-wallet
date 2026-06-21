@@ -9,3 +9,11 @@ export function runEnboxPromise<A, E>(
     effect.pipe(Effect.mapError(enboxEffectErrorToError)),
   );
 }
+
+export function runEnboxSync<A, E>(
+  effect: Effect.Effect<A, E, never>,
+): A {
+  return Effect.runSync(
+    effect.pipe(Effect.mapError(enboxEffectErrorToError)),
+  );
+}

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
+import { runEnboxPromise } from '@/enbox/effect/runtime';
+import { checkEndpointHealthEffect } from '@/lib/browser-effects';
 
 interface EndpointHealthProps {
   url: string;
@@ -13,15 +15,9 @@ export function EndpointHealth({ url, className }: EndpointHealthProps) {
     let cancelled = false;
 
     (async () => {
-      try {
-        const res = await fetch(`${url}/info`, {
-          signal: AbortSignal.timeout(5000),
-        });
-        if (!cancelled) {
-          setStatus(res.ok ? 'ok' : 'error');
-        }
-      } catch {
-        if (!cancelled) setStatus('error');
+      const nextStatus = await runEnboxPromise(checkEndpointHealthEffect(url));
+      if (!cancelled) {
+        setStatus(nextStatus);
       }
     })();
 

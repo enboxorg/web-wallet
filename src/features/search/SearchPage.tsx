@@ -12,13 +12,15 @@ import { queryKeys } from '@/enbox/queries/query-keys';
 import { truncateDid } from '@/lib/utils';
 import type { IdentityProfile } from '@/enbox/types';
 import { fetchPublicProfile } from './public-profile';
+import { runEnboxSync } from '@/enbox/effect/runtime';
+import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
 
 const SEARCH_HISTORY_KEY = 'enbox:searchHistory';
 const MAX_HISTORY = 5;
 
 function getSearchHistory(): string[] {
   try {
-    const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+    const raw = runEnboxSync(localStorageGetEffect(SEARCH_HISTORY_KEY));
     return raw ? JSON.parse(raw) : [];
   } catch { return []; }
 }
@@ -27,7 +29,10 @@ function addToSearchHistory(did: string): void {
   try {
     const history = getSearchHistory().filter(d => d !== did);
     history.unshift(did);
-    localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(history.slice(0, MAX_HISTORY)));
+    runEnboxSync(localStorageSetEffect(
+      SEARCH_HISTORY_KEY,
+      JSON.stringify(history.slice(0, MAX_HISTORY)),
+    ));
   } catch {}
 }
 

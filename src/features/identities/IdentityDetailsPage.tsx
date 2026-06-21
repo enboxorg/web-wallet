@@ -18,6 +18,8 @@ import { Button } from '@/components/ui/Button';
 import { Dialog } from '@/components/ui/Dialog';
 import { Loader } from '@/components/ui/Loader';
 import { TabList, Tab, TabPanel } from '@/components/ui/Tabs';
+import { runEnboxPromise } from '@/enbox/effect/runtime';
+import { shareEffect } from '@/lib/browser-effects';
 import { truncateDid, copyToClipboard } from '@/lib/utils';
 
 import OverviewTab from './tabs/OverviewTab';
@@ -297,21 +299,17 @@ export default function IdentityDetailsPage() {
             {linkCopied ? 'Link copied!' : 'Copy profile link'}
           </button>
 
-          {typeof navigator !== 'undefined' && navigator.share && (
+          {typeof navigator !== 'undefined' && 'share' in navigator && (
             <Button
               variant="secondary"
               size="sm"
               className="w-full"
               onClick={async () => {
-                try {
-                  await navigator.share({
-                    title: profile?.displayName || 'Enbox Identity',
-                    text: did,
-                    url: `${window.location.origin}/search/${encodeURIComponent(did)}`,
-                  });
-                } catch {
-                  // User cancelled share sheet
-                }
+                await runEnboxPromise(shareEffect({
+                  title: profile?.displayName || 'Enbox Identity',
+                  text: did,
+                  url: `${window.location.origin}/search/${encodeURIComponent(did)}`,
+                }));
               }}
             >
               <Share2 size={14} />

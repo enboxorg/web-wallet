@@ -6,6 +6,8 @@ import { toast } from 'sonner';
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { generateName, generateAvatar, generateBanner } from '@/lib/identity-generators';
+import { runEnboxSync } from '@/enbox/effect/runtime';
+import { randomUuidEffect } from '@/lib/browser-effects';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -21,7 +23,7 @@ export default function CreateIdentityPage() {
   const { mutate, isPending, error } = useCreateIdentity();
 
   // Random seed for generating defaults — changes on "regenerate"
-  const [seed, setSeed] = useState(() => crypto.randomUUID());
+  const [seed, setSeed] = useState(() => runEnboxSync(randomUuidEffect()));
 
   // Form state
   const [persona, setPersona] = useState('');
@@ -82,7 +84,7 @@ export default function CreateIdentityPage() {
   const handleRegenerate = useCallback(() => {
     setAvatarCustom(false);
     setHeroCustom(false);
-    setSeed(crypto.randomUUID());
+    setSeed(runEnboxSync(randomUuidEffect()));
   }, []);
 
   function handleAvatarUpload(file: File) {

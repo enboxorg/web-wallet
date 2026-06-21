@@ -1,3 +1,7 @@
+import { Effect } from 'effect';
+import { runEnboxSync } from '@/enbox/effect/runtime';
+import { localStorageGetEffect } from './browser-effects';
+
 /** Auto-lock timeout options in milliseconds. */
 export const AUTO_LOCK_OPTIONS = [
   { label: '5 minutes', value: 5 * 60 * 1000 },
@@ -15,14 +19,19 @@ export const AUTO_LOCK_STORAGE_KEY = 'enbox:autoLockTimeout';
 
 /** Read the user's auto-lock timeout preference from localStorage. */
 export function getAutoLockTimeout(): number {
-  try {
-    const stored = localStorage.getItem(AUTO_LOCK_STORAGE_KEY);
+  return runEnboxSync(getAutoLockTimeoutEffect());
+}
+
+export function getAutoLockTimeoutEffect() {
+  return localStorageGetEffect(AUTO_LOCK_STORAGE_KEY).pipe(
+    Effect.map((stored) => {
     if (stored) {
       const val = parseInt(stored, 10);
       if (!isNaN(val) && val >= 0) return val;
     }
-  } catch {}
-  return DEFAULT_AUTO_LOCK_MS;
+      return DEFAULT_AUTO_LOCK_MS;
+    }),
+  );
 }
 
 /** @deprecated Use `getAutoLockTimeout()` instead. */

@@ -1,3 +1,6 @@
+import { Effect } from 'effect';
+
+import { runEnboxPromise, runEnboxSync } from '@/enbox/effect/runtime';
 import {
   AUTH_METHOD_STORAGE_KEY,
   PASSKEY_CREDENTIAL_STORAGE_KEY,
@@ -58,35 +61,59 @@ const AUTHENTICATOR_DATA_FLAGS_OFFSET = 32;
 const AUTHENTICATOR_FLAG_USER_PRESENT = 0x01;
 const AUTHENTICATOR_FLAG_USER_VERIFIED = 0x04;
 
+function passkeyError(operation: string) {
+  return (cause: unknown) => {
+    if (cause instanceof Error) return cause;
+    return new Error(`${operation} failed`);
+  };
+}
+
 /**
  * Returns true when platform passkeys can be created. The stronger PRF vault
  * wrapping path is used when the selected passkey provider supports it;
  * otherwise the wallet falls back to a passkey-gated local wrapper.
  */
 export async function isPasskeySupported(): Promise<boolean> {
-  if (!canCheckPasskeySupport()) return false;
+  return runEnboxPromise(isPasskeySupportedEffect());
+}
 
-  try {
-    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-  } catch {
-    return false;
-  }
+export function isPasskeySupportedEffect() {
+  return Effect.gen(function* () {
+    const canCheck = yield* canCheckPasskeySupportEffect();
+    if (!canCheck) return false;
+
+    return yield* Effect.tryPromise({
+      try: async () => PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+      catch: passkeyError('passkey.supportCheck'),
+    }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+  });
 }
 
 export function canCheckPasskeySupport(): boolean {
-  if (globalThis.isSecureContext === false) return false;
-  return hasWebAuthnRuntime() && typeof indexedDB !== 'undefined';
+  return runEnboxSync(canCheckPasskeySupportEffect());
+}
+
+export function canCheckPasskeySupportEffect() {
+  return Effect.sync(() => {
+    if (globalThis.isSecureContext === false) return false;
+    return hasWebAuthnRuntime() && typeof indexedDB !== 'undefined';
+  });
 }
 
 export async function isPasskeyUnlockAvailable(): Promise<boolean> {
-  if (!hasWebAuthnRuntime()) return false;
-  if (globalThis.isSecureContext === false) return false;
+  return runEnboxPromise(isPasskeyUnlockAvailableEffect());
+}
 
-  try {
-    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
-  } catch {
-    return false;
-  }
+export function isPasskeyUnlockAvailableEffect() {
+  return Effect.gen(function* () {
+    if (!hasWebAuthnRuntime()) return false;
+    if (globalThis.isSecureContext === false) return false;
+
+    return yield* Effect.tryPromise({
+      try: async () => PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+      catch: passkeyError('passkey.unlockSupportCheck'),
+    }).pipe(Effect.catchAll(() => Effect.succeed(false)));
+  });
 }
 
 export function isPasskeyVaultUnsupportedError(error: unknown): boolean {
@@ -94,97 +121,147 @@ export function isPasskeyVaultUnsupportedError(error: unknown): boolean {
 }
 
 export function getStoredAuthMethod(): WalletAuthMethod | null {
-  try {
-    const value = localStorage.getItem(AUTH_METHOD_STORAGE_KEY);
-    return value === 'pin' || value === 'passkey' ? value : null;
-  } catch {
-    return null;
-  }
+  return runEnboxSync(getStoredAuthMethodEffect());
+}
+
+export function getStoredAuthMethodEffect() {
+  return Effect.sync(() => {
+    try {
+      const value = localStorage.getItem(AUTH_METHOD_STORAGE_KEY);
+      return value === 'pin' || value === 'passkey' ? value : null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 export function hasStoredPasskeyCredential(): boolean {
-  return getStoredPasskeyCredential() !== null;
+  return runEnboxSync(hasStoredPasskeyCredentialEffect());
+}
+
+export function hasStoredPasskeyCredentialEffect() {
+  return getStoredPasskeyCredentialEffect().pipe(
+    Effect.map((credential) => credential !== null),
+  );
 }
 
 export function storePasskeyCredential(credential: StoredPasskeyCredential): void {
-  localStorage.setItem(PASSKEY_CREDENTIAL_STORAGE_KEY, JSON.stringify(credential));
-  localStorage.setItem(AUTH_METHOD_STORAGE_KEY, 'passkey');
+  runEnboxSync(storePasskeyCredentialEffect(credential));
+}
+
+export function storePasskeyCredentialEffect(credential: StoredPasskeyCredential) {
+  return Effect.try({
+    try: () => {
+      localStorage.setItem(PASSKEY_CREDENTIAL_STORAGE_KEY, JSON.stringify(credential));
+      localStorage.setItem(AUTH_METHOD_STORAGE_KEY, 'passkey');
+    },
+    catch: passkeyError('passkey.storeCredential'),
+  });
 }
 
 export function clearPasskeyCredential(): void {
-  try {
-    localStorage.removeItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
-    if (localStorage.getItem(AUTH_METHOD_STORAGE_KEY) === 'passkey') {
-      localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
+  runEnboxSync(clearPasskeyCredentialEffect());
+}
+
+export function clearPasskeyCredentialEffect() {
+  return Effect.sync(() => {
+    try {
+      localStorage.removeItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+      if (localStorage.getItem(AUTH_METHOD_STORAGE_KEY) === 'passkey') {
+        localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
+      }
+    } catch {
+      /* noop */
     }
-  } catch {
-    /* noop */
-  }
+  });
 }
 
 export function markPinAuthMethod(): void {
-  try {
-    localStorage.removeItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
-    localStorage.setItem(AUTH_METHOD_STORAGE_KEY, 'pin');
-  } catch {
-    /* noop */
-  }
+  runEnboxSync(markPinAuthMethodEffect());
+}
+
+export function markPinAuthMethodEffect() {
+  return Effect.sync(() => {
+    try {
+      localStorage.removeItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+      localStorage.setItem(AUTH_METHOD_STORAGE_KEY, 'pin');
+    } catch {
+      /* noop */
+    }
+  });
 }
 
 export async function preparePasskeyVaultPassword(): Promise<PreparedPasskeyVault> {
-  if (!(await isPasskeySupported())) {
-    throw new Error('Passkeys are not available on this device. Create a PIN instead.');
-  }
+  return runEnboxPromise(preparePasskeyVaultPasswordEffect());
+}
 
-  const password = randomBase64Url(VAULT_PASSWORD_BYTES);
-  const salt = randomBytes(WEBAUTHN_SALT_BYTES);
-  const credential = await createPasskeyCredential(salt);
-  const prfOutput = await tryGetPrfOutputFromCredential(credential, salt);
+export function preparePasskeyVaultPasswordEffect() {
+  return Effect.gen(function* () {
+    if (!(yield* isPasskeySupportedEffect())) {
+      return yield* Effect.fail(
+        new Error('Passkeys are not available on this device. Create a PIN instead.'),
+      );
+    }
 
-  if (prfOutput) {
-    const wrapped = await wrapVaultPassword(password, prfOutput);
+    const password = yield* randomBase64UrlEffect(VAULT_PASSWORD_BYTES);
+    const salt = yield* randomBytesEffect(WEBAUTHN_SALT_BYTES);
+    const credential = yield* createPasskeyCredentialEffect(salt);
+    const prfOutput = yield* tryGetPrfOutputFromCredentialEffect(credential, salt);
 
-    return {
-      password,
-      credential: {
-        version: 2,
-        wrapping: 'prf',
-        credentialId: bytesToBase64Url(new Uint8Array(credential.rawId)),
-        salt: bytesToBase64Url(salt),
-        iv: bytesToBase64Url(wrapped.iv),
-        wrappedVaultPassword: bytesToBase64Url(wrapped.ciphertext),
-        createdAt: new Date().toISOString(),
-      },
-    };
-  }
+    if (prfOutput) {
+      const wrapped = yield* wrapVaultPasswordEffect(password, prfOutput);
 
-  return prepareLocalWrappedPasskeyVault(password, credential);
+      return {
+        password,
+        credential: {
+          version: 2,
+          wrapping: 'prf',
+          credentialId: bytesToBase64Url(new Uint8Array(credential.rawId)),
+          salt: bytesToBase64Url(salt),
+          iv: bytesToBase64Url(wrapped.iv),
+          wrappedVaultPassword: bytesToBase64Url(wrapped.ciphertext),
+          createdAt: new Date().toISOString(),
+        },
+      } satisfies PreparedPasskeyVault;
+    }
+
+    return yield* prepareLocalWrappedPasskeyVaultEffect(password, credential);
+  });
 }
 
 export async function unlockWithStoredPasskey(): Promise<string> {
-  const stored = getStoredPasskeyCredential();
-  if (!stored) {
-    throw new Error('No passkey is set up for this wallet.');
-  }
-  if (!(await isPasskeyUnlockAvailable())) {
-    throw new Error('Passkeys are not available on this device.');
-  }
-
-  if (stored.wrapping === 'local') {
-    await verifyStoredPasskeyAssertion(stored);
-    const key = await getLocalWrappingKey(stored.keyId);
-    if (!key) {
-      throw new Error('Passkey vault storage is missing. Restore from your recovery phrase to regain access.');
-    }
-    return decryptVaultPasswordWithKey(stored, key);
-  }
-
-  const prfOutput = await getPrfOutputForStoredCredential(stored);
-  return decryptVaultPassword(stored, prfOutput);
+  return runEnboxPromise(unlockWithStoredPasskeyEffect());
 }
 
-function getStoredPasskeyCredential(): StoredPasskeyCredential | null {
-  try {
+export function unlockWithStoredPasskeyEffect() {
+  return Effect.gen(function* () {
+    const stored = yield* getStoredPasskeyCredentialEffect();
+    if (!stored) {
+      return yield* Effect.fail(new Error('No passkey is set up for this wallet.'));
+    }
+    if (!(yield* isPasskeyUnlockAvailableEffect())) {
+      return yield* Effect.fail(new Error('Passkeys are not available on this device.'));
+    }
+
+    if (stored.wrapping === 'local') {
+      yield* verifyStoredPasskeyAssertionEffect(stored);
+      const key = yield* getLocalWrappingKeyEffect(stored.keyId);
+    if (!key) {
+        return yield* Effect.fail(
+          new Error('Passkey vault storage is missing. Restore from your recovery phrase to regain access.'),
+        );
+    }
+      return yield* decryptVaultPasswordWithKeyEffect(stored, key);
+    }
+
+    const prfOutput = yield* getPrfOutputForStoredCredentialEffect(stored);
+    return yield* decryptVaultPasswordEffect(stored, prfOutput);
+  });
+}
+
+function getStoredPasskeyCredentialEffect() {
+  return Effect.sync((): StoredPasskeyCredential | null => {
+    try {
     const raw = localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredPasskeyCredentialBase> & Record<string, unknown>;
@@ -227,9 +304,10 @@ function getStoredPasskeyCredential(): StoredPasskeyCredential | null {
       };
     }
     return null;
-  } catch {
+    } catch {
     return null;
-  }
+    }
+  });
 }
 
 function hasWebAuthnRuntime(): boolean {
@@ -246,163 +324,197 @@ function hasWebAuthnRuntime(): boolean {
   );
 }
 
-async function createPasskeyCredential(salt: Uint8Array): Promise<PublicKeyCredential> {
-  const existing = getStoredPasskeyCredential();
-  const publicKey: PublicKeyCredentialCreationOptions = {
-    challenge: toArrayBuffer(randomBytes(WEBAUTHN_CHALLENGE_BYTES)),
-    rp: { name: PASSKEY_RP_NAME },
-    user: {
-      id: toArrayBuffer(randomBytes(32)),
-      name: PASSKEY_USER_NAME,
-      displayName: PASSKEY_USER_DISPLAY_NAME,
-    },
-    pubKeyCredParams: [
-      { type: 'public-key', alg: -7 },
-      { type: 'public-key', alg: -257 },
-    ],
-    timeout: PASSKEY_TIMEOUT_MS,
-    attestation: 'none',
-    authenticatorSelection: {
-      authenticatorAttachment: 'platform',
-      residentKey: 'preferred',
-      userVerification: 'required',
-    },
-    extensions: {
-      prf: {
-        eval: {
-          first: toArrayBuffer(salt),
+function createPasskeyCredentialEffect(salt: Uint8Array) {
+  return Effect.gen(function* () {
+    const existing = yield* getStoredPasskeyCredentialEffect();
+    const challenge = yield* randomBytesEffect(WEBAUTHN_CHALLENGE_BYTES);
+    const userId = yield* randomBytesEffect(32);
+    const publicKey: PublicKeyCredentialCreationOptions = {
+      challenge: toArrayBuffer(challenge),
+      rp: { name: PASSKEY_RP_NAME },
+      user: {
+        id: toArrayBuffer(userId),
+        name: PASSKEY_USER_NAME,
+        displayName: PASSKEY_USER_DISPLAY_NAME,
+      },
+      pubKeyCredParams: [
+        { type: 'public-key', alg: -7 },
+        { type: 'public-key', alg: -257 },
+      ],
+      timeout: PASSKEY_TIMEOUT_MS,
+      attestation: 'none',
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        residentKey: 'preferred',
+        userVerification: 'required',
+      },
+      extensions: {
+        prf: {
+          eval: {
+            first: toArrayBuffer(salt),
+          },
         },
       },
-    },
-    excludeCredentials: existing
-      ? [{ type: 'public-key', id: toArrayBuffer(base64UrlToBytes(existing.credentialId)) }]
-      : undefined,
-  };
+      excludeCredentials: existing
+        ? [{ type: 'public-key', id: toArrayBuffer(base64UrlToBytes(existing.credentialId)) }]
+        : undefined,
+    };
 
-  const credential = await navigator.credentials.create({ publicKey });
-  return asPublicKeyCredential(credential);
+    const credential = yield* Effect.tryPromise({
+      try: async () => navigator.credentials.create({ publicKey }),
+      catch: passkeyError('passkey.createCredential'),
+    });
+    return asPublicKeyCredential(credential);
+  });
 }
 
-async function tryGetPrfOutputFromCredential(
+function tryGetPrfOutputFromCredentialEffect(
   credential: PublicKeyCredential,
   salt: Uint8Array,
-): Promise<Uint8Array | null> {
+): Effect.Effect<Uint8Array | null, never, never> {
   const output = getPrfOutput(credential);
-  if (output) return output;
+  if (output) return Effect.succeed(output);
 
   const extensionResults = credential.getClientExtensionResults();
   if (extensionResults.prf?.enabled !== true) {
-    return null;
+    return Effect.succeed(null);
   }
 
-  try {
-    return await getPrfOutputForCredentialId(credential.rawId, salt);
-  } catch {
-    return null;
-  }
+  return getPrfOutputForCredentialIdEffect(credential.rawId, salt).pipe(
+    Effect.catchAll(() => Effect.succeed(null)),
+  );
 }
 
-async function getPrfOutputForStoredCredential(
+function getPrfOutputForStoredCredentialEffect(
   credential: StoredPrfPasskeyCredential,
-): Promise<Uint8Array> {
+): Effect.Effect<Uint8Array, Error, never> {
   return getPrfOutputForCredentialId(
     toArrayBuffer(base64UrlToBytes(credential.credentialId)),
     base64UrlToBytes(credential.salt),
   );
 }
 
-async function getPrfOutputForCredentialId(
+function getPrfOutputForCredentialIdEffect(
   credentialId: ArrayBuffer,
   salt: Uint8Array,
-): Promise<Uint8Array> {
-  const publicKey: PublicKeyCredentialRequestOptions = {
-    challenge: toArrayBuffer(randomBytes(WEBAUTHN_CHALLENGE_BYTES)),
-    allowCredentials: [
-      {
-        type: 'public-key',
-        id: credentialId,
-      },
-    ],
-    userVerification: 'required',
-    timeout: PASSKEY_TIMEOUT_MS,
-    extensions: {
-      prf: {
-        eval: {
-          first: toArrayBuffer(salt),
+) {
+  return Effect.gen(function* () {
+    const challenge = yield* randomBytesEffect(WEBAUTHN_CHALLENGE_BYTES);
+    const publicKey: PublicKeyCredentialRequestOptions = {
+      challenge: toArrayBuffer(challenge),
+      allowCredentials: [
+        {
+          type: 'public-key',
+          id: credentialId,
+        },
+      ],
+      userVerification: 'required',
+      timeout: PASSKEY_TIMEOUT_MS,
+      extensions: {
+        prf: {
+          eval: {
+            first: toArrayBuffer(salt),
+          },
         },
       },
-    },
-  };
+    };
 
-  const credential = await navigator.credentials.get({ publicKey });
-  const output = getPrfOutput(asPublicKeyCredential(credential));
-  if (!output) {
-    throw new PasskeyVaultUnsupportedError(
-      'This passkey cannot unlock the wallet vault. Use your recovery phrase to restore access.',
-    );
-  }
-  return output;
+    const credential = yield* Effect.tryPromise({
+      try: async () => navigator.credentials.get({ publicKey }),
+      catch: passkeyError('passkey.getPrfOutput'),
+    });
+    const output = getPrfOutput(asPublicKeyCredential(credential));
+    if (!output) {
+      return yield* Effect.fail(
+        new PasskeyVaultUnsupportedError(
+          'This passkey cannot unlock the wallet vault. Use your recovery phrase to restore access.',
+        ),
+      );
+    }
+    return output;
+  });
 }
 
-async function prepareLocalWrappedPasskeyVault(
+function getPrfOutputForCredentialId(
+  credentialId: ArrayBuffer,
+  salt: Uint8Array,
+): Effect.Effect<Uint8Array, Error, never> {
+  return getPrfOutputForCredentialIdEffect(credentialId, salt);
+}
+
+function prepareLocalWrappedPasskeyVaultEffect(
   password: string,
   credential: PublicKeyCredential,
-): Promise<PreparedPasskeyVault> {
+): Effect.Effect<PreparedPasskeyVault, Error, never> {
   const response = asAttestationResponse(credential.response);
   const publicKey = response.getPublicKey();
   if (!publicKey) {
-    throw new PasskeyVaultUnsupportedError(
-      'This passkey provider did not return enough information to secure the wallet vault. Create a PIN instead.',
+    return Effect.fail(
+      new PasskeyVaultUnsupportedError(
+        'This passkey provider did not return enough information to secure the wallet vault. Create a PIN instead.',
+      ),
     );
   }
 
-  const keyId = randomBase64Url(LOCAL_WRAPPING_KEY_BYTES);
-  const key = await crypto.subtle.generateKey(
-    { name: 'AES-GCM', length: 256 },
-    false,
-    ['encrypt', 'decrypt'],
-  );
-  await storeLocalWrappingKey(keyId, key);
-  const wrapped = await wrapVaultPasswordWithKey(password, key);
+  return Effect.gen(function* () {
+    const keyId = yield* randomBase64UrlEffect(LOCAL_WRAPPING_KEY_BYTES);
+    const key = yield* Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.generateKey(
+          { name: 'AES-GCM', length: 256 },
+          false,
+          ['encrypt', 'decrypt'],
+        ),
+      catch: passkeyError('passkey.generateLocalWrappingKey'),
+    });
+    yield* storeLocalWrappingKeyEffect(keyId, key);
+    const wrapped = yield* wrapVaultPasswordWithKeyEffect(password, key);
 
-  return {
-    password,
-    credential: {
-      version: 2,
-      wrapping: 'local',
-      credentialId: bytesToBase64Url(new Uint8Array(credential.rawId)),
-      publicKey: bytesToBase64Url(new Uint8Array(publicKey)),
-      publicKeyAlgorithm: response.getPublicKeyAlgorithm(),
-      keyId,
-      iv: bytesToBase64Url(wrapped.iv),
-      wrappedVaultPassword: bytesToBase64Url(wrapped.ciphertext),
-      createdAt: new Date().toISOString(),
-    },
-  };
+    return {
+      password,
+      credential: {
+        version: 2,
+        wrapping: 'local',
+        credentialId: bytesToBase64Url(new Uint8Array(credential.rawId)),
+        publicKey: bytesToBase64Url(new Uint8Array(publicKey)),
+        publicKeyAlgorithm: response.getPublicKeyAlgorithm(),
+        keyId,
+        iv: bytesToBase64Url(wrapped.iv),
+        wrappedVaultPassword: bytesToBase64Url(wrapped.ciphertext),
+        createdAt: new Date().toISOString(),
+      },
+    };
+  });
 }
 
-async function verifyStoredPasskeyAssertion(
+function verifyStoredPasskeyAssertionEffect(
   stored: StoredLocalPasskeyCredential,
-): Promise<void> {
-  const challenge = randomBytes(WEBAUTHN_CHALLENGE_BYTES);
-  const publicKey: PublicKeyCredentialRequestOptions = {
-    challenge: toArrayBuffer(challenge),
-    allowCredentials: [
-      {
-        type: 'public-key',
-        id: toArrayBuffer(base64UrlToBytes(stored.credentialId)),
-      },
-    ],
-    userVerification: 'required',
-    timeout: PASSKEY_TIMEOUT_MS,
-  };
+): Effect.Effect<void, Error, never> {
+  return Effect.gen(function* () {
+    const challenge = yield* randomBytesEffect(WEBAUTHN_CHALLENGE_BYTES);
+    const publicKey: PublicKeyCredentialRequestOptions = {
+      challenge: toArrayBuffer(challenge),
+      allowCredentials: [
+        {
+          type: 'public-key',
+          id: toArrayBuffer(base64UrlToBytes(stored.credentialId)),
+        },
+      ],
+      userVerification: 'required',
+      timeout: PASSKEY_TIMEOUT_MS,
+    };
 
-  const credential = asPublicKeyCredential(await navigator.credentials.get({ publicKey }));
-  const response = asAssertionResponse(credential.response);
-  const clientData = parseClientData(response.clientDataJSON);
-  if (clientData.type !== 'webauthn.get' || clientData.challenge !== bytesToBase64Url(challenge)) {
-    throw new Error('Passkey verification failed.');
-  }
+    const credential = asPublicKeyCredential(
+      yield* Effect.tryPromise({
+        try: async () => navigator.credentials.get({ publicKey }),
+        catch: passkeyError('passkey.verifyAssertion'),
+      }),
+    );
+    const response = asAssertionResponse(credential.response);
+    const clientData = parseClientData(response.clientDataJSON);
+    if (clientData.type !== 'webauthn.get' || clientData.challenge !== bytesToBase64Url(challenge)) {
+      return yield* Effect.fail(new Error('Passkey verification failed.'));
+    }
 
   const authenticatorData = bufferSourceToBytes(response.authenticatorData);
   const flags = authenticatorData[AUTHENTICATOR_DATA_FLAGS_OFFSET] ?? 0;
@@ -410,21 +522,25 @@ async function verifyStoredPasskeyAssertion(
     (flags & AUTHENTICATOR_FLAG_USER_PRESENT) === 0 ||
     (flags & AUTHENTICATOR_FLAG_USER_VERIFIED) === 0
   ) {
-    throw new Error('Passkey verification requires user verification.');
+      return yield* Effect.fail(new Error('Passkey verification requires user verification.'));
   }
 
-  const clientDataHash = await crypto.subtle.digest('SHA-256', response.clientDataJSON);
+    const clientDataHash = yield* Effect.tryPromise({
+      try: async () => crypto.subtle.digest('SHA-256', response.clientDataJSON),
+      catch: passkeyError('passkey.clientDataHash'),
+    });
   const signedData = concatBytes(authenticatorData, new Uint8Array(clientDataHash));
-  const publicKeyCryptoKey = await importPasskeyPublicKey(stored);
-  const verified = await verifyPasskeySignature(
+    const publicKeyCryptoKey = yield* importPasskeyPublicKeyEffect(stored);
+    const verified = yield* verifyPasskeySignatureEffect(
     publicKeyCryptoKey,
     stored.publicKeyAlgorithm,
     response.signature,
     signedData,
   );
   if (!verified) {
-    throw new Error('Passkey verification failed.');
+      return yield* Effect.fail(new Error('Passkey verification failed.'));
   }
+  });
 }
 
 function asPublicKeyCredential(credential: Credential | null): PublicKeyCredential {
@@ -462,134 +578,182 @@ function getPrfOutput(credential: PublicKeyCredential): Uint8Array | null {
   return output ? bufferSourceToBytes(output) : null;
 }
 
-async function wrapVaultPassword(
+function wrapVaultPasswordEffect(
   password: string,
   prfOutput: Uint8Array,
-): Promise<{ iv: Uint8Array; ciphertext: Uint8Array }> {
-  const iv = randomBytes(AES_GCM_IV_BYTES);
-  const key = await aesKeyFromPrfOutput(prfOutput, ['encrypt']);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
-    key,
-    toArrayBuffer(new TextEncoder().encode(password)),
-  );
-  return { iv, ciphertext: new Uint8Array(ciphertext) };
+): Effect.Effect<{ iv: Uint8Array; ciphertext: Uint8Array }, Error, never> {
+  return Effect.gen(function* () {
+    const iv = yield* randomBytesEffect(AES_GCM_IV_BYTES);
+    const key = yield* aesKeyFromPrfOutputEffect(prfOutput, ['encrypt']);
+    const ciphertext = yield* Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: toArrayBuffer(iv) },
+          key,
+          toArrayBuffer(new TextEncoder().encode(password)),
+        ),
+      catch: passkeyError('passkey.wrapVaultPassword'),
+    });
+    return { iv, ciphertext: new Uint8Array(ciphertext) };
+  });
 }
 
-async function decryptVaultPassword(
+function decryptVaultPasswordEffect(
   credential: StoredPrfPasskeyCredential,
   prfOutput: Uint8Array,
-): Promise<string> {
-  const key = await aesKeyFromPrfOutput(prfOutput, ['decrypt']);
-  return decryptVaultPasswordWithKey(credential, key);
+): Effect.Effect<string, Error, never> {
+  return Effect.gen(function* () {
+    const key = yield* aesKeyFromPrfOutputEffect(prfOutput, ['decrypt']);
+    return yield* decryptVaultPasswordWithKeyEffect(credential, key);
+  });
 }
 
-async function wrapVaultPasswordWithKey(
+function wrapVaultPasswordWithKeyEffect(
   password: string,
   key: CryptoKey,
-): Promise<{ iv: Uint8Array; ciphertext: Uint8Array }> {
-  const iv = randomBytes(AES_GCM_IV_BYTES);
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(iv) },
-    key,
-    toArrayBuffer(new TextEncoder().encode(password)),
-  );
-  return { iv, ciphertext: new Uint8Array(ciphertext) };
+): Effect.Effect<{ iv: Uint8Array; ciphertext: Uint8Array }, Error, never> {
+  return Effect.gen(function* () {
+    const iv = yield* randomBytesEffect(AES_GCM_IV_BYTES);
+    const ciphertext = yield* Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.encrypt(
+          { name: 'AES-GCM', iv: toArrayBuffer(iv) },
+          key,
+          toArrayBuffer(new TextEncoder().encode(password)),
+        ),
+      catch: passkeyError('passkey.wrapVaultPasswordWithKey'),
+    });
+    return { iv, ciphertext: new Uint8Array(ciphertext) };
+  });
 }
 
-async function decryptVaultPasswordWithKey(
+function decryptVaultPasswordWithKeyEffect(
   credential: StoredPasskeyCredential,
   key: CryptoKey,
-): Promise<string> {
-  const plaintext = await crypto.subtle.decrypt(
-    { name: 'AES-GCM', iv: toArrayBuffer(base64UrlToBytes(credential.iv)) },
-    key,
-    toArrayBuffer(base64UrlToBytes(credential.wrappedVaultPassword)),
-  );
-  return new TextDecoder().decode(plaintext);
+): Effect.Effect<string, Error, never> {
+  return Effect.gen(function* () {
+    const plaintext = yield* Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: toArrayBuffer(base64UrlToBytes(credential.iv)) },
+          key,
+          toArrayBuffer(base64UrlToBytes(credential.wrappedVaultPassword)),
+        ),
+      catch: passkeyError('passkey.decryptVaultPassword'),
+    });
+    return new TextDecoder().decode(plaintext);
+  });
 }
 
-async function importPasskeyPublicKey(
+function importPasskeyPublicKeyEffect(
   credential: StoredLocalPasskeyCredential,
-): Promise<CryptoKey> {
+): Effect.Effect<CryptoKey, Error, never> {
   const publicKey = toArrayBuffer(base64UrlToBytes(credential.publicKey));
   if (credential.publicKeyAlgorithm === ES256_ALGORITHM) {
-    return crypto.subtle.importKey(
-      'spki',
-      publicKey,
-      { name: 'ECDSA', namedCurve: 'P-256' },
-      false,
-      ['verify'],
-    );
+    return Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.importKey(
+          'spki',
+          publicKey,
+          { name: 'ECDSA', namedCurve: 'P-256' },
+          false,
+          ['verify'],
+        ),
+      catch: passkeyError('passkey.importEcdsaPublicKey'),
+    });
   }
   if (credential.publicKeyAlgorithm === RS256_ALGORITHM) {
-    return crypto.subtle.importKey(
-      'spki',
-      publicKey,
-      { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
-      false,
-      ['verify'],
-    );
+    return Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.importKey(
+          'spki',
+          publicKey,
+          { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+          false,
+          ['verify'],
+        ),
+      catch: passkeyError('passkey.importRsaPublicKey'),
+    });
   }
-  throw new Error('Unsupported passkey algorithm.');
+  return Effect.fail(new Error('Unsupported passkey algorithm.'));
 }
 
-async function verifyPasskeySignature(
+function verifyPasskeySignatureEffect(
   key: CryptoKey,
   algorithm: COSEAlgorithmIdentifier,
   signature: ArrayBuffer,
   signedData: Uint8Array,
-): Promise<boolean> {
+): Effect.Effect<boolean, Error, never> {
   if (algorithm === ES256_ALGORITHM) {
-    return crypto.subtle.verify(
-      { name: 'ECDSA', hash: 'SHA-256' },
-      key,
-      toArrayBuffer(derEcdsaSignatureToRaw(new Uint8Array(signature), 32)),
-      toArrayBuffer(signedData),
-    );
+    return Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.verify(
+          { name: 'ECDSA', hash: 'SHA-256' },
+          key,
+          toArrayBuffer(derEcdsaSignatureToRaw(new Uint8Array(signature), 32)),
+          toArrayBuffer(signedData),
+        ),
+      catch: passkeyError('passkey.verifyEcdsaSignature'),
+    });
   }
   if (algorithm === RS256_ALGORITHM) {
-    return crypto.subtle.verify(
-      { name: 'RSASSA-PKCS1-v1_5' },
-      key,
-      signature,
-      toArrayBuffer(signedData),
-    );
+    return Effect.tryPromise({
+      try: async () =>
+        crypto.subtle.verify(
+          { name: 'RSASSA-PKCS1-v1_5' },
+          key,
+          signature,
+          toArrayBuffer(signedData),
+        ),
+      catch: passkeyError('passkey.verifyRsaSignature'),
+    });
   }
-  return false;
+  return Effect.succeed(false);
 }
 
-async function aesKeyFromPrfOutput(
+function aesKeyFromPrfOutputEffect(
   output: Uint8Array,
   usages: KeyUsage[],
-): Promise<CryptoKey> {
-  const digest = await crypto.subtle.digest('SHA-256', toArrayBuffer(output));
-  return crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, usages);
+): Effect.Effect<CryptoKey, Error, never> {
+  return Effect.gen(function* () {
+    const digest = yield* Effect.tryPromise({
+      try: async () => crypto.subtle.digest('SHA-256', toArrayBuffer(output)),
+      catch: passkeyError('passkey.prfDigest'),
+    });
+    return yield* Effect.tryPromise({
+      try: async () => crypto.subtle.importKey('raw', digest, { name: 'AES-GCM' }, false, usages),
+      catch: passkeyError('passkey.importAesKey'),
+    });
+  });
 }
 
-async function storeLocalWrappingKey(keyId: string, key: CryptoKey): Promise<void> {
-  const db = await openLocalWrappingDb();
-  await idbRequest<IDBValidKey>(
-    db.transaction(LOCAL_WRAPPING_STORE, 'readwrite')
-      .objectStore(LOCAL_WRAPPING_STORE)
-      .put(key, keyId),
-  );
-  db.close();
+function storeLocalWrappingKeyEffect(keyId: string, key: CryptoKey) {
+  return Effect.gen(function* () {
+    const db = yield* openLocalWrappingDbEffect();
+    yield* idbRequestEffect<IDBValidKey>(
+      db.transaction(LOCAL_WRAPPING_STORE, 'readwrite')
+        .objectStore(LOCAL_WRAPPING_STORE)
+        .put(key, keyId),
+    );
+    db.close();
+  });
 }
 
-async function getLocalWrappingKey(keyId: string): Promise<CryptoKey | null> {
-  const db = await openLocalWrappingDb();
-  const key = await idbRequest<CryptoKey | undefined>(
-    db.transaction(LOCAL_WRAPPING_STORE, 'readonly')
-      .objectStore(LOCAL_WRAPPING_STORE)
-      .get(keyId),
-  );
-  db.close();
-  return key ?? null;
+function getLocalWrappingKeyEffect(keyId: string): Effect.Effect<CryptoKey | null, Error, never> {
+  return Effect.gen(function* () {
+    const db = yield* openLocalWrappingDbEffect();
+    const key = yield* idbRequestEffect<CryptoKey | undefined>(
+      db.transaction(LOCAL_WRAPPING_STORE, 'readonly')
+        .objectStore(LOCAL_WRAPPING_STORE)
+        .get(keyId),
+    );
+    db.close();
+    return key ?? null;
+  });
 }
 
-function openLocalWrappingDb(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
+function openLocalWrappingDbEffect(): Effect.Effect<IDBDatabase, Error, never> {
+  return Effect.async<IDBDatabase, Error>((resume) => {
     const request = indexedDB.open(LOCAL_WRAPPING_DB_NAME, LOCAL_WRAPPING_DB_VERSION);
     request.onupgradeneeded = () => {
       const db = request.result;
@@ -597,27 +761,37 @@ function openLocalWrappingDb(): Promise<IDBDatabase> {
         db.createObjectStore(LOCAL_WRAPPING_STORE);
       }
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('Failed to open passkey vault storage.'));
-    request.onblocked = () => reject(new Error('Passkey vault storage is blocked by another tab.'));
+    request.onsuccess = () => resume(Effect.succeed(request.result));
+    request.onerror = () =>
+      resume(Effect.fail(request.error ?? new Error('Failed to open passkey vault storage.')));
+    request.onblocked = () =>
+      resume(Effect.fail(new Error('Passkey vault storage is blocked by another tab.')));
   });
 }
 
-function idbRequest<T>(request: IDBRequest<T>): Promise<T> {
-  return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('Passkey vault storage failed.'));
+function idbRequestEffect<T>(request: IDBRequest<T>): Effect.Effect<T, Error, never> {
+  return Effect.async<T, Error>((resume) => {
+    request.onsuccess = () => resume(Effect.succeed(request.result));
+    request.onerror = () =>
+      resume(Effect.fail(request.error ?? new Error('Passkey vault storage failed.')));
   });
 }
 
-function randomBytes(length: number): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(length);
-  crypto.getRandomValues(bytes);
-  return bytes;
+function randomBytesEffect(length: number): Effect.Effect<Uint8Array<ArrayBuffer>, Error, never> {
+  return Effect.try({
+    try: () => {
+      const bytes = new Uint8Array(length);
+      crypto.getRandomValues(bytes);
+      return bytes;
+    },
+    catch: passkeyError('passkey.randomBytes'),
+  });
 }
 
-function randomBase64Url(length: number): string {
-  return bytesToBase64Url(randomBytes(length));
+function randomBase64UrlEffect(length: number): Effect.Effect<string, Error, never> {
+  return randomBytesEffect(length).pipe(
+    Effect.map(bytesToBase64Url),
+  );
 }
 
 function bufferSourceToBytes(source: BufferSource): Uint8Array<ArrayBuffer> {

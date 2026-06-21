@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { AuthManager } from '@enbox/auth';
+import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
 
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { DwnRegistrationError, sdkError } from './effect/errors';
@@ -72,6 +72,13 @@ export function createWalletAuthManagerEffect() {
         },
       } as Parameters<typeof AuthManager.create>[0]),
     catch: sdkError('authManager.create'),
+  });
+}
+
+export function requestLocalDwnDiscoveryEffect() {
+  return Effect.try({
+    try: () => requestLocalDwnDiscovery(),
+    catch: sdkError('auth.requestLocalDwnDiscovery'),
   });
 }
 
