@@ -25,10 +25,11 @@ import { truncateDid, copyToClipboard } from '@/lib/utils';
 import OverviewTab from './tabs/OverviewTab';
 import ProtocolsTab from './tabs/ProtocolsTab';
 import WalletsTab from './tabs/WalletsTab';
+import SocialGraphTab from './tabs/SocialGraphTab';
 import PermissionsTab from './tabs/PermissionsTab';
 import ActivityTab from './tabs/ActivityTab';
 
-const TABS = ['Overview', 'Protocols', 'Wallets', 'Permissions', 'Activity'] as const;
+const TABS = ['Overview', 'Protocols', 'Wallets', 'Social', 'Permissions', 'Activity'] as const;
 const tabId = (i: number) => `identity-tab-${i}`;
 const panelId = (i: number) => `identity-panel-${i}`;
 
@@ -51,6 +52,7 @@ export default function IdentityDetailsPage() {
       'Overview',
       protocolCount > 0 ? `Protocols (${protocolCount})` : 'Protocols',
       'Wallets',
+      'Social',
       permissionCount > 0 ? `Permissions (${permissionCount})` : 'Permissions',
       'Activity',
     ];
@@ -238,9 +240,12 @@ export default function IdentityDetailsPage() {
         <WalletsTab did={did} />
       </TabPanel>
       <TabPanel id={panelId(3)} labelledBy={tabId(3)} active={activeTab === 3}>
-        <PermissionsTab did={did} />
+        <SocialGraphTab did={did} />
       </TabPanel>
       <TabPanel id={panelId(4)} labelledBy={tabId(4)} active={activeTab === 4}>
+        <PermissionsTab did={did} />
+      </TabPanel>
+      <TabPanel id={panelId(5)} labelledBy={tabId(5)} active={activeTab === 5}>
         <ActivityTab did={did} />
       </TabPanel>
 
