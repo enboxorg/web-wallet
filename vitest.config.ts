@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      'ajv/dist/2020.js': path.resolve(__dirname, './src/vendor/ajv-2020-csp.ts'),
     },
   },
   define: {
@@ -14,6 +15,11 @@ export default defineConfig({
     globals: true,
     environment: 'happy-dom',
     setupFiles: ['./src/vitest.setup.ts'],
+    server: {
+      deps: {
+        inline: ['@enbox/dwn-sdk-js'],
+      },
+    },
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['src/e2e/**', 'node_modules'],
     css: false,

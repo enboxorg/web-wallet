@@ -13,6 +13,7 @@ export default defineConfig({
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
+            'ajv/dist/2020.js': path.resolve(__dirname, './src/vendor/ajv-2020-csp.ts'),
         },
     },
     define: {
