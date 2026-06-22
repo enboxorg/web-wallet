@@ -31,6 +31,7 @@ import {
 } from '../effect/errors';
 import { CurrentAgent, enboxLiveLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
+import { normalizeProfileImageBlob } from '@/lib/profile-images';
 
 function registerIdentityForSyncEffect(did: string) {
   return Effect.gen(function* () {
@@ -147,6 +148,66 @@ function getRequiredIdentityEffect(did: string) {
   });
 }
 
+function normalizeProfileImageEffect(image: Blob, label: string) {
+  return Effect.try({
+    try: () => normalizeProfileImageBlob(image, label),
+    catch: (err) => err instanceof Error ? err : new Error(String(err)),
+  });
+}
+
+function setProfileImageEffect(
+  repo: any,
+  ctxId: string,
+  kind: 'avatar' | 'hero',
+  image: Blob,
+  label: string,
+) {
+  return Effect.gen(function* () {
+    const normalized = yield* normalizeProfileImageEffect(image, label);
+
+    yield* Effect.tryPromise({
+      try: () =>
+        repo.profile[kind].set(ctxId, {
+          data       : normalized,
+          dataFormat : normalized.type,
+        }),
+      catch: sdkError(`profile.${kind}.set`),
+    });
+  });
+}
+
+function replaceProfileImageEffect(
+  repo: any,
+  ctxId: string,
+  kind: 'avatar' | 'hero',
+  image: Blob,
+  label: string,
+) {
+  return Effect.gen(function* () {
+    const normalized = yield* normalizeProfileImageEffect(image, label);
+    const existing = (yield* Effect.tryPromise({
+      try: () => repo.profile[kind].get(ctxId),
+      catch: sdkError(`profile.${kind}.get`),
+    })) as { delete(): Promise<unknown> } | undefined;
+
+    if (existing) {
+      yield* Effect.tryPromise({
+        try: () => existing.delete(),
+        catch: sdkError(`profile.${kind}.delete`),
+      });
+    }
+
+    yield* Effect.tryPromise({
+      try: () =>
+        repo.profile[kind].set(ctxId, {
+          data       : normalized,
+          dataFormat : normalized.type,
+        }),
+      catch: sdkError(`profile.${kind}.set`),
+    });
+  });
+}
+
 // ── Create identity ────────────────────────────────────────────────
 
 export interface CreateIdentityParams {
@@ -258,27 +319,13 @@ export function createIdentityEffect(params: CreateIdentityParams) {
     // 6. Set avatar if provided
     if (params.avatar && profileRecord) {
       const ctxId = profileRecord.contextId as string;
-      const avatar = params.avatar;
-      yield* Effect.tryPromise({
-        try: () =>
-          repo.profile.avatar.set(ctxId, {
-            data: avatar,
-          }),
-        catch: sdkError('profile.avatar.set'),
-      });
+      yield* setProfileImageEffect(repo, ctxId, 'avatar', params.avatar, 'Avatar image');
     }
 
     // 7. Set hero if provided
     if (params.hero && profileRecord) {
       const ctxId = profileRecord.contextId as string;
-      const hero = params.hero;
-      yield* Effect.tryPromise({
-        try: () =>
-          repo.profile.hero.set(ctxId, {
-            data: hero,
-          }),
-        catch: sdkError('profile.hero.set'),
-      });
+      yield* setProfileImageEffect(repo, ctxId, 'hero', params.hero, 'Banner image');
     }
 
     // 8. Create wallet record
@@ -348,14 +395,7 @@ export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams)
 
     if (params.avatar !== undefined && ctxId) {
       if (params.avatar) {
-        const avatar = params.avatar;
-        yield* Effect.tryPromise({
-          try: () =>
-            repo.profile.avatar.set(ctxId, {
-              data: avatar,
-            }),
-          catch: sdkError('profile.avatar.set'),
-        });
+        yield* replaceProfileImageEffect(repo, ctxId, 'avatar', params.avatar, 'Avatar image');
       } else {
         const existing = yield* Effect.tryPromise({
           try: () => repo.profile.avatar.get(ctxId),
@@ -372,14 +412,7 @@ export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams)
 
     if (params.hero !== undefined && ctxId) {
       if (params.hero) {
-        const hero = params.hero;
-        yield* Effect.tryPromise({
-          try: () =>
-            repo.profile.hero.set(ctxId, {
-              data: hero,
-            }),
-          catch: sdkError('profile.hero.set'),
-        });
+        yield* replaceProfileImageEffect(repo, ctxId, 'hero', params.hero, 'Banner image');
       } else {
         const existing = yield* Effect.tryPromise({
           try: () => repo.profile.hero.get(ctxId),

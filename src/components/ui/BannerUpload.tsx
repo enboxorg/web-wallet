@@ -1,11 +1,16 @@
 import { useRef } from 'react';
 import { Upload, X, ImagePlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  PROFILE_IMAGE_ACCEPT,
+  validateProfileImageBlob,
+} from '@/lib/profile-images';
 
 interface BannerUploadProps {
   src?: string | null;
   onUpload: (file: File) => void;
   onClear?: () => void;
+  onError?: (message: string) => void;
   className?: string;
 }
 
@@ -13,13 +18,21 @@ export function BannerUpload({
   src,
   onUpload,
   onClear,
+  onError,
   className,
 }: BannerUploadProps) {
   const inputRef = useRef<HTMLInputElement>(null);
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) onUpload(file);
+    if (file) {
+      const error = validateProfileImageBlob(file, 'Banner image');
+      if (error) {
+        onError?.(error);
+      } else {
+        onUpload(file);
+      }
+    }
     e.target.value = '';
   }
 
@@ -84,7 +97,8 @@ export function BannerUpload({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={PROFILE_IMAGE_ACCEPT}
+        aria-label="Banner image file"
         onChange={handleChange}
         className="hidden"
         tabIndex={-1}

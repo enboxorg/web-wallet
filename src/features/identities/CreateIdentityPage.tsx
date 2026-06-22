@@ -160,12 +160,14 @@ export default function CreateIdentityPage() {
             src={heroPreview}
             onUpload={handleHeroUpload}
             onClear={handleHeroClear}
+            onError={(message) => toast.error(message)}
           />
           <div className="-mt-10 ml-4 relative z-10">
             <AvatarUpload
               src={avatarPreview}
               name={displayName || persona}
               onUpload={handleAvatarUpload}
+              onError={(message) => toast.error(message)}
               size="xl"
             />
           </div>

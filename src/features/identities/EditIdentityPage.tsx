@@ -196,6 +196,7 @@ export default function EditIdentityPage() {
           src={heroPreview}
           onUpload={handleHeroUpload}
           onClear={handleHeroClear}
+          onError={(message) => toast.error(message)}
         />
 
         {/* Avatar overlapping the banner */}
@@ -204,6 +205,7 @@ export default function EditIdentityPage() {
             src={avatarPreview}
             name={displayName}
             onUpload={handleAvatarUpload}
+            onError={(message) => toast.error(message)}
             size="xl"
           />
         </div>
