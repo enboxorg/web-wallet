@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  getUnsupportedConnectPermissionError,
   isDWebConnectRequestEvent,
   normalizeTrustedOrigin,
   referrerOrigin,
@@ -15,7 +16,11 @@ const permissionRequest = {
     structure: {},
   },
   permissionScopes: [
-    { protocol: 'https://example.com/protocols/demo' },
+    {
+      interface: 'Records',
+      method: 'Read',
+      protocol: 'https://example.com/protocols/demo',
+    },
   ],
 };
 
@@ -89,6 +94,67 @@ describe('DWeb Connect message hardening', () => {
     expect(sanitized?.appName).toBeUndefined();
     expect(sanitized?.appIcon).toBeUndefined();
     expect(sanitized?.requestedDid).toBeUndefined();
+  });
+
+  it('reports removed read-like record scopes as unsupported', () => {
+    for (const method of ['Query', 'Subscribe', 'Count']) {
+      expect(getUnsupportedConnectPermissionError([{
+        protocolDefinition: permissionRequest.protocolDefinition,
+        permissionScopes: [{
+          interface: 'Records',
+          method,
+          protocol: 'https://example.com/protocols/demo',
+        }],
+      } as any])).toBe(
+        `Records.${method} is no longer supported in DWeb Connect. The app must request Records.Read instead.`,
+      );
+    }
+  });
+
+  it('reports delegated protocol configure as unsupported', () => {
+    expect(getUnsupportedConnectPermissionError([{
+      protocolDefinition: permissionRequest.protocolDefinition,
+      permissionScopes: [{
+        interface: 'Protocols',
+        method: 'Configure',
+        protocol: 'https://example.com/protocols/demo',
+      }],
+    } as any])).toBe(
+      'Protocols.Configure cannot be delegated through DWeb Connect. The wallet configures protocols during approval.',
+    );
+  });
+
+  it('allows current connect support and record scopes', () => {
+    expect(getUnsupportedConnectPermissionError([{
+      protocolDefinition: permissionRequest.protocolDefinition,
+      permissionScopes: [
+        {
+          interface: 'Protocols',
+          method: 'Query',
+          protocol: 'https://example.com/protocols/demo',
+        },
+        {
+          interface: 'Messages',
+          method: 'Read',
+          protocol: 'https://example.com/protocols/demo',
+        },
+        {
+          interface: 'Records',
+          method: 'Read',
+          protocol: 'https://example.com/protocols/demo',
+        },
+        {
+          interface: 'Records',
+          method: 'Write',
+          protocol: 'https://example.com/protocols/demo',
+        },
+        {
+          interface: 'Records',
+          method: 'Delete',
+          protocol: 'https://example.com/protocols/demo',
+        },
+      ],
+    } as any])).toBeUndefined();
   });
 
   it('requires messages to come from the opener and active origin', () => {

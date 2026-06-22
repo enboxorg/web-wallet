@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { getProtocolName, getProtocolInfo, getScopeColor } from '../protocol-names';
+import { getProtocolName, getProtocolInfo, getScopeColor, getScopeLabel } from '../protocol-names';
 
 describe('getProtocolName', () => {
   // ── Known protocol URIs ───────────────────────────────────────────
@@ -98,15 +98,12 @@ describe('getProtocolInfo', () => {
 });
 
 describe('getScopeColor', () => {
-  it('returns green for read-like scopes', () => {
+  it('returns green for read', () => {
     expect(getScopeColor('Read')).toBe('green');
-    expect(getScopeColor('Query')).toBe('green');
-    expect(getScopeColor('Subscribe')).toBe('green');
   });
 
-  it('returns amber for write-like scopes', () => {
+  it('returns amber for write', () => {
     expect(getScopeColor('Write')).toBe('amber');
-    expect(getScopeColor('Configure')).toBe('amber');
   });
 
   it('returns red for delete', () => {
@@ -114,6 +111,23 @@ describe('getScopeColor', () => {
   });
 
   it('returns gray for unknown scopes', () => {
+    expect(getScopeColor('Query')).toBe('gray');
+    expect(getScopeColor('Subscribe')).toBe('gray');
+    expect(getScopeColor('Configure')).toBe('gray');
     expect(getScopeColor('SomethingElse')).toBe('gray');
+  });
+});
+
+describe('getScopeLabel', () => {
+  it('uses friendly labels for supported record permissions', () => {
+    expect(getScopeLabel({ interface: 'Records', method: 'Read' })).toBe('Read');
+    expect(getScopeLabel({ interface: 'Records', method: 'Write' })).toBe('Write');
+    expect(getScopeLabel({ interface: 'Records', method: 'Delete' })).toBe('Delete');
+  });
+
+  it('keeps unsupported and non-record scopes explicit', () => {
+    expect(getScopeLabel({ interface: 'Records', method: 'Query' })).toBe('Records.Query');
+    expect(getScopeLabel({ interface: 'Records', method: 'Subscribe' })).toBe('Records.Subscribe');
+    expect(getScopeLabel({ interface: 'Protocols', method: 'Configure' })).toBe('Protocols.Configure');
   });
 });

@@ -61,15 +61,16 @@ export function getProtocolInfo(uri: string): ProtocolInfo {
 /** Human-readable label for a DWN permission scope interface + method. */
 export function getScopeLabel(scope: { interface: string; method: string }): string {
   const method = scope.method;
-  switch (method) {
-    case 'Write':     return 'Write';
-    case 'Read':      return 'Read';
-    case 'Delete':    return 'Delete';
-    case 'Query':     return 'Query';
-    case 'Subscribe': return 'Subscribe';
-    case 'Configure': return 'Configure';
-    default:          return `${scope.interface}.${method}`;
+  if (scope.interface === 'Records') {
+    switch (method) {
+      case 'Write':  return 'Write';
+      case 'Read':   return 'Read';
+      case 'Delete': return 'Delete';
+      default:       return `${scope.interface}.${method}`;
+    }
   }
+
+  return `${scope.interface}.${method}`;
 }
 
 /** Colour hint for a permission scope (for UI badge colouring). */
@@ -78,11 +79,8 @@ export type ScopeColor = 'green' | 'amber' | 'red' | 'blue' | 'gray';
 /** Get a colour category for a scope method. */
 export function getScopeColor(method: string): ScopeColor {
   switch (method) {
-    case 'Read':
-    case 'Query':
-    case 'Subscribe': return 'green';
-    case 'Write':
-    case 'Configure': return 'amber';
+    case 'Read':   return 'green';
+    case 'Write':  return 'amber';
     case 'Delete':    return 'red';
     default:          return 'gray';
   }
