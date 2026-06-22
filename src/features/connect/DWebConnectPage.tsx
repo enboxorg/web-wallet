@@ -19,6 +19,7 @@ import {
   importPortableIdentity,
 } from './connect-effects';
 import {
+  getUnsupportedConnectPermissionError,
   isDWebConnectRequestEvent,
   referrerOrigin,
   sanitizeDWebConnectRequest,
@@ -91,6 +92,13 @@ export default function DWebConnectPage() {
         return;
       }
 
+      const unsupportedPermission = getUnsupportedConnectPermissionError(sanitized.permissions);
+      if (unsupportedPermission) {
+        setErrorMessage(unsupportedPermission);
+        setPhase('error');
+        return;
+      }
+
       if (activeOriginRef.current && activeOriginRef.current !== sanitized.origin) {
         return;
       }
@@ -155,6 +163,10 @@ export default function DWebConnectPage() {
 
       const allGrants: any[] = [];
       const allDecryptionKeys: any[] = [];
+      const unsupportedPermission = getUnsupportedConnectPermissionError(permissions);
+      if (unsupportedPermission) {
+        throw new Error(unsupportedPermission);
+      }
 
       const delegateGrantPromises = permissions.map(async (permissionRequest) => {
         const { protocolDefinition, permissionScopes } = permissionRequest;

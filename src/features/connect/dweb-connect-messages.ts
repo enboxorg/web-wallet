@@ -18,6 +18,8 @@ export interface SanitizedDWebConnectRequest {
   requestedDid?: string;
 }
 
+const READ_LIKE_REMOVED_RECORD_METHODS = new Set(['Query', 'Subscribe', 'Count']);
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -97,6 +99,30 @@ function sanitizePermissions(value: unknown): ConnectPermissionRequest[] | undef
   });
 
   return valid ? value as ConnectPermissionRequest[] : undefined;
+}
+
+export function getUnsupportedConnectPermissionError(
+  permissions: ConnectPermissionRequest[],
+): string | undefined {
+  for (const permission of permissions) {
+    for (const scope of permission.permissionScopes as unknown[]) {
+      if (!isPlainObject(scope)) continue;
+
+      if (
+        scope.interface === 'Records'
+        && typeof scope.method === 'string'
+        && READ_LIKE_REMOVED_RECORD_METHODS.has(scope.method)
+      ) {
+        return `Records.${scope.method} is no longer supported in DWeb Connect. The app must request Records.Read instead.`;
+      }
+
+      if (scope.interface === 'Protocols' && scope.method === 'Configure') {
+        return 'Protocols.Configure cannot be delegated through DWeb Connect. The wallet configures protocols during approval.';
+      }
+    }
+  }
+
+  return undefined;
 }
 
 export function sanitizeDWebConnectRequest(

@@ -6,7 +6,7 @@
  * colour-coded scope badges, and encryption indicators.
  */
 import { Lock, Shield } from 'lucide-react';
-import type { ConnectPermissionRequest } from '@enbox/agent';
+import type { ConnectPermissionRequest, DwnPermissionScope } from '@enbox/agent';
 import { getProtocolInfo, getScopeLabel, getScopeColor, type ScopeColor } from '@/lib/protocol-names';
 
 interface PermissionDisplayProps {
@@ -23,6 +23,29 @@ const SCOPE_COLOR_CLASSES: Record<ScopeColor, string> = {
   gray  : 'bg-gray-500/15 text-gray-400 border-gray-500/20',
 };
 
+function isInternalConnectScope(scope: DwnPermissionScope): boolean {
+  return (
+    (scope?.interface === 'Protocols' && scope?.method === 'Query')
+    || (scope?.interface === 'Messages' && scope?.method === 'Read')
+  );
+}
+
+function getDisplayScopes(permissionScopes: ConnectPermissionRequest['permissionScopes']) {
+  const scopes = new Map<string, { interface: string; method: string }>();
+
+  for (const scope of permissionScopes) {
+    if (isInternalConnectScope(scope)) continue;
+
+    const scopeInterface = scope.interface;
+    const method = scope.method;
+
+    const key = `${scopeInterface}.${method}`;
+    scopes.set(key, { interface: scopeInterface, method });
+  }
+
+  return [...scopes.values()];
+}
+
 export function PermissionDisplay({ permissions }: PermissionDisplayProps) {
   if (permissions.length === 0) { return null; }
 
@@ -38,10 +61,7 @@ export function PermissionDisplay({ permissions }: PermissionDisplayProps) {
         const hasEncryptedTypes = Object.values(perm.protocolDefinition.types ?? {})
           .some((type: any) => type?.encryptionRequired === true);
 
-        // Deduplicate scope methods for badge display.
-        const scopeMethods = [...new Set(
-          perm.permissionScopes.map((s: any) => s.method as string),
-        )];
+        const displayScopes = getDisplayScopes(perm.permissionScopes);
 
         return (
           <div
@@ -71,19 +91,21 @@ export function PermissionDisplay({ permissions }: PermissionDisplayProps) {
             </p>
 
             {/* Scope badges */}
-            <div className="flex flex-wrap gap-1.5">
-              {scopeMethods.map((method) => {
-                const color = getScopeColor(method);
-                return (
-                  <span
-                    key={method}
-                    className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${SCOPE_COLOR_CLASSES[color]}`}
-                  >
-                    {getScopeLabel({ interface: 'Records', method })}
-                  </span>
-                );
-              })}
-            </div>
+            {displayScopes.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {displayScopes.map((scope) => {
+                  const color = getScopeColor(scope.method);
+                  return (
+                    <span
+                      key={`${scope.interface}.${scope.method}`}
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${SCOPE_COLOR_CLASSES[color]}`}
+                    >
+                      {getScopeLabel(scope)}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Raw protocol URI (collapsed detail) */}
             <p className="text-[10px] font-mono text-text-ghost truncate" title={protocolUri}>
