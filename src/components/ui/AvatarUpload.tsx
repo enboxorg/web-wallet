@@ -1,12 +1,17 @@
 import { useRef } from 'react';
 import { Camera } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import {
+  PROFILE_IMAGE_ACCEPT,
+  validateProfileImageBlob,
+} from '@/lib/profile-images';
 import { Avatar } from './Avatar';
 
 interface AvatarUploadProps {
   src?: string | null;
   name?: string;
   onUpload: (file: File) => void;
+  onError?: (message: string) => void;
   size?: 'lg' | 'xl';
   className?: string;
 }
@@ -15,6 +20,7 @@ export function AvatarUpload({
   src,
   name,
   onUpload,
+  onError,
   size = 'lg',
   className,
 }: AvatarUploadProps) {
@@ -22,7 +28,14 @@ export function AvatarUpload({
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (file) onUpload(file);
+    if (file) {
+      const error = validateProfileImageBlob(file, 'Avatar image');
+      if (error) {
+        onError?.(error);
+      } else {
+        onUpload(file);
+      }
+    }
     e.target.value = '';
   }
 
@@ -50,7 +63,9 @@ export function AvatarUpload({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept={PROFILE_IMAGE_ACCEPT}
+        aria-label="Avatar image file"
+        onClick={(event) => event.stopPropagation()}
         onChange={handleChange}
         className="hidden"
         tabIndex={-1}

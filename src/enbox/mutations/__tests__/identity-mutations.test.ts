@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Effect } from 'effect';
 
-import { createIdentity, importIdentity } from '../identity-mutations';
+import { createIdentity, importIdentity, updateIdentityProfile } from '../identity-mutations';
 
 const mocks = vi.hoisted(() => {
   const calls: string[] = [];
@@ -16,12 +16,12 @@ const mocks = vi.hoisted(() => {
         return { record: profileRecord };
       }),
       avatar: {
-        set: vi.fn(),
-        get: vi.fn(),
+        set: vi.fn(async () => ({})),
+        get: vi.fn(async () => undefined),
       },
       hero: {
-        set: vi.fn(),
-        get: vi.fn(),
+        set: vi.fn(async () => ({})),
+        get: vi.fn(async () => undefined),
       },
     },
   };
@@ -117,6 +117,7 @@ function createAgent(did = 'did:dht:new', didMetadata?: Record<string, unknown>)
         mocks.calls.push('identity:import');
         return { did: { uri: did, metadata: didMetadata } };
       }),
+      setMetadataName: vi.fn(async () => { mocks.calls.push('identity:setMetadataName'); }),
       delete: vi.fn(async () => { mocks.calls.push('identity:delete'); }),
     },
     did: {
@@ -226,5 +227,67 @@ describe('identity mutations', () => {
       'sync:register',
       'wallet:create',
     ]);
+  });
+
+  it('normalizes uploaded profile image Files to typed Blobs', async () => {
+    const did = 'did:dht:new';
+    const agent = createAgent(did);
+    const avatar = new File(['avatar'], 'avatar.jpg', { type: 'image/jpeg' });
+
+    await createIdentity(agent, {
+      persona: 'Personal',
+      displayName: 'Alice',
+      avatar,
+      dwnEndpoints: ['https://fly.example/dwn'],
+    });
+
+    expect(mocks.profileRepo.profile.avatar.set).toHaveBeenCalledWith(
+      'profile-context',
+      expect.objectContaining({
+        dataFormat: 'image/jpeg',
+      }),
+    );
+
+    const avatarWrite = mocks.profileRepo.profile.avatar.set.mock.calls[0][1];
+    expect(avatarWrite.data).toBeInstanceOf(Blob);
+    expect(avatarWrite.data).not.toBeInstanceOf(File);
+    expect(avatarWrite.data.type).toBe('image/jpeg');
+  });
+
+  it('replaces profile image records so the MIME type can change', async () => {
+    const did = 'did:dht:existing';
+    const agent = createAgent(did);
+    const existingAvatar = { delete: vi.fn(async () => undefined) };
+    const avatar = new File(['avatar'], 'avatar.webp', { type: 'image/webp' });
+    mocks.profileRepo.profile.avatar.get.mockResolvedValueOnce(existingAvatar);
+
+    await updateIdentityProfile(agent, {
+      did,
+      displayName: 'Alice',
+      avatar,
+    });
+
+    expect(mocks.profileRepo.profile.avatar.get).toHaveBeenCalledWith('profile-context');
+    expect(existingAvatar.delete).toHaveBeenCalled();
+    expect(mocks.profileRepo.profile.avatar.set).toHaveBeenCalledWith(
+      'profile-context',
+      expect.objectContaining({
+        dataFormat: 'image/webp',
+      }),
+    );
+  });
+
+  it('rejects unsupported profile image types with a supported-format message', async () => {
+    const did = 'did:dht:existing';
+    const agent = createAgent(did);
+    const avatar = new File(['avatar'], 'avatar.svg', { type: 'image/svg+xml' });
+
+    await expect(updateIdentityProfile(agent, {
+      did,
+      displayName: 'Alice',
+      avatar,
+    })).rejects.toThrow('Avatar image must be a PNG, JPEG, GIF, or WebP image.');
+
+    expect(mocks.profileRepo.profile.avatar.set).not.toHaveBeenCalled();
   });
 });
