@@ -15,6 +15,7 @@ import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { prepareProtocol } from './protocol-install';
+import { createPostMessageConnectSessionMetadata } from './connect-session-metadata';
 import {
   createDelegateDid,
   createPermissionGrants,
@@ -160,13 +161,24 @@ export default function DWebConnectPage() {
 
     try {
       // If the dapp is exporting a portable identity, import it first.
-      const requestData = _pendingRequest?.data as any;
-      if (hasPortableIdentity && requestData?.portableIdentity) {
-        await importPortableIdentity(requestData.portableIdentity, agent);
+      const sanitizedRequest = _pendingRequest
+        ? sanitizeDWebConnectRequest(_pendingRequest)
+        : undefined;
+      if (!sanitizedRequest) {
+        throw new Error('Invalid DWeb Connect request.');
+      }
+
+      if (hasPortableIdentity && sanitizedRequest.portableIdentity) {
+        await importPortableIdentity(sanitizedRequest.portableIdentity, agent);
         setStatusMessage('Creating delegate...');
       }
 
       const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
+      const connectSession = createPostMessageConnectSessionMetadata({
+        appName        : sanitizedRequest.appName,
+        appIcon        : sanitizedRequest.appIcon,
+        clientMetadata : sanitizedRequest.clientMetadata,
+      });
 
       const allGrants: any[] = [];
       const allDecryptionKeys: any[] = [];
@@ -212,6 +224,7 @@ export default function DWebConnectPage() {
           delegateBearerDid,
           permissionScopes,
           agent,
+          connectSession,
         );
       });
 
@@ -229,9 +242,6 @@ export default function DWebConnectPage() {
 
       // If the dapp sent an ephemeral public key, encrypt the response
       // so private key material is not exposed as plaintext in postMessage.
-      const sanitizedRequest = _pendingRequest
-        ? sanitizeDWebConnectRequest(_pendingRequest)
-        : undefined;
       const dappEphemeralKey = sanitizedRequest?.ephemeralPublicKey;
       if (dappEphemeralKey) {
         try {

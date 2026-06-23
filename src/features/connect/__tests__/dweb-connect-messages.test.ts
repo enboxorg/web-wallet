@@ -57,7 +57,24 @@ describe('DWeb Connect message hardening', () => {
   });
 
   it('sanitizes valid authorization requests', () => {
-    const sanitized = sanitizeDWebConnectRequest(request());
+    const sanitized = sanitizeDWebConnectRequest(request({
+      data: {
+        type: 'dweb-connect-authorization-request',
+        permissions: [permissionRequest],
+        appName: 'Example App',
+        appIcon: '/icon.png',
+        ephemeralPublicKey: 'public-key',
+        did: 'did:dht:alice',
+        clientMetadata: {
+          origin: 'https://spoofed.example',
+          userAgent: 'ExampleBrowser/1.0',
+          platform: 'MacIntel',
+          language: 'en-US',
+          languages: ['en-US', 'en'],
+          timezone: 'America/New_York',
+        },
+      },
+    }));
 
     expect(sanitized).toEqual(expect.objectContaining({
       origin: 'https://app.example',
@@ -66,6 +83,14 @@ describe('DWeb Connect message hardening', () => {
       appIcon: 'https://app.example/icon.png',
       ephemeralPublicKey: 'public-key',
       requestedDid: 'did:dht:alice',
+      clientMetadata: {
+        origin: 'https://app.example',
+        userAgent: 'ExampleBrowser/1.0',
+        platform: 'MacIntel',
+        language: 'en-US',
+        languages: ['en-US', 'en'],
+        timezone: 'America/New_York',
+      },
     }));
   });
 

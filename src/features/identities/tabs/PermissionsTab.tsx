@@ -1,5 +1,14 @@
 import { useMemo, useState } from 'react';
-import { Shield, Copy, Check, Trash2 } from 'lucide-react';
+import {
+  Check,
+  Clock3,
+  Copy,
+  Globe2,
+  MonitorSmartphone,
+  Power,
+  Shield,
+  Trash2,
+} from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
@@ -10,29 +19,319 @@ import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { truncateDid, copyToClipboard } from '@/lib/utils';
-import { getProtocolName } from '@/lib/protocol-names';
+import { getProtocolName, getScopeLabel } from '@/lib/protocol-names';
 import type { PermissionGrant } from '@enbox/api';
+import {
+  buildPermissionSections,
+  type PermissionGranteeGroup,
+  type PermissionSessionGroup,
+} from './permission-sessions';
 
 interface PermissionsTabProps {
   did: string;
+}
+
+type RevokeTarget =
+  | { kind: 'grant'; grant: PermissionGrant }
+  | { kind: 'session'; session: PermissionSessionGroup };
+
+function formatDateTime(value: string | undefined): string {
+  if (!value) return 'Unknown';
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return 'Unknown';
+
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle : 'medium',
+    timeStyle : 'short',
+  }).format(date);
+}
+
+function grantCountLabel(count: number): string {
+  return count === 1 ? '1 permission' : `${count} permissions`;
+}
+
+function sessionTitle(sessionGroup: PermissionSessionGroup): string {
+  return sessionGroup.session.appName
+    ?? sessionGroup.session.origin
+    ?? truncateDid(sessionGroup.grantee);
+}
+
+function sessionDetails(sessionGroup: PermissionSessionGroup): string[] {
+  const { session } = sessionGroup;
+  return [
+    session.platform,
+    session.timezone,
+    session.transport === 'postMessage' ? 'Browser popup' : undefined,
+    session.transport === 'relay' ? 'Relay' : undefined,
+  ].filter((part): part is string => Boolean(part));
+}
+
+function grantScopeLabel(grant: PermissionGrant): string | undefined {
+  const scopeInterface = grant.scope?.interface;
+  const method = grant.scope?.method;
+  if (!scopeInterface) return undefined;
+  if (!method) return scopeInterface;
+  return getScopeLabel({ interface: scopeInterface, method });
+}
+
+function revokeTargetGrants(target: RevokeTarget): PermissionGrant[] {
+  return target.kind === 'session' ? target.session.grants : [target.grant];
+}
+
+function revokeDialogCopy(target: RevokeTarget | null): {
+  title: string;
+  body: string;
+  confirm: string;
+} {
+  if (target?.kind === 'session') {
+    return {
+      title   : 'Revoke session',
+      body    : 'Revoke this connect session? The app will lose every permission granted in this session.',
+      confirm : 'Revoke session',
+    };
+  }
+
+  return {
+    title   : 'Revoke permission',
+    body    : 'Revoke this permission? The app will no longer be able to access this protocol.',
+    confirm : 'Revoke',
+  };
+}
+
+function PermissionGrantRow({
+  grant,
+  onRevoke,
+}: {
+  grant: PermissionGrant;
+  onRevoke: (grant: PermissionGrant) => void;
+}) {
+  const protocol = grant.scope?.protocol;
+  const scopeLabel = grantScopeLabel(grant);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] bg-surface-2 px-3 py-2">
+      <span
+        className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary"
+        title={protocol}
+      >
+        {protocol ? getProtocolName(protocol) : 'All protocols'}
+      </span>
+      {scopeLabel && (
+        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
+          {scopeLabel}
+        </span>
+      )}
+      <button
+        type="button"
+        onClick={() => onRevoke(grant)}
+        className="ml-auto inline-flex items-center justify-center rounded-md p-1 text-text-ghost transition-colors hover:bg-error/10 hover:text-error"
+        aria-label="Revoke permission"
+        title="Revoke"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function CopyDidButton({
+  did,
+  copiedDid,
+  onCopy,
+  label,
+}: {
+  did: string;
+  copiedDid: string | null;
+  onCopy: (did: string) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onCopy(did)}
+      className="text-text-ghost hover:text-text-secondary"
+      aria-label={label}
+      title={label}
+    >
+      {copiedDid === did ? (
+        <Check className="h-3.5 w-3.5 text-success" />
+      ) : (
+        <Copy className="h-3.5 w-3.5" />
+      )}
+    </button>
+  );
+}
+
+function SessionCard({
+  sessionGroup,
+  copiedDid,
+  onCopy,
+  onRevokeGrant,
+  onRevokeSession,
+}: {
+  sessionGroup: PermissionSessionGroup;
+  copiedDid: string | null;
+  onCopy: (did: string) => void;
+  onRevokeGrant: (grant: PermissionGrant) => void;
+  onRevokeSession: (session: PermissionSessionGroup) => void;
+}) {
+  const details = sessionDetails(sessionGroup);
+
+  return (
+    <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 space-y-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <MonitorSmartphone className="h-4 w-4 shrink-0 text-accent" />
+            <h3 className="truncate text-sm font-semibold text-text-primary">
+              {sessionTitle(sessionGroup)}
+            </h3>
+            <span
+              className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                sessionGroup.active
+                  ? 'bg-success/10 text-success'
+                  : 'bg-surface-3 text-text-ghost'
+              }`}
+            >
+              {sessionGroup.active ? 'Active' : 'Inactive'}
+            </span>
+          </div>
+
+          {sessionGroup.session.origin && (
+            <div className="flex min-w-0 items-center gap-1.5 text-xs text-text-secondary">
+              <Globe2 className="h-3.5 w-3.5 shrink-0 text-text-ghost" />
+              <span className="truncate" title={sessionGroup.session.origin}>
+                {sessionGroup.session.origin}
+              </span>
+            </div>
+          )}
+
+          <div className="flex min-w-0 items-center gap-1.5 text-xs text-text-ghost">
+            <Shield className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate font-mono" title={sessionGroup.grantee}>
+              {truncateDid(sessionGroup.grantee)}
+            </span>
+            <CopyDidButton
+              did={sessionGroup.grantee}
+              copiedDid={copiedDid}
+              onCopy={onCopy}
+              label="Copy delegate DID"
+            />
+          </div>
+
+          {details.length > 0 && (
+            <p
+              className="truncate text-xs text-text-ghost"
+              title={sessionGroup.session.userAgent}
+            >
+              {details.join(' • ')}
+            </p>
+          )}
+        </div>
+
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={() => onRevokeSession(sessionGroup)}
+          className="shrink-0"
+        >
+          <Power className="h-3.5 w-3.5" />
+          Revoke
+        </Button>
+      </div>
+
+      <div className="mb-3 grid gap-2 text-xs text-text-ghost sm:grid-cols-2">
+        <div className="flex items-center gap-1.5">
+          <Clock3 className="h-3.5 w-3.5" />
+          <span>Approved {formatDateTime(sessionGroup.dateGranted)}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Clock3 className="h-3.5 w-3.5" />
+          <span>
+            {sessionGroup.active ? 'Expires' : 'Expired'} {formatDateTime(sessionGroup.dateExpires)}
+          </span>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {sessionGroup.grants.map((grant, index) => (
+          <PermissionGrantRow
+            key={grant.id ?? index}
+            grant={grant}
+            onRevoke={onRevokeGrant}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function StandaloneGroupCard({
+  group,
+  copiedDid,
+  onCopy,
+  onRevokeGrant,
+}: {
+  group: PermissionGranteeGroup;
+  copiedDid: string | null;
+  onCopy: (did: string) => void;
+  onRevokeGrant: (grant: PermissionGrant) => void;
+}) {
+  return (
+    <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <Shield className="h-4 w-4 shrink-0 text-accent" />
+        <span className="font-mono text-sm text-text-primary">
+          {truncateDid(group.grantee)}
+        </span>
+        <CopyDidButton
+          did={group.grantee}
+          copiedDid={copiedDid}
+          onCopy={onCopy}
+          label="Copy DID"
+        />
+      </div>
+
+      <div className="space-y-2">
+        {group.grants.map((grant, index) => (
+          <PermissionGrantRow
+            key={grant.id ?? index}
+            grant={grant}
+            onRevoke={onRevokeGrant}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SectionHeader({
+  title,
+  count,
+}: {
+  title: string;
+  count: number;
+}) {
+  return (
+    <div className="flex items-center justify-between">
+      <h3 className="text-sm font-semibold text-text-primary">{title}</h3>
+      <span className="text-xs text-text-ghost">{grantCountLabel(count)}</span>
+    </div>
+  );
 }
 
 export default function PermissionsTab({ did }: PermissionsTabProps) {
   const queryClient = useQueryClient();
   const { data: permissions, isLoading, isError, error } = usePermissions(did);
   const [copiedDid, setCopiedDid] = useState<string | null>(null);
-  const [revokeTarget, setRevokeTarget] = useState<PermissionGrant | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
   const [revoking, setRevoking] = useState(false);
 
-  const grouped = useMemo(() => {
-    if (!permissions) return {};
-    return permissions.reduce((acc: Record<string, PermissionGrant[]>, grant: PermissionGrant) => {
-      const grantee = grant.grantee || 'unknown';
-      if (!acc[grantee]) acc[grantee] = [];
-      acc[grantee].push(grant);
-      return acc;
-    }, {});
-  }, [permissions]);
+  const {
+    activeSessions,
+    inactiveSessions,
+    standaloneGroups,
+  } = useMemo(() => buildPermissionSections(permissions), [permissions]);
 
   if (isLoading) {
     return <Loader message="Loading permissions..." />;
@@ -42,9 +341,11 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     return <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load data'} />;
   }
 
-  const grantees = Object.keys(grouped);
+  const isEmpty = activeSessions.length === 0
+    && inactiveSessions.length === 0
+    && standaloneGroups.length === 0;
 
-  if (grantees.length === 0) {
+  if (isEmpty) {
     return (
       <EmptyState
         icon={<Shield />}
@@ -56,11 +357,12 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
 
   const handleRevoke = async () => {
     if (!revokeTarget) return;
+    const grants = revokeTargetGrants(revokeTarget);
     setRevoking(true);
     try {
-      await revokeTarget.revoke();
+      await Promise.all(grants.map((grant) => grant.revoke()));
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(did) });
-      toast.success('Permission revoked');
+      toast.success(revokeTarget.kind === 'session' ? 'Session revoked' : 'Permission revoked');
       setRevokeTarget(null);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to revoke permission');
@@ -77,71 +379,77 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     }
   };
 
+  const dialogCopy = revokeDialogCopy(revokeTarget);
+  const activeGrantCount = activeSessions.reduce(
+    (sum, session) => sum + session.grants.length,
+    0,
+  );
+  const inactiveGrantCount = inactiveSessions.reduce(
+    (sum, session) => sum + session.grants.length,
+    0,
+  );
+  const standaloneGrantCount = standaloneGroups.reduce(
+    (sum, group) => sum + group.grants.length,
+    0,
+  );
+
   return (
-    <div className="space-y-4">
-      {grantees.map((grantee) => (
-        <div
-          key={grantee}
-          className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-4"
-        >
-          {/* Grantee header */}
-          <div className="mb-3 flex items-center gap-2">
-            <Shield className="h-4 w-4 shrink-0 text-accent" />
-            <span className="font-mono text-sm text-text-primary">
-              {truncateDid(grantee)}
-            </span>
-            <button
-              onClick={() => handleCopy(grantee)}
-              className="ml-1 text-text-ghost hover:text-text-secondary"
-              aria-label="Copy DID"
-            >
-              {copiedDid === grantee ? (
-                <Check className="h-3.5 w-3.5 text-success" />
-              ) : (
-                <Copy className="h-3.5 w-3.5" />
-              )}
-            </button>
-          </div>
+    <div className="space-y-6">
+      {activeSessions.length > 0 && (
+        <section className="space-y-3" aria-label="Active connect sessions">
+          <SectionHeader title="Active Sessions" count={activeGrantCount} />
+          {activeSessions.map((sessionGroup) => (
+            <SessionCard
+              key={sessionGroup.id}
+              sessionGroup={sessionGroup}
+              copiedDid={copiedDid}
+              onCopy={handleCopy}
+              onRevokeGrant={(grant) => setRevokeTarget({ kind: 'grant', grant })}
+              onRevokeSession={(session) => setRevokeTarget({ kind: 'session', session })}
+            />
+          ))}
+        </section>
+      )}
 
-          {/* Grants */}
-          <div className="space-y-2">
-            {grouped[grantee].map((grant: PermissionGrant, i: number) => (
-              <div
-                key={grant.id ?? i}
-                className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] bg-surface-2 px-3 py-2"
-              >
-                <span className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary" title={grant.scope?.protocol}>
-                  {grant.scope?.protocol ? getProtocolName(grant.scope.protocol) : 'All protocols'}
-                </span>
-                {grant.scope?.interface && (
-                  <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                    {grant.scope.interface}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setRevokeTarget(grant)}
-                  className="ml-auto inline-flex items-center justify-center rounded-md p-1 text-text-ghost hover:text-error hover:bg-error/10 transition-colors"
-                  aria-label="Revoke permission"
-                  title="Revoke"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
+      {inactiveSessions.length > 0 && (
+        <section className="space-y-3" aria-label="Inactive permission bundles">
+          <SectionHeader title="Inactive Permission Bundles" count={inactiveGrantCount} />
+          {inactiveSessions.map((sessionGroup) => (
+            <SessionCard
+              key={sessionGroup.id}
+              sessionGroup={sessionGroup}
+              copiedDid={copiedDid}
+              onCopy={handleCopy}
+              onRevokeGrant={(grant) => setRevokeTarget({ kind: 'grant', grant })}
+              onRevokeSession={(session) => setRevokeTarget({ kind: 'session', session })}
+            />
+          ))}
+        </section>
+      )}
 
-      {/* Revoke confirmation dialog */}
+      {standaloneGroups.length > 0 && (
+        <section className="space-y-3" aria-label="Other permissions">
+          <SectionHeader title="Other Permissions" count={standaloneGrantCount} />
+          {standaloneGroups.map((group) => (
+            <StandaloneGroupCard
+              key={group.grantee}
+              group={group}
+              copiedDid={copiedDid}
+              onCopy={handleCopy}
+              onRevokeGrant={(grant) => setRevokeTarget({ kind: 'grant', grant })}
+            />
+          ))}
+        </section>
+      )}
+
       <Dialog
         open={!!revokeTarget}
         onClose={() => !revoking && setRevokeTarget(null)}
-        title="Revoke permission"
+        title={dialogCopy.title}
       >
         <div className="space-y-4">
           <p className="text-sm text-text-secondary">
-            Revoke this permission? The app will no longer be able to access this protocol.
+            {dialogCopy.body}
           </p>
           <div className="flex justify-end gap-3">
             <Button
@@ -158,7 +466,7 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
               onClick={handleRevoke}
               loading={revoking}
             >
-              Revoke
+              {dialogCopy.confirm}
             </Button>
           </div>
         </div>

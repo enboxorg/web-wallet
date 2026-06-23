@@ -13,6 +13,7 @@ import { withNetworkPolicy } from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
+import type { ConnectSessionMetadata } from './connect-session-metadata';
 
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
@@ -194,17 +195,31 @@ export function createPermissionGrantsEffect(
   selectedDid: string,
   delegateBearerDid: any,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
+  connectSession?: ConnectSessionMetadata,
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
-      try: async () =>
-        EnboxConnectProtocol.createPermissionGrants(
+      try: async () => {
+        const createPermissionGrantsWithOptions =
+          EnboxConnectProtocol.createPermissionGrants as unknown as (
+            selectedDid: string,
+            delegateBearerDid: any,
+            agent: EnboxAgent,
+            permissionScopes: ConnectPermissionRequest['permissionScopes'],
+            delegateKeyDeliveryData?: unknown,
+            options?: { connectSession?: ConnectSessionMetadata },
+          ) => Promise<unknown[]>;
+
+        return createPermissionGrantsWithOptions(
           selectedDid,
           delegateBearerDid,
           agent,
           permissionScopes,
-        ),
+          undefined,
+          connectSession ? { connectSession } : undefined,
+        );
+      },
       catch: sdkError('dwebConnect.createPermissionGrants'),
     });
   });
@@ -215,9 +230,15 @@ export function createPermissionGrants(
   delegateBearerDid: any,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
   agent: EnboxAgent,
+  connectSession?: ConnectSessionMetadata,
 ) {
   return runEnboxPromise(
-    createPermissionGrantsEffect(selectedDid, delegateBearerDid, permissionScopes).pipe(
+    createPermissionGrantsEffect(
+      selectedDid,
+      delegateBearerDid,
+      permissionScopes,
+      connectSession,
+    ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
