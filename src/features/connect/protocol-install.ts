@@ -8,11 +8,17 @@ import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 
 type ProtocolQueryReply = {
   status: { code: number; detail: string };
-  entries?: Array<{ definition?: DwnProtocolDefinition }>;
+  entries?: ProtocolConfigureEntry[];
 };
 
 export type ResolvedProtocolSetupStatus = 'configured' | 'install' | 'update';
 export type ProtocolSetupStatus = ResolvedProtocolSetupStatus | 'checking' | 'unavailable';
+
+type ProtocolConfigureEntry = {
+  descriptor?: {
+    definition?: DwnProtocolDefinition;
+  };
+};
 
 type PrepareProtocolAgent = {
   did: unknown;
@@ -109,6 +115,12 @@ export function getProtocolSetupStatus(
   return 'configured';
 }
 
+function getProtocolDefinitionFromEntry(
+  entry: ProtocolConfigureEntry | undefined,
+): DwnProtocolDefinition | undefined {
+  return entry?.descriptor?.definition;
+}
+
 export async function queryProtocolSetupStatus(
   selectedDid: string,
   agent: Pick<PrepareProtocolAgent, 'processDwnRequest'>,
@@ -125,7 +137,10 @@ export async function queryProtocolSetupStatus(
     throw new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`);
   }
 
-  return getProtocolSetupStatus(queryResult.reply.entries?.[0]?.definition, protocolDefinition);
+  return getProtocolSetupStatus(
+    getProtocolDefinitionFromEntry(queryResult.reply.entries?.[0]),
+    protocolDefinition,
+  );
 }
 
 /**
@@ -170,7 +185,10 @@ export function prepareProtocolEffect(
 
     const existingEntry = queryResult.reply.entries?.[0];
     const needsEncryption = protocolHasEncryptedTypes(protocolDefinition);
-    const setupStatus = getProtocolSetupStatus(existingEntry?.definition, protocolDefinition);
+    const setupStatus = getProtocolSetupStatus(
+      getProtocolDefinitionFromEntry(existingEntry),
+      protocolDefinition,
+    );
 
     let configureMessage: unknown;
 
