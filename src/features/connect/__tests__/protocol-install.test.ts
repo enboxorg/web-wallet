@@ -7,6 +7,7 @@ import {
   prepareProtocol,
   protocolDefinitionsMatch,
   protocolHasEncryptedTypes,
+  queryProtocolSetupStatus,
 } from '../protocol-install';
 
 vi.mock('@enbox/agent', async () => {
@@ -95,6 +96,21 @@ describe('protocol-install', () => {
     expect(getProtocolSetupStatus(installedEncryptedProtocol, encryptedProtocol)).toBe('configured');
   });
 
+  it('reads installed definitions from ProtocolsConfigure query entries', async () => {
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: {
+        status  : { code: 200, detail: 'OK' },
+        entries : [{ descriptor: { definition: installedEncryptedProtocol } }],
+      },
+    });
+
+    await expect(queryProtocolSetupStatus(
+      'did:example:owner',
+      { processDwnRequest },
+      encryptedProtocol,
+    )).resolves.toBe('configured');
+  });
+
   it('detects older or different installed protocol definitions', () => {
     const olderInstalledDefinition: DwnProtocolDefinition = {
       ...notesProtocol,
@@ -130,8 +146,10 @@ describe('protocol-install', () => {
 
   it('does not create a new configure message when the installed protocol is current', async () => {
     const installedEntry = {
-      definition: installedEncryptedProtocol,
-      descriptor: { method: 'Configure' },
+      descriptor: {
+        method: 'Configure',
+        definition: installedEncryptedProtocol,
+      },
     };
     const processDwnRequest = vi
       .fn()
@@ -152,7 +170,7 @@ describe('protocol-install', () => {
 
   it('reconfigures stale encrypted installs that are missing $encryption', async () => {
     const staleInstalled = {
-      definition: encryptedProtocol,
+      descriptor: { definition: encryptedProtocol },
     };
     const processDwnRequest = vi
       .fn()
@@ -184,7 +202,7 @@ describe('protocol-install', () => {
       .mockResolvedValueOnce({
         reply: {
           status  : { code: 200, detail: 'OK' },
-          entries : [{ definition: olderInstalledDefinition }],
+          entries : [{ descriptor: { definition: olderInstalledDefinition } }],
         },
       })
       .mockResolvedValueOnce({
