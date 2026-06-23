@@ -14,6 +14,7 @@ import { truncateDid } from '@/lib/utils';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
+import { ensureRegistration } from '@/enbox/registration';
 import { prepareProtocol } from './protocol-install';
 import {
   createDelegateDid,
@@ -30,6 +31,14 @@ import {
 } from './dweb-connect-messages';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
+
+function connectErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : 'Failed to create delegate.';
+  if (/Could not send permission grant to any DWN endpoint/i.test(message)) {
+    return 'Could not write the approved permission grants to any DWN endpoint for this identity. Check the identity DWN endpoints and try again.';
+  }
+  return message;
+}
 
 export default function DWebConnectPage() {
   const agent = useAgent();
@@ -156,7 +165,7 @@ export default function DWebConnectPage() {
     if (approvalCompletedRef.current) { return; }
 
     setPhase('connecting');
-    setStatusMessage(hasPortableIdentity ? 'Importing identity...' : 'Creating delegate...');
+    setStatusMessage(hasPortableIdentity ? 'Importing identity...' : 'Preparing identity...');
 
     try {
       // If the dapp is exporting a portable identity, import it first.
@@ -169,25 +178,24 @@ export default function DWebConnectPage() {
 
       if (hasPortableIdentity && sanitizedRequest.portableIdentity) {
         await importPortableIdentity(sanitizedRequest.portableIdentity, agent);
-        setStatusMessage('Creating delegate...');
       }
 
-      const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
-      const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
-        appName        : sanitizedRequest.appName,
-        appIcon        : sanitizedRequest.appIcon,
-        clientMetadata : sanitizedRequest.clientMetadata,
-        transport      : 'postMessage',
-      });
-
-      const allGrants: any[] = [];
       const allDecryptionKeys: any[] = [];
       const unsupportedPermission = getUnsupportedConnectPermissionError(permissions);
       if (unsupportedPermission) {
         throw new Error(unsupportedPermission);
       }
 
-      const delegateGrantPromises = permissions.map(async (permissionRequest) => {
+      setStatusMessage('Preparing identity...');
+      const dwnEndpoints = await agent.dwn.getDwnEndpointUrlsForTarget(selectedDid);
+      if (!Array.isArray(dwnEndpoints) || dwnEndpoints.length === 0) {
+        throw new Error('This identity does not have any DWN endpoints configured.');
+      }
+      await ensureRegistration(agent, dwnEndpoints);
+
+      setStatusMessage('Preparing protocols...');
+      const allPermissionScopes: ConnectPermissionRequest['permissionScopes'] = [];
+      for (const permissionRequest of permissions) {
         const { protocolDefinition, permissionScopes } = permissionRequest;
 
         // Validate scopes match the protocol URI
@@ -199,6 +207,7 @@ export default function DWebConnectPage() {
         }
 
         await prepareProtocol(selectedDid, agent, protocolDefinition);
+        allPermissionScopes.push(...permissionScopes);
 
         // Derive scoped decryption keys for single-party encrypted
         // protocols so the delegate can read encrypted records after
@@ -218,18 +227,25 @@ export default function DWebConnectPage() {
             console.warn('Failed to derive scoped decryption keys:', err);
           }
         }
+      }
 
-        return createPermissionGrants(
-          selectedDid,
-          delegateBearerDid,
-          permissionScopes,
-          agent,
-          connectSession,
-        );
+      setStatusMessage('Creating delegate...');
+      const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
+      const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
+        appName        : sanitizedRequest.appName,
+        appIcon        : sanitizedRequest.appIcon,
+        clientMetadata : sanitizedRequest.clientMetadata,
+        transport      : 'postMessage',
       });
 
-      const grants = (await Promise.all(delegateGrantPromises)).flat();
-      allGrants.push(...grants);
+      setStatusMessage('Creating grants...');
+      const allGrants = await createPermissionGrants(
+        selectedDid,
+        delegateBearerDid,
+        allPermissionScopes,
+        agent,
+        connectSession,
+      );
 
       setStatusMessage('Returning grants...');
 
@@ -281,7 +297,7 @@ export default function DWebConnectPage() {
       setTimeout(() => window.close(), 3000);
     } catch (err) {
       console.error('DWeb connect error:', err);
-      setErrorMessage((err as Error).message || 'Failed to create delegate.');
+      setErrorMessage(connectErrorMessage(err));
       setPhase('error');
     }
   }
