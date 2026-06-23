@@ -33,6 +33,11 @@ const PROTOCOL_REGISTRY: Record<string, ProtocolInfo> = {
   },
 };
 
+/** Whether the protocol URI has curated wallet display metadata. */
+export function isKnownProtocol(uri: string): boolean {
+  return uri in PROTOCOL_REGISTRY;
+}
+
 /**
  * Get a human-friendly name for a protocol URI.
  * Falls back to the last path segment if the URI is unknown.
@@ -71,17 +76,4 @@ export function getScopeLabel(scope: { interface: string; method: string }): str
   }
 
   return `${scope.interface}.${method}`;
-}
-
-/** Colour hint for a permission scope (for UI badge colouring). */
-export type ScopeColor = 'green' | 'amber' | 'red' | 'blue' | 'gray';
-
-/** Get a colour category for a scope method. */
-export function getScopeColor(method: string): ScopeColor {
-  switch (method) {
-    case 'Read':   return 'green';
-    case 'Write':  return 'amber';
-    case 'Delete':    return 'red';
-    default:          return 'gray';
-  }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 
-import { getProtocolName, getProtocolInfo, getScopeColor, getScopeLabel } from '../protocol-names';
+import { getProtocolName, getProtocolInfo, getScopeLabel } from '../protocol-names';
 
 describe('getProtocolName', () => {
   // ── Known protocol URIs ───────────────────────────────────────────
@@ -94,27 +94,6 @@ describe('getProtocolInfo', () => {
     const info = getProtocolInfo('https://example.com/my-thing');
     expect(info.name).toBe('My Thing');
     expect(info.description).toContain('https://example.com/my-thing');
-  });
-});
-
-describe('getScopeColor', () => {
-  it('returns green for read', () => {
-    expect(getScopeColor('Read')).toBe('green');
-  });
-
-  it('returns amber for write', () => {
-    expect(getScopeColor('Write')).toBe('amber');
-  });
-
-  it('returns red for delete', () => {
-    expect(getScopeColor('Delete')).toBe('red');
-  });
-
-  it('returns gray for unknown scopes', () => {
-    expect(getScopeColor('Query')).toBe('gray');
-    expect(getScopeColor('Subscribe')).toBe('gray');
-    expect(getScopeColor('Configure')).toBe('gray');
-    expect(getScopeColor('SomethingElse')).toBe('gray');
   });
 });
 

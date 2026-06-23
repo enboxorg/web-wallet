@@ -146,8 +146,12 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
-    expect(screen.getByText('Connection summary')).toBeInTheDocument();
-    expect(screen.getByText('24-hour session')).toBeInTheDocument();
+    expect(screen.getByText('https://app.example')).toBeInTheDocument();
+    expect(screen.getByText(/App name:\s*Example App/i)).toBeInTheDocument();
+    expect(screen.getByText('First connection')).toBeInTheDocument();
+    expect(screen.getByText('wants to view a custom data type.')).toBeInTheDocument();
+    expect(screen.getByText('What app.example will be able to do')).toBeInTheDocument();
+    expect(screen.getByText('Access lasts 24 hours')).toBeInTheDocument();
 
     fireEvent.click(approve);
     fireEvent.click(approve);
@@ -242,7 +246,7 @@ describe('DWebConnectPage', () => {
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText('Connection summary')).toBeInTheDocument();
+    expect(await screen.findByText('Returning connection')).toBeInTheDocument();
     expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
     expect(screen.getByText(/separate 24-hour session/i)).toBeInTheDocument();
   });

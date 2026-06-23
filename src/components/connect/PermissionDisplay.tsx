@@ -1,11 +1,10 @@
 /**
  * Permission display for DWeb Connect consent screens.
  *
- * Presents a compact, summary-first approval view:
- * - temporary session + setup + data-area summary
- * - user-facing access rows
- * - setup changes only when something will be added/updated
- * - one collapsed technical detail section for protocol internals
+ * Keeps the primary surface focused on consent:
+ * - what the requester can do
+ * - how long access lasts
+ * - where setup/protocol mechanics can be inspected
  */
 import {
   AlertTriangle,
@@ -13,21 +12,27 @@ import {
   ChevronDown,
   Clock3,
   Code,
-  Database,
   Download,
   History,
   Loader2,
   Lock,
   RefreshCw,
-  Shield,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { ConnectPermissionRequest, DwnPermissionScope } from '@enbox/agent';
-import { getProtocolInfo, getScopeLabel, getScopeColor, type ScopeColor } from '@/lib/protocol-names';
+import type { ConnectPermissionRequest } from '@enbox/agent';
+import { getProtocolInfo, isKnownProtocol } from '@/lib/protocol-names';
 import type { ProtocolSetupStatus } from '@/features/connect/protocol-install';
+import {
+  formatActionPhrase,
+  getDisplayScopes,
+  getHighestPermissionRisk,
+  getPermissionActions,
+  mergePermissionRequestsByProtocol,
+} from './connect-scope-display';
+import type { DisplayScope, PermissionRisk } from './connect-scope-display';
 import { CONNECT_SESSION_DURATION_LABEL } from './SessionExpiryNotice';
 
-const CONNECT_SESSION_SUMMARY_LABEL = CONNECT_SESSION_DURATION_LABEL === '24 hours'
+const CONNECT_SESSION_NOUN_LABEL = CONNECT_SESSION_DURATION_LABEL === '24 hours'
   ? '24-hour session'
   : `${CONNECT_SESSION_DURATION_LABEL} session`;
 
@@ -38,16 +43,9 @@ interface PermissionDisplayProps {
   protocolSetupStatuses?: Record<string, ProtocolSetupStatus>;
   /** Number of active matching sessions for this app + identity. */
   existingSessionCount?: number;
+  /** Trust anchor shown in section copy, usually the verified origin. */
+  requesterLabel?: string;
 }
-
-/** Colour classes for scope badges. */
-const SCOPE_COLOR_CLASSES: Record<ScopeColor, string> = {
-  green : 'bg-green-500/15 text-green-400 border-green-500/20',
-  amber : 'bg-amber-500/15 text-amber-400 border-amber-500/20',
-  red   : 'bg-red-500/15 text-red-400 border-red-500/20',
-  blue  : 'bg-blue-500/15 text-blue-400 border-blue-500/20',
-  gray  : 'bg-gray-500/15 text-gray-400 border-gray-500/20',
-};
 
 type ProtocolDefinition = ConnectPermissionRequest['protocolDefinition'];
 
@@ -56,84 +54,59 @@ type ProtocolAccess = {
   protocolUri: string;
   name: string;
   description: string;
-  displayScopes: Array<{ interface: string; method: string }>;
+  isKnownProtocol: boolean;
+  displayScopes: DisplayScope[];
   paths: string[];
   hasEncryptedTypes: boolean;
   setupStatus: ProtocolSetupStatus;
 };
 
-type SetupDisplay = {
-  icon: LucideIcon;
-  title: string;
-  body: (protocolName: string) => string;
-  className: string;
-  iconClassName: string;
-  spin?: boolean;
+type SetupStatusDisplay = {
+  label: string;
 };
 
-const SETUP_DISPLAY: Record<ProtocolSetupStatus, SetupDisplay> = {
+const SETUP_STATUS_DISPLAY: Record<ProtocolSetupStatus, SetupStatusDisplay> = {
   checking: {
-    icon          : Loader2,
-    title         : 'Checking setup',
-    body          : (protocolName) => `Checking whether ${protocolName} is ready for this identity.`,
-    className     : 'border-border-subtle bg-surface-1',
-    iconClassName : 'text-text-secondary',
-    spin          : true,
+    label : 'Checking',
   },
   configured: {
-    icon          : CheckCircle2,
-    title         : 'Already ready',
-    body          : (protocolName) => `${protocolName} is already ready for this identity.`,
-    className     : 'border-green-500/20 bg-green-500/10',
-    iconClassName : 'text-green-400',
+    label : 'Already ready',
   },
   install: {
-    icon          : Download,
-    title         : 'Will add data format',
-    body          : (protocolName) => `Adds ${protocolName} so this app can use its data with this identity.`,
-    className     : 'border-blue-500/20 bg-blue-500/10',
-    iconClassName : 'text-blue-400',
+    label : 'Will add',
   },
   update: {
-    icon          : RefreshCw,
-    title         : 'Will update data format',
-    body          : (protocolName) => `${protocolName} uses a newer setup than this identity has today.`,
-    className     : 'border-amber-500/20 bg-amber-500/10',
-    iconClassName : 'text-amber-400',
+    label : 'Will update',
   },
   unavailable: {
-    icon          : AlertTriangle,
-    title         : 'Could not verify setup',
-    body          : (protocolName) => `The wallet could not verify ${protocolName} yet. It will check again before approval.`,
-    className     : 'border-amber-500/20 bg-amber-500/10',
-    iconClassName : 'text-amber-400',
+    label : 'Needs verification',
   },
 };
-
-function isInternalConnectScope(scope: DwnPermissionScope): boolean {
-  return (
-    (scope?.interface === 'Protocols' && scope?.method === 'Query')
-    || (scope?.interface === 'Messages' && scope?.method === 'Read')
-  );
-}
-
-function getDisplayScopes(permissionScopes: ConnectPermissionRequest['permissionScopes']) {
-  const scopes = new Map<string, { interface: string; method: string }>();
-
-  for (const scope of permissionScopes) {
-    if (isInternalConnectScope(scope)) continue;
-
-    const scopeInterface = scope.interface;
-    const method = scope.method;
-    const key = `${scopeInterface}.${method}`;
-    scopes.set(key, { interface: scopeInterface, method });
-  }
-
-  return [...scopes.values()];
-}
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
+}
+
+function capitalize(value: string): string {
+  if (!value) return value;
+  return `${value[0].toUpperCase()}${value.slice(1)}`;
+}
+
+function hostLabel(value: string): string {
+  try {
+    return new URL(value).host || value;
+  } catch {
+    return value;
+  }
+}
+
+function protocolUriLabel(uri: string): string {
+  try {
+    const url = new URL(uri);
+    return `${url.host}${url.pathname}`;
+  } catch {
+    return uri;
+  }
 }
 
 function collectStructurePaths(
@@ -183,7 +156,7 @@ function getProtocolAccess(
   permissions: ConnectPermissionRequest[],
   protocolSetupStatuses?: Record<string, ProtocolSetupStatus>,
 ): ProtocolAccess[] {
-  return permissions.map((permission) => {
+  return mergePermissionRequestsByProtocol(permissions).map((permission) => {
     const protocolUri = permission.protocolDefinition.protocol;
     const info = getProtocolInfo(protocolUri);
     const paths = collectStructurePaths(
@@ -197,6 +170,7 @@ function getProtocolAccess(
       protocolUri,
       name: info.name,
       description: info.description,
+      isKnownProtocol: isKnownProtocol(protocolUri),
       displayScopes: getDisplayScopes(permission.permissionScopes),
       paths,
       hasEncryptedTypes,
@@ -205,132 +179,143 @@ function getProtocolAccess(
   });
 }
 
-function getSetupSummary(access: ProtocolAccess[]): {
-  label: string;
-  tone: 'neutral' | 'success' | 'info' | 'warning';
-  icon: LucideIcon;
-  spin?: boolean;
-} {
-  const updates = access.filter((item) => item.setupStatus === 'update').length;
-  const installs = access.filter((item) => item.setupStatus === 'install').length;
-  const unavailable = access.filter((item) => item.setupStatus === 'unavailable').length;
-  const checking = access.filter((item) => item.setupStatus === 'checking').length;
-
-  if (updates > 0) {
-    return {
-      label : `Updates ${pluralize(updates, 'data format')}`,
-      tone  : 'warning',
-      icon  : RefreshCw,
-    };
-  }
-  if (installs > 0) {
-    return {
-      label : `Adds ${pluralize(installs, 'data format')}`,
-      tone  : 'info',
-      icon  : Download,
-    };
-  }
-  if (unavailable > 0) {
-    return {
-      label : 'Setup check needed',
-      tone  : 'warning',
-      icon  : AlertTriangle,
-    };
-  }
-  if (checking > 0) {
-    return {
-      label : 'Checking setup',
-      tone  : 'neutral',
-      icon  : Loader2,
-      spin  : true,
-    };
-  }
-  return {
-    label : 'No new setup',
-    tone  : 'success',
-    icon  : CheckCircle2,
-  };
-}
-
-function summaryToneClasses(tone: 'neutral' | 'success' | 'info' | 'warning'): string {
-  switch (tone) {
-    case 'success':
-      return 'border-green-500/20 bg-green-500/10 text-green-300';
-    case 'info':
-      return 'border-blue-500/20 bg-blue-500/10 text-blue-300';
-    case 'warning':
-      return 'border-amber-500/20 bg-amber-500/10 text-amber-300';
+function actionBadgeClasses(risk: PermissionRisk): string {
+  switch (risk) {
+    case 'delete':
+      return 'border-red-500/30 bg-red-500/10 text-red-300';
+    case 'edit':
+      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
     default:
       return 'border-border-subtle bg-surface-1 text-text-secondary';
   }
+}
+
+function rowRiskClasses(risk: PermissionRisk): string {
+  switch (risk) {
+    case 'delete':
+      return 'border-l-red-500/70';
+    case 'edit':
+      return 'border-l-amber-500/70';
+    default:
+      return 'border-l-border-subtle';
+  }
+}
+
+function formatAccessSentence(item: ProtocolAccess): string {
+  const actions = getPermissionActions(item.displayScopes);
+  const objectLabel = item.isKnownProtocol ? `your ${item.name}` : 'a custom data type';
+  return `${capitalize(formatActionPhrase(actions))} ${objectLabel}`;
 }
 
 function sessionCountLabel(count: number): string {
   return count === 1 ? '1 active session' : `${count} active sessions`;
 }
 
-function SummaryChip({
-  icon: Icon,
-  label,
-  tone = 'neutral',
-  spin,
+function AccessRows({
+  access,
+  requesterLabel = 'this app',
 }: {
-  icon: LucideIcon;
-  label: string;
-  tone?: 'neutral' | 'success' | 'info' | 'warning';
-  spin?: boolean;
+  access: ProtocolAccess[];
+  requesterLabel?: string;
 }) {
+  const requesterSentenceLabel = hostLabel(requesterLabel);
+  const encryptedAccess = access.filter((item) => item.hasEncryptedTypes);
+  const showSharedEncryptedNote = encryptedAccess.length > 1;
+
   return (
-    <div className={`inline-flex min-h-8 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium ${summaryToneClasses(tone)}`}>
-      <Icon className={`h-3.5 w-3.5 shrink-0 ${spin ? 'animate-spin' : ''}`} />
-      <span>{label}</span>
-    </div>
+    <section className="space-y-2">
+      <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
+        What {requesterSentenceLabel} will be able to do
+      </p>
+
+      <div className="overflow-hidden rounded-xl border border-border-default bg-surface-2">
+        {access.map((item, index) => {
+          const actions = getPermissionActions(item.displayScopes);
+          const risk = getHighestPermissionRisk(actions);
+
+          return (
+            <div
+              key={item.protocolUri}
+              className={`border-l-2 px-4 py-3 ${rowRiskClasses(risk)} ${index > 0 ? 'border-t border-t-border-subtle' : ''}`}
+            >
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-text-primary">
+                    {formatAccessSentence(item)}
+                  </p>
+                  {item.isKnownProtocol && (
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-secondary">
+                      {item.description}
+                    </p>
+                  )}
+                  {!item.isKnownProtocol && (
+                    <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.protocolUri}>
+                      Custom protocol: {protocolUriLabel(item.protocolUri)}
+                    </p>
+                  )}
+                </div>
+
+                {actions.length > 1 && (
+                  <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
+                    {actions.map((action) => (
+                      <span
+                        key={action.key}
+                        className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${actionBadgeClasses(action.risk)}`}
+                        title={action.label}
+                      >
+                        {action.label}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {item.hasEncryptedTypes && !showSharedEncryptedNote && (
+                <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
+                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>
+                    Stored encrypted. Approval shares the keys needed for this app to read allowed data during this session.
+                  </span>
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {showSharedEncryptedNote && (
+        <p className="inline-flex items-start gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2 text-xs leading-relaxed text-text-secondary">
+          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>
+            Some allowed data is stored encrypted. Approval shares the keys needed for this app to read allowed data during this session.
+          </span>
+        </p>
+      )}
+    </section>
   );
 }
 
-function ConnectionSummary({
-  access,
-  existingSessionCount,
-}: {
-  access: ProtocolAccess[];
-  existingSessionCount: number;
-}) {
-  const setup = getSetupSummary(access);
-
+function SessionTerms({ existingSessionCount }: { existingSessionCount: number }) {
   return (
     <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-            Connection summary
+      <div className="flex items-start gap-3">
+        <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-text-primary">
+            Access lasts {CONNECT_SESSION_DURATION_LABEL}
           </p>
-          <p className="mt-1 text-sm font-medium text-text-primary">
-            Review what changes before approving
+          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+            It expires automatically. You can revoke it later from this identity&apos;s Permissions tab.
           </p>
         </div>
-        <Shield className="h-5 w-5 shrink-0 text-accent" />
-      </div>
-
-      <div className="mt-3 flex flex-wrap gap-2">
-        <SummaryChip icon={Clock3} label={CONNECT_SESSION_SUMMARY_LABEL} />
-        <SummaryChip
-          icon={setup.icon}
-          label={setup.label}
-          tone={setup.tone}
-          spin={setup.spin}
-        />
-        <SummaryChip
-          icon={Database}
-          label={pluralize(access.length, 'data area')}
-        />
       </div>
 
       {existingSessionCount > 0 && (
-        <div className="mt-3 flex items-center gap-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2">
-          <History className="h-4 w-4 shrink-0 text-amber-400" />
-          <p className="text-xs text-amber-100/90">
-            This app already has {sessionCountLabel(existingSessionCount)} for this identity.
-            Approving creates a separate {CONNECT_SESSION_SUMMARY_LABEL}.
+        <div className="mt-3 flex items-start gap-2 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2">
+          <History className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
+          <p className="text-xs leading-relaxed text-text-secondary">
+            This requester already has {sessionCountLabel(existingSessionCount)} for this identity.
+            Approving creates a separate {CONNECT_SESSION_NOUN_LABEL}.
           </p>
         </div>
       )}
@@ -338,191 +323,218 @@ function ConnectionSummary({
   );
 }
 
-function ScopeBadges({ scopes }: { scopes: ProtocolAccess['displayScopes'] }) {
-  if (scopes.length === 0) return null;
+function SetupStatusBadge({ status }: { status: ProtocolSetupStatus }) {
+  const display = SETUP_STATUS_DISPLAY[status];
 
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {scopes.map((scope) => {
-        const color = getScopeColor(scope.method);
-        return (
-          <span
-            key={`${scope.interface}.${scope.method}`}
-            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${SCOPE_COLOR_CLASSES[color]}`}
-          >
-            {getScopeLabel(scope)}
-          </span>
-        );
-      })}
+    <span className="inline-flex shrink-0 items-center rounded-full border border-border-subtle bg-surface-1 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+      {display.label}
+    </span>
+  );
+}
+
+function SetupDetailGroup({
+  title,
+  summary,
+  items,
+  icon: Icon,
+}: {
+  title: string;
+  summary: string;
+  items: ProtocolAccess[];
+  icon: LucideIcon;
+}) {
+  if (items.length === 0) return null;
+
+  return (
+    <div className="rounded-lg border border-border-subtle bg-surface-1 p-3">
+      <div className="flex items-start gap-2">
+        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs font-medium text-text-primary">
+              {title}
+            </p>
+            <span className="text-[10px] font-medium text-text-ghost">
+              {pluralize(items.length, 'item')}
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+            {summary}
+          </p>
+
+          <div className="mt-2 space-y-1.5">
+            {items.map((item) => (
+              <div
+                key={item.protocolUri}
+                className="flex flex-col gap-1 rounded-md bg-surface-2 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-xs text-text-primary">
+                    {item.isKnownProtocol ? item.name : 'Custom protocol'}
+                  </p>
+                  {!item.isKnownProtocol && (
+                    <p className="truncate font-mono text-[10px] text-text-ghost" title={item.protocolUri}>
+                      {protocolUriLabel(item.protocolUri)}
+                    </p>
+                  )}
+                </div>
+                <SetupStatusBadge status={item.setupStatus} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-function AccessRows({ access }: { access: ProtocolAccess[] }) {
-  return (
-    <section className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-        Access requested
-      </p>
+function setupChangeTitle(items: ProtocolAccess[]): string {
+  const hasInstall = items.some((item) => item.setupStatus === 'install');
+  const hasUpdate = items.some((item) => item.setupStatus === 'update');
 
-      <div className="overflow-hidden rounded-xl border border-border-default bg-surface-2">
-        {access.map((item, index) => (
-          <div
-            key={item.protocolUri}
-            className={`flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between ${index > 0 ? 'border-t border-border-subtle' : ''}`}
-          >
-            <div className="min-w-0">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="truncate text-sm font-medium text-text-primary">
-                  {item.name}
-                </p>
-                {item.hasEncryptedTypes && (
-                  <span
-                    className="inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-500/20 bg-blue-500/15 px-2 py-0.5 text-[10px] font-medium text-blue-400"
-                    title="This data uses end-to-end encryption"
-                  >
-                    <Lock className="h-3 w-3" />
-                    Encrypted
-                  </span>
-                )}
-              </div>
-              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-secondary">
-                {item.description}
-              </p>
-            </div>
-
-            <div className="sm:shrink-0">
-              <ScopeBadges scopes={item.displayScopes} />
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+  if (hasInstall && hasUpdate) return 'Will add or update setup';
+  if (hasUpdate) return 'Will update setup';
+  return 'Will add setup';
 }
 
-function SetupChanges({ access }: { access: ProtocolAccess[] }) {
-  const visibleSetup = access.filter((item) =>
+function SetupDetails({ access }: { access: ProtocolAccess[] }) {
+  const setupChanges = access.filter((item) =>
     item.setupStatus === 'install'
     || item.setupStatus === 'update'
+  );
+  const setupChecks = access.filter((item) =>
+    item.setupStatus === 'checking'
     || item.setupStatus === 'unavailable'
   );
-  if (visibleSetup.length === 0) return null;
+  const ready = access.filter((item) => item.setupStatus === 'configured');
+  const hasUpdate = setupChanges.some((item) => item.setupStatus === 'update');
 
   return (
     <section className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-        Wallet setup
-      </p>
-
-      <div className="space-y-2">
-        {visibleSetup.map((item) => {
-          const display = SETUP_DISPLAY[item.setupStatus];
-          const Icon = display.icon;
-
-          return (
-            <div
-              key={item.protocolUri}
-              className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 ${display.className}`}
-            >
-              <Icon
-                className={`mt-0.5 h-4 w-4 shrink-0 ${display.iconClassName} ${display.spin ? 'animate-spin' : ''}`}
-              />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-text-primary">
-                  {display.title}
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
-                  {display.body(item.name)}
-                </p>
-              </div>
-            </div>
-          );
-        })}
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
+          Wallet setup
+        </p>
+        <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+          Setup is wallet housekeeping. It does not add permissions beyond the access listed above.
+        </p>
       </div>
+
+      <SetupDetailGroup
+        icon={hasUpdate ? RefreshCw : Download}
+        title={setupChangeTitle(setupChanges)}
+        summary="The wallet prepares these before creating the grant."
+        items={setupChanges}
+      />
+      <SetupDetailGroup
+        icon={setupChecks.some((item) => item.setupStatus === 'unavailable') ? AlertTriangle : Loader2}
+        title="Still checking setup"
+        summary="The wallet will verify these before approval finishes."
+        items={setupChecks}
+      />
+      <SetupDetailGroup
+        icon={CheckCircle2}
+        title="Already ready"
+        summary="The wallet will not change these."
+        items={ready}
+      />
     </section>
   );
 }
 
 function TechnicalDetails({ access }: { access: ProtocolAccess[] }) {
   return (
-    <details className="group rounded-xl border border-border-default bg-surface-2 p-4">
+    <details
+      data-testid="technical-setup-details"
+      className="group rounded-xl border border-border-default bg-surface-2 p-4"
+    >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-medium text-text-secondary hover:text-text-primary">
         <span className="inline-flex items-center gap-1.5">
           <Code className="h-3.5 w-3.5" />
-          Technical details
+          Technical & setup details
         </span>
         <ChevronDown className="h-4 w-4 text-text-ghost transition-transform group-open:rotate-180" />
       </summary>
 
       <div className="mt-4 space-y-5">
-        {access.map((item) => {
-          const typeNames = Object.keys(item.permission.protocolDefinition.types ?? {});
-          const encryptedTypeCount = getEncryptedTypeCount(item.permission.protocolDefinition);
-          const protocolJson = JSON.stringify(item.permission.protocolDefinition, null, 2);
+        <SetupDetails access={access} />
 
-          return (
-            <div key={item.protocolUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
-              <div>
-                <p className="text-sm font-medium text-text-primary">{item.name}</p>
-                <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.protocolUri}>
-                  {item.protocolUri}
-                </p>
+        <section className="space-y-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
+            Protocol details
+          </p>
+
+          {access.map((item) => {
+            const typeNames = Object.keys(item.permission.protocolDefinition.types ?? {});
+            const encryptedTypeCount = getEncryptedTypeCount(item.permission.protocolDefinition);
+            const protocolJson = JSON.stringify(item.permission.protocolDefinition, null, 2);
+
+            return (
+              <div key={item.protocolUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
+                <div>
+                  <p className="text-sm font-medium text-text-primary">
+                    {item.isKnownProtocol ? item.name : 'Custom protocol'}
+                  </p>
+                  <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.protocolUri}>
+                    {item.protocolUri}
+                  </p>
+                </div>
+
+                <dl className="grid gap-2 text-xs sm:grid-cols-3">
+                  <div className="min-w-0">
+                    <dt className="text-text-ghost">Types</dt>
+                    <dd className="mt-1 text-text-primary">{pluralize(typeNames.length, 'type')}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-text-ghost">Record paths</dt>
+                    <dd className="mt-1 text-text-primary">{pluralize(item.paths.length, 'path')}</dd>
+                  </div>
+                  <div className="min-w-0">
+                    <dt className="text-text-ghost">Encrypted types</dt>
+                    <dd className="mt-1 text-text-primary">{pluralize(encryptedTypeCount, 'type')}</dd>
+                  </div>
+                </dl>
+
+                {typeNames.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 text-xs text-text-ghost">Types</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {typeNames.map((typeName) => (
+                        <span
+                          key={typeName}
+                          className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
+                        >
+                          {typeName}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {item.paths.length > 0 && (
+                  <div>
+                    <p className="mb-1.5 text-xs text-text-ghost">Record paths</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {item.paths.map((path) => (
+                        <span
+                          key={path}
+                          className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
+                        >
+                          {path}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <pre className="max-h-72 overflow-auto rounded-md bg-surface-1 p-3 font-mono text-[11px] leading-relaxed text-text-tertiary">
+                  {protocolJson}
+                </pre>
               </div>
-
-              <dl className="grid gap-2 text-xs sm:grid-cols-3">
-                <div className="min-w-0">
-                  <dt className="text-text-ghost">Types</dt>
-                  <dd className="mt-1 text-text-primary">{pluralize(typeNames.length, 'type')}</dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-text-ghost">Record paths</dt>
-                  <dd className="mt-1 text-text-primary">{pluralize(item.paths.length, 'path')}</dd>
-                </div>
-                <div className="min-w-0">
-                  <dt className="text-text-ghost">Encrypted types</dt>
-                  <dd className="mt-1 text-text-primary">{pluralize(encryptedTypeCount, 'type')}</dd>
-                </div>
-              </dl>
-
-              {typeNames.length > 0 && (
-                <div>
-                  <p className="mb-1.5 text-xs text-text-ghost">Types</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {typeNames.map((typeName) => (
-                      <span
-                        key={typeName}
-                        className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
-                      >
-                        {typeName}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {item.paths.length > 0 && (
-                <div>
-                  <p className="mb-1.5 text-xs text-text-ghost">Record paths</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {item.paths.map((path) => (
-                      <span
-                        key={path}
-                        className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
-                      >
-                        {path}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <pre className="max-h-72 overflow-auto rounded-md bg-surface-1 p-3 font-mono text-[11px] leading-relaxed text-text-tertiary">
-                {protocolJson}
-              </pre>
-            </div>
-          );
-        })}
+            );
+          })}
+        </section>
       </div>
     </details>
   );
@@ -532,6 +544,7 @@ export function PermissionDisplay({
   permissions,
   protocolSetupStatuses,
   existingSessionCount = 0,
+  requesterLabel,
 }: PermissionDisplayProps) {
   if (permissions.length === 0) return null;
 
@@ -539,12 +552,8 @@ export function PermissionDisplay({
 
   return (
     <div className="space-y-4">
-      <ConnectionSummary
-        access={access}
-        existingSessionCount={existingSessionCount}
-      />
-      <AccessRows access={access} />
-      <SetupChanges access={access} />
+      <AccessRows access={access} requesterLabel={requesterLabel} />
+      <SessionTerms existingSessionCount={existingSessionCount} />
       <TechnicalDetails access={access} />
     </div>
   );

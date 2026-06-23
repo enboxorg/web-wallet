@@ -6,7 +6,10 @@ import { Effect } from 'effect';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
-import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
+import {
+  PermissionDisplay,
+} from '@/components/connect/PermissionDisplay';
+import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
@@ -43,6 +46,12 @@ function connectErrorMessage(error: unknown): string {
   return message;
 }
 
+function permissionSummaryContinuation(summary: string): string {
+  return summary
+    .replace(/^wants to /, '')
+    .replace(/^wants access to /, 'get access to ');
+}
+
 export default function DWebConnectPage() {
   const agent = useAgent();
   const { data: identities } = useIdentities();
@@ -56,7 +65,6 @@ export default function DWebConnectPage() {
   const [permissions, setPermissions] = useState<ConnectPermissionRequest[]>([]);
   const [origin, setOrigin] = useState('');
   const [appName, setAppName] = useState<string | undefined>();
-  const [appIcon, setAppIcon] = useState<string | undefined>();
   const [hasPortableIdentity, setHasPortableIdentity] = useState(false);
   const [requestedDid, setRequestedDid] = useState('');
   const [selectedDid, setSelectedDid] = useState('');
@@ -128,7 +136,6 @@ export default function DWebConnectPage() {
       setOrigin(sanitized.origin);
       setPermissions(sanitized.permissions);
       setAppName(sanitized.appName);
-      setAppIcon(sanitized.appIcon);
       setRequestedDid(sanitized.requestedDid ?? '');
       setHasPortableIdentity(!!sanitized.portableIdentity);
       setPhase('request');
@@ -339,16 +346,20 @@ export default function DWebConnectPage() {
 
   // ── Derived display values ────────────────────────────────────
 
-  /** Resolve the icon to show: dapp-provided, or Google favicon fallback. */
-  const displayIcon = appIcon
-    || (origin ? `https://t3.gstatic.com/faviconV2?client=SOCIAL&type=FAVICON&fallback_opts=TYPE,SIZE,URL&url=${origin}&size=128` : undefined);
-
-  /** Display name: dapp-provided appName, or bare origin. */
-  const displayName = appName || origin;
   const existingSessions = useMemo(() =>
     findMatchingActiveConnectSessions(selectedPermissions, { origin, appName }),
   [selectedPermissions, origin, appName]);
   const protocolSetupStatuses = useProtocolSetupStatuses(selectedDid, agent, permissions);
+  const requestSummary = useMemo(
+    () => getConnectPermissionAskSummary(permissions),
+    [permissions],
+  );
+  const requesterLabel = origin || 'Unknown origin';
+  const isIdentityOverride = Boolean(
+    requestedDid
+    && selectedDid
+    && selectedDid !== requestedDid
+  );
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -404,30 +415,37 @@ export default function DWebConnectPage() {
       {/* Connect request UI */}
       {phase === 'request' && (
         <div className="flex flex-1 flex-col gap-6">
-          {/* App identity */}
-          <div className="flex flex-col items-center gap-3 text-center">
-            {displayIcon && (
-              <img
-                src={displayIcon}
-                alt=""
-                className="h-12 w-12 rounded-xl"
-                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-              />
-            )}
-            <div>
-              <p className="text-base font-semibold text-text-primary">
-                {displayName}
-              </p>
-              {appName && origin && (
-                <p className="mt-0.5 text-xs text-text-ghost truncate max-w-[280px]">
-                  {origin}
+          {/* Requester identity */}
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 text-text-secondary">
+                <Globe className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base font-semibold text-text-primary">
+                  {requesterLabel}
                 </p>
-              )}
+                {appName && (
+                  <p className="mt-0.5 truncate text-xs text-text-secondary">
+                    App name: {appName}
+                  </p>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+                    {existingSessions.length > 0 ? 'Returning connection' : 'First connection'}
+                  </span>
+                  {hasPortableIdentity && (
+                    <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+                      Identity transfer
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
-            <p className="text-sm text-text-secondary">
+            <p className="text-sm leading-relaxed text-text-secondary">
               {hasPortableIdentity
-                ? 'wants to transfer an identity and connect'
-                : 'is requesting permissions'}
+                ? `wants to transfer an identity and then ${permissionSummaryContinuation(requestSummary)}`
+                : requestSummary}
             </p>
           </div>
 
@@ -444,12 +462,23 @@ export default function DWebConnectPage() {
 
           {/* Identity selector */}
           {identityOptions.length > 0 ? (
-            <Select
-              label="Approve as"
-              options={identityOptions}
-              value={selectedDid}
-              onChange={(e) => setSelectedDid(e.target.value)}
-            />
+            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
+                Approve as
+              </p>
+              <Select
+                id="dweb-connect-identity"
+                aria-label="Approve as identity"
+                options={identityOptions}
+                value={selectedDid}
+                onChange={(e) => setSelectedDid(e.target.value)}
+              />
+              {isIdentityOverride && (
+                <p className="mt-2 text-xs leading-relaxed text-amber-300">
+                  This app requested {truncateDid(requestedDid)}. You selected a different identity.
+                </p>
+              )}
+            </section>
           ) : (
             <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center">
               <p className="text-xs text-warning">
@@ -462,11 +491,12 @@ export default function DWebConnectPage() {
             permissions={permissions}
             protocolSetupStatuses={protocolSetupStatuses}
             existingSessionCount={existingSessions.length}
+            requesterLabel={requesterLabel}
           />
 
           {/* Actions */}
           <div className="mt-auto flex gap-3 pt-4">
-            <Button variant="danger" className="flex-1" onClick={handleDeny}>
+            <Button variant="secondary" className="flex-1" onClick={handleDeny}>
               <X className="h-4 w-4" />
               Deny
             </Button>

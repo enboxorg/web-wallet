@@ -21,7 +21,10 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
-import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
+import {
+  PermissionDisplay,
+} from '@/components/connect/PermissionDisplay';
+import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { prepareProtocol } from './protocol-install';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
 import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
@@ -273,6 +276,11 @@ export default function AppConnectPage() {
       appName : connectionRequest.appName,
     })
     : [];
+  const requesterLabel = connectionRequest?.clientMetadata?.origin
+    || (connectionRequest?.clientDid ? truncateDid(connectionRequest.clientDid) : 'Unknown requester');
+  const requestSummary = connectionRequest
+    ? getConnectPermissionAskSummary(permissionRequests)
+    : '';
 
   async function handleCopyPin() {
     const copied = await copyToClipboard(pin);
@@ -408,38 +416,52 @@ export default function AppConnectPage() {
       {/* ─── Request phase ──────────────────────────────────────── */}
       {phase === 'request' && connectionRequest && (
         <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-6 lg:px-0 max-w-lg mx-auto space-y-6">
-          {/* App identity */}
-          <div className="flex flex-col items-center gap-3 text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-accent/10 text-accent">
-              <Link2 className="h-8 w-8" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold text-text-primary">
-                {connectionRequest.appName || 'Unknown App'}
-              </h2>
-              {connectionRequest.appName && (
-                <p className="mt-0.5 text-xs text-text-ghost font-mono truncate max-w-[280px]">
-                  {truncateDid(connectionRequest.clientDid)}
+          {/* Requester identity */}
+          <div className="space-y-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 text-text-secondary">
+                <Link2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-base font-semibold text-text-primary">
+                  {requesterLabel}
                 </p>
-              )}
+                {connectionRequest.appName && (
+                  <p className="mt-0.5 truncate text-xs text-text-secondary">
+                    App name: {connectionRequest.appName}
+                  </p>
+                )}
+                {connectionRequest.clientMetadata?.origin && (
+                  <p className="mt-0.5 font-mono text-[10px] text-text-ghost">
+                    Client DID: {truncateDid(connectionRequest.clientDid)}
+                  </p>
+                )}
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+                    {existingSessions.length > 0 ? 'Returning connection' : 'First connection'}
+                  </span>
+                </div>
+              </div>
             </div>
-            <p className="text-sm text-text-secondary">wants to connect</p>
+            <p className="text-sm leading-relaxed text-text-secondary">
+              {requestSummary}
+            </p>
           </div>
-
-          <PermissionDisplay
-            permissions={connectionRequest.permissionRequests}
-            protocolSetupStatuses={protocolSetupStatuses}
-            existingSessionCount={existingSessions.length}
-          />
 
           {/* Identity selector */}
           {identityOptions.length > 0 ? (
-            <Select
-              label="Approve as"
-              options={identityOptions}
-              value={selectedDid}
-              onChange={(e) => setSelectedDid(e.target.value)}
-            />
+            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
+                Approve as
+              </p>
+              <Select
+                id="app-connect-identity"
+                aria-label="Approve as identity"
+                options={identityOptions}
+                value={selectedDid}
+                onChange={(e) => setSelectedDid(e.target.value)}
+              />
+            </section>
           ) : (
             <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center">
               <p className="text-xs text-warning">
@@ -448,10 +470,17 @@ export default function AppConnectPage() {
             </div>
           )}
 
+          <PermissionDisplay
+            permissions={connectionRequest.permissionRequests}
+            protocolSetupStatuses={protocolSetupStatuses}
+            existingSessionCount={existingSessions.length}
+            requesterLabel={requesterLabel}
+          />
+
           {/* Action buttons — stacked on mobile */}
           <div className="flex flex-col gap-3 sm:flex-row sm:gap-3">
             <Button
-              variant="danger"
+              variant="secondary"
               className="w-full min-h-[44px] sm:flex-1"
               onClick={handleDeny}
             >
