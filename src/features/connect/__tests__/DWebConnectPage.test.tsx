@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   ensureRegistration: vi.fn(),
   importPortableIdentity: vi.fn(),
   prepareProtocol: vi.fn(),
+  permissions: [] as any[],
 }));
 
 vi.mock('@/enbox/hooks/use-agent', () => ({
@@ -32,6 +33,14 @@ vi.mock('@/enbox/hooks/use-identities', () => ({
         metadata: { name: 'Alice' },
       },
     ],
+  }),
+}));
+
+vi.mock('@/enbox/hooks/use-permissions', () => ({
+  usePermissions: () => ({
+    data      : mocks.permissions,
+    isLoading : false,
+    isError   : false,
   }),
 }));
 
@@ -127,6 +136,7 @@ describe('DWebConnectPage', () => {
     mocks.agent.dwn.getDwnEndpointUrlsForTarget.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistration.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
+    mocks.permissions = [];
   });
 
   it('coalesces duplicate approve clicks into one delegate grant response', async () => {
@@ -203,5 +213,34 @@ describe('DWebConnectPage', () => {
         transport : 'postMessage',
       }),
     );
+  });
+
+  it('shows when the app already has an active connect session', async () => {
+    mocks.permissions = [{
+      id          : 'grant-existing',
+      grantee     : 'did:jwk:existing',
+      dateGranted : '2026-06-23T00:00:00.000Z',
+      dateExpires : '2999-06-24T00:00:00.000Z',
+      scope       : {
+        interface : 'Records',
+        method    : 'Read',
+        protocol  : 'https://example.com/protocols/tasks',
+      },
+      connectSession: {
+        id        : 'session-existing',
+        createdAt : '2026-06-23T00:00:00.000Z',
+        expiresAt : '2999-06-24T00:00:00.000Z',
+        appName   : 'Example App',
+        origin    : 'https://app.example',
+        transport : 'postMessage',
+      },
+      revoke: vi.fn(),
+    }];
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText('Existing app access')).toBeInTheDocument();
+    expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
+    expect(screen.getByText(/creates a new 24-hour session/i)).toBeInTheDocument();
   });
 });

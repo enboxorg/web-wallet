@@ -21,9 +21,11 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
+import { ExistingConnectSessionsNotice } from '@/components/connect/ExistingConnectSessionsNotice';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
 import { SessionExpiryNotice } from '@/components/connect/SessionExpiryNotice';
 import { prepareProtocol } from './protocol-install';
+import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
 import {
   denyConnectRequest,
   fetchConnectRequest,
@@ -32,6 +34,7 @@ import {
 } from './connect-effects';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
+import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 
 type Phase = 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
@@ -60,6 +63,7 @@ export default function AppConnectPage() {
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pinCopied, setPinCopied] = useState(false);
+  const { data: selectedPermissions } = usePermissions(selectedDid);
 
   // Build identity options for the selector
   const identityOptions = (identities ?? []).map((id: any) => ({
@@ -260,6 +264,13 @@ export default function AppConnectPage() {
     setFlashOn(scannerRef.current?.isFlashOn() ?? false);
   }
 
+  const existingSessions = connectionRequest
+    ? findMatchingActiveConnectSessions(selectedPermissions, {
+      origin  : connectionRequest.clientMetadata?.origin,
+      appName : connectionRequest.appName,
+    })
+    : [];
+
   async function handleCopyPin() {
     const copied = await copyToClipboard(pin);
     if (copied) {
@@ -413,6 +424,8 @@ export default function AppConnectPage() {
           </div>
 
           {/* Permissions — rich display */}
+          <ExistingConnectSessionsNotice sessions={existingSessions} />
+
           <PermissionDisplay permissions={connectionRequest.permissionRequests} />
 
           <SessionExpiryNotice />
