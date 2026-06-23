@@ -3,8 +3,8 @@
  *
  * Presents a compact, summary-first approval view:
  * - temporary session + setup + data-area summary
- * - user-facing access rows
- * - setup changes only when something will be added/updated
+ * - grouped wallet setup plan
+ * - user-facing access rows after setup context
  * - one collapsed technical detail section for protocol internals
  */
 import {
@@ -62,51 +62,33 @@ type ProtocolAccess = {
   setupStatus: ProtocolSetupStatus;
 };
 
-type SetupDisplay = {
-  icon: LucideIcon;
-  title: string;
-  body: (protocolName: string) => string;
+type SetupTone = 'neutral' | 'success' | 'info' | 'warning';
+
+type SetupStatusDisplay = {
+  label: string;
   className: string;
-  iconClassName: string;
-  spin?: boolean;
 };
 
-const SETUP_DISPLAY: Record<ProtocolSetupStatus, SetupDisplay> = {
+const SETUP_STATUS_DISPLAY: Record<ProtocolSetupStatus, SetupStatusDisplay> = {
   checking: {
-    icon          : Loader2,
-    title         : 'Checking setup',
-    body          : (protocolName) => `Checking whether ${protocolName} is ready for this identity.`,
-    className     : 'border-border-subtle bg-surface-1',
-    iconClassName : 'text-text-secondary',
-    spin          : true,
+    label     : 'Checking',
+    className : 'border-border-subtle bg-surface-1 text-text-secondary',
   },
   configured: {
-    icon          : CheckCircle2,
-    title         : 'Already ready',
-    body          : (protocolName) => `${protocolName} is already ready for this identity.`,
-    className     : 'border-green-500/20 bg-green-500/10',
-    iconClassName : 'text-green-400',
+    label     : 'Ready',
+    className : 'border-green-500/20 bg-green-500/10 text-green-300',
   },
   install: {
-    icon          : Download,
-    title         : 'Will add data format',
-    body          : (protocolName) => `Adds ${protocolName} so this app can use its data with this identity.`,
-    className     : 'border-blue-500/20 bg-blue-500/10',
-    iconClassName : 'text-blue-400',
+    label     : 'Add',
+    className : 'border-blue-500/20 bg-blue-500/10 text-blue-300',
   },
   update: {
-    icon          : RefreshCw,
-    title         : 'Will update data format',
-    body          : (protocolName) => `${protocolName} uses a newer setup than this identity has today.`,
-    className     : 'border-amber-500/20 bg-amber-500/10',
-    iconClassName : 'text-amber-400',
+    label     : 'Update',
+    className : 'border-amber-500/20 bg-amber-500/10 text-amber-300',
   },
   unavailable: {
-    icon          : AlertTriangle,
-    title         : 'Could not verify setup',
-    body          : (protocolName) => `The wallet could not verify ${protocolName} yet. It will check again before approval.`,
-    className     : 'border-amber-500/20 bg-amber-500/10',
-    iconClassName : 'text-amber-400',
+    label     : 'Verify',
+    className : 'border-amber-500/20 bg-amber-500/10 text-amber-300',
   },
 };
 
@@ -207,7 +189,7 @@ function getProtocolAccess(
 
 function getSetupSummary(access: ProtocolAccess[]): {
   label: string;
-  tone: 'neutral' | 'success' | 'info' | 'warning';
+  tone: SetupTone;
   icon: LucideIcon;
   spin?: boolean;
 } {
@@ -217,15 +199,20 @@ function getSetupSummary(access: ProtocolAccess[]): {
   const checking = access.filter((item) => item.setupStatus === 'checking').length;
 
   if (updates > 0) {
+    const parts = [
+      installs > 0 ? `${installs} to add` : '',
+      `${updates} to update`,
+    ].filter(Boolean);
+
     return {
-      label : `Updates ${pluralize(updates, 'data format')}`,
+      label : `Setup: ${parts.join(', ')}`,
       tone  : 'warning',
       icon  : RefreshCw,
     };
   }
   if (installs > 0) {
     return {
-      label : `Adds ${pluralize(installs, 'data format')}`,
+      label : `Setup: ${installs} to add`,
       tone  : 'info',
       icon  : Download,
     };
@@ -246,13 +233,13 @@ function getSetupSummary(access: ProtocolAccess[]): {
     };
   }
   return {
-    label : 'No new setup',
+    label : 'No setup changes',
     tone  : 'success',
     icon  : CheckCircle2,
   };
 }
 
-function summaryToneClasses(tone: 'neutral' | 'success' | 'info' | 'warning'): string {
+function summaryToneClasses(tone: SetupTone): string {
   switch (tone) {
     case 'success':
       return 'border-green-500/20 bg-green-500/10 text-green-300';
@@ -265,8 +252,49 @@ function summaryToneClasses(tone: 'neutral' | 'success' | 'info' | 'warning'): s
   }
 }
 
+function setupGroupClasses(tone: SetupTone): string {
+  switch (tone) {
+    case 'success':
+      return 'border-green-500/20 bg-green-500/10';
+    case 'info':
+      return 'border-blue-500/20 bg-blue-500/10';
+    case 'warning':
+      return 'border-amber-500/20 bg-amber-500/10';
+    default:
+      return 'border-border-default bg-surface-2';
+  }
+}
+
+function setupIconClasses(tone: SetupTone): string {
+  switch (tone) {
+    case 'success':
+      return 'bg-green-500/15 text-green-400';
+    case 'info':
+      return 'bg-blue-500/15 text-blue-400';
+    case 'warning':
+      return 'bg-amber-500/15 text-amber-400';
+    default:
+      return 'bg-surface-1 text-text-secondary';
+  }
+}
+
 function sessionCountLabel(count: number): string {
   return count === 1 ? '1 active session' : `${count} active sessions`;
+}
+
+function getScopeDisplayLabel(scope: { interface: string; method: string }): string {
+  if (scope.interface !== 'Records') return getScopeLabel(scope);
+
+  switch (scope.method) {
+    case 'Read':
+      return 'View';
+    case 'Write':
+      return 'Add or edit';
+    case 'Delete':
+      return 'Delete';
+    default:
+      return getScopeLabel(scope);
+  }
 }
 
 function SummaryChip({
@@ -277,7 +305,7 @@ function SummaryChip({
 }: {
   icon: LucideIcon;
   label: string;
-  tone?: 'neutral' | 'success' | 'info' | 'warning';
+  tone?: SetupTone;
   spin?: boolean;
 }) {
   return (
@@ -349,8 +377,9 @@ function ScopeBadges({ scopes }: { scopes: ProtocolAccess['displayScopes'] }) {
           <span
             key={`${scope.interface}.${scope.method}`}
             className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${SCOPE_COLOR_CLASSES[color]}`}
+            title={getScopeLabel(scope)}
           >
-            {getScopeLabel(scope)}
+            {getScopeDisplayLabel(scope)}
           </span>
         );
       })}
@@ -362,7 +391,7 @@ function AccessRows({ access }: { access: ProtocolAccess[] }) {
   return (
     <section className="space-y-2">
       <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-        Access requested
+        Access after approval
       </p>
 
       <div className="overflow-hidden rounded-xl border border-border-default bg-surface-2">
@@ -401,13 +430,128 @@ function AccessRows({ access }: { access: ProtocolAccess[] }) {
   );
 }
 
-function SetupChanges({ access }: { access: ProtocolAccess[] }) {
-  const visibleSetup = access.filter((item) =>
+function SetupStatusBadge({ status }: { status: ProtocolSetupStatus }) {
+  const display = SETUP_STATUS_DISPLAY[status];
+
+  return (
+    <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${display.className}`}>
+      {display.label}
+    </span>
+  );
+}
+
+function SetupItemList({ items }: { items: ProtocolAccess[] }) {
+  return (
+    <div className="mt-3 space-y-2">
+      {items.map((item) => (
+        <div
+          key={item.protocolUri}
+          className="flex flex-col gap-2 rounded-lg bg-surface-2/70 px-3 py-2 sm:flex-row sm:items-start sm:justify-between"
+        >
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-2">
+              <p className="truncate text-xs font-medium text-text-primary">
+                {item.name}
+              </p>
+              {item.hasEncryptedTypes && (
+                <Lock className="h-3 w-3 shrink-0 text-blue-400" />
+              )}
+            </div>
+            <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-text-secondary">
+              {item.description}
+            </p>
+          </div>
+          <SetupStatusBadge status={item.setupStatus} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SetupNameChips({ items }: { items: ProtocolAccess[] }) {
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5">
+      {items.map((item) => (
+        <span
+          key={item.protocolUri}
+          className="inline-flex items-center gap-1 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-300"
+        >
+          <CheckCircle2 className="h-3 w-3" />
+          {item.name}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function SetupBundle({
+  icon: Icon,
+  title,
+  summary,
+  items,
+  tone,
+  compact = false,
+  spin = false,
+}: {
+  icon: LucideIcon;
+  title: string;
+  summary: string;
+  items: ProtocolAccess[];
+  tone: SetupTone;
+  compact?: boolean;
+  spin?: boolean;
+}) {
+  return (
+    <div className={`rounded-xl border p-4 ${setupGroupClasses(tone)}`}>
+      <div className="flex items-start gap-3">
+        <div className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${setupIconClasses(tone)}`}>
+          <Icon className={`h-4 w-4 ${spin ? 'animate-spin' : ''}`} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-medium text-text-primary">
+              {title}
+            </p>
+            <span
+              className="inline-flex items-center rounded-full border border-border-subtle bg-surface-2/60 px-2 py-0.5 text-[10px] font-medium text-text-secondary"
+            >
+              {pluralize(items.length, 'data area')}
+            </span>
+          </div>
+          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+            {summary}
+          </p>
+          {compact ? (
+            <SetupNameChips items={items} />
+          ) : (
+            <SetupItemList items={items} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function setupChangeTitle(items: ProtocolAccess[]): string {
+  const hasInstall = items.some((item) => item.setupStatus === 'install');
+  const hasUpdate = items.some((item) => item.setupStatus === 'update');
+
+  if (hasInstall && hasUpdate) return 'Will add or update data areas';
+  if (hasUpdate) return 'Will update data areas';
+  return 'Will add data areas';
+}
+
+function SetupPlan({ access }: { access: ProtocolAccess[] }) {
+  const setupChanges = access.filter((item) =>
     item.setupStatus === 'install'
     || item.setupStatus === 'update'
+  );
+  const setupChecks = access.filter((item) =>
+    item.setupStatus === 'checking'
     || item.setupStatus === 'unavailable'
   );
-  if (visibleSetup.length === 0) return null;
+  const ready = access.filter((item) => item.setupStatus === 'configured');
+  const hasSetupWork = setupChanges.length > 0 || setupChecks.length > 0;
 
   return (
     <section className="space-y-2">
@@ -416,29 +560,39 @@ function SetupChanges({ access }: { access: ProtocolAccess[] }) {
       </p>
 
       <div className="space-y-2">
-        {visibleSetup.map((item) => {
-          const display = SETUP_DISPLAY[item.setupStatus];
-          const Icon = display.icon;
+        {setupChanges.length > 0 && (
+          <SetupBundle
+            icon={setupChanges.some((item) => item.setupStatus === 'update') ? RefreshCw : Download}
+            title={setupChangeTitle(setupChanges)}
+            summary="Your wallet does this first, then grants the requested access."
+            items={setupChanges}
+            tone={setupChanges.some((item) => item.setupStatus === 'update') ? 'warning' : 'info'}
+          />
+        )}
 
-          return (
-            <div
-              key={item.protocolUri}
-              className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 ${display.className}`}
-            >
-              <Icon
-                className={`mt-0.5 h-4 w-4 shrink-0 ${display.iconClassName} ${display.spin ? 'animate-spin' : ''}`}
-              />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-text-primary">
-                  {display.title}
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
-                  {display.body(item.name)}
-                </p>
-              </div>
-            </div>
-          );
-        })}
+        {setupChecks.length > 0 && (
+          <SetupBundle
+            icon={setupChecks.some((item) => item.setupStatus === 'unavailable') ? AlertTriangle : Loader2}
+            title="Still checking setup"
+            summary="The wallet needs to verify these data areas before approval can finish."
+            items={setupChecks}
+            tone={setupChecks.some((item) => item.setupStatus === 'unavailable') ? 'warning' : 'neutral'}
+            spin={setupChecks.every((item) => item.setupStatus === 'checking')}
+          />
+        )}
+
+        {ready.length > 0 && (
+          <SetupBundle
+            icon={CheckCircle2}
+            title={hasSetupWork ? 'Already ready' : 'No setup changes'}
+            summary={hasSetupWork
+              ? 'These data areas are already set up. The wallet will not change them.'
+              : 'These data areas are already set up for this identity.'}
+            items={ready}
+            tone="success"
+            compact
+          />
+        )}
       </div>
     </section>
   );
@@ -543,8 +697,8 @@ export function PermissionDisplay({
         access={access}
         existingSessionCount={existingSessionCount}
       />
+      <SetupPlan access={access} />
       <AccessRows access={access} />
-      <SetupChanges access={access} />
       <TechnicalDetails access={access} />
     </div>
   );
