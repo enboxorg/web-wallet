@@ -109,6 +109,17 @@ describe('DWebConnectPage', () => {
       expect(mocks.createDelegateDid).toHaveBeenCalledTimes(1);
       expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1);
     });
+    expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
+      'did:dht:alice',
+      { uri: 'did:jwk:delegate' },
+      permissionRequest.permissionScopes,
+      mocks.agent,
+      expect.objectContaining({
+        appName   : 'Example App',
+        origin    : 'https://app.example',
+        transport : 'postMessage',
+      }),
+    );
     expect(window.opener.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'dweb-connect-authorization-response',

@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import {
   EnboxConnectProtocol,
+  type ConnectSessionMetadata,
   type ConnectPermissionRequest,
   type EnboxConnectRequest,
 } from '@enbox/agent';
@@ -194,6 +195,7 @@ export function createPermissionGrantsEffect(
   selectedDid: string,
   delegateBearerDid: any,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
+  connectSession?: ConnectSessionMetadata,
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
@@ -204,6 +206,8 @@ export function createPermissionGrantsEffect(
           delegateBearerDid,
           agent,
           permissionScopes,
+          undefined,
+          connectSession ? { connectSession } : undefined,
         ),
       catch: sdkError('dwebConnect.createPermissionGrants'),
     });
@@ -215,9 +219,15 @@ export function createPermissionGrants(
   delegateBearerDid: any,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
   agent: EnboxAgent,
+  connectSession?: ConnectSessionMetadata,
 ) {
   return runEnboxPromise(
-    createPermissionGrantsEffect(selectedDid, delegateBearerDid, permissionScopes).pipe(
+    createPermissionGrantsEffect(
+      selectedDid,
+      delegateBearerDid,
+      permissionScopes,
+      connectSession,
+    ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );

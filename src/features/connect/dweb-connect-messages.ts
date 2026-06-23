@@ -1,5 +1,9 @@
 import type { ConnectPermissionRequest } from '@enbox/agent';
 import type { DWebConnectRequest } from '@/stores/dweb-connect-store';
+import {
+  sanitizeConnectClientMetadata,
+  type ConnectClientMetadata,
+} from './connect-session-metadata';
 
 const MAX_APP_NAME_LENGTH = 120;
 const MAX_URL_LENGTH = 2048;
@@ -13,6 +17,7 @@ export interface SanitizedDWebConnectRequest {
   permissions: ConnectPermissionRequest[];
   appName?: string;
   appIcon?: string;
+  clientMetadata: ConnectClientMetadata;
   portableIdentity?: unknown;
   ephemeralPublicKey?: string;
   requestedDid?: string;
@@ -148,6 +153,7 @@ export function sanitizeDWebConnectRequest(
     permissions,
     appName: optionalString(request.data.appName, MAX_APP_NAME_LENGTH),
     appIcon: sanitizeIconUrl(request.data.appIcon, origin),
+    clientMetadata: sanitizeConnectClientMetadata(request.data.clientMetadata, origin),
     portableIdentity: request.data.portableIdentity,
     ephemeralPublicKey,
     requestedDid: sanitizeRequestedDid(request.data.did),

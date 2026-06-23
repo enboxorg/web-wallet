@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   createDelegateDid,
+  createPermissionGrants,
   denyConnectRequest,
   encryptDWebConnectResponse,
   fetchConnectRequest,
@@ -88,6 +89,41 @@ describe('connect Effect adapters', () => {
       request,
       '1234',
       agent,
+    );
+  });
+
+  it('passes connect session metadata through permission grant creation', async () => {
+    const agent = { id: 'agent-1' };
+    const delegateBearerDid = { uri: 'did:jwk:delegate' };
+    const scopes = [{
+      interface: 'Records',
+      method: 'Read',
+      protocol: 'https://example.com/protocols/demo',
+    }];
+    const connectSession = {
+      id        : 'session-1',
+      createdAt : '2026-06-23T00:00:00.000Z',
+      expiresAt : '2026-06-24T00:00:00.000Z',
+      origin    : 'https://app.example',
+      transport : 'postMessage' as const,
+    };
+    mocks.createPermissionGrants.mockResolvedValue([{ id: 'grant-1' }]);
+
+    await createPermissionGrants(
+      'did:dht:alice',
+      delegateBearerDid,
+      scopes as any,
+      agent,
+      connectSession,
+    );
+
+    expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
+      'did:dht:alice',
+      delegateBearerDid,
+      agent,
+      scopes,
+      undefined,
+      { connectSession },
     );
   });
 
