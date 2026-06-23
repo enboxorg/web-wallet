@@ -105,6 +105,22 @@ describe('ensureRegistrationEffect', () => {
     expect(tokenStore.set).toHaveBeenCalledWith({});
   });
 
+  it('retries transient server info failures before skipping an endpoint', async () => {
+    const agent = createAgent();
+    agent.rpc.getServerInfo
+      .mockRejectedValueOnce(new Error('temporary network failure'))
+      .mockResolvedValueOnce({ registrationRequirements: [] });
+    const tokenStore = createTokenStore();
+
+    await runWithAgentAndStore(agent, tokenStore, ['https://dwn.example']);
+
+    expect(agent.rpc.getServerInfo).toHaveBeenCalledTimes(2);
+    expect(DwnRegistrar.registerTenant).toHaveBeenCalledWith(
+      'https://dwn.example',
+      'did:dht:agent',
+    );
+  });
+
   it('refreshes expired provider-auth tokens through the injected token store', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const endpoint = 'https://provider.example/dwn';

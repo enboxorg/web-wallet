@@ -9,15 +9,24 @@ import { CryptoUtils, Ed25519 } from '@enbox/crypto';
 import { DidJwk } from '@enbox/dids';
 
 import { sdkError } from '@/enbox/effect/errors';
+import { withNetworkPolicy } from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
 
+function sdkTimeout(operation: string) {
+  return sdkError(operation)(new Error(`${operation} timed out`));
+}
+
 export function fetchConnectRequestEffect(requestUri: string, encryptionKey: string) {
-  return Effect.tryPromise({
-    try: async () => EnboxConnectProtocol.getConnectRequest(requestUri, encryptionKey),
-    catch: sdkError('connect.getConnectRequest'),
-  });
+  return withNetworkPolicy(
+    'connect.getConnectRequest',
+    Effect.tryPromise({
+      try: async () => EnboxConnectProtocol.getConnectRequest(requestUri, encryptionKey),
+      catch: sdkError('connect.getConnectRequest'),
+    }),
+    () => sdkTimeout('connect.getConnectRequest'),
+  );
 }
 
 export function fetchConnectRequest(
@@ -42,16 +51,20 @@ export function submitConnectResponseEffect(
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-    return yield* Effect.tryPromise({
-      try: async () =>
-        EnboxConnectProtocol.submitConnectResponse(
-          selectedDid,
-          connectionRequest,
-          pin,
-          agent,
-        ),
-      catch: sdkError('connect.submitConnectResponse'),
-    });
+    return yield* withNetworkPolicy(
+      'connect.submitConnectResponse',
+      Effect.tryPromise({
+        try: async () =>
+          EnboxConnectProtocol.submitConnectResponse(
+            selectedDid,
+            connectionRequest,
+            pin,
+            agent,
+          ),
+        catch: sdkError('connect.submitConnectResponse'),
+      }),
+      () => sdkTimeout('connect.submitConnectResponse'),
+    );
   });
 }
 
@@ -69,18 +82,26 @@ export function submitConnectResponse(
 }
 
 export function denyConnectRequestEffect(callbackUrl: string, state: string) {
-  return Effect.tryPromise({
-    try: async () =>
-      fetch(callbackUrl, {
-        method  : 'POST',
-        headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body    : new URLSearchParams({
-          id_token : 'DENIED',
-          state,
-        }).toString(),
-      }),
-    catch: sdkError('connect.deny'),
-  }).pipe(Effect.asVoid);
+  return withNetworkPolicy(
+    'connect.deny',
+    Effect.tryPromise({
+      try: async () => {
+        const res = await fetch(callbackUrl, {
+          method  : 'POST',
+          headers : { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body    : new URLSearchParams({
+            id_token : 'DENIED',
+            state,
+          }).toString(),
+        });
+        if (!res.ok) {
+          throw new Error(`Connect denial callback failed (${res.status})`);
+        }
+      },
+      catch: sdkError('connect.deny'),
+    }),
+    () => sdkTimeout('connect.deny'),
+  );
 }
 
 export function denyConnectRequest(callbackUrl: string, state: string): Promise<void> {

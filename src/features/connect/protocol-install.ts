@@ -2,6 +2,7 @@ import { Effect } from 'effect';
 import { DwnInterface, type DwnProtocolDefinition, getDwnServiceEndpointUrls } from '@enbox/agent';
 
 import { sdkError } from '@/enbox/effect/errors';
+import { withNetworkPolicy } from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 
@@ -27,6 +28,10 @@ type PrepareProtocolAgent = {
     encryption?: true;
   }) => Promise<{ reply: ProtocolQueryReply; message?: unknown }>;
 };
+
+function sdkTimeout(operation: string) {
+  return sdkError(operation)(new Error(`${operation} timed out`));
+}
 
 function getStructureNode(structure: Record<string, any> | undefined, protocolPath: string): Record<string, any> | undefined {
   if (!structure) return undefined;
@@ -130,15 +135,19 @@ export function prepareProtocolEffect(
     yield* Effect.forEach(
       dwnEndpoints,
       (endpoint: string) =>
-        Effect.tryPromise({
-          try: async () =>
-            agent.rpc.sendDwnRequest({
-              dwnUrl: endpoint,
-              targetDid: selectedDid,
-              message: configureMessage,
-            }),
-          catch: sdkError('connect.protocol.sendConfigure'),
-        }).pipe(
+        withNetworkPolicy(
+          'connect.protocol.sendConfigure',
+          Effect.tryPromise({
+            try: async () =>
+              agent.rpc.sendDwnRequest({
+                dwnUrl: endpoint,
+                targetDid: selectedDid,
+                message: configureMessage,
+              }),
+            catch: sdkError('connect.protocol.sendConfigure'),
+          }),
+          () => sdkTimeout('connect.protocol.sendConfigure'),
+        ).pipe(
           Effect.tap((reply) =>
             Effect.sync(() => {
               if (reply.status.code !== 202 && reply.status.code !== 409) {
