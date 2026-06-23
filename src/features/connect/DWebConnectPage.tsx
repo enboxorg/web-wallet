@@ -37,12 +37,38 @@ import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
+class EncryptedChannelRequiredError extends Error {
+  constructor() {
+    super('Connection denied: dapp does not support encrypted DWeb Connect responses.');
+    this.name = 'EncryptedChannelRequiredError';
+  }
+}
+
 function connectErrorMessage(error: unknown): string {
   const message = error instanceof Error ? error.message : 'Failed to create delegate.';
   if (/Could not send permission grant to any DWN endpoint/i.test(message)) {
     return 'Could not write the approved permission grants to any DWN endpoint for this identity. Check the identity DWN endpoints and try again.';
   }
   return message;
+}
+
+function notifyDWebConnectError(
+  origin: string,
+  error: string,
+  reason: string,
+): void {
+  if (!origin || !window.opener || window.opener.closed) {
+    return;
+  }
+
+  window.opener.postMessage(
+    {
+      type: 'dweb-connect-authorization-response',
+      error,
+      reason,
+    },
+    origin,
+  );
 }
 
 export default function DWebConnectPage() {
@@ -181,6 +207,14 @@ export default function DWebConnectPage() {
       if (!sanitizedRequest) {
         throw new Error('Invalid DWeb Connect request.');
       }
+      if (!sanitizedRequest.ephemeralPublicKey) {
+        notifyDWebConnectError(
+          origin,
+          'encryption_required',
+          'Wallet requires an encrypted channel. The dapp did not provide an ephemeral public key.',
+        );
+        throw new EncryptedChannelRequiredError();
+      }
 
       if (hasPortableIdentity && sanitizedRequest.portableIdentity) {
         await importPortableIdentity(sanitizedRequest.portableIdentity, agent);
@@ -262,33 +296,14 @@ export default function DWebConnectPage() {
         delegateDecryptionKeys : allDecryptionKeys.length > 0 ? allDecryptionKeys : undefined,
       };
 
-      // If the dapp sent an ephemeral public key, encrypt the response
-      // so private key material is not exposed as plaintext in postMessage.
-      const dappEphemeralKey = sanitizedRequest?.ephemeralPublicKey;
-      if (dappEphemeralKey) {
-        try {
-          const encryptedPayload = await encryptDWebConnectResponse(
-            responsePayload,
-            dappEphemeralKey,
-          );
-          window.opener.postMessage(
-            { type: 'dweb-connect-authorization-response', encryptedPayload },
-            origin,
-          );
-        } catch (encErr) {
-          console.warn('Failed to encrypt connect response, falling back to plaintext:', encErr);
-          window.opener.postMessage(
-            { type: 'dweb-connect-authorization-response', ...responsePayload },
-            origin,
-          );
-        }
-      } else {
-        // Dapp does not support encrypted channel — send plaintext.
-        window.opener.postMessage(
-          { type: 'dweb-connect-authorization-response', ...responsePayload },
-          origin,
-        );
-      }
+      const encryptedPayload = await encryptDWebConnectResponse(
+        responsePayload,
+        sanitizedRequest.ephemeralPublicKey,
+      );
+      window.opener.postMessage(
+        { type: 'dweb-connect-authorization-response', encryptedPayload },
+        origin,
+      );
 
       setPhase('done');
       approvalCompletedRef.current = true;
@@ -303,7 +318,11 @@ export default function DWebConnectPage() {
       setTimeout(() => window.close(), 3000);
     } catch (err) {
       console.error('DWeb connect error:', err);
-      setErrorMessage(connectErrorMessage(err));
+      const message = connectErrorMessage(err);
+      if (!(err instanceof EncryptedChannelRequiredError)) {
+        notifyDWebConnectError(origin, 'connection_failed', message);
+      }
+      setErrorMessage(message);
       setPhase('error');
     }
   }

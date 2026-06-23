@@ -104,6 +104,7 @@ function connectRequest(): DWebConnectRequest {
     data: {
       type: 'dweb-connect-authorization-request',
       appName: 'Example App',
+      ephemeralPublicKey: 'dapp-public-key',
       permissions: [permissionRequest],
     },
   };
@@ -135,6 +136,7 @@ describe('DWebConnectPage', () => {
     });
     mocks.createPermissionGrants.mockResolvedValue([{ id: 'grant-1' }]);
     mocks.deriveScopedDecryptionKeys.mockResolvedValue([]);
+    mocks.encryptDWebConnectResponse.mockResolvedValue('encrypted-payload');
     mocks.agent.dwn.getDwnEndpointUrlsForTarget.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistration.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
@@ -175,11 +177,48 @@ describe('DWebConnectPage', () => {
     expect(window.opener.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
         type: 'dweb-connect-authorization-response',
-        connectedDid: 'did:dht:alice',
-        grants: [{ id: 'grant-1' }],
+        encryptedPayload: 'encrypted-payload',
       }),
       'https://app.example',
     );
+    expect(mocks.encryptDWebConnectResponse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectedDid: 'did:dht:alice',
+        grants: [{ id: 'grant-1' }],
+      }),
+      'dapp-public-key',
+    );
+  });
+
+  it('rejects DWeb Connect requests that cannot receive encrypted responses', async () => {
+    useDWebConnectStore.setState({
+      pendingRequests: [{
+        ...connectRequest(),
+        data: {
+          ...connectRequest().data,
+          ephemeralPublicKey: undefined,
+        },
+      }],
+      walletReady: false,
+    });
+
+    render(<DWebConnectPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+
+    await waitFor(() => {
+      expect(window.opener.postMessage).toHaveBeenCalledWith(
+        {
+          type   : 'dweb-connect-authorization-response',
+          error  : 'encryption_required',
+          reason : 'Wallet requires an encrypted channel. The dapp did not provide an ephemeral public key.',
+        },
+        'https://app.example',
+      );
+    });
+    expect(mocks.createDelegateDid).not.toHaveBeenCalled();
+    expect(mocks.createPermissionGrants).not.toHaveBeenCalled();
+    expect(mocks.encryptDWebConnectResponse).not.toHaveBeenCalled();
   });
 
   it('creates grants once with all requested scopes after preparing each protocol', async () => {
