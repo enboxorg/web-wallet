@@ -22,6 +22,7 @@ import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
+import { SessionExpiryNotice } from '@/components/connect/SessionExpiryNotice';
 import { prepareProtocol } from './protocol-install';
 import {
   denyConnectRequest,
@@ -413,6 +414,8 @@ export default function AppConnectPage() {
 
           {/* Permissions — rich display */}
           <PermissionDisplay permissions={connectionRequest.permissionRequests} />
+
+          <SessionExpiryNotice />
 
           {/* Identity selector */}
           {identityOptions.length > 0 ? (
