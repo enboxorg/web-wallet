@@ -26,6 +26,7 @@ import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
 import { SessionExpiryNotice } from '@/components/connect/SessionExpiryNotice';
 import { prepareProtocol } from './protocol-install';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
+import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
 import {
   denyConnectRequest,
   fetchConnectRequest,
@@ -38,6 +39,8 @@ import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 
 type Phase = 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
+
+const EMPTY_PERMISSION_REQUESTS: EnboxConnectRequest['permissionRequests'] = [];
 
 export default function AppConnectPage() {
   const agent = useAgent();
@@ -64,6 +67,8 @@ export default function AppConnectPage() {
   const [errorMessage, setErrorMessage] = useState('');
   const [pinCopied, setPinCopied] = useState(false);
   const { data: selectedPermissions } = usePermissions(selectedDid);
+  const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
+  const protocolSetupStatuses = useProtocolSetupStatuses(selectedDid, agent, permissionRequests);
 
   // Build identity options for the selector
   const identityOptions = (identities ?? []).map((id: any) => ({
@@ -426,7 +431,10 @@ export default function AppConnectPage() {
           {/* Permissions — rich display */}
           <ExistingConnectSessionsNotice sessions={existingSessions} />
 
-          <PermissionDisplay permissions={connectionRequest.permissionRequests} />
+          <PermissionDisplay
+            permissions={connectionRequest.permissionRequests}
+            protocolSetupStatuses={protocolSetupStatuses}
+          />
 
           <SessionExpiryNotice />
 

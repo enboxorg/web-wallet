@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   ensureRegistration: vi.fn(),
   importPortableIdentity: vi.fn(),
   prepareProtocol: vi.fn(),
+  queryProtocolSetupStatus: vi.fn(),
   permissions: [] as any[],
 }));
 
@@ -58,6 +59,7 @@ vi.mock('../connect-effects', () => ({
 
 vi.mock('../protocol-install', () => ({
   prepareProtocol: mocks.prepareProtocol,
+  queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
 
 const permissionRequest = {
@@ -136,6 +138,7 @@ describe('DWebConnectPage', () => {
     mocks.agent.dwn.getDwnEndpointUrlsForTarget.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistration.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
+    mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.permissions = [];
   });
 

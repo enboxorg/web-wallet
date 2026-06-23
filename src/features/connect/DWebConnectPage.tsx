@@ -33,6 +33,7 @@ import {
   sanitizeDWebConnectRequest,
 } from './dweb-connect-messages';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
+import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
@@ -349,6 +350,7 @@ export default function DWebConnectPage() {
   const existingSessions = useMemo(() =>
     findMatchingActiveConnectSessions(selectedPermissions, { origin, appName }),
   [selectedPermissions, origin, appName]);
+  const protocolSetupStatuses = useProtocolSetupStatuses(selectedDid, agent, permissions);
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -461,7 +463,10 @@ export default function DWebConnectPage() {
           {/* Permissions — rich display */}
           <ExistingConnectSessionsNotice sessions={existingSessions} />
 
-          <PermissionDisplay permissions={permissions} />
+          <PermissionDisplay
+            permissions={permissions}
+            protocolSetupStatuses={protocolSetupStatuses}
+          />
 
           <SessionExpiryNotice />
 

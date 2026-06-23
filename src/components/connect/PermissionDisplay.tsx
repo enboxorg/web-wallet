@@ -5,13 +5,26 @@
  * a dapp is requesting, with human-readable names, descriptions,
  * colour-coded scope badges, and encryption indicators.
  */
-import { ChevronDown, Code, Lock, Settings, Shield } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronDown,
+  Code,
+  Download,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Shield,
+} from 'lucide-react';
 import type { ConnectPermissionRequest, DwnPermissionScope } from '@enbox/agent';
 import { getProtocolInfo, getScopeLabel, getScopeColor, type ScopeColor } from '@/lib/protocol-names';
+import type { ProtocolSetupStatus } from '@/features/connect/protocol-install';
 
 interface PermissionDisplayProps {
   /** The permission requests from the dapp. */
   permissions: ConnectPermissionRequest[];
+  /** Setup status keyed by protocol URI. */
+  protocolSetupStatuses?: Record<string, ProtocolSetupStatus>;
 }
 
 /** Colour classes for scope badges. */
@@ -24,6 +37,54 @@ const SCOPE_COLOR_CLASSES: Record<ScopeColor, string> = {
 };
 
 type ProtocolDefinition = ConnectPermissionRequest['protocolDefinition'];
+
+type ProtocolSetupDisplay = {
+  icon: typeof CheckCircle2;
+  title: string;
+  body: string;
+  className: string;
+  iconClassName: string;
+  spin?: boolean;
+};
+
+const PROTOCOL_SETUP_DISPLAY: Record<ProtocolSetupStatus, ProtocolSetupDisplay> = {
+  checking: {
+    icon          : Loader2,
+    title         : 'Checking setup',
+    body          : 'Your wallet is checking whether this protocol is already ready for this identity.',
+    className     : 'border-border-subtle bg-surface-1',
+    iconClassName : 'text-text-secondary',
+    spin          : true,
+  },
+  configured: {
+    icon          : CheckCircle2,
+    title         : 'Ready',
+    body          : 'This protocol is already ready for this identity. The wallet will verify it before granting access.',
+    className     : 'border-green-500/20 bg-green-500/10',
+    iconClassName : 'text-green-400',
+  },
+  install: {
+    icon          : Download,
+    title         : 'Will install',
+    body          : 'This app uses a protocol that is not configured yet. The wallet will set it up before granting access.',
+    className     : 'border-blue-500/20 bg-blue-500/10',
+    iconClassName : 'text-blue-400',
+  },
+  update: {
+    icon          : RefreshCw,
+    title         : 'Will update',
+    body          : 'This identity has an older or different setup for this protocol. The wallet will update it before granting access.',
+    className     : 'border-amber-500/20 bg-amber-500/10',
+    iconClassName : 'text-amber-400',
+  },
+  unavailable: {
+    icon          : AlertTriangle,
+    title         : 'Setup check unavailable',
+    body          : 'The wallet could not check this protocol yet. It will try again before granting access.',
+    className     : 'border-amber-500/20 bg-amber-500/10',
+    iconClassName : 'text-amber-400',
+  },
+};
 
 function isInternalConnectScope(scope: DwnPermissionScope): boolean {
   return (
@@ -84,6 +145,27 @@ function getEncryptedTypeCount(protocolDefinition: ProtocolDefinition): number {
   return Object.values(protocolDefinition.types ?? {})
     .filter((type: any) => type?.encryptionRequired === true)
     .length;
+}
+
+function ProtocolSetupNotice({ status }: { status: ProtocolSetupStatus | undefined }) {
+  const display = PROTOCOL_SETUP_DISPLAY[status ?? 'checking'];
+  const Icon = display.icon;
+
+  return (
+    <div className={`flex items-start gap-2 rounded-lg border px-3 py-2.5 ${display.className}`}>
+      <Icon
+        className={`mt-0.5 h-4 w-4 shrink-0 ${display.iconClassName} ${display.spin ? 'animate-spin' : ''}`}
+      />
+      <div className="min-w-0">
+        <p className="text-xs font-medium text-text-primary">
+          Protocol setup: {display.title}
+        </p>
+        <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
+          {display.body}
+        </p>
+      </div>
+    </div>
+  );
 }
 
 function ProtocolAdvancedView({
@@ -169,7 +251,7 @@ function ProtocolAdvancedView({
   );
 }
 
-export function PermissionDisplay({ permissions }: PermissionDisplayProps) {
+export function PermissionDisplay({ permissions, protocolSetupStatuses }: PermissionDisplayProps) {
   if (permissions.length === 0) { return null; }
 
   return (
@@ -216,17 +298,7 @@ export function PermissionDisplay({ permissions }: PermissionDisplayProps) {
               {info.description}
             </p>
 
-            <div className="flex items-start gap-2 border-t border-border-subtle pt-3">
-              <Settings className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-              <div className="min-w-0">
-                <p className="text-xs font-medium text-text-primary">
-                  Protocol setup
-                </p>
-                <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
-                  Your wallet will make sure this protocol is configured on your DWN endpoints before granting app access.
-                </p>
-              </div>
-            </div>
+            <ProtocolSetupNotice status={protocolSetupStatuses?.[protocolUri]} />
 
             {/* Scope badges */}
             {displayScopes.length > 0 && (
