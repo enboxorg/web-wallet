@@ -146,8 +146,8 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
-    expect(screen.getByText('Temporary session')).toBeInTheDocument();
-    expect(screen.getByText(/permissions for 24 hours/i)).toBeInTheDocument();
+    expect(screen.getByText('Connection summary')).toBeInTheDocument();
+    expect(screen.getByText('24-hour session')).toBeInTheDocument();
 
     fireEvent.click(approve);
     fireEvent.click(approve);
@@ -242,8 +242,8 @@ describe('DWebConnectPage', () => {
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText('Existing app access')).toBeInTheDocument();
+    expect(await screen.findByText('Connection summary')).toBeInTheDocument();
     expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
-    expect(screen.getByText(/creates a new 24-hour session/i)).toBeInTheDocument();
+    expect(screen.getByText(/separate 24-hour session/i)).toBeInTheDocument();
   });
 });

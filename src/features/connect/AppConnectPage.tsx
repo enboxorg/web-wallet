@@ -21,9 +21,7 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
-import { ExistingConnectSessionsNotice } from '@/components/connect/ExistingConnectSessionsNotice';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
-import { SessionExpiryNotice } from '@/components/connect/SessionExpiryNotice';
 import { prepareProtocol } from './protocol-install';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
 import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
@@ -428,15 +426,11 @@ export default function AppConnectPage() {
             <p className="text-sm text-text-secondary">wants to connect</p>
           </div>
 
-          {/* Permissions — rich display */}
-          <ExistingConnectSessionsNotice sessions={existingSessions} />
-
           <PermissionDisplay
             permissions={connectionRequest.permissionRequests}
             protocolSetupStatuses={protocolSetupStatuses}
+            existingSessionCount={existingSessions.length}
           />
-
-          <SessionExpiryNotice />
 
           {/* Identity selector */}
           {identityOptions.length > 0 ? (

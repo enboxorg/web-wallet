@@ -6,9 +6,7 @@ import { Effect } from 'effect';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
-import { ExistingConnectSessionsNotice } from '@/components/connect/ExistingConnectSessionsNotice';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
-import { SessionExpiryNotice } from '@/components/connect/SessionExpiryNotice';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
@@ -460,15 +458,11 @@ export default function DWebConnectPage() {
             </div>
           )}
 
-          {/* Permissions — rich display */}
-          <ExistingConnectSessionsNotice sessions={existingSessions} />
-
           <PermissionDisplay
             permissions={permissions}
             protocolSetupStatuses={protocolSetupStatuses}
+            existingSessionCount={existingSessions.length}
           />
-
-          <SessionExpiryNotice />
 
           {/* Actions */}
           <div className="mt-auto flex gap-3 pt-4">
