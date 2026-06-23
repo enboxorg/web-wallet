@@ -179,11 +179,12 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const hasFragment = globalThis.location?.hash?.length > 1;
       const cachedEndpoint = runEnboxSync(localStorageGetEffect(STORAGE_KEYS.LOCAL_DWN_ENDPOINT));
 
-      // Only attempt local DWN discovery on desktop. On mobile/touch
-      // devices there's no local DWN, and the dwn:// URL open triggers
-      // a blocked popup warning in mobile browsers.
+      // Only attempt local DWN discovery on desktop for fresh sessions.
+      // Returning users already have a same-tab vault password cached, so
+      // discovery would only delay restore.
       const isTouchDevice = 'ontouchstart' in globalThis || navigator.maxTouchPoints > 0;
-      if (!hasFragment && !cachedEndpoint && !isTouchDevice) {
+      const hasCachedSession = !!getCachedSessionPassword();
+      if (!hasFragment && !cachedEndpoint && !isTouchDevice && !hasCachedSession) {
         await runEnboxPromise(
           requestLocalDwnDiscoveryUntilEndpointEffect(DWN_DISCOVERY_TIMEOUT_MS),
         );

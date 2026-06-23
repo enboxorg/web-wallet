@@ -181,46 +181,76 @@ function ensureValidTokenEffect(
 
 // ── Public API ─────────────────────────────────────────────────────
 
-function registerDidWithEndpointEffect(
+type EndpointInfo = {
+  endpoint: string;
+  serverInfo: ServerInfo;
+};
+
+type PreparedEndpointInfo = EndpointInfo & {
+  tokens: Record<string, RegistrationTokenData>;
+};
+
+function requiresProviderAuth(
+  serverInfo: ServerInfo,
+): serverInfo is ServerInfo & { providerAuth: NonNullable<ServerInfo['providerAuth']> } {
+  return serverInfo.registrationRequirements?.includes('provider-auth-v0') === true
+    && serverInfo.providerAuth !== undefined;
+}
+
+function fetchServerInfoEffect(dwnEndpoint: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* withNetworkPolicy(
+      'serverInfo.get',
+      Effect.tryPromise({
+        try: async (): Promise<ServerInfo> => agent.rpc.getServerInfo(dwnEndpoint),
+        catch: registrationError('serverInfo.get', dwnEndpoint),
+      }),
+      () => registrationTimeout('serverInfo.get', dwnEndpoint),
+    );
+  });
+}
+
+function prepareEndpointTokensEffect(
+  dwnEndpoint: string,
+  serverInfo: ServerInfo,
+  tokens: Record<string, RegistrationTokenData>,
+) {
+  return requiresProviderAuth(serverInfo)
+    ? ensureValidTokenEffect(dwnEndpoint, serverInfo.providerAuth, tokens)
+    : Effect.succeed(tokens);
+}
+
+function registerPreparedDidWithEndpointEffect(
   dwnEndpoint: string,
   did: string,
   serverInfo: ServerInfo,
   tokens: Record<string, RegistrationTokenData>,
 ) {
-  return Effect.gen(function* () {
-    let updated = { ...tokens };
-    const requiresProviderAuth =
-      serverInfo.registrationRequirements?.includes('provider-auth-v0') &&
-      serverInfo.providerAuth !== undefined;
+  if (requiresProviderAuth(serverInfo)) {
+    return withNetworkPolicy(
+      'tenant.registerWithToken',
+      Effect.tryPromise({
+        try: () =>
+          DwnRegistrar.registerTenantWithToken(
+            dwnEndpoint,
+            did,
+            tokens[dwnEndpoint].registrationToken,
+          ),
+        catch: registrationError('tenant.registerWithToken', dwnEndpoint, did),
+      }),
+      () => registrationTimeout('tenant.registerWithToken', dwnEndpoint, did),
+    );
+  }
 
-    if (requiresProviderAuth) {
-      updated = yield* ensureValidTokenEffect(dwnEndpoint, serverInfo.providerAuth!, updated);
-      yield* withNetworkPolicy(
-        'tenant.registerWithToken',
-        Effect.tryPromise({
-          try: () =>
-            DwnRegistrar.registerTenantWithToken(
-              dwnEndpoint,
-              did,
-              updated[dwnEndpoint].registrationToken,
-            ),
-          catch: registrationError('tenant.registerWithToken', dwnEndpoint, did),
-        }),
-        () => registrationTimeout('tenant.registerWithToken', dwnEndpoint, did),
-      );
-    } else {
-      yield* withNetworkPolicy(
-        'tenant.register',
-        Effect.tryPromise({
-          try: () => DwnRegistrar.registerTenant(dwnEndpoint, did),
-          catch: registrationError('tenant.register', dwnEndpoint, did),
-        }),
-        () => registrationTimeout('tenant.register', dwnEndpoint, did),
-      );
-    }
-
-    return updated;
-  });
+  return withNetworkPolicy(
+    'tenant.register',
+    Effect.tryPromise({
+      try: () => DwnRegistrar.registerTenant(dwnEndpoint, did),
+      catch: registrationError('tenant.register', dwnEndpoint, did),
+    }),
+    () => registrationTimeout('tenant.register', dwnEndpoint, did),
+  );
 }
 
 /**
@@ -255,37 +285,71 @@ export function ensureRegistrationEffect(dwnEndpoints: string[]) {
     }
 
     let tokens = yield* tokenStore.get;
+    const endpoints = [...new Set(dwnEndpoints)];
 
-    for (const endpoint of dwnEndpoints) {
-      const serverInfo = yield* withNetworkPolicy(
-        'serverInfo.get',
-        Effect.tryPromise({
-          try: async (): Promise<ServerInfo> => agent.rpc.getServerInfo(endpoint),
-          catch: registrationError('serverInfo.get', endpoint),
-        }),
-        () => registrationTimeout('serverInfo.get', endpoint),
-      ).pipe(
-        Effect.catchAll((err) =>
-          Effect.sync(() => {
-            console.warn(`Could not reach DWN endpoint ${endpoint} for registration:`, err);
-            return undefined;
-          })
-        ),
-      );
-
-      if (!serverInfo) continue;
-
-      for (const did of didsToRegister) {
-        tokens = yield* registerDidWithEndpointEffect(endpoint, did, serverInfo, tokens).pipe(
+    const endpointInfos = yield* Effect.forEach(
+      endpoints,
+      (endpoint) =>
+        fetchServerInfoEffect(endpoint).pipe(
+          Effect.map((serverInfo) => ({ endpoint, serverInfo })),
           Effect.catchAll((err) =>
             Effect.sync(() => {
-              console.warn(`DWN registration of ${did} with ${endpoint} failed:`, err);
-              return tokens;
+              console.warn(`Could not reach DWN endpoint ${endpoint} for registration:`, err);
+              return undefined;
             })
           ),
-        );
-      }
+        ),
+      { concurrency: 'unbounded' },
+    );
+
+    const availableEndpoints = endpointInfos.filter(
+      (info): info is EndpointInfo => info !== undefined,
+    );
+
+    const preparedEndpoints = yield* Effect.forEach(
+      availableEndpoints,
+      ({ endpoint, serverInfo }) =>
+        prepareEndpointTokensEffect(endpoint, serverInfo, tokens).pipe(
+          Effect.map((preparedTokens) => ({
+            endpoint,
+            serverInfo,
+            tokens: preparedTokens,
+          })),
+          Effect.catchAll((err) =>
+            Effect.sync(() => {
+              console.warn(`Could not prepare DWN registration for ${endpoint}:`, err);
+              return undefined;
+            })
+          ),
+        ),
+      { concurrency: 'unbounded' },
+    );
+
+    const reachableEndpoints = preparedEndpoints.filter(
+      (info): info is PreparedEndpointInfo => info !== undefined,
+    );
+
+    for (const endpointInfo of reachableEndpoints) {
+      tokens = { ...tokens, ...endpointInfo.tokens };
     }
+
+    yield* Effect.forEach(
+      reachableEndpoints,
+      ({ endpoint, serverInfo }) =>
+        Effect.forEach(
+          didsToRegister,
+          (did) =>
+            registerPreparedDidWithEndpointEffect(endpoint, did, serverInfo, tokens).pipe(
+              Effect.catchAll((err) =>
+                Effect.sync(() => {
+                  console.warn(`DWN registration of ${did} with ${endpoint} failed:`, err);
+                })
+              ),
+            ),
+          { concurrency: 'unbounded', discard: true },
+        ),
+      { concurrency: 'unbounded', discard: true },
+    );
 
     yield* tokenStore.set(tokens);
   });
