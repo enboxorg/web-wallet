@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
+import { SessionExpiryNotice } from '@/components/connect/SessionExpiryNotice';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
@@ -452,6 +453,8 @@ export default function DWebConnectPage() {
 
           {/* Permissions — rich display */}
           <PermissionDisplay permissions={permissions} />
+
+          <SessionExpiryNotice />
 
           {/* Actions */}
           <div className="mt-auto flex gap-3 pt-4">

@@ -133,6 +133,8 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
+    expect(screen.getByText('Temporary session')).toBeInTheDocument();
+    expect(screen.getByText(/permissions for 24 hours/i)).toBeInTheDocument();
 
     fireEvent.click(approve);
     fireEvent.click(approve);
