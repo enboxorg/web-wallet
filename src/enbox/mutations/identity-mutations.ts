@@ -32,6 +32,8 @@ import {
 import { CurrentAgent, enboxLiveLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
 import { normalizeProfileImageBlob } from '@/lib/profile-images';
+import { clearCachedProfileImagesEffect } from '../effect/profile-image-cache';
+import { publishWalletEvent } from '../effect/wallet-events';
 
 function registerIdentityForSyncEffect(did: string) {
   return Effect.gen(function* () {
@@ -331,6 +333,16 @@ export function createIdentityEffect(params: CreateIdentityParams) {
     // 8. Create wallet record
     yield* createWalletRecordBestEffortEffect(did, 'Failed to create wallet record:');
 
+    yield* publishWalletEvent({ _tag: 'identity.created', did });
+    yield* publishWalletEvent({
+      _tag     : 'identity.profile.updated',
+      did,
+      avatar   : params.avatar !== undefined,
+      hero     : params.hero !== undefined,
+      metadata : true,
+      timestamp: Date.now(),
+    });
+
     return identity;
   });
 }
@@ -426,6 +438,15 @@ export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams)
         }
       }
     }
+
+    yield* publishWalletEvent({
+      _tag     : 'identity.profile.updated',
+      did      : params.did,
+      avatar   : params.avatar !== undefined,
+      hero     : params.hero !== undefined,
+      metadata : true,
+      timestamp: Date.now(),
+    });
   });
 }
 
@@ -458,6 +479,9 @@ export function deleteIdentityEffect(did: string) {
       try: () => agent.did.delete({ didUri: did, tenant: agent.agentDid.uri }),
       catch: sdkError('did.delete'),
     });
+
+    yield* clearCachedProfileImagesEffect(did);
+    yield* publishWalletEvent({ _tag: 'identity.deleted', did });
   });
 }
 
@@ -532,6 +556,8 @@ export function importIdentityEffect(portableIdentity: any) {
       'Failed to create wallet record on import:',
     );
 
+    yield* publishWalletEvent({ _tag: 'identity.imported', did });
+
     return identity;
   });
 }
@@ -564,6 +590,10 @@ export function updateDwnEndpointsEffect(params: UpdateDwnEndpointsParams) {
           endpoints: params.endpoints,
         }),
       catch: sdkError('identity.setDwnEndpoints'),
+    });
+    yield* publishWalletEvent({
+      _tag : 'identity.dwnEndpoints.updated',
+      did  : params.did,
     });
   });
 }

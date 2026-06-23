@@ -15,95 +15,10 @@ import type { EnboxAgent, IdentityProfile } from '../types';
 import { sdkError } from '../effect/errors';
 import { CurrentAgent, currentAgentLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
-
-// ── Blob URL lifecycle management ──────────────────────────────────
-
-type ProfileImageSlot = 'avatar' | 'hero';
-type ProfileImageRecord = {
-  id?: unknown;
-  dataCid?: unknown;
-  dataSize?: unknown;
-  timestamp?: unknown;
-  data: { blob(): Promise<Blob> };
-};
-type CachedProfileImageUrl = {
-  key: string;
-  url: string;
-};
-
-const _profileImageUrls = new Map<string, Partial<Record<ProfileImageSlot, CachedProfileImageUrl>>>();
-const BLOB_URL_REVOKE_DELAY_MS = 60_000;
-
-function imageRecordCacheKey(record: ProfileImageRecord): string {
-  return [record.id, record.dataCid, record.dataSize, record.timestamp]
-    .filter((part): part is string | number =>
-      typeof part === 'string' || typeof part === 'number'
-    )
-    .join('|');
-}
-
-function revokeObjectUrlLater(url: string): void {
-  setTimeout(() => {
-    try {
-      URL.revokeObjectURL(url);
-    } catch {
-      // Best-effort cleanup only.
-    }
-  }, BLOB_URL_REVOKE_DELAY_MS);
-}
-
-function setCachedImageUrl(
-  did: string,
-  slot: ProfileImageSlot,
-  next: CachedProfileImageUrl,
-): void {
-  const cache = _profileImageUrls.get(did) ?? {};
-  const previous = cache[slot];
-
-  cache[slot] = next;
-  _profileImageUrls.set(did, cache);
-
-  if (previous && previous.url !== next.url) {
-    revokeObjectUrlLater(previous.url);
-  }
-}
-
-function clearCachedImageUrl(did: string, slot: ProfileImageSlot): void {
-  const cache = _profileImageUrls.get(did);
-  const previous = cache?.[slot];
-  if (!cache || !previous) {
-    return;
-  }
-
-  delete cache[slot];
-  if (!cache.avatar && !cache.hero) {
-    _profileImageUrls.delete(did);
-  }
-  revokeObjectUrlLater(previous.url);
-}
-
-function getCachedImageUrlEffect(
-  did: string,
-  slot: ProfileImageSlot,
-  record: ProfileImageRecord,
-) {
-  const key = imageRecordCacheKey(record);
-  const cached = _profileImageUrls.get(did)?.[slot];
-
-  if (key && cached?.key === key) {
-    return Effect.succeed(cached.url);
-  }
-
-  return Effect.tryPromise({
-    try: async () => {
-      const blob = await record.data.blob();
-      const url = URL.createObjectURL(blob);
-      setCachedImageUrl(did, slot, { key: key || url, url });
-      return url;
-    },
-    catch: sdkError(`profile.${slot}.blob`),
-  });
-}
+import {
+  clearCachedProfileImageUrlEffect,
+  getCachedProfileImageUrlEffect,
+} from '../effect/profile-image-cache';
 
 function createEnboxEffect(did: string) {
   return Effect.gen(function* () {
@@ -196,9 +111,9 @@ export function fetchProfileEffect(did: string) {
         catch: sdkError('profile.avatar.get'),
       });
       if (avatarRecord) {
-        avatarUrl = yield* getCachedImageUrlEffect(did, 'avatar', avatarRecord);
+        avatarUrl = yield* getCachedProfileImageUrlEffect(did, 'avatar', avatarRecord);
       } else {
-        clearCachedImageUrl(did, 'avatar');
+        yield* clearCachedProfileImageUrlEffect(did, 'avatar');
       }
 
       // Hero image
@@ -207,13 +122,13 @@ export function fetchProfileEffect(did: string) {
         catch: sdkError('profile.hero.get'),
       });
       if (heroRecord) {
-        heroUrl = yield* getCachedImageUrlEffect(did, 'hero', heroRecord);
+        heroUrl = yield* getCachedProfileImageUrlEffect(did, 'hero', heroRecord);
       } else {
-        clearCachedImageUrl(did, 'hero');
+        yield* clearCachedProfileImageUrlEffect(did, 'hero');
       }
     } else {
-      clearCachedImageUrl(did, 'avatar');
-      clearCachedImageUrl(did, 'hero');
+      yield* clearCachedProfileImageUrlEffect(did, 'avatar');
+      yield* clearCachedProfileImageUrlEffect(did, 'hero');
     }
 
     return {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Globe, Check, X, AlertCircle, Import } from 'lucide-react';
 import type { ConnectPermissionRequest } from '@enbox/agent';
+import { Effect } from 'effect';
 
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -10,6 +11,9 @@ import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
 import { truncateDid } from '@/lib/utils';
+import { runEnboxPromise } from '@/enbox/effect/runtime';
+import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
+import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { prepareProtocol } from './protocol-install';
 import {
   createDelegateDid,
@@ -36,6 +40,7 @@ export default function DWebConnectPage() {
   const [_pendingRequest, setPendingRequest] = useState<DWebConnectRequest | null>(null);
   const activeOriginRef = useRef('');
   const hasAcceptedRequestRef = useRef(false);
+  const approvalCompletedRef = useRef(false);
   const [permissions, setPermissions] = useState<ConnectPermissionRequest[]>([]);
   const [origin, setOrigin] = useState('');
   const [appName, setAppName] = useState<string | undefined>();
@@ -105,6 +110,7 @@ export default function DWebConnectPage() {
 
       activeOriginRef.current = sanitized.origin;
       hasAcceptedRequestRef.current = true;
+      approvalCompletedRef.current = false;
       setPendingRequest(req);
       setOrigin(sanitized.origin);
       setPermissions(sanitized.permissions);
@@ -145,8 +151,9 @@ export default function DWebConnectPage() {
 
   // ── Approve flow ──────────────────────────────────────────────
 
-  async function handleApprove() {
+  async function runApproveFlow() {
     if (!agent || !selectedDid || !origin) { return; }
+    if (approvalCompletedRef.current) { return; }
 
     setPhase('connecting');
     setStatusMessage(hasPortableIdentity ? 'Importing identity...' : 'Creating delegate...');
@@ -252,6 +259,13 @@ export default function DWebConnectPage() {
       }
 
       setPhase('done');
+      approvalCompletedRef.current = true;
+
+      await runEnboxPromise(publishWalletEvent({
+        _tag         : 'connect.approved',
+        origin,
+        connectedDid : selectedDid,
+      }));
 
       // Auto-close after a few seconds
       setTimeout(() => window.close(), 3000);
@@ -262,12 +276,33 @@ export default function DWebConnectPage() {
     }
   }
 
+  async function handleApprove() {
+    const lockKey = `dweb-connect:${origin}:${_pendingRequest?.timestamp ?? selectedDid}`;
+
+    await runEnboxPromise(
+      withWalletOperationLock(
+        lockKey,
+        Effect.tryPromise({
+          try: runApproveFlow,
+          catch: (err) => err,
+        }),
+      ),
+    );
+  }
+
   function handleDeny() {
+    approvalCompletedRef.current = true;
     if (origin && window.opener) {
       window.opener.postMessage(
         { type: 'dweb-connect-authorization-response', error: 'denied' },
         origin,
       );
+      runEnboxPromise(publishWalletEvent({
+        _tag: 'connect.denied',
+        origin,
+      })).catch((err: unknown) => {
+        console.warn('DWeb connect deny event failed:', err);
+      });
     }
     window.close();
   }

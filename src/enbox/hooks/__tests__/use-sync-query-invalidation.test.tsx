@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuthStore } from '@/stores/auth-store';
 import { queryKeys } from '../../queries/query-keys';
 import { useSyncQueryInvalidation } from '../use-sync-query-invalidation';
+import { runEnboxPromise } from '../../effect/runtime';
+import { publishWalletEvent } from '../../effect/wallet-events';
 
 function createQueryClient() {
   return new QueryClient({
@@ -194,6 +196,39 @@ describe('useSyncQueryInvalidation', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.profile('did:dht:identity'),
+    });
+  });
+
+  it('invalidates profile queries from wallet domain events', async () => {
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    useAuthStore.setState({
+      initialized: true,
+      unlocked: true,
+      firstTime: false,
+      agent: null,
+    });
+
+    renderHook(() => useSyncQueryInvalidation(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await act(async () => {
+      await runEnboxPromise(publishWalletEvent({
+        _tag     : 'identity.profile.updated',
+        did      : 'did:dht:identity',
+        avatar   : true,
+        hero     : false,
+        metadata : true,
+        timestamp: Date.now(),
+      }));
+    });
+
+    await vi.waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: queryKeys.identities.profile('did:dht:identity'),
+      });
     });
   });
 });

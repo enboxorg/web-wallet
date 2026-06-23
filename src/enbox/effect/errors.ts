@@ -1,4 +1,4 @@
-import { Data } from 'effect';
+import { Schema } from 'effect';
 
 export function getUnknownErrorMessage(error: unknown, fallback = 'Unknown error'): string {
   if (error instanceof Error && error.message) return error.message;
@@ -15,48 +15,69 @@ export function getUnknownErrorMessage(error: unknown, fallback = 'Unknown error
   return fallback;
 }
 
-export class EnboxSdkError extends Data.TaggedError('EnboxSdkError')<{
-  readonly operation: string;
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
+export class EnboxSdkError extends Schema.TaggedError<EnboxSdkError>('EnboxSdkError')(
+  'EnboxSdkError',
+  {
+    operation : Schema.String,
+    cause     : Schema.Unknown,
+    message   : Schema.String,
+  },
+) {}
 
-export class EnboxStorageError extends Data.TaggedError('EnboxStorageError')<{
-  readonly operation: string;
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
+export class EnboxStorageError extends Schema.TaggedError<EnboxStorageError>('EnboxStorageError')(
+  'EnboxStorageError',
+  {
+    operation : Schema.String,
+    cause     : Schema.Unknown,
+    message   : Schema.String,
+  },
+) {}
 
-export class DwnRegistrationError extends Data.TaggedError('DwnRegistrationError')<{
-  readonly operation: string;
-  readonly endpoint?: string;
-  readonly did?: string;
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
+export class DwnRegistrationError extends Schema.TaggedError<DwnRegistrationError>('DwnRegistrationError')(
+  'DwnRegistrationError',
+  {
+    operation : Schema.String,
+    endpoint  : Schema.optional(Schema.String),
+    did       : Schema.optional(Schema.String),
+    cause     : Schema.Unknown,
+    message   : Schema.String,
+  },
+) {}
 
-export class ProtocolInstallationError extends Data.TaggedError('ProtocolInstallationError')<{
-  readonly protocol: string;
-  readonly statusCode?: number;
-  readonly statusDetail?: string;
-  readonly cause: unknown;
-  readonly message: string;
-}> {}
+export class ProtocolInstallationError extends Schema.TaggedError<ProtocolInstallationError>('ProtocolInstallationError')(
+  'ProtocolInstallationError',
+  {
+    protocol     : Schema.String,
+    statusCode   : Schema.optional(Schema.Number),
+    statusDetail : Schema.optional(Schema.String),
+    cause        : Schema.Unknown,
+    message      : Schema.String,
+  },
+) {}
 
-export class IdentityPublishError extends Data.TaggedError('IdentityPublishError')<{
-  readonly did: string;
-  readonly message: string;
-}> {}
+export class IdentityPublishError extends Schema.TaggedError<IdentityPublishError>('IdentityPublishError')(
+  'IdentityPublishError',
+  {
+    did     : Schema.String,
+    message : Schema.String,
+  },
+) {}
 
-export class IdentityNotFoundError extends Data.TaggedError('IdentityNotFoundError')<{
-  readonly did: string;
-  readonly message: string;
-}> {}
+export class IdentityNotFoundError extends Schema.TaggedError<IdentityNotFoundError>('IdentityNotFoundError')(
+  'IdentityNotFoundError',
+  {
+    did     : Schema.String,
+    message : Schema.String,
+  },
+) {}
 
-export class DuplicateIdentityError extends Data.TaggedError('DuplicateIdentityError')<{
-  readonly did: string;
-  readonly message: string;
-}> {}
+export class DuplicateIdentityError extends Schema.TaggedError<DuplicateIdentityError>('DuplicateIdentityError')(
+  'DuplicateIdentityError',
+  {
+    did     : Schema.String,
+    message : Schema.String,
+  },
+) {}
 
 export type EnboxEffectError =
   | EnboxSdkError

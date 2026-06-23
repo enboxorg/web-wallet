@@ -1,7 +1,9 @@
-import { Effect } from 'effect';
+import { Effect, Schedule } from 'effect';
 import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
 
+import { STORAGE_KEYS } from '@/lib/constants';
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import { localStorageGetEffect } from '@/lib/browser-effects';
 import { DwnRegistrationError, sdkError } from './effect/errors';
 import { withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
@@ -88,6 +90,30 @@ export function requestLocalDwnDiscoveryEffect() {
   return Effect.try({
     try: () => requestLocalDwnDiscovery(),
     catch: sdkError('auth.requestLocalDwnDiscovery'),
+  });
+}
+
+export function requestLocalDwnDiscoveryUntilEndpointEffect(
+  timeoutMs: number,
+  intervalMs = 250,
+) {
+  const retries = Math.max(1, Math.ceil(timeoutMs / intervalMs));
+
+  return Effect.gen(function* () {
+    yield* requestLocalDwnDiscoveryEffect();
+
+    return yield* localStorageGetEffect(STORAGE_KEYS.LOCAL_DWN_ENDPOINT).pipe(
+      Effect.flatMap((endpoint) =>
+        endpoint
+          ? Effect.succeed(endpoint)
+          : Effect.fail(sdkError('auth.localDwnDiscovery.poll')(new Error('Local DWN endpoint not found yet')))
+      ),
+      Effect.retry(Schedule.intersect(
+        Schedule.spaced(`${intervalMs} millis`),
+        Schedule.recurs(retries),
+      )),
+      Effect.catchAll(() => Effect.succeed(null)),
+    );
   });
 }
 
