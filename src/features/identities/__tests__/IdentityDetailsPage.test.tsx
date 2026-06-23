@@ -29,10 +29,26 @@ const mockProtocols = [
 ];
 
 const mockPermissions = [
-  createMockPermission({
+  {
+    ...createMockPermission({
     grantee: 'did:dht:app1',
     protocol: 'https://identity.foundation/protocols/profile',
-  }),
+    }),
+    dateGranted    : '2026-06-23T00:00:00.000Z',
+    dateExpires    : '2026-06-24T00:00:00.000Z',
+    connectSession : {
+      id        : 'session-1',
+      createdAt : '2026-06-23T00:00:00.000Z',
+      expiresAt : '2026-06-24T00:00:00.000Z',
+      appName   : 'Example App',
+      origin    : 'https://app.example',
+      userAgent : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
+      platform  : 'MacIntel',
+      language  : 'en-US',
+      timezone  : 'America/New_York',
+      transport : 'postMessage' as const,
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -220,6 +236,20 @@ describe('IdentityDetailsPage', () => {
 
     // Should show the grantee DID (truncated — contains "app1")
     expect(screen.getByText(/app1/)).toBeInTheDocument();
+  });
+
+  it('shows connect session metadata on the permissions tab', async () => {
+    const { user } = renderWithProviders(<IdentityDetailsPage />, {
+      initialRoute: route,
+    });
+
+    await user.click(screen.getByRole('tab', { name: /permissions/i }));
+
+    expect(screen.getByText('Active Sessions')).toBeInTheDocument();
+    expect(screen.getByText('Example App')).toBeInTheDocument();
+    expect(screen.getByText('Safari on macOS')).toBeInTheDocument();
+    expect(screen.getAllByText('America/New_York').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Browser popup').length).toBeGreaterThanOrEqual(1);
   });
 
   it('switches to social tab and shows social graph records', async () => {

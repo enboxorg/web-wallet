@@ -1,9 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Check,
+  ChevronDown,
   Clock3,
   Copy,
+  Info,
+  Languages,
   Globe2,
+  MapPin,
   MonitorSmartphone,
   Power,
   Shield,
@@ -26,6 +30,7 @@ import {
   type PermissionGranteeGroup,
   type PermissionSessionGroup,
 } from './permission-sessions';
+import { describeConnectSession, sessionTitle } from './permission-session-display';
 
 interface PermissionsTabProps {
   did: string;
@@ -48,22 +53,6 @@ function formatDateTime(value: string | undefined): string {
 
 function grantCountLabel(count: number): string {
   return count === 1 ? '1 permission' : `${count} permissions`;
-}
-
-function sessionTitle(sessionGroup: PermissionSessionGroup): string {
-  return sessionGroup.session.appName
-    ?? sessionGroup.session.origin
-    ?? truncateDid(sessionGroup.grantee);
-}
-
-function sessionDetails(sessionGroup: PermissionSessionGroup): string[] {
-  const { session } = sessionGroup;
-  return [
-    session.platform,
-    session.timezone,
-    session.transport === 'postMessage' ? 'Browser popup' : undefined,
-    session.transport === 'relay' ? 'Relay' : undefined,
-  ].filter((part): part is string => Boolean(part));
 }
 
 function grantScopeLabel(grant: PermissionGrant): string | undefined {
@@ -162,6 +151,26 @@ function CopyDidButton({
   );
 }
 
+function SessionMetadataItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  value: string | undefined;
+}) {
+  if (!value) return null;
+
+  return (
+    <div className="flex min-w-0 items-center gap-1.5 text-xs text-text-ghost">
+      <span className="shrink-0 text-text-ghost">{icon}</span>
+      <span className="shrink-0 text-text-tertiary">{label}</span>
+      <span className="truncate text-text-secondary" title={value}>{value}</span>
+    </div>
+  );
+}
+
 function SessionCard({
   sessionGroup,
   copiedDid,
@@ -175,7 +184,7 @@ function SessionCard({
   onRevokeGrant: (grant: PermissionGrant) => void;
   onRevokeSession: (session: PermissionSessionGroup) => void;
 }) {
-  const details = sessionDetails(sessionGroup);
+  const summary = describeConnectSession(sessionGroup.session);
 
   return (
     <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-4">
@@ -206,6 +215,29 @@ function SessionCard({
             </div>
           )}
 
+          <div className="grid gap-1 sm:grid-cols-2">
+            <SessionMetadataItem
+              icon={<MonitorSmartphone className="h-3.5 w-3.5" />}
+              label="Device"
+              value={summary.title}
+            />
+            <SessionMetadataItem
+              icon={<MapPin className="h-3.5 w-3.5" />}
+              label="Timezone"
+              value={summary.timezone}
+            />
+            <SessionMetadataItem
+              icon={<Globe2 className="h-3.5 w-3.5" />}
+              label="Transport"
+              value={summary.transport}
+            />
+            <SessionMetadataItem
+              icon={<Languages className="h-3.5 w-3.5" />}
+              label="Language"
+              value={summary.language}
+            />
+          </div>
+
           <div className="flex min-w-0 items-center gap-1.5 text-xs text-text-ghost">
             <Shield className="h-3.5 w-3.5 shrink-0" />
             <span className="truncate font-mono" title={sessionGroup.grantee}>
@@ -218,15 +250,6 @@ function SessionCard({
               label="Copy delegate DID"
             />
           </div>
-
-          {details.length > 0 && (
-            <p
-              className="truncate text-xs text-text-ghost"
-              title={sessionGroup.session.userAgent}
-            >
-              {details.join(' • ')}
-            </p>
-          )}
         </div>
 
         <Button
@@ -252,6 +275,29 @@ function SessionCard({
           </span>
         </div>
       </div>
+
+      {summary.technicalDetails.length > 0 && (
+        <details className="group mb-3 rounded-[var(--radius-md)] bg-surface-2 px-3 py-2">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-text-secondary hover:text-text-primary">
+            <span className="inline-flex items-center gap-1.5">
+              <Info className="h-3.5 w-3.5" />
+              Session details
+            </span>
+            <ChevronDown className="h-4 w-4 text-text-ghost transition-transform group-open:rotate-180" />
+          </summary>
+
+          <dl className="mt-2 grid gap-2 text-xs">
+            {summary.technicalDetails.map((detail) => (
+              <div key={detail.label} className="grid gap-1 sm:grid-cols-[7rem_1fr]">
+                <dt className="text-text-ghost">{detail.label}</dt>
+                <dd className="min-w-0 break-words font-mono text-text-secondary">
+                  {detail.value}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
 
       <div className="space-y-2">
         {sessionGroup.grants.map((grant, index) => (
