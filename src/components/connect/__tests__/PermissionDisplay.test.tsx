@@ -45,6 +45,9 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
+    expect(screen.getByText('Connection summary')).toBeInTheDocument();
+    expect(screen.getByText('24-hour session')).toBeInTheDocument();
+    expect(screen.getByText('Access requested')).toBeInTheDocument();
     expect(screen.getByText('Read')).toBeInTheDocument();
     expect(screen.getByText('Write')).toBeInTheDocument();
     expect(screen.getByText('Delete')).toBeInTheDocument();
@@ -91,9 +94,11 @@ describe('PermissionDisplay', () => {
       />,
     );
 
-    expect(screen.getByText('Protocol setup: Will install')).toBeInTheDocument();
-    expect(screen.getByText(/wallet will set it up before granting access/i)).toBeInTheDocument();
-    expect(screen.getByText('Advanced protocol view')).toBeInTheDocument();
+    expect(screen.getByText('Adds 1 data format')).toBeInTheDocument();
+    expect(screen.getByText('Wallet setup')).toBeInTheDocument();
+    expect(screen.getByText('Will add data format')).toBeInTheDocument();
+    expect(screen.getByText(/Adds Tasks so this app can use its data/i)).toBeInTheDocument();
+    expect(screen.getByText('Technical details')).toBeInTheDocument();
     expect(screen.getByText('2 types')).toBeInTheDocument();
     expect(screen.getByText('2 paths')).toBeInTheDocument();
     expect(screen.getByText('task/comment')).toBeInTheDocument();
@@ -124,8 +129,39 @@ describe('PermissionDisplay', () => {
       />,
     );
 
-    expect(screen.getByText('Protocol setup: Will update')).toBeInTheDocument();
-    expect(screen.getByText(/older or different setup/i)).toBeInTheDocument();
+    expect(screen.getByText('Updates 1 data format')).toBeInTheDocument();
+    expect(screen.getByText('Will update data format')).toBeInTheDocument();
+    expect(screen.getByText(/newer setup than this identity has today/i)).toBeInTheDocument();
     expect(screen.queryByText(/schema mismatch/i)).not.toBeInTheDocument();
+  });
+
+  it('summarizes existing app access without repeating a separate notice', () => {
+    const permissions = [{
+      protocolDefinition: {
+        protocol: tasksProtocol,
+        types: {},
+        structure: {},
+      },
+      permissionScopes: [
+        {
+          interface: 'Records',
+          method: 'Read',
+          protocol: tasksProtocol,
+        },
+      ],
+    }] as unknown as ConnectPermissionRequest[];
+
+    render(
+      <PermissionDisplay
+        permissions={permissions}
+        protocolSetupStatuses={{ [tasksProtocol]: 'configured' }}
+        existingSessionCount={2}
+      />,
+    );
+
+    expect(screen.getByText('No new setup')).toBeInTheDocument();
+    expect(screen.getByText(/already has 2 active sessions/i)).toBeInTheDocument();
+    expect(screen.getByText(/separate 24-hour session/i)).toBeInTheDocument();
+    expect(screen.queryByText('Existing app access')).not.toBeInTheDocument();
   });
 });
