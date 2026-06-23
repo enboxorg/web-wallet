@@ -5,11 +5,17 @@ import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-conn
 import DWebConnectPage from '../DWebConnectPage';
 
 const mocks = vi.hoisted(() => ({
-  agent: { id: 'agent-1' },
+  agent: {
+    id: 'agent-1',
+    dwn: {
+      getDwnEndpointUrlsForTarget: vi.fn(),
+    },
+  },
   createDelegateDid: vi.fn(),
   createPermissionGrants: vi.fn(),
   deriveScopedDecryptionKeys: vi.fn(),
   encryptDWebConnectResponse: vi.fn(),
+  ensureRegistration: vi.fn(),
   importPortableIdentity: vi.fn(),
   prepareProtocol: vi.fn(),
 }));
@@ -27,6 +33,10 @@ vi.mock('@/enbox/hooks/use-identities', () => ({
       },
     ],
   }),
+}));
+
+vi.mock('@/enbox/registration', () => ({
+  ensureRegistration: mocks.ensureRegistration,
 }));
 
 vi.mock('../connect-effects', () => ({
@@ -52,6 +62,26 @@ const permissionRequest = {
       interface: 'Records',
       method: 'Read',
       protocol: 'https://example.com/protocols/tasks',
+    },
+  ],
+};
+
+const secondPermissionRequest = {
+  protocolDefinition: {
+    protocol: 'https://example.com/protocols/profile',
+    types: {},
+    structure: {},
+  },
+  permissionScopes: [
+    {
+      interface: 'Records',
+      method: 'Read',
+      protocol: 'https://example.com/protocols/profile',
+    },
+    {
+      interface: 'Records',
+      method: 'Write',
+      protocol: 'https://example.com/protocols/profile',
     },
   ],
 };
@@ -94,6 +124,8 @@ describe('DWebConnectPage', () => {
     });
     mocks.createPermissionGrants.mockResolvedValue([{ id: 'grant-1' }]);
     mocks.deriveScopedDecryptionKeys.mockResolvedValue([]);
+    mocks.agent.dwn.getDwnEndpointUrlsForTarget.mockResolvedValue(['https://dwn.example']);
+    mocks.ensureRegistration.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
   });
 
@@ -109,6 +141,11 @@ describe('DWebConnectPage', () => {
       expect(mocks.createDelegateDid).toHaveBeenCalledTimes(1);
       expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1);
     });
+    expect(mocks.agent.dwn.getDwnEndpointUrlsForTarget).toHaveBeenCalledWith('did:dht:alice');
+    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
+      mocks.agent,
+      ['https://dwn.example'],
+    );
     expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
       'did:dht:alice',
       { uri: 'did:jwk:delegate' },
@@ -127,6 +164,42 @@ describe('DWebConnectPage', () => {
         grants: [{ id: 'grant-1' }],
       }),
       'https://app.example',
+    );
+  });
+
+  it('creates grants once with all requested scopes after preparing each protocol', async () => {
+    useDWebConnectStore.setState({
+      pendingRequests: [{
+        ...connectRequest(),
+        data: {
+          ...connectRequest().data,
+          permissions: [permissionRequest, secondPermissionRequest],
+        },
+      }],
+      walletReady: false,
+    });
+
+    render(<DWebConnectPage />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+
+    await waitFor(() => {
+      expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.prepareProtocol).toHaveBeenCalledTimes(2);
+    expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
+      'did:dht:alice',
+      { uri: 'did:jwk:delegate' },
+      [
+        ...permissionRequest.permissionScopes,
+        ...secondPermissionRequest.permissionScopes,
+      ],
+      mocks.agent,
+      expect.objectContaining({
+        appName   : 'Example App',
+        origin    : 'https://app.example',
+        transport : 'postMessage',
+      }),
     );
   });
 });
