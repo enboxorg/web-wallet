@@ -3,6 +3,7 @@ import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
 
 import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { DwnRegistrationError, sdkError } from './effect/errors';
+import { withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
 import { getStoredTokens, storeTokens } from './registration';
@@ -15,12 +16,20 @@ export interface ProviderAuthRequest {
   state: string;
 }
 
+function sdkTimeout(operation: string) {
+  return sdkError(operation)(new Error(`${operation} timed out`));
+}
+
 export function resolveProviderAuthEffect(request: ProviderAuthRequest) {
   return Effect.gen(function* () {
-    const res = yield* Effect.tryPromise({
-      try: async () => fetch(request.authorizeUrl, { signal: AbortSignal.timeout(30_000) }),
-      catch: sdkError('providerAuth.fetch'),
-    });
+    const res = yield* withNetworkPolicy(
+      'providerAuth.fetch',
+      Effect.tryPromise({
+        try: async () => fetch(request.authorizeUrl, { signal: AbortSignal.timeout(30_000) }),
+        catch: sdkError('providerAuth.fetch'),
+      }),
+      () => sdkTimeout('providerAuth.fetch'),
+    );
 
     if (!res.ok) {
       const responseText = yield* Effect.tryPromise({

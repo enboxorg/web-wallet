@@ -67,6 +67,16 @@ describe('connect Effect adapters', () => {
     expect(mocks.randomPin).toHaveBeenCalledWith({ length: 4 });
   });
 
+  it('retries transient connect request fetch failures', async () => {
+    const request = { state: 'state-1' };
+    mocks.getConnectRequest
+      .mockRejectedValueOnce(new Error('temporary fetch failure'))
+      .mockResolvedValueOnce(request);
+
+    await expect(fetchConnectRequest('https://relay.example/request', 'key')).resolves.toBe(request);
+    expect(mocks.getConnectRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('submits connect responses with the provided agent service', async () => {
     const agent = { id: 'agent-1' };
     const request = { state: 'state-1' } as any;

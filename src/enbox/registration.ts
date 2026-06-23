@@ -28,6 +28,7 @@ import {
   sdkError,
   storageError,
 } from './effect/errors';
+import { withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise, runEnboxSync } from './effect/runtime';
 
 // ── Token persistence ──────────────────────────────────────────────
@@ -69,6 +70,10 @@ function isTokenExpired(token: RegistrationTokenData): boolean {
   return Date.now() >= token.expiresAt - 60_000;
 }
 
+function registrationTimeout(operation: string, endpoint?: string, did?: string) {
+  return registrationError(operation, endpoint, did)(new Error(`${operation} timed out`));
+}
+
 // ── Provider-auth flow ─────────────────────────────────────────────
 
 function obtainProviderAuthTokenEffect(
@@ -83,16 +88,20 @@ function obtainProviderAuthTokenEffect(
       `redirect_uri=${encodeURIComponent(dwnEndpoint)}` +
       `&state=${encodeURIComponent(state)}`;
 
-    const authResponse = yield* Effect.tryPromise({
-      try: async () => {
-        const res = await fetch(authorizeUrl, { signal: AbortSignal.timeout(30_000) });
-        if (!res.ok) {
-          throw new Error(`Provider auth authorize failed (${res.status}): ${await res.text()}`);
-        }
-        return res.json() as Promise<{ code: string; state: string }>;
-      },
-      catch: registrationError('providerAuth.authorize', dwnEndpoint),
-    });
+    const authResponse = yield* withNetworkPolicy(
+      'providerAuth.authorize',
+      Effect.tryPromise({
+        try: async () => {
+          const res = await fetch(authorizeUrl, { signal: AbortSignal.timeout(30_000) });
+          if (!res.ok) {
+            throw new Error(`Provider auth authorize failed (${res.status}): ${await res.text()}`);
+          }
+          return res.json() as Promise<{ code: string; state: string }>;
+        },
+        catch: registrationError('providerAuth.authorize', dwnEndpoint),
+      }),
+      () => registrationTimeout('providerAuth.authorize', dwnEndpoint),
+    );
 
     if (authResponse.state !== state) {
       return yield* Effect.fail(
@@ -105,15 +114,19 @@ function obtainProviderAuthTokenEffect(
       );
     }
 
-    const tokenResponse = yield* Effect.tryPromise({
-      try: () =>
-        DwnRegistrar.exchangeAuthCode(
-          providerAuth.tokenUrl,
-          authResponse.code,
-          dwnEndpoint,
-        ),
-      catch: registrationError('providerAuth.exchangeCode', dwnEndpoint),
-    });
+    const tokenResponse = yield* withNetworkPolicy(
+      'providerAuth.exchangeCode',
+      Effect.tryPromise({
+        try: () =>
+          DwnRegistrar.exchangeAuthCode(
+            providerAuth.tokenUrl,
+            authResponse.code,
+            dwnEndpoint,
+          ),
+        catch: registrationError('providerAuth.exchangeCode', dwnEndpoint),
+      }),
+      () => registrationTimeout('providerAuth.exchangeCode', dwnEndpoint),
+    );
 
     return {
       registrationToken: tokenResponse.registrationToken,
@@ -137,14 +150,18 @@ function ensureValidTokenEffect(
 
     if (tokenData) {
       if (isTokenExpired(tokenData) && tokenData.refreshUrl && tokenData.refreshToken) {
-        const refreshed = yield* Effect.tryPromise({
-          try: () =>
-            DwnRegistrar.refreshRegistrationToken(
-              tokenData.refreshUrl!,
-              tokenData.refreshToken!,
-            ),
-          catch: registrationError('providerAuth.refreshToken', dwnEndpoint),
-        });
+        const refreshed = yield* withNetworkPolicy(
+          'providerAuth.refreshToken',
+          Effect.tryPromise({
+            try: () =>
+              DwnRegistrar.refreshRegistrationToken(
+                tokenData.refreshUrl!,
+                tokenData.refreshToken!,
+              ),
+            catch: registrationError('providerAuth.refreshToken', dwnEndpoint),
+          }),
+          () => registrationTimeout('providerAuth.refreshToken', dwnEndpoint),
+        );
         tokenData = {
           ...tokenData,
           registrationToken: refreshed.registrationToken,
@@ -183,20 +200,28 @@ function registerDidWithEndpointEffect(
 
     if (requiresProviderAuth) {
       updated = yield* ensureValidTokenEffect(dwnEndpoint, serverInfo.providerAuth!, updated);
-      yield* Effect.tryPromise({
-        try: () =>
-          DwnRegistrar.registerTenantWithToken(
-            dwnEndpoint,
-            did,
-            updated[dwnEndpoint].registrationToken,
-          ),
-        catch: registrationError('tenant.registerWithToken', dwnEndpoint, did),
-      });
+      yield* withNetworkPolicy(
+        'tenant.registerWithToken',
+        Effect.tryPromise({
+          try: () =>
+            DwnRegistrar.registerTenantWithToken(
+              dwnEndpoint,
+              did,
+              updated[dwnEndpoint].registrationToken,
+            ),
+          catch: registrationError('tenant.registerWithToken', dwnEndpoint, did),
+        }),
+        () => registrationTimeout('tenant.registerWithToken', dwnEndpoint, did),
+      );
     } else {
-      yield* Effect.tryPromise({
-        try: () => DwnRegistrar.registerTenant(dwnEndpoint, did),
-        catch: registrationError('tenant.register', dwnEndpoint, did),
-      });
+      yield* withNetworkPolicy(
+        'tenant.register',
+        Effect.tryPromise({
+          try: () => DwnRegistrar.registerTenant(dwnEndpoint, did),
+          catch: registrationError('tenant.register', dwnEndpoint, did),
+        }),
+        () => registrationTimeout('tenant.register', dwnEndpoint, did),
+      );
     }
 
     return updated;
@@ -237,10 +262,14 @@ export function ensureRegistrationEffect(dwnEndpoints: string[]) {
     let tokens = yield* tokenStore.get;
 
     for (const endpoint of dwnEndpoints) {
-      const serverInfo = yield* Effect.tryPromise({
-        try: async (): Promise<ServerInfo> => agent.rpc.getServerInfo(endpoint),
-        catch: registrationError('serverInfo.get', endpoint),
-      }).pipe(
+      const serverInfo = yield* withNetworkPolicy(
+        'serverInfo.get',
+        Effect.tryPromise({
+          try: async (): Promise<ServerInfo> => agent.rpc.getServerInfo(endpoint),
+          catch: registrationError('serverInfo.get', endpoint),
+        }),
+        () => registrationTimeout('serverInfo.get', endpoint),
+      ).pipe(
         Effect.catchAll((err) =>
           Effect.sync(() => {
             console.warn(`Could not reach DWN endpoint ${endpoint} for registration:`, err);
