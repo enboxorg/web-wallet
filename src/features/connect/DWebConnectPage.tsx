@@ -6,10 +6,12 @@ import { Effect } from 'effect';
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
+import { ExistingConnectSessionsNotice } from '@/components/connect/ExistingConnectSessionsNotice';
 import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
 import { SessionExpiryNotice } from '@/components/connect/SessionExpiryNotice';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
+import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
 import { truncateDid } from '@/lib/utils';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
@@ -30,6 +32,8 @@ import {
   referrerOrigin,
   sanitizeDWebConnectRequest,
 } from './dweb-connect-messages';
+import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
+import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
@@ -62,6 +66,7 @@ export default function DWebConnectPage() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const isPopup = useMemo(() => !!window.opener, []);
+  const { data: selectedPermissions } = usePermissions(selectedDid);
 
   // Build identity options
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? []).map((id: any) => ({
@@ -342,6 +347,10 @@ export default function DWebConnectPage() {
 
   /** Display name: dapp-provided appName, or bare origin. */
   const displayName = appName || origin;
+  const existingSessions = useMemo(() =>
+    findMatchingActiveConnectSessions(selectedPermissions, { origin, appName }),
+  [selectedPermissions, origin, appName]);
+  const protocolSetupStatuses = useProtocolSetupStatuses(selectedDid, agent, permissions);
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -452,7 +461,12 @@ export default function DWebConnectPage() {
           )}
 
           {/* Permissions — rich display */}
-          <PermissionDisplay permissions={permissions} />
+          <ExistingConnectSessionsNotice sessions={existingSessions} />
+
+          <PermissionDisplay
+            permissions={permissions}
+            protocolSetupStatuses={protocolSetupStatuses}
+          />
 
           <SessionExpiryNotice />
 

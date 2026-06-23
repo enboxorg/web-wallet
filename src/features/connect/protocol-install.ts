@@ -11,6 +11,9 @@ type ProtocolQueryReply = {
   entries?: Array<{ definition?: DwnProtocolDefinition }>;
 };
 
+export type ResolvedProtocolSetupStatus = 'configured' | 'install' | 'update';
+export type ProtocolSetupStatus = ResolvedProtocolSetupStatus | 'checking' | 'unavailable';
+
 type PrepareProtocolAgent = {
   did: unknown;
   rpc: {
@@ -43,6 +46,31 @@ function getStructureNode(structure: Record<string, any> | undefined, protocolPa
   return current;
 }
 
+function normalizeProtocolDefinition(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeProtocolDefinition);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([key, entry]) => key !== '$encryption' && entry !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, normalizeProtocolDefinition(entry)]),
+  );
+}
+
+export function protocolDefinitionsMatch(
+  installedDefinition: DwnProtocolDefinition,
+  requestedDefinition: DwnProtocolDefinition,
+): boolean {
+  return JSON.stringify(normalizeProtocolDefinition(installedDefinition))
+    === JSON.stringify(normalizeProtocolDefinition(requestedDefinition));
+}
+
 export function protocolHasEncryptedTypes(protocolDefinition: DwnProtocolDefinition): boolean {
   return Object.values(protocolDefinition.types ?? {}).some((type: any) => type?.encryptionRequired === true);
 }
@@ -64,9 +92,46 @@ export function hasEncryptionConfiguredForEncryptedTypes(
   return true;
 }
 
+export function getProtocolSetupStatus(
+  installedDefinition: DwnProtocolDefinition | undefined,
+  requestedDefinition: DwnProtocolDefinition,
+): ResolvedProtocolSetupStatus {
+  if (!installedDefinition) {
+    return 'install';
+  }
+
+  const missingEncryption = protocolHasEncryptedTypes(requestedDefinition)
+    && !hasEncryptionConfiguredForEncryptedTypes(installedDefinition, requestedDefinition);
+  if (missingEncryption || !protocolDefinitionsMatch(installedDefinition, requestedDefinition)) {
+    return 'update';
+  }
+
+  return 'configured';
+}
+
+export async function queryProtocolSetupStatus(
+  selectedDid: string,
+  agent: Pick<PrepareProtocolAgent, 'processDwnRequest'>,
+  protocolDefinition: DwnProtocolDefinition,
+): Promise<ResolvedProtocolSetupStatus> {
+  const queryResult = await agent.processDwnRequest({
+    author        : selectedDid,
+    messageType   : DwnInterface.ProtocolsQuery,
+    target        : selectedDid,
+    messageParams : { filter: { protocol: protocolDefinition.protocol } },
+  });
+
+  if (queryResult.reply.status.code !== 200) {
+    throw new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`);
+  }
+
+  return getProtocolSetupStatus(queryResult.reply.entries?.[0]?.definition, protocolDefinition);
+}
+
 /**
  * Ensure the requested protocol is installed locally and on all owner DWN
- * endpoints, with `$encryption` keys present when encrypted types exist.
+ * endpoints, updating older/different definitions and adding `$encryption`
+ * keys when encrypted types require them.
  */
 export async function prepareProtocol(
   selectedDid: string,
@@ -97,20 +162,19 @@ export function prepareProtocolEffect(
       catch: sdkError('connect.protocol.query'),
     });
 
-  if (queryResult.reply.status.code !== 200) {
+    if (queryResult.reply.status.code !== 200) {
       return yield* Effect.fail(
         new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`),
       );
-  }
+    }
 
-  const existingEntry = queryResult.reply.entries?.[0];
-  const needsEncryption = protocolHasEncryptedTypes(protocolDefinition);
-  const missingEncryption = needsEncryption
-    && !hasEncryptionConfiguredForEncryptedTypes(existingEntry?.definition, protocolDefinition);
+    const existingEntry = queryResult.reply.entries?.[0];
+    const needsEncryption = protocolHasEncryptedTypes(protocolDefinition);
+    const setupStatus = getProtocolSetupStatus(existingEntry?.definition, protocolDefinition);
 
-  let configureMessage: unknown;
+    let configureMessage: unknown;
 
-  if (!existingEntry || missingEncryption) {
+    if (setupStatus !== 'configured') {
       const { message } = yield* Effect.tryPromise({
         try: async () =>
           agent.processDwnRequest({
@@ -121,11 +185,11 @@ export function prepareProtocolEffect(
             encryption: needsEncryption || undefined,
           }),
         catch: sdkError('connect.protocol.configure'),
-    });
-    configureMessage = message;
-  } else {
-    configureMessage = existingEntry;
-  }
+      });
+      configureMessage = message;
+    } else {
+      configureMessage = existingEntry;
+    }
 
     const dwnEndpoints = yield* Effect.tryPromise({
       try: async () => getDwnServiceEndpointUrls(selectedDid, agent.did as any),
