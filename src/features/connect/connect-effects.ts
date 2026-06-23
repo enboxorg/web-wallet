@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import {
   EnboxConnectProtocol,
+  type ConnectSessionMetadata,
   type ConnectPermissionRequest,
   type EnboxConnectRequest,
 } from '@enbox/agent';
@@ -13,7 +14,6 @@ import { withNetworkPolicy } from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
-import type { ConnectSessionMetadata } from './connect-session-metadata';
 
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
@@ -200,26 +200,15 @@ export function createPermissionGrantsEffect(
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
-      try: async () => {
-        const createPermissionGrantsWithOptions =
-          EnboxConnectProtocol.createPermissionGrants as unknown as (
-            selectedDid: string,
-            delegateBearerDid: any,
-            agent: EnboxAgent,
-            permissionScopes: ConnectPermissionRequest['permissionScopes'],
-            delegateKeyDeliveryData?: unknown,
-            options?: { connectSession?: ConnectSessionMetadata },
-          ) => Promise<unknown[]>;
-
-        return createPermissionGrantsWithOptions(
+      try: async () =>
+        EnboxConnectProtocol.createPermissionGrants(
           selectedDid,
           delegateBearerDid,
           agent,
           permissionScopes,
           undefined,
           connectSession ? { connectSession } : undefined,
-        );
-      },
+        ),
       catch: sdkError('dwebConnect.createPermissionGrants'),
     });
   });

@@ -1,5 +1,5 @@
 import type { PermissionGrant } from '@enbox/api';
-import type { ConnectSessionMetadata } from '@/features/connect/connect-session-metadata';
+import type { ConnectSessionMetadata } from '@enbox/agent';
 
 export type PermissionGrantWithSession = PermissionGrant & {
   connectSession?: ConnectSessionMetadata;

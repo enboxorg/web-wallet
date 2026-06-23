@@ -1,36 +1,6 @@
-export type ConnectSessionTransport = 'relay' | 'postMessage';
-
-export interface ConnectClientMetadata {
-  origin?: string;
-  userAgent?: string;
-  platform?: string;
-  language?: string;
-  languages?: string[];
-  timezone?: string;
-}
-
-export interface ConnectSessionMetadata {
-  id: string;
-  appName?: string;
-  appIcon?: string;
-  origin?: string;
-  userAgent?: string;
-  platform?: string;
-  language?: string;
-  languages?: string[];
-  timezone?: string;
-  transport?: ConnectSessionTransport;
-  createdAt: string;
-  expiresAt: string;
-}
-
-const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+import type { ConnectClientMetadata } from '@enbox/agent';
 
 const CONNECT_SESSION_METADATA_LIMITS = {
-  id        : 128,
-  appName   : 128,
-  appIcon   : 2048,
-  origin    : 2048,
   userAgent : 512,
   platform  : 128,
   language  : 64,
@@ -60,12 +30,6 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function randomSessionId(): string {
-  const randomId = globalThis.crypto?.randomUUID?.();
-  if (randomId) return randomId;
-  return `connect-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-}
-
 export function sanitizeConnectClientMetadata(
   value: unknown,
   trustedOrigin: string,
@@ -83,25 +47,4 @@ export function sanitizeConnectClientMetadata(
   };
 }
 
-export function createPostMessageConnectSessionMetadata(options: {
-  appName?: string;
-  appIcon?: string;
-  clientMetadata: ConnectClientMetadata;
-}): ConnectSessionMetadata {
-  const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + SESSION_TTL_MS);
-
-  return {
-    id        : randomSessionId().slice(0, CONNECT_SESSION_METADATA_LIMITS.id),
-    createdAt : createdAt.toISOString(),
-    expiresAt : expiresAt.toISOString(),
-    transport : 'postMessage',
-    ...(options.appName
-      ? { appName: options.appName.slice(0, CONNECT_SESSION_METADATA_LIMITS.appName) }
-      : {}),
-    ...(options.appIcon
-      ? { appIcon: options.appIcon.slice(0, CONNECT_SESSION_METADATA_LIMITS.appIcon) }
-      : {}),
-    ...options.clientMetadata,
-  };
-}
+export type { ConnectClientMetadata };

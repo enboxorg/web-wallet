@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Globe, Check, X, AlertCircle, Import } from 'lucide-react';
-import type { ConnectPermissionRequest } from '@enbox/agent';
+import { EnboxConnectProtocol, type ConnectPermissionRequest } from '@enbox/agent';
 import { Effect } from 'effect';
 
 import { Button } from '@/components/ui/Button';
@@ -15,7 +15,6 @@ import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { prepareProtocol } from './protocol-install';
-import { createPostMessageConnectSessionMetadata } from './connect-session-metadata';
 import {
   createDelegateDid,
   createPermissionGrants,
@@ -174,10 +173,11 @@ export default function DWebConnectPage() {
       }
 
       const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
-      const connectSession = createPostMessageConnectSessionMetadata({
+      const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
         appName        : sanitizedRequest.appName,
         appIcon        : sanitizedRequest.appIcon,
         clientMetadata : sanitizedRequest.clientMetadata,
+        transport      : 'postMessage',
       });
 
       const allGrants: any[] = [];
