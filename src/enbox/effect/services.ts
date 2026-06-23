@@ -3,6 +3,10 @@ import { Context, Effect, Layer } from 'effect';
 import { STORAGE_KEYS } from '@/lib/constants';
 import type { EnboxAgent, RegistrationTokenData } from '../types';
 import { storageError } from './errors';
+import {
+  decodeRegistrationTokensJsonEffect,
+  encodeRegistrationTokensJsonEffect,
+} from './schemas';
 
 export class CurrentAgent extends Context.Tag('enbox/CurrentAgent')<
   CurrentAgent,
@@ -32,23 +36,28 @@ export const BrowserRegistrationTokenStoreLive = Layer.succeed(
   RegistrationTokenStore,
   {
     get: Effect.try({
-      try: () => {
-        const raw = globalThis.localStorage?.getItem(STORAGE_KEYS.REGISTRATION_TOKENS);
-        return raw ? JSON.parse(raw) as Record<string, RegistrationTokenData> : {};
-      },
+      try: () => globalThis.localStorage?.getItem(STORAGE_KEYS.REGISTRATION_TOKENS) ?? null,
       catch: storageError('registrationTokens.get'),
-    }).pipe(Effect.catchAll(() => Effect.succeed({}))),
+    }).pipe(
+      Effect.flatMap(decodeRegistrationTokensJsonEffect),
+      Effect.catchAll(() => Effect.succeed({})),
+    ),
 
     set: (tokens) =>
-      Effect.try({
-        try: () => {
-          globalThis.localStorage?.setItem(
-            STORAGE_KEYS.REGISTRATION_TOKENS,
-            JSON.stringify(tokens),
-          );
-        },
-        catch: storageError('registrationTokens.set'),
-      }).pipe(Effect.catchAll(() => Effect.void)),
+      encodeRegistrationTokensJsonEffect(tokens).pipe(
+        Effect.flatMap((serialized) =>
+          Effect.try({
+            try: () => {
+              globalThis.localStorage?.setItem(
+                STORAGE_KEYS.REGISTRATION_TOKENS,
+                serialized,
+              );
+            },
+            catch: storageError('registrationTokens.set'),
+          })
+        ),
+        Effect.catchAll(() => Effect.void),
+      ),
   },
 );
 

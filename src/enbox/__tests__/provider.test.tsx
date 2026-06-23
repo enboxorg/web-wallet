@@ -90,6 +90,22 @@ function ConnectButton() {
   );
 }
 
+function DoubleConnectButton() {
+  const { connect } = useEnboxAuth();
+
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void connect('1234', TEST_ENDPOINTS).catch(() => {});
+        void connect('1234', TEST_ENDPOINTS).catch(() => {});
+      }}
+    >
+      Double Connect
+    </button>
+  );
+}
+
 function RestoreButton() {
   const { restore } = useEnboxAuth();
 
@@ -143,6 +159,25 @@ describe('EnboxAuthProvider restore flow', () => {
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
+  });
+
+  it('coalesces duplicate first-time setup calls into one vault operation', async () => {
+    const user = userEvent.setup();
+    const auth = createAuth();
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <DoubleConnectButton />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Double Connect' }));
+
+    await waitFor(() => {
+      expect(auth.connectVault).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('configures wallet identity protocol sync for auth-managed recovery', async () => {

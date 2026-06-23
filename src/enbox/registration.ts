@@ -26,10 +26,13 @@ import {
   DwnRegistrationError,
   registrationError,
   sdkError,
-  storageError,
 } from './effect/errors';
 import { withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise, runEnboxSync } from './effect/runtime';
+import {
+  decodeRegistrationTokensJsonEffect,
+  encodeRegistrationTokensJsonEffect,
+} from './effect/schemas';
 
 // ── Token persistence ──────────────────────────────────────────────
 
@@ -43,21 +46,13 @@ export function storeTokens(tokens: Record<string, RegistrationTokenData>): void
 
 export function getStoredTokensEffect() {
   return localStorageGetEffect(STORAGE_KEYS.REGISTRATION_TOKENS).pipe(
-    Effect.flatMap((raw) =>
-      Effect.try({
-        try: () => raw ? JSON.parse(raw) as Record<string, RegistrationTokenData> : {},
-        catch: storageError('registrationTokens.parse'),
-      })
-    ),
+    Effect.flatMap(decodeRegistrationTokensJsonEffect),
     Effect.catchAll(() => Effect.succeed({})),
   );
 }
 
 export function storeTokensEffect(tokens: Record<string, RegistrationTokenData>) {
-  return Effect.try({
-    try: () => JSON.stringify(tokens),
-    catch: storageError('registrationTokens.stringify'),
-  }).pipe(
+  return encodeRegistrationTokensJsonEffect(tokens).pipe(
     Effect.flatMap((serialized) =>
       localStorageSetEffect(STORAGE_KEYS.REGISTRATION_TOKENS, serialized)
     ),

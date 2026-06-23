@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, ManagedRuntime, Option } from 'effect';
+import { Cause, Effect, Exit, Fiber, ManagedRuntime, Option } from 'effect';
 
 import { AppLayer, type AppServices } from './app-layer';
 import { enboxEffectErrorToError } from './errors';
@@ -33,6 +33,22 @@ export function runEnboxPromise<A, E>(
   return AppRuntime.runPromiseExit(
     effect.pipe(Effect.mapError(enboxEffectErrorToError)),
   ).then(valueOrThrow);
+}
+
+export function runEnboxFork<A, E>(
+  effect: Effect.Effect<A, E, AppServices>,
+) {
+  return AppRuntime.runFork(
+    effect.pipe(Effect.mapError(enboxEffectErrorToError)),
+  );
+}
+
+export function interruptEnboxFork(
+  fiber: ReturnType<typeof runEnboxFork>,
+): void {
+  AppRuntime.runPromise(Fiber.interrupt(fiber)).catch((error: unknown) => {
+    console.warn('Failed to interrupt Enbox Effect fiber:', error);
+  });
 }
 
 export function runEnboxSync<A, E>(

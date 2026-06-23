@@ -2,13 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Effect, Layer } from 'effect';
 import { DwnRegistrar } from '@enbox/dwn-clients';
 
-import { ensureRegistrationEffect } from '../registration';
+import { ensureRegistrationEffect, getStoredTokens, storeTokens } from '../registration';
 import { runEnboxPromise } from '../effect/runtime';
 import {
   RegistrationTokenStore,
   currentAgentLayer,
 } from '../effect/services';
 import type { RegistrationTokenData } from '../types';
+import { STORAGE_KEYS } from '@/lib/constants';
 
 vi.mock('@enbox/dwn-clients', () => ({
   DwnRegistrar: {
@@ -77,9 +78,41 @@ async function runWithAgentAndStore(
 describe('ensureRegistrationEffect', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.clear();
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     vi.mocked(DwnRegistrar.registerTenant).mockResolvedValue(undefined as never);
     vi.mocked(DwnRegistrar.registerTenantWithToken).mockResolvedValue(undefined as never);
+  });
+
+  it('decodes persisted provider-auth tokens through Schema and falls back on invalid storage', () => {
+    const endpoint = 'https://dwn.example';
+
+    storeTokens({
+      [endpoint]: {
+        registrationToken : 'token',
+        refreshToken      : 'refresh',
+        expiresAt         : 123,
+        tokenUrl          : 'https://provider.example/token',
+        refreshUrl        : 'https://provider.example/refresh',
+      },
+    });
+
+    expect(getStoredTokens()).toEqual({
+      [endpoint]: {
+        registrationToken : 'token',
+        refreshToken      : 'refresh',
+        expiresAt         : 123,
+        tokenUrl          : 'https://provider.example/token',
+        refreshUrl        : 'https://provider.example/refresh',
+      },
+    });
+
+    localStorage.setItem(
+      STORAGE_KEYS.REGISTRATION_TOKENS,
+      '{"https://dwn.example":{"registrationToken":1}}',
+    );
+
+    expect(getStoredTokens()).toEqual({});
   });
 
   it('registers the agent DID and connected identity DIDs with proof-of-work registration', async () => {
