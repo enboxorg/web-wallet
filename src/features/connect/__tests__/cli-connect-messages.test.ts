@@ -79,6 +79,17 @@ describe('parseCliConnectRequest', () => {
     expect(parsed.cliDid).toBe(request.cliDid);
   });
 
+  it('accepts a pre-supplied delegateDid (CLI-owns-key mode)', async () => {
+    const { request } = await buildSignedRequest({ delegateDid: 'did:dht:contributor1' });
+    const parsed = await parseCliConnectRequest(encodeRequest(request));
+    expect(parsed.delegateDid).toBe('did:dht:contributor1');
+  });
+
+  it('rejects an invalid delegateDid', async () => {
+    const { request } = await buildSignedRequest({ delegateDid: 'not-a-did' });
+    await expect(parseCliConnectRequest(encodeRequest(request))).rejects.toThrow(/delegateDid/i);
+  });
+
   it('rejects a request with a tampered proof', async () => {
     const { request } = await buildSignedRequest({ challenge: 'different-after-signing' });
     await expect(parseCliConnectRequest(encodeRequest(request))).rejects.toThrow(/proof/i);

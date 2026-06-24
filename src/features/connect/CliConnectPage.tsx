@@ -133,17 +133,32 @@ export default function CliConnectPage() {
       }
 
       setStatusMessage('Creating delegate...');
-      const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
       const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
         appName        : request.appName,
         clientMetadata : request.clientMetadata,
         transport      : 'relay',
       });
 
+      // Two delegation models:
+      //  - Pre-supplied delegateDid: the tool already owns this DID's key, so
+      //    grant to it directly and echo the DID back (no private keys leave
+      //    the wallet).
+      //  - Otherwise: mint a delegate did:jwk and hand it back with its keys.
+      let grantRecipient: unknown;
+      let responseDelegateDid: unknown;
+      if (request.delegateDid) {
+        grantRecipient = request.delegateDid;
+        responseDelegateDid = request.delegateDid;
+      } else {
+        const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
+        grantRecipient = delegateBearerDid;
+        responseDelegateDid = delegatePortableDid;
+      }
+
       setStatusMessage('Creating grants...');
       const grants = await createPermissionGrants(
         selectedDid,
-        delegateBearerDid,
+        grantRecipient,
         allPermissionScopes,
         agent,
         connectSession,
@@ -153,7 +168,7 @@ export default function CliConnectPage() {
         version                : 1,
         type                   : CLI_CONNECT_RESPONSE_TYPE,
         connectedDid           : selectedDid,
-        delegateDid            : delegatePortableDid,
+        delegateDid            : responseDelegateDid,
         grants,
         delegateDecryptionKeys : allDecryptionKeys.length > 0 ? allDecryptionKeys : undefined,
         walletOrigin           : window.location.origin,

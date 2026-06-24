@@ -44,6 +44,13 @@ export interface CliConnectRequest {
   cliProof: string;
   /** Loopback URL the wallet POSTs the response to. */
   callbackUrl?: string;
+  /**
+   * Optional DID the grants should be issued to. When set, the tool already
+   * owns this DID's key and the wallet grants to it directly (the response
+   * echoes the DID, no private keys). When omitted, the wallet mints a delegate
+   * `did:jwk` and returns it (with keys) in the response.
+   */
+  delegateDid?: string;
   clientMetadata: ConnectClientMetadata;
 }
 
@@ -186,6 +193,11 @@ export async function parseCliConnectRequest(raw: string | null): Promise<CliCon
     throw new Error('The CLI connect callback must be a loopback (127.0.0.1) URL.');
   }
 
+  const delegateDid = optionalString(decoded.delegateDid, MAX_DID_LENGTH);
+  if (delegateDid && !DID_PATTERN.test(delegateDid)) {
+    throw new Error('The CLI connect request delegateDid must be a valid DID.');
+  }
+
   const request: CliConnectRequest = {
     version        : 1,
     type           : CLI_CONNECT_REQUEST_TYPE,
@@ -195,6 +207,7 @@ export async function parseCliConnectRequest(raw: string | null): Promise<CliCon
     challenge,
     cliProof,
     ...(callbackUrl ? { callbackUrl } : {}),
+    ...(delegateDid ? { delegateDid } : {}),
     clientMetadata : sanitizeConnectClientMetadata(decoded.clientMetadata, callbackUrl ?? 'cli'),
   };
 
