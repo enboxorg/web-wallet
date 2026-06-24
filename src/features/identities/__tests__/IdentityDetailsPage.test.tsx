@@ -35,11 +35,11 @@ const mockPermissions = [
     protocol: 'https://identity.foundation/protocols/profile',
     }),
     dateGranted    : '2026-06-23T00:00:00.000Z',
-    dateExpires    : '2026-06-24T00:00:00.000Z',
+    dateExpires    : '2099-06-24T00:00:00.000Z',
     connectSession : {
       id        : 'session-1',
       createdAt : '2026-06-23T00:00:00.000Z',
-      expiresAt : '2026-06-24T00:00:00.000Z',
+      expiresAt : '2099-06-24T00:00:00.000Z',
       appName   : 'Example App',
       origin    : 'https://app.example',
       userAgent : 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15',
