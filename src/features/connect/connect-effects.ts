@@ -206,7 +206,6 @@ export function createPermissionGrantsEffect(
           delegateBearerDid,
           agent,
           permissionScopes,
-          undefined,
           connectSession ? { connectSession } : undefined,
         ),
       catch: sdkError('dwebConnect.createPermissionGrants'),
