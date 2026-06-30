@@ -122,7 +122,6 @@ describe('connect Effect adapters', () => {
       delegateBearerDid,
       agent,
       scopes,
-      undefined,
       { connectSession },
     );
   });
