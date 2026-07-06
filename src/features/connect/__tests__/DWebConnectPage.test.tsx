@@ -11,9 +11,9 @@ const mocks = vi.hoisted(() => ({
       getDwnEndpointUrlsForTarget: vi.fn(),
     },
   },
+  createAndSendGrantKeyRecords: vi.fn(),
   createDelegateDid: vi.fn(),
   createPermissionGrants: vi.fn(),
-  deriveScopedDecryptionKeys: vi.fn(),
   encryptDWebConnectResponse: vi.fn(),
   ensureRegistration: vi.fn(),
   importPortableIdentity: vi.fn(),
@@ -50,9 +50,9 @@ vi.mock('@/enbox/registration', () => ({
 }));
 
 vi.mock('../connect-effects', () => ({
+  createAndSendGrantKeyRecords: mocks.createAndSendGrantKeyRecords,
   createDelegateDid: mocks.createDelegateDid,
   createPermissionGrants: mocks.createPermissionGrants,
-  deriveScopedDecryptionKeys: mocks.deriveScopedDecryptionKeys,
   encryptDWebConnectResponse: mocks.encryptDWebConnectResponse,
   importPortableIdentity: mocks.importPortableIdentity,
 }));
@@ -104,6 +104,7 @@ function connectRequest(): DWebConnectRequest {
     data: {
       type: 'dweb-connect-authorization-request',
       appName: 'Example App',
+      ephemeralPublicKey: 'dapp-ephemeral-key',
       permissions: [permissionRequest],
     },
   };
@@ -132,9 +133,11 @@ describe('DWebConnectPage', () => {
     mocks.createDelegateDid.mockResolvedValue({
       delegateBearerDid: { uri: 'did:jwk:delegate' },
       delegatePortableDid: { uri: 'did:jwk:delegate', privateKeys: [] },
+      delegateX25519PrivateKey: { kty: 'OKP', crv: 'X25519', d: 'secret', x: 'public' },
     });
     mocks.createPermissionGrants.mockResolvedValue([{ id: 'grant-1' }]);
-    mocks.deriveScopedDecryptionKeys.mockResolvedValue([]);
+    mocks.createAndSendGrantKeyRecords.mockResolvedValue([]);
+    mocks.encryptDWebConnectResponse.mockResolvedValue({ iv: 'encrypted' });
     mocks.agent.dwn.getDwnEndpointUrlsForTarget.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistration.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
@@ -159,6 +162,7 @@ describe('DWebConnectPage', () => {
     await waitFor(() => {
       expect(mocks.createDelegateDid).toHaveBeenCalledTimes(1);
       expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1);
+      expect(mocks.createAndSendGrantKeyRecords).toHaveBeenCalledTimes(1);
     });
     expect(mocks.agent.dwn.getDwnEndpointUrlsForTarget).toHaveBeenCalledWith('did:dht:alice');
     expect(mocks.ensureRegistration).toHaveBeenCalledWith(
@@ -176,12 +180,27 @@ describe('DWebConnectPage', () => {
         transport : 'postMessage',
       }),
     );
+    expect(mocks.createAndSendGrantKeyRecords).toHaveBeenCalledWith(
+      'did:dht:alice',
+      { uri: 'did:jwk:delegate' },
+      { kty: 'OKP', crv: 'X25519', d: 'secret', x: 'public' },
+      [{ id: 'grant-1' }],
+      [permissionRequest.protocolDefinition],
+      mocks.agent,
+    );
+    expect(mocks.encryptDWebConnectResponse).toHaveBeenCalledWith(
+      {
+        delegateDid  : { uri: 'did:jwk:delegate', privateKeys: [] },
+        connectedDid : 'did:dht:alice',
+        grants       : [{ id: 'grant-1' }],
+      },
+      'dapp-ephemeral-key',
+    );
     expect(window.opener.postMessage).toHaveBeenCalledWith(
-      expect.objectContaining({
+      {
         type: 'dweb-connect-authorization-response',
-        connectedDid: 'did:dht:alice',
-        grants: [{ id: 'grant-1' }],
-      }),
+        encryptedPayload: { iv: 'encrypted' },
+      },
       'https://app.example',
     );
   });

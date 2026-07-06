@@ -2,11 +2,14 @@ import { Effect } from 'effect';
 import {
   EnboxConnectProtocol,
   type ConnectSessionMetadata,
+  type DwnDataEncodedRecordsWriteMessage,
   type ConnectPermissionRequest,
   type EnboxConnectRequest,
+  type DwnProtocolDefinition,
 } from '@enbox/agent';
 import { encryptPostMessagePayload, generateEphemeralKeyPair } from '@enbox/browser';
-import { CryptoUtils, Ed25519 } from '@enbox/crypto';
+import { Convert } from '@enbox/common';
+import { CryptoUtils, Ed25519, type PrivateKeyJwk } from '@enbox/crypto';
 import { DidJwk } from '@enbox/dids';
 
 import { sdkError } from '@/enbox/effect/errors';
@@ -17,6 +20,71 @@ import type { EnboxAgent } from '@/enbox/types';
 
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
+}
+
+function dataEncodedRecordToSend(record: DwnDataEncodedRecordsWriteMessage) {
+  const { encodedData, ...message } = record;
+  const bytes = Convert.base64Url(encodedData).toUint8Array();
+
+  return {
+    message,
+    data: new Blob([bytes as BlobPart]),
+  };
+}
+
+async function fanOutDataEncodedRecords(
+  ownerDid: string,
+  agent: EnboxAgent,
+  records: DwnDataEncodedRecordsWriteMessage[],
+): Promise<void> {
+  if (records.length === 0) {
+    return;
+  }
+
+  const dwnEndpointUrls = await agent.dwn.getDwnEndpointUrlsForTarget(ownerDid);
+  const sendTasks = records.flatMap((record, recordIndex) => {
+    const { message, data } = dataEncodedRecordToSend(record);
+
+    return dwnEndpointUrls.map((dwnUrl: string) => ({
+      data,
+      dwnUrl,
+      message,
+      recordIndex,
+    }));
+  });
+
+  const settled = await Promise.allSettled(
+    sendTasks.map(async ({ data, dwnUrl, message, recordIndex }) => {
+      const reply = await agent.rpc.sendDwnRequest({
+        data,
+        dwnUrl,
+        message,
+        targetDid: ownerDid,
+      });
+
+      return { dwnUrl, recordIndex, reply };
+    }),
+  );
+
+  const successPerRecord = new Array<boolean>(records.length).fill(false);
+  settled.forEach((result) => {
+    if (result.status === 'rejected') {
+      console.warn('Failed to fan out grantKey record:', result.reason);
+      return;
+    }
+
+    const { dwnUrl, recordIndex, reply } = result.value;
+    if (reply.status.code === 202 || reply.status.code === 409) {
+      successPerRecord[recordIndex] = true;
+      return;
+    }
+
+    console.warn(`Endpoint ${dwnUrl} rejected grantKey record: ${reply.status.detail}`);
+  });
+
+  if (successPerRecord.some((success) => !success)) {
+    throw new Error('Could not send grantKey record to any DWN endpoint.');
+  }
 }
 
 export function fetchConnectRequestEffect(requestUri: string, encryptionKey: string) {
@@ -142,53 +210,21 @@ export function createDelegateDidEffect() {
     });
 
     const delegateEdPrivateKey = delegatePortableDid.privateKeys![0];
-    const delegateX25519PrivateKey = yield* Effect.tryPromise({
+    const delegateX25519PrivateKey = (yield* Effect.tryPromise({
       try: async () =>
         Ed25519.convertPrivateKeyToX25519({
           privateKey: delegateEdPrivateKey,
         }),
       catch: sdkError('dwebConnect.delegate.x25519'),
-    });
+    })) as PrivateKeyJwk;
     delegatePortableDid.privateKeys!.push(delegateX25519PrivateKey);
 
-    return { delegateBearerDid, delegatePortableDid };
+    return { delegateBearerDid, delegatePortableDid, delegateX25519PrivateKey };
   });
 }
 
 export function createDelegateDid() {
   return runEnboxPromise(createDelegateDidEffect());
-}
-
-export function deriveScopedDecryptionKeysEffect(
-  selectedDid: string,
-  permissionRequest: ConnectPermissionRequest,
-) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    return yield* Effect.tryPromise({
-      try: async () =>
-        EnboxConnectProtocol.deriveScopedDecryptionKeys(
-          agent,
-          selectedDid,
-          permissionRequest.protocolDefinition.protocol,
-          permissionRequest.permissionScopes,
-          permissionRequest.protocolDefinition,
-        ),
-      catch: sdkError('dwebConnect.deriveScopedDecryptionKeys'),
-    });
-  });
-}
-
-export function deriveScopedDecryptionKeys(
-  selectedDid: string,
-  permissionRequest: ConnectPermissionRequest,
-  agent: EnboxAgent,
-) {
-  return runEnboxPromise(
-    deriveScopedDecryptionKeysEffect(selectedDid, permissionRequest).pipe(
-      Effect.provide(currentAgentLayer(agent)),
-    ),
-  );
 }
 
 export function createPermissionGrantsEffect(
@@ -226,6 +262,60 @@ export function createPermissionGrants(
       delegateBearerDid,
       permissionScopes,
       connectSession,
+    ).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+export function createAndSendGrantKeyRecordsEffect(
+  selectedDid: string,
+  delegateBearerDid: any,
+  delegateX25519PrivateKey: PrivateKeyJwk,
+  grantMessages: DwnDataEncodedRecordsWriteMessage[],
+  protocolDefinitions: DwnProtocolDefinition[],
+) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* withNetworkPolicy(
+      'dwebConnect.createGrantKeyRecords',
+      Effect.tryPromise({
+        try: async () => {
+          const grantKeyRecords = await EnboxConnectProtocol.createGrantKeyRecordsForGrants({
+            agent,
+            ownerDid              : selectedDid,
+            granteeDid            : delegateBearerDid.uri,
+            granteeRootPrivateKey : delegateX25519PrivateKey,
+            grantMessages,
+            protocolDefinitions,
+          });
+
+          await fanOutDataEncodedRecords(selectedDid, agent, grantKeyRecords);
+
+          return grantKeyRecords;
+        },
+        catch: sdkError('dwebConnect.createGrantKeyRecords'),
+      }),
+      () => sdkTimeout('dwebConnect.createGrantKeyRecords'),
+    );
+  });
+}
+
+export function createAndSendGrantKeyRecords(
+  selectedDid: string,
+  delegateBearerDid: any,
+  delegateX25519PrivateKey: PrivateKeyJwk,
+  grantMessages: DwnDataEncodedRecordsWriteMessage[],
+  protocolDefinitions: DwnProtocolDefinition[],
+  agent: EnboxAgent,
+) {
+  return runEnboxPromise(
+    createAndSendGrantKeyRecordsEffect(
+      selectedDid,
+      delegateBearerDid,
+      delegateX25519PrivateKey,
+      grantMessages,
+      protocolDefinitions,
     ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
