@@ -18,9 +18,9 @@ import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { ensureRegistration } from '@/enbox/registration';
 import { prepareProtocol } from './protocol-install';
 import {
+  createAndSendGrantKeyRecords,
   createDelegateDid,
   createPermissionGrants,
-  deriveScopedDecryptionKeys,
 } from './connect-effects';
 import { getUnsupportedConnectPermissionError } from './dweb-connect-messages';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
@@ -105,7 +105,7 @@ export default function CliConnectPage() {
 
       setStatusMessage('Preparing protocols...');
       const allPermissionScopes: ConnectPermissionRequest['permissionScopes'] = [];
-      const allDecryptionKeys: any[] = [];
+      const protocolDefinitions: ConnectPermissionRequest['protocolDefinition'][] = [];
 
       for (const permissionRequest of permissions) {
         const { protocolDefinition, permissionScopes } = permissionRequest;
@@ -119,21 +119,11 @@ export default function CliConnectPage() {
 
         await prepareProtocol(selectedDid, agent, protocolDefinition);
         allPermissionScopes.push(...permissionScopes);
-
-        const hasEncryptedTypes = Object.values(protocolDefinition.types ?? {})
-          .some((type: any) => type?.encryptionRequired === true);
-        if (hasEncryptedTypes) {
-          try {
-            const keys = await deriveScopedDecryptionKeys(selectedDid, permissionRequest, agent);
-            allDecryptionKeys.push(...keys);
-          } catch (err) {
-            console.warn('Failed to derive scoped decryption keys:', err);
-          }
-        }
+        protocolDefinitions.push(protocolDefinition);
       }
 
       setStatusMessage('Creating delegate...');
-      const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
+      const { delegateBearerDid, delegatePortableDid, delegateX25519PrivateKey } = await createDelegateDid();
       const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
         appName        : request.appName,
         clientMetadata : request.clientMetadata,
@@ -149,16 +139,25 @@ export default function CliConnectPage() {
         connectSession,
       );
 
-      const response: CliConnectResponse = {
-        version                : 1,
-        type                   : CLI_CONNECT_RESPONSE_TYPE,
-        connectedDid           : selectedDid,
-        delegateDid            : delegatePortableDid,
+      setStatusMessage('Creating encrypted key deliveries...');
+      await createAndSendGrantKeyRecords(
+        selectedDid,
+        delegateBearerDid,
+        delegateX25519PrivateKey,
         grants,
-        delegateDecryptionKeys : allDecryptionKeys.length > 0 ? allDecryptionKeys : undefined,
-        walletOrigin           : window.location.origin,
-        expiresAt              : (connectSession as { expiresAt?: string }).expiresAt,
-        challenge              : request.challenge,
+        protocolDefinitions,
+        agent,
+      );
+
+      const response: CliConnectResponse = {
+        version      : 1,
+        type         : CLI_CONNECT_RESPONSE_TYPE,
+        connectedDid : selectedDid,
+        delegateDid  : delegatePortableDid,
+        grants,
+        walletOrigin : window.location.origin,
+        expiresAt    : (connectSession as { expiresAt?: string }).expiresAt,
+        challenge    : request.challenge,
       };
 
       setStatusMessage('Returning grants...');

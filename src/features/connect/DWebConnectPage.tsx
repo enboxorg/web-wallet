@@ -21,9 +21,9 @@ import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { ensureRegistration } from '@/enbox/registration';
 import { prepareProtocol } from './protocol-install';
 import {
+  createAndSendGrantKeyRecords,
   createDelegateDid,
   createPermissionGrants,
-  deriveScopedDecryptionKeys,
   encryptDWebConnectResponse,
   importPortableIdentity,
 } from './connect-effects';
@@ -191,7 +191,6 @@ export default function DWebConnectPage() {
         await importPortableIdentity(sanitizedRequest.portableIdentity, agent);
       }
 
-      const allDecryptionKeys: any[] = [];
       const unsupportedPermission = getUnsupportedConnectPermissionError(permissions);
       if (unsupportedPermission) {
         throw new Error(unsupportedPermission);
@@ -206,6 +205,7 @@ export default function DWebConnectPage() {
 
       setStatusMessage('Preparing protocols...');
       const allPermissionScopes: ConnectPermissionRequest['permissionScopes'] = [];
+      const protocolDefinitions: ConnectPermissionRequest['protocolDefinition'][] = [];
       for (const permissionRequest of permissions) {
         const { protocolDefinition, permissionScopes } = permissionRequest;
 
@@ -219,29 +219,11 @@ export default function DWebConnectPage() {
 
         await prepareProtocol(selectedDid, agent, protocolDefinition);
         allPermissionScopes.push(...permissionScopes);
-
-        // Derive scoped decryption keys for single-party encrypted
-        // protocols so the delegate can read encrypted records after
-        // page refresh / session restore.
-        const hasEncryptedTypes = Object.values(protocolDefinition.types ?? {})
-          .some((type: any) => type?.encryptionRequired === true);
-
-        if (hasEncryptedTypes) {
-          try {
-            const keys = await deriveScopedDecryptionKeys(
-              selectedDid,
-              permissionRequest,
-              agent,
-            );
-            allDecryptionKeys.push(...keys);
-          } catch (err) {
-            console.warn('Failed to derive scoped decryption keys:', err);
-          }
-        }
+        protocolDefinitions.push(protocolDefinition);
       }
 
       setStatusMessage('Creating delegate...');
-      const { delegateBearerDid, delegatePortableDid } = await createDelegateDid();
+      const { delegateBearerDid, delegatePortableDid, delegateX25519PrivateKey } = await createDelegateDid();
       const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
         appName        : sanitizedRequest.appName,
         appIcon        : sanitizedRequest.appIcon,
@@ -258,42 +240,36 @@ export default function DWebConnectPage() {
         connectSession,
       );
 
+      setStatusMessage('Creating encrypted key deliveries...');
+      await createAndSendGrantKeyRecords(
+        selectedDid,
+        delegateBearerDid,
+        delegateX25519PrivateKey,
+        allGrants,
+        protocolDefinitions,
+        agent,
+      );
+
       setStatusMessage('Returning grants...');
 
       const responsePayload: Record<string, unknown> = {
-        delegateDid            : delegatePortableDid,
-        connectedDid           : selectedDid,
-        grants                 : allGrants,
-        delegateDecryptionKeys : allDecryptionKeys.length > 0 ? allDecryptionKeys : undefined,
+        delegateDid  : delegatePortableDid,
+        connectedDid : selectedDid,
+        grants       : allGrants,
       };
 
-      // If the dapp sent an ephemeral public key, encrypt the response
-      // so private key material is not exposed as plaintext in postMessage.
       const dappEphemeralKey = sanitizedRequest?.ephemeralPublicKey;
-      if (dappEphemeralKey) {
-        try {
-          const encryptedPayload = await encryptDWebConnectResponse(
-            responsePayload,
-            dappEphemeralKey,
-          );
-          window.opener.postMessage(
-            { type: 'dweb-connect-authorization-response', encryptedPayload },
-            origin,
-          );
-        } catch (encErr) {
-          console.warn('Failed to encrypt connect response, falling back to plaintext:', encErr);
-          window.opener.postMessage(
-            { type: 'dweb-connect-authorization-response', ...responsePayload },
-            origin,
-          );
-        }
-      } else {
-        // Dapp does not support encrypted channel — send plaintext.
-        window.opener.postMessage(
-          { type: 'dweb-connect-authorization-response', ...responsePayload },
-          origin,
-        );
+      if (!dappEphemeralKey) {
+        throw new Error('DWeb Connect requires an encrypted response channel.');
       }
+      const encryptedPayload = await encryptDWebConnectResponse(
+        responsePayload,
+        dappEphemeralKey,
+      );
+      window.opener.postMessage(
+        { type: 'dweb-connect-authorization-response', encryptedPayload },
+        origin,
+      );
 
       setPhase('done');
       approvalCompletedRef.current = true;

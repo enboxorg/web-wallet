@@ -54,7 +54,6 @@ export interface CliConnectResponse {
   /** Portable delegate DID, including private keys, for the tool to hold. */
   delegateDid: unknown;
   grants: unknown[];
-  delegateDecryptionKeys?: unknown[];
   walletOrigin: string;
   expiresAt?: string;
   challenge: string;

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  createAndSendGrantKeyRecords,
   createDelegateDid,
   createPermissionGrants,
   denyConnectRequest,
@@ -11,8 +12,8 @@ import {
 } from '../connect-effects';
 
 const mocks = vi.hoisted(() => ({
+  createGrantKeyRecordsForGrants: vi.fn(),
   createPermissionGrants: vi.fn(),
-  deriveScopedDecryptionKeys: vi.fn(),
   encryptPostMessagePayload: vi.fn(),
   generateEphemeralKeyPair: vi.fn(),
   getConnectRequest: vi.fn(),
@@ -24,8 +25,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@enbox/agent', () => ({
   EnboxConnectProtocol: {
+    createGrantKeyRecordsForGrants: mocks.createGrantKeyRecordsForGrants,
     createPermissionGrants: mocks.createPermissionGrants,
-    deriveScopedDecryptionKeys: mocks.deriveScopedDecryptionKeys,
     getConnectRequest: mocks.getConnectRequest,
     submitConnectResponse: mocks.submitConnectResponse,
   },
@@ -126,6 +127,54 @@ describe('connect Effect adapters', () => {
     );
   });
 
+  it('creates and fans out durable grantKey records for created grants', async () => {
+    const agent = {
+      dwn: {
+        getDwnEndpointUrlsForTarget: vi.fn(async () => ['https://dwn-a.example', 'https://dwn-b.example']),
+      },
+      rpc: {
+        sendDwnRequest: vi.fn(async () => ({ status: { code: 202, detail: 'Accepted' } })),
+      },
+    };
+    const delegateBearerDid = { uri: 'did:jwk:delegate' };
+    const delegateX25519PrivateKey = { kty: 'OKP', crv: 'X25519', d: 'secret', x: 'public' };
+    const grantMessages = [{ recordId: 'grant-1' }];
+    const protocolDefinitions = [{ protocol: 'https://example.com/protocols/demo' }];
+    const grantKeyRecord = {
+      encodedData : 'AQ',
+      recordId    : 'grant-key-1',
+      descriptor  : { protocol: 'https://enbox.org/protocols/encryption' },
+    };
+    mocks.createGrantKeyRecordsForGrants.mockResolvedValue([grantKeyRecord]);
+
+    await createAndSendGrantKeyRecords(
+      'did:dht:alice',
+      delegateBearerDid,
+      delegateX25519PrivateKey as any,
+      grantMessages as any,
+      protocolDefinitions as any,
+      agent as any,
+    );
+
+    expect(mocks.createGrantKeyRecordsForGrants).toHaveBeenCalledWith({
+      agent,
+      ownerDid              : 'did:dht:alice',
+      granteeDid            : 'did:jwk:delegate',
+      granteeRootPrivateKey : delegateX25519PrivateKey,
+      grantMessages,
+      protocolDefinitions,
+    });
+    expect(agent.rpc.sendDwnRequest).toHaveBeenCalledTimes(2);
+    expect(agent.rpc.sendDwnRequest).toHaveBeenCalledWith(expect.objectContaining({
+      dwnUrl    : 'https://dwn-a.example',
+      targetDid : 'did:dht:alice',
+      message   : {
+        recordId   : 'grant-key-1',
+        descriptor : { protocol: 'https://enbox.org/protocols/encryption' },
+      },
+    }));
+  });
+
   it('posts denial callbacks as form data', async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }));
     Object.defineProperty(globalThis, 'fetch', {
@@ -157,6 +206,7 @@ describe('connect Effect adapters', () => {
       'ed25519-private',
       'x25519-private',
     ]);
+    expect(result.delegateX25519PrivateKey).toBe('x25519-private');
   });
 
   it('encrypts DWeb Connect response payloads', async () => {
