@@ -120,7 +120,7 @@ describe('connect Effect adapters', () => {
 
     expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
       'did:dht:alice',
-      delegateBearerDid,
+      delegateBearerDid.uri,
       agent,
       scopes,
       { connectSession },

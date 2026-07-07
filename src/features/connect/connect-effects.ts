@@ -10,7 +10,7 @@ import {
 import { encryptPostMessagePayload, generateEphemeralKeyPair } from '@enbox/browser';
 import { Convert } from '@enbox/common';
 import { CryptoUtils, Ed25519, type PrivateKeyJwk } from '@enbox/crypto';
-import { DidJwk } from '@enbox/dids';
+import { DidJwk, type BearerDid } from '@enbox/dids';
 
 import { sdkError } from '@/enbox/effect/errors';
 import { withNetworkPolicy } from '@/enbox/effect/network-policy';
@@ -229,7 +229,7 @@ export function createDelegateDid() {
 
 export function createPermissionGrantsEffect(
   selectedDid: string,
-  delegateBearerDid: any,
+  delegateBearerDid: BearerDid,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
   connectSession?: ConnectSessionMetadata,
 ) {
@@ -237,9 +237,10 @@ export function createPermissionGrantsEffect(
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
       try: async () =>
+        // @enbox/agent >= 0.8.10 grants to the delegate DID URI, not the BearerDid.
         EnboxConnectProtocol.createPermissionGrants(
           selectedDid,
-          delegateBearerDid,
+          delegateBearerDid.uri,
           agent,
           permissionScopes,
           connectSession ? { connectSession } : undefined,
@@ -251,7 +252,7 @@ export function createPermissionGrantsEffect(
 
 export function createPermissionGrants(
   selectedDid: string,
-  delegateBearerDid: any,
+  delegateBearerDid: BearerDid,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
   agent: EnboxAgent,
   connectSession?: ConnectSessionMetadata,
