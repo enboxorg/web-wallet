@@ -6,3 +6,7 @@
   Permissions-Policy: camera=(self), microphone=(), geolocation=(), payment=()
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   X-Permitted-Cross-Domain-Policies: none
+
+/.well-known/enbox-connect
+  Content-Type: application/json
+  Access-Control-Allow-Origin: *
