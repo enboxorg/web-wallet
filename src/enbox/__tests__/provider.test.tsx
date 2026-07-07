@@ -137,6 +137,40 @@ describe('EnboxAuthProvider restore flow', () => {
     });
   });
 
+  it('skips local DWN discovery when a same-tab session password is cached', async () => {
+    localStorage.removeItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT);
+    sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, '1234');
+    const auth = createAuth();
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    expect(authMocks.requestLocalDwnDiscovery).not.toHaveBeenCalled();
+  });
+
+  it('requests local DWN discovery for fresh desktop sessions without a cached endpoint', async () => {
+    localStorage.removeItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT);
+    authMocks.requestLocalDwnDiscovery.mockImplementationOnce(() => {
+      localStorage.setItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT, 'http://127.0.0.1:55500');
+      return true;
+    });
+    const auth = createAuth();
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.requestLocalDwnDiscovery).toHaveBeenCalled());
+  });
+
   it('uses explicit vault connect for first-time setup', async () => {
     const user = userEvent.setup();
     const auth = createAuth();
