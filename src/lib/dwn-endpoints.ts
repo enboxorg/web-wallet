@@ -1,11 +1,21 @@
 /**
  * Default DWN (Decentralised Web Node) endpoints.
  * These are the remote DWNs that identities register with and sync to.
+ *
+ * VITE_DWN_ENDPOINTS (comma-separated) overrides them for local
+ * development against a local dwn-server, e.g.
+ * `VITE_DWN_ENDPOINTS=http://localhost:3000 bun dev`.
  */
-export const DEFAULT_DWN_ENDPOINTS: string[] = [
-  'https://enbox-dwn.fly.dev',
-  'https://dev.aws.dwn.enbox.id',
-];
+export const DEFAULT_DWN_ENDPOINTS: string[] = (() => {
+  const raw =
+    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_DWN_ENDPOINTS) || '';
+  const overrides = String(raw)
+    .split(',')
+    .map((endpoint: string) => endpoint.trim())
+    .filter(Boolean);
+  if (overrides.length > 0) { return overrides; }
+  return ['https://enbox-dwn.fly.dev', 'https://dev.aws.dwn.enbox.id'];
+})();
 
 /**
  * The public-facing wallet URL used by DWeb Connect handlers

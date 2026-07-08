@@ -13,6 +13,7 @@ import {
   SwitchCamera,
 } from 'lucide-react';
 import {
+  EnboxConnectProtocol,
   type EnboxConnectRequest,
 } from '@enbox/agent';
 
@@ -39,9 +40,25 @@ import { useIdentities } from '@/enbox/hooks/use-identities';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 
-type Phase = 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
+type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
 
 const EMPTY_PERMISSION_REQUESTS: EnboxConnectRequest['permissionRequests'] = [];
+
+/**
+ * Extracts the connect deep-link parameters from the current URL.
+ *
+ * CLI clients (e.g. `meshd auth connect --open`) hand the user a wallet URL
+ * of the form `/connect/app#request_uri=...&encryption_key=...` instead of a
+ * QR code. The request pointer and single-use encryption key ride in the URI
+ * fragment (never the query string), so the key never reaches the wallet's
+ * web server. When both parameters are present the page skips the scanner and
+ * feeds them straight into the same connect-request flow the scanner uses.
+ */
+function getDeepLinkParams(): { requestUri: string; encryptionKey: string } | null {
+  const parsed = EnboxConnectProtocol.parseWalletConnectUri(window.location.href);
+  if (!parsed) return null;
+  return { requestUri: parsed.requestUri, encryptionKey: parsed.encryptionKeyBase64Url };
+}
 
 export default function AppConnectPage() {
   const agent = useAgent();
@@ -53,8 +70,13 @@ export default function AppConnectPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const processConnectUriRef = useRef(processConnectUri);
   processConnectUriRef.current = processConnectUri;
+  const processConnectParamsRef = useRef(processConnectParams);
+  processConnectParamsRef.current = processConnectParams;
 
-  const [phase, setPhase] = useState<Phase>('scanning');
+  // Start in 'loading' when the URL carries deep-link connect parameters so
+  // the camera never starts for a link-initiated flow.
+  const [phase, setPhase] = useState<Phase>(() => (getDeepLinkParams() ? 'loading' : 'scanning'));
+  const deepLinkHandledRef = useRef(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
   const [cameras, setCameras] = useState<Scanner.Camera[]>([]);
@@ -191,16 +213,8 @@ export default function AppConnectPage() {
 
   // ── Connect flow ─────────────────────────────────────────────────
 
-  async function processConnectUri(uri: string) {
+  async function processConnectParams(requestUri: string, encryptionKey: string) {
     try {
-      const url = new URL(uri);
-      const requestUri = url.searchParams.get('request_uri');
-      const encryptionKey = url.searchParams.get('encryption_key');
-
-      if (!requestUri || !encryptionKey) {
-        throw new Error('Invalid connection URI: missing request_uri or encryption_key');
-      }
-
       const request = await fetchConnectRequest(requestUri, encryptionKey);
       setConnectionRequest(request);
       setPhase('request');
@@ -210,6 +224,33 @@ export default function AppConnectPage() {
       setPhase('error');
     }
   }
+
+  async function processConnectUri(uri: string) {
+    try {
+      const parsed = EnboxConnectProtocol.parseWalletConnectUri(uri);
+      if (!parsed) {
+        throw new Error('Invalid connection URI: missing request_uri or encryption_key');
+      }
+
+      await processConnectParams(parsed.requestUri, parsed.encryptionKeyBase64Url);
+    } catch (err) {
+      console.error('Connect flow error:', err);
+      setErrorMessage((err as Error).message || 'Failed to process connection request.');
+      setPhase('error');
+    }
+  }
+
+  // Deep-link flow: when the page is opened with `request_uri` +
+  // `encryption_key` in the URI fragment (CLI `--open` flow), fetch the connect
+  // request directly — same path the QR scanner feeds into, same consent UI
+  // afterwards. The ref guards against double-fetching under React strict
+  // mode's double-invoked effects (the relay request may be one-time-use).
+  useEffect(() => {
+    const deepLink = getDeepLinkParams();
+    if (!deepLink || deepLinkHandledRef.current) return;
+    deepLinkHandledRef.current = true;
+    void processConnectParamsRef.current(deepLink.requestUri, deepLink.encryptionKey);
+  }, []);
 
   async function handleApprove() {
     if (!agent || !connectionRequest || !selectedDid) return;
@@ -386,6 +427,13 @@ export default function AppConnectPage() {
             onChange={handleFileUpload}
             hidden
           />
+        </div>
+      )}
+
+      {/* ─── Loading phase (deep link) ──────────────────────────── */}
+      {phase === 'loading' && (
+        <div className="animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0">
+          <Loader message="Fetching connection request..." />
         </div>
       )}
 

@@ -95,7 +95,7 @@ describe('connect Effect adapters', () => {
 
   it('passes connect session metadata through permission grant creation', async () => {
     const agent = { id: 'agent-1' };
-    const delegateBearerDid = { uri: 'did:jwk:delegate' };
+    const delegateDid = 'did:jwk:delegate';
     const scopes = [{
       interface: 'Records',
       method: 'Read',
@@ -112,7 +112,7 @@ describe('connect Effect adapters', () => {
 
     await createPermissionGrants(
       'did:dht:alice',
-      delegateBearerDid,
+      delegateDid,
       scopes as any,
       agent,
       connectSession,
@@ -120,7 +120,7 @@ describe('connect Effect adapters', () => {
 
     expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
       'did:dht:alice',
-      delegateBearerDid.uri,
+      delegateDid,
       agent,
       scopes,
       { connectSession },
@@ -136,7 +136,7 @@ describe('connect Effect adapters', () => {
         sendDwnRequest: vi.fn(async () => ({ status: { code: 202, detail: 'Accepted' } })),
       },
     };
-    const delegateBearerDid = { uri: 'did:jwk:delegate' };
+    const delegateDid = 'did:jwk:delegate';
     const delegateX25519PrivateKey = { kty: 'OKP', crv: 'X25519', d: 'secret', x: 'public' };
     const grantMessages = [{ recordId: 'grant-1' }];
     const protocolDefinitions = [{ protocol: 'https://example.com/protocols/demo' }];
@@ -149,7 +149,7 @@ describe('connect Effect adapters', () => {
 
     await createAndSendGrantKeyRecords(
       'did:dht:alice',
-      delegateBearerDid,
+      delegateDid,
       delegateX25519PrivateKey as any,
       grantMessages as any,
       protocolDefinitions as any,
