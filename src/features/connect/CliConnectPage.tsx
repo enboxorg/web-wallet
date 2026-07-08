@@ -133,7 +133,7 @@ export default function CliConnectPage() {
       setStatusMessage('Creating grants...');
       const grants = await createPermissionGrants(
         selectedDid,
-        delegateBearerDid,
+        delegateBearerDid.uri,
         allPermissionScopes,
         agent,
         connectSession,
@@ -142,7 +142,7 @@ export default function CliConnectPage() {
       setStatusMessage('Creating encrypted key deliveries...');
       await createAndSendGrantKeyRecords(
         selectedDid,
-        delegateBearerDid,
+        delegateBearerDid.uri,
         delegateX25519PrivateKey,
         grants,
         protocolDefinitions,

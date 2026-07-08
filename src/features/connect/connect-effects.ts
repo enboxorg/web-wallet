@@ -10,7 +10,7 @@ import {
 import { encryptPostMessagePayload, generateEphemeralKeyPair } from '@enbox/browser';
 import { Convert } from '@enbox/common';
 import { CryptoUtils, Ed25519, type PrivateKeyJwk } from '@enbox/crypto';
-import { DidJwk, type BearerDid } from '@enbox/dids';
+import { DidJwk } from '@enbox/dids';
 
 import { sdkError } from '@/enbox/effect/errors';
 import { withNetworkPolicy } from '@/enbox/effect/network-policy';
@@ -229,7 +229,7 @@ export function createDelegateDid() {
 
 export function createPermissionGrantsEffect(
   selectedDid: string,
-  delegateBearerDid: BearerDid,
+  delegateDid: string,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
   connectSession?: ConnectSessionMetadata,
 ) {
@@ -237,10 +237,9 @@ export function createPermissionGrantsEffect(
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
       try: async () =>
-        // @enbox/agent >= 0.8.10 grants to the delegate DID URI, not the BearerDid.
         EnboxConnectProtocol.createPermissionGrants(
           selectedDid,
-          delegateBearerDid.uri,
+          delegateDid,
           agent,
           permissionScopes,
           connectSession ? { connectSession } : undefined,
@@ -252,7 +251,7 @@ export function createPermissionGrantsEffect(
 
 export function createPermissionGrants(
   selectedDid: string,
-  delegateBearerDid: BearerDid,
+  delegateDid: string,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
   agent: EnboxAgent,
   connectSession?: ConnectSessionMetadata,
@@ -260,7 +259,7 @@ export function createPermissionGrants(
   return runEnboxPromise(
     createPermissionGrantsEffect(
       selectedDid,
-      delegateBearerDid,
+      delegateDid,
       permissionScopes,
       connectSession,
     ).pipe(
@@ -271,7 +270,7 @@ export function createPermissionGrants(
 
 export function createAndSendGrantKeyRecordsEffect(
   selectedDid: string,
-  delegateBearerDid: any,
+  delegateDid: string,
   delegateX25519PrivateKey: PrivateKeyJwk,
   grantMessages: DwnDataEncodedRecordsWriteMessage[],
   protocolDefinitions: DwnProtocolDefinition[],
@@ -285,7 +284,7 @@ export function createAndSendGrantKeyRecordsEffect(
           const grantKeyRecords = await EnboxConnectProtocol.createGrantKeyRecordsForGrants({
             agent,
             ownerDid              : selectedDid,
-            granteeDid            : delegateBearerDid.uri,
+            granteeDid            : delegateDid,
             granteeRootPrivateKey : delegateX25519PrivateKey,
             grantMessages,
             protocolDefinitions,
@@ -304,7 +303,7 @@ export function createAndSendGrantKeyRecordsEffect(
 
 export function createAndSendGrantKeyRecords(
   selectedDid: string,
-  delegateBearerDid: any,
+  delegateDid: string,
   delegateX25519PrivateKey: PrivateKeyJwk,
   grantMessages: DwnDataEncodedRecordsWriteMessage[],
   protocolDefinitions: DwnProtocolDefinition[],
@@ -313,7 +312,7 @@ export function createAndSendGrantKeyRecords(
   return runEnboxPromise(
     createAndSendGrantKeyRecordsEffect(
       selectedDid,
-      delegateBearerDid,
+      delegateDid,
       delegateX25519PrivateKey,
       grantMessages,
       protocolDefinitions,

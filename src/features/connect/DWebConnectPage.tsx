@@ -234,7 +234,7 @@ export default function DWebConnectPage() {
       setStatusMessage('Creating grants...');
       const allGrants = await createPermissionGrants(
         selectedDid,
-        delegateBearerDid,
+        delegateBearerDid.uri,
         allPermissionScopes,
         agent,
         connectSession,
@@ -243,7 +243,7 @@ export default function DWebConnectPage() {
       setStatusMessage('Creating encrypted key deliveries...');
       await createAndSendGrantKeyRecords(
         selectedDid,
-        delegateBearerDid,
+        delegateBearerDid.uri,
         delegateX25519PrivateKey,
         allGrants,
         protocolDefinitions,

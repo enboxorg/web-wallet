@@ -171,7 +171,7 @@ describe('DWebConnectPage', () => {
     );
     expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
       'did:dht:alice',
-      { uri: 'did:jwk:delegate' },
+      'did:jwk:delegate',
       permissionRequest.permissionScopes,
       mocks.agent,
       expect.objectContaining({
@@ -182,7 +182,7 @@ describe('DWebConnectPage', () => {
     );
     expect(mocks.createAndSendGrantKeyRecords).toHaveBeenCalledWith(
       'did:dht:alice',
-      { uri: 'did:jwk:delegate' },
+      'did:jwk:delegate',
       { kty: 'OKP', crv: 'X25519', d: 'secret', x: 'public' },
       [{ id: 'grant-1' }],
       [permissionRequest.protocolDefinition],
@@ -227,7 +227,7 @@ describe('DWebConnectPage', () => {
     expect(mocks.prepareProtocol).toHaveBeenCalledTimes(2);
     expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
       'did:dht:alice',
-      { uri: 'did:jwk:delegate' },
+      'did:jwk:delegate',
       [
         ...permissionRequest.permissionScopes,
         ...secondPermissionRequest.permissionScopes,
