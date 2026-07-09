@@ -10,7 +10,7 @@ import {
 import { encryptPostMessagePayload, generateEphemeralKeyPair } from '@enbox/browser';
 import { Convert } from '@enbox/common';
 import { CryptoUtils, Ed25519, type PrivateKeyJwk } from '@enbox/crypto';
-import { DidJwk } from '@enbox/dids';
+import { Did, DidJwk } from '@enbox/dids';
 
 import { sdkError } from '@/enbox/effect/errors';
 import { withNetworkPolicy } from '@/enbox/effect/network-policy';
@@ -20,6 +20,88 @@ import type { EnboxAgent } from '@/enbox/types';
 
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
+}
+
+const LOCAL_RELAY_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
+const MAX_CONNECT_RESPONSE_BYTES = 2_000_000;
+
+function parseConnectUrl(value: string, label: string): URL {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+
+  const isLocalHttp = import.meta.env.DEV
+    && url.protocol === 'http:'
+    && LOCAL_RELAY_HOSTS.has(url.hostname);
+  if (
+    (url.protocol !== 'https:' && !isLocalHttp)
+    || url.username !== ''
+    || url.password !== ''
+    || url.hash !== ''
+  ) {
+    throw new Error(`${label} must use HTTPS or a local development origin.`);
+  }
+  return url;
+}
+
+async function readBoundedResponseText(response: Response): Promise<string> {
+  const declaredLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_CONNECT_RESPONSE_BYTES) {
+    throw new Error('Connect request response is too large.');
+  }
+  if (response.body === null) return '';
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let byteLength = 0;
+  let text = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.byteLength;
+    if (byteLength > MAX_CONNECT_RESPONSE_BYTES) {
+      await reader.cancel();
+      throw new Error('Connect request response is too large.');
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
+async function getBoundConnectRequest(requestUri: string, encryptionKey: string): Promise<EnboxConnectRequest> {
+  const requestUrl = parseConnectUrl(requestUri, 'Connect request URI');
+  const response = await fetch(requestUrl, {
+    redirect : 'error',
+    signal   : AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    throw new Error(`Connect request fetch failed (${response.status}).`);
+  }
+
+  const jwe = await readBoundedResponseText(response);
+  const jwt = await EnboxConnectProtocol.decryptRequest({ jwe, encryptionKey });
+  const jwtParts = jwt.split('.');
+  if (jwtParts.length !== 3) throw new Error('Connect request JWT is malformed.');
+
+  const header = Convert.base64Url(jwtParts[0]).toObject() as { kid?: unknown };
+  if (typeof header.kid !== 'string') throw new Error('Connect request JWT is missing its signing DID.');
+  const signerDidUri = header.kid.split('#')[0];
+  const signerDid = Did.parse(signerDidUri);
+  if (!signerDid || signerDid.uri !== signerDidUri || !header.kid.startsWith(`${signerDidUri}#`)) {
+    throw new Error('Connect request JWT has an invalid signing DID.');
+  }
+
+  const payload = await EnboxConnectProtocol.verifyJwt({ jwt });
+  EnboxConnectProtocol.assertConnectRequest(payload);
+  if (payload.clientDid !== signerDidUri) {
+    throw new Error('Connect request client DID does not match the JWT signer.');
+  }
+  parseConnectUrl(payload.callbackUrl, 'Connect callback URL');
+
+  return payload;
 }
 
 function dataEncodedRecordToSend(record: DwnDataEncodedRecordsWriteMessage) {
@@ -41,7 +123,7 @@ async function fanOutDataEncodedRecords(
     return;
   }
 
-  const dwnEndpointUrls = await agent.dwn.getDwnEndpointUrlsForTarget(ownerDid);
+  const dwnEndpointUrls = await agent.dwn.getRemoteDwnEndpointUrls(ownerDid);
   const sendTasks = records.flatMap((record, recordIndex) => {
     const { message, data } = dataEncodedRecordToSend(record);
 
@@ -91,7 +173,7 @@ export function fetchConnectRequestEffect(requestUri: string, encryptionKey: str
   return withNetworkPolicy(
     'connect.getConnectRequest',
     Effect.tryPromise({
-      try: async () => EnboxConnectProtocol.getConnectRequest(requestUri, encryptionKey),
+      try: async () => getBoundConnectRequest(requestUri, encryptionKey),
       catch: sdkError('connect.getConnectRequest'),
     }),
     () => sdkTimeout('connect.getConnectRequest'),
@@ -177,27 +259,6 @@ export function denyConnectRequest(callbackUrl: string, state: string): Promise<
   return runEnboxPromise(denyConnectRequestEffect(callbackUrl, state));
 }
 
-export function importPortableIdentityEffect(portableIdentity: unknown) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    return yield* Effect.tryPromise({
-      try: async () => agent.identity.import({ portableIdentity }),
-      catch: sdkError('dwebConnect.identity.import'),
-    });
-  });
-}
-
-export function importPortableIdentity(
-  portableIdentity: unknown,
-  agent: EnboxAgent,
-) {
-  return runEnboxPromise(
-    importPortableIdentityEffect(portableIdentity).pipe(
-      Effect.provide(currentAgentLayer(agent)),
-    ),
-  );
-}
-
 export function createDelegateDidEffect() {
   return Effect.gen(function* () {
     const delegateBearerDid = yield* Effect.tryPromise({
@@ -266,6 +327,67 @@ export function createPermissionGrants(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
+}
+
+export function selectEncryptedReadGrants<T>(
+  grants: T[],
+  scopes: ConnectPermissionRequest['permissionScopes'],
+): T[] {
+  if (grants.length !== scopes.length) {
+    throw new Error('Connect grant count does not match the approved permission scopes.');
+  }
+
+  return grants.filter((_, index) =>
+    scopes[index].interface === 'Records' && scopes[index].method === 'Read'
+  );
+}
+
+export type ConnectSessionRevocation = {
+  grantId: string;
+  revocationGrantId: string;
+};
+
+/** Give a delegate narrowly scoped authority to revoke each session grant. */
+export async function createSessionRevocationGrants(
+  selectedDid: string,
+  delegateDid: string,
+  sessionGrants: DwnDataEncodedRecordsWriteMessage[],
+  dateExpires: string,
+  agent: EnboxAgent,
+): Promise<{
+  grants: DwnDataEncodedRecordsWriteMessage[];
+  sessionRevocations: ConnectSessionRevocation[];
+}> {
+  const revocationResults = await Promise.all(sessionGrants.map(async (grant) => {
+    if (typeof grant.recordId !== 'string' || grant.recordId === '') {
+      throw new Error('Connect session grant is missing its record ID.');
+    }
+    const revocationGrant = await agent.permissions.createGrant({
+      delegated : true,
+      store     : true,
+      grantedTo: delegateDid,
+      scope     : {
+        interface : 'Records',
+        method    : 'Write',
+        protocol  : 'https://identity.foundation/dwn/permissions',
+        contextId : grant.recordId,
+      },
+      dateExpires,
+      author: selectedDid,
+    });
+    return { grant, revocationGrant: revocationGrant.message as DwnDataEncodedRecordsWriteMessage };
+  }));
+
+  const revocationGrants = revocationResults.map(({ revocationGrant }) => revocationGrant);
+  await fanOutDataEncodedRecords(selectedDid, agent, revocationGrants);
+
+  return {
+    grants: [...sessionGrants, ...revocationGrants],
+    sessionRevocations: revocationResults.map(({ grant, revocationGrant }) => ({
+      grantId           : grant.recordId,
+      revocationGrantId : revocationGrant.recordId,
+    })),
+  };
 }
 
 export function createAndSendGrantKeyRecordsEffect(

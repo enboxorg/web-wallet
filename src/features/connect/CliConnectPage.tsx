@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Terminal, Check, X, AlertCircle, Copy } from 'lucide-react';
 import { EnboxConnectProtocol, type ConnectPermissionRequest } from '@enbox/agent';
 import { Effect } from 'effect';
@@ -10,21 +10,24 @@ import { PermissionDisplay } from '@/components/connect/PermissionDisplay';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
-import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { truncateDid } from '@/lib/utils';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
-import { ensureRegistration } from '@/enbox/registration';
+import { ensureRegistrationForDids } from '@/enbox/registration';
 import { prepareProtocol } from './protocol-install';
 import {
   createAndSendGrantKeyRecords,
   createDelegateDid,
   createPermissionGrants,
+  createSessionRevocationGrants,
+  selectEncryptedReadGrants,
 } from './connect-effects';
-import { getUnsupportedConnectPermissionError } from './dweb-connect-messages';
-import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
-import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
+import { preflightConnectPermissions } from './connect-request-preflight';
+import {
+  protocolSetupAllowsApproval,
+  useProtocolSetupStatuses,
+} from './use-protocol-setup-statuses';
 import {
   CLI_CONNECT_RESPONSE_TYPE,
   parseCliConnectRequest,
@@ -47,9 +50,9 @@ export default function CliConnectPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [responseJson, setResponseJson] = useState('');
-  const [delivered, setDelivered] = useState(false);
-
-  const { data: selectedPermissions } = usePermissions(selectedDid);
+  const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
+  const approvalInFlightRef = useRef(false);
+  const approvalCompletedRef = useRef(false);
 
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? []).map((id: any) => ({
     value : id.did.uri as string,
@@ -80,7 +83,10 @@ export default function CliConnectPage() {
 
   // Auto-select the first identity.
   useEffect(() => {
-    if (identityOptions.length === 0) return;
+    if (identityOptions.length === 0) {
+      if (selectedDid !== '') setSelectedDid('');
+      return;
+    }
     const selectedExists = identityOptions.some((option) => option.value === selectedDid);
     if (!selectedDid || !selectedExists) {
       setSelectedDid(identityOptions[0].value);
@@ -89,37 +95,24 @@ export default function CliConnectPage() {
 
   async function runApproveFlow() {
     if (!agent || !selectedDid || !request) return;
+    if (approvalInFlightRef.current || approvalCompletedRef.current) return;
+    approvalInFlightRef.current = true;
 
     setPhase('connecting');
     setStatusMessage('Preparing identity...');
 
     try {
-      const unsupported = getUnsupportedConnectPermissionError(permissions);
-      if (unsupported) throw new Error(unsupported);
+      const preflight = preflightConnectPermissions(permissions);
 
-      const dwnEndpoints = await agent.dwn.getDwnEndpointUrlsForTarget(selectedDid);
+      const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
       if (!Array.isArray(dwnEndpoints) || dwnEndpoints.length === 0) {
         throw new Error('This identity does not have any DWN endpoints configured.');
       }
-      await ensureRegistration(agent, dwnEndpoints);
+      await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
 
       setStatusMessage('Preparing protocols...');
-      const allPermissionScopes: ConnectPermissionRequest['permissionScopes'] = [];
-      const protocolDefinitions: ConnectPermissionRequest['protocolDefinition'][] = [];
-
-      for (const permissionRequest of permissions) {
-        const { protocolDefinition, permissionScopes } = permissionRequest;
-
-        const scopesValid = permissionScopes.every(
-          (scope: any) => 'protocol' in scope && scope.protocol === protocolDefinition.protocol,
-        );
-        if (!scopesValid) {
-          throw new Error('All permission scopes must match the protocol URI they are provided with.');
-        }
-
+      for (const protocolDefinition of preflight.definitions) {
         await prepareProtocol(selectedDid, agent, protocolDefinition);
-        allPermissionScopes.push(...permissionScopes);
-        protocolDefinitions.push(protocolDefinition);
       }
 
       setStatusMessage('Creating delegate...');
@@ -134,18 +127,28 @@ export default function CliConnectPage() {
       const grants = await createPermissionGrants(
         selectedDid,
         delegateBearerDid.uri,
-        allPermissionScopes,
+        preflight.scopes,
         agent,
         connectSession,
       );
 
       setStatusMessage('Creating encrypted key deliveries...');
+      const encryptedReadGrants = selectEncryptedReadGrants(grants, preflight.scopes);
       await createAndSendGrantKeyRecords(
         selectedDid,
         delegateBearerDid.uri,
         delegateX25519PrivateKey,
+        encryptedReadGrants,
+        preflight.definitions,
+        agent,
+      );
+
+      setStatusMessage('Preparing session revocation...');
+      const grantBundle = await createSessionRevocationGrants(
+        selectedDid,
+        delegateBearerDid.uri,
         grants,
-        protocolDefinitions,
+        connectSession.expiresAt,
         agent,
       );
 
@@ -154,7 +157,8 @@ export default function CliConnectPage() {
         type         : CLI_CONNECT_RESPONSE_TYPE,
         connectedDid : selectedDid,
         delegateDid  : delegatePortableDid,
-        grants,
+        grants: grantBundle.grants,
+        sessionRevocations: grantBundle.sessionRevocations,
         walletOrigin : window.location.origin,
         expiresAt    : (connectSession as { expiresAt?: string }).expiresAt,
         challenge    : request.challenge,
@@ -162,10 +166,9 @@ export default function CliConnectPage() {
 
       setStatusMessage('Returning grants...');
       const json = JSON.stringify(response, null, 2);
-      const wasDelivered = await postCliCallback(request.callbackUrl, json);
 
       setResponseJson(json);
-      setDelivered(wasDelivered);
+      approvalCompletedRef.current = true;
       setPhase('done');
 
       await runEnboxPromise(publishWalletEvent({
@@ -175,8 +178,22 @@ export default function CliConnectPage() {
       }));
     } catch (err) {
       console.error('CLI connect error:', err);
+      if (request.callbackUrl) {
+        void postCliCallback(
+          request.callbackUrl,
+          JSON.stringify({
+            version   : 1,
+            type      : CLI_CONNECT_RESPONSE_TYPE,
+            error     : 'connection_failed',
+            challenge : request.challenge,
+          }),
+        );
+      }
+      approvalCompletedRef.current = true;
       setErrorMessage(err instanceof Error ? err.message : 'Failed to create delegate.');
       setPhase('error');
+    } finally {
+      approvalInFlightRef.current = false;
     }
   }
 
@@ -194,6 +211,7 @@ export default function CliConnectPage() {
   }
 
   function handleDeny() {
+    approvalCompletedRef.current = true;
     if (request?.callbackUrl) {
       void postCliCallback(
         request.callbackUrl,
@@ -210,13 +228,15 @@ export default function CliConnectPage() {
     void navigator.clipboard?.writeText(responseJson);
   }
 
-  const existingSessions = useMemo(
-    () => findMatchingActiveConnectSessions(selectedPermissions, { appName }),
-    [selectedPermissions, appName],
+  const protocolSetupStatuses = useProtocolSetupStatuses(
+    selectedDid,
+    agent,
+    permissions,
+    protocolSetupRetryKey,
   );
-  const protocolSetupStatuses = useProtocolSetupStatuses(selectedDid, agent, permissions);
+  const protocolSetupReady = protocolSetupAllowsApproval(permissions, protocolSetupStatuses);
   const requestSummary = useMemo(() => getConnectPermissionAskSummary(permissions), [permissions]);
-  const requesterLabel = appName ?? 'A command-line tool';
+  const requesterLabel = 'this command-line request';
 
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col p-6">
@@ -237,29 +257,25 @@ export default function CliConnectPage() {
             </div>
             <p className="text-sm font-medium text-text-primary">Approved!</p>
             <p className="text-xs text-text-ghost">
-              {delivered
-                ? 'Sent back to your terminal. You can close this window.'
-                : 'Copy the response below and paste it into your terminal.'}
+              Copy the response below and paste it into your terminal.
             </p>
           </div>
 
-          {!delivered && (
-            <section className="rounded-xl border border-border-default bg-surface-2 p-3">
-              <div className="mb-2 flex items-center justify-between">
-                <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">Response</p>
-                <Button variant="secondary" onClick={handleCopy}>
-                  <Copy className="h-4 w-4" />
-                  Copy
-                </Button>
-              </div>
-              <textarea
-                readOnly
-                aria-label="CLI connect response"
-                className="h-40 w-full resize-none rounded-md border border-border-subtle bg-surface-1 p-2 font-mono text-[10px] text-text-secondary"
-                value={responseJson}
-              />
-            </section>
-          )}
+          <section className="rounded-xl border border-border-default bg-surface-2 p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">Response</p>
+              <Button variant="secondary" onClick={handleCopy}>
+                <Copy className="h-4 w-4" />
+                Copy
+              </Button>
+            </div>
+            <textarea
+              readOnly
+              aria-label="CLI connect response"
+              className="h-40 w-full resize-none rounded-md border border-border-subtle bg-surface-1 p-2 font-mono text-[10px] text-text-secondary"
+              value={responseJson}
+            />
+          </section>
         </div>
       )}
 
@@ -278,8 +294,13 @@ export default function CliConnectPage() {
                 <Terminal className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-semibold text-text-primary">{requesterLabel}</p>
+                <p className="truncate text-base font-semibold text-text-primary">
+                  {request?.cliDid ? truncateDid(request.cliDid) : requesterLabel}
+                </p>
                 <p className="mt-0.5 text-xs text-text-secondary">wants to connect from your terminal</p>
+                {appName && (
+                  <p className="mt-0.5 text-xs text-text-ghost">Reported app name: {appName}</p>
+                )}
               </div>
             </div>
             <p className="text-sm leading-relaxed text-text-secondary">{requestSummary}</p>
@@ -304,11 +325,18 @@ export default function CliConnectPage() {
             </div>
           )}
 
+          <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2.5">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <p className="text-xs leading-relaxed text-text-secondary">
+              CLI v1 proves control of the displayed DID and challenge only. The callback address, reported app name, and requested permissions come from the link and are not covered by that proof. Approval responses must be copied back to the CLI.
+            </p>
+          </div>
+
           <PermissionDisplay
             permissions={permissions}
             protocolSetupStatuses={protocolSetupStatuses}
-            existingSessionCount={existingSessions.length}
             requesterLabel={requesterLabel}
+            onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
           />
 
           <div className="mt-auto flex gap-3 pt-4">
@@ -316,7 +344,7 @@ export default function CliConnectPage() {
               <X className="h-4 w-4" />
               Deny
             </Button>
-            <Button className="flex-1" onClick={handleApprove} disabled={!selectedDid}>
+            <Button className="flex-1" onClick={handleApprove} disabled={!selectedDid || !protocolSetupReady}>
               <Check className="h-4 w-4" />
               Approve
             </Button>

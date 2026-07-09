@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  getUnsupportedConnectPermissionError,
   isDWebConnectRequestEvent,
   normalizeTrustedOrigin,
   referrerOrigin,
@@ -9,11 +8,14 @@ import {
 } from '../dweb-connect-messages';
 import type { DWebConnectRequest } from '@/stores/dweb-connect-store';
 
+const EPHEMERAL_PUBLIC_KEY = 'BD9WY6815Q2-il2LQsSmn0XqWzkCtWClUfHQ5gStlg5xBKyBlwPlNDXXASI1ZWBtZAvYHj2pRKKZF_6e_RCHdKI';
+
 const permissionRequest = {
   protocolDefinition: {
-    protocol: 'https://example.com/protocols/demo',
-    types: {},
-    structure: {},
+    protocol  : 'https://example.com/protocols/demo',
+    published : false,
+    types     : {},
+    structure : {},
   },
   permissionScopes: [
     {
@@ -33,7 +35,7 @@ function request(overrides?: Partial<DWebConnectRequest>): DWebConnectRequest {
       permissions: [permissionRequest],
       appName: 'Example App',
       appIcon: '/icon.png',
-      ephemeralPublicKey: 'public-key',
+      ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
       did: 'did:dht:alice',
     },
     ...overrides,
@@ -45,6 +47,7 @@ describe('DWeb Connect message hardening', () => {
     expect(normalizeTrustedOrigin('https://app.example')).toBe('https://app.example');
     expect(normalizeTrustedOrigin('http://localhost:5173')).toBe('http://localhost:5173');
     expect(normalizeTrustedOrigin('http://127.0.0.1:5173')).toBe('http://127.0.0.1:5173');
+    expect(normalizeTrustedOrigin('http://[::1]:5173')).toBe('http://[::1]:5173');
     expect(normalizeTrustedOrigin('http://app.example')).toBeUndefined();
     expect(normalizeTrustedOrigin('null')).toBeUndefined();
     expect(normalizeTrustedOrigin('not a url')).toBeUndefined();
@@ -63,7 +66,7 @@ describe('DWeb Connect message hardening', () => {
         permissions: [permissionRequest],
         appName: 'Example App',
         appIcon: '/icon.png',
-        ephemeralPublicKey: 'public-key',
+        ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
         did: 'did:dht:alice',
         clientMetadata: {
           origin: 'https://spoofed.example',
@@ -81,7 +84,7 @@ describe('DWeb Connect message hardening', () => {
       permissions: [permissionRequest],
       appName: 'Example App',
       appIcon: 'https://app.example/icon.png',
-      ephemeralPublicKey: 'public-key',
+      ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
       requestedDid: 'did:dht:alice',
       clientMetadata: {
         origin: 'https://app.example',
@@ -94,6 +97,21 @@ describe('DWeb Connect message hardening', () => {
     }));
   });
 
+  it('accepts the browser client optional undefined fields', () => {
+    const withSdkOptionals = request({
+      data: {
+        type: 'dweb-connect-authorization-request',
+        permissions: [permissionRequest],
+        ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
+        appName: undefined,
+        appIcon: undefined,
+        did: undefined,
+        portableIdentity: undefined,
+      },
+    });
+    expect(sanitizeDWebConnectRequest(withSdkOptionals)).toBeDefined();
+  });
+
   it('rejects malformed or opaque-origin requests', () => {
     expect(sanitizeDWebConnectRequest(request({ origin: 'null' }))).toBeUndefined();
     expect(sanitizeDWebConnectRequest(request({
@@ -101,6 +119,45 @@ describe('DWeb Connect message hardening', () => {
     }))).toBeUndefined();
     expect(sanitizeDWebConnectRequest(request({
       data: { type: 'other', permissions: [permissionRequest] },
+    }))).toBeUndefined();
+    expect(sanitizeDWebConnectRequest(request({
+      data: { type: 'dweb-connect-authorization-request', permissions: [permissionRequest] },
+    }))).toBeUndefined();
+    expect(sanitizeDWebConnectRequest(request({
+      data: {
+        type: 'dweb-connect-authorization-request',
+        permissions: [permissionRequest],
+        ephemeralPublicKey: 'not-a-p256-key',
+      },
+    }))).toBeUndefined();
+  });
+
+  it('validates portable identity targets', () => {
+    const portableIdentity = {
+      portableDid : { uri: 'did:dht:portable' },
+      metadata    : { uri: 'did:dht:portable' },
+    };
+    expect(sanitizeDWebConnectRequest(request({
+      data: {
+        type: 'dweb-connect-authorization-request',
+        permissions: [permissionRequest],
+        ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
+        portableIdentity,
+        did: 'did:dht:portable',
+      },
+    }))).toEqual(expect.objectContaining({
+      portableIdentity,
+      portableIdentityDid: 'did:dht:portable',
+    }));
+
+    expect(sanitizeDWebConnectRequest(request({
+      data: {
+        type: 'dweb-connect-authorization-request',
+        permissions: [permissionRequest],
+        ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
+        portableIdentity,
+        did: 'did:dht:different',
+      },
     }))).toBeUndefined();
   });
 
@@ -111,6 +168,7 @@ describe('DWeb Connect message hardening', () => {
         permissions: [permissionRequest],
         appName: 'x'.repeat(200),
         appIcon: 'javascript:alert(1)',
+        ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
         did: 'not a did',
       },
     }));
@@ -119,67 +177,6 @@ describe('DWeb Connect message hardening', () => {
     expect(sanitized?.appName).toBeUndefined();
     expect(sanitized?.appIcon).toBeUndefined();
     expect(sanitized?.requestedDid).toBeUndefined();
-  });
-
-  it('reports removed read-like record scopes as unsupported', () => {
-    for (const method of ['Query', 'Subscribe', 'Count']) {
-      expect(getUnsupportedConnectPermissionError([{
-        protocolDefinition: permissionRequest.protocolDefinition,
-        permissionScopes: [{
-          interface: 'Records',
-          method,
-          protocol: 'https://example.com/protocols/demo',
-        }],
-      } as any])).toBe(
-        `Records.${method} is no longer supported in DWeb Connect. The app must request Records.Read instead.`,
-      );
-    }
-  });
-
-  it('reports delegated protocol configure as unsupported', () => {
-    expect(getUnsupportedConnectPermissionError([{
-      protocolDefinition: permissionRequest.protocolDefinition,
-      permissionScopes: [{
-        interface: 'Protocols',
-        method: 'Configure',
-        protocol: 'https://example.com/protocols/demo',
-      }],
-    } as any])).toBe(
-      'Protocols.Configure cannot be delegated through DWeb Connect. The wallet configures protocols during approval.',
-    );
-  });
-
-  it('allows current connect support and record scopes', () => {
-    expect(getUnsupportedConnectPermissionError([{
-      protocolDefinition: permissionRequest.protocolDefinition,
-      permissionScopes: [
-        {
-          interface: 'Protocols',
-          method: 'Query',
-          protocol: 'https://example.com/protocols/demo',
-        },
-        {
-          interface: 'Messages',
-          method: 'Read',
-          protocol: 'https://example.com/protocols/demo',
-        },
-        {
-          interface: 'Records',
-          method: 'Read',
-          protocol: 'https://example.com/protocols/demo',
-        },
-        {
-          interface: 'Records',
-          method: 'Write',
-          protocol: 'https://example.com/protocols/demo',
-        },
-        {
-          interface: 'Records',
-          method: 'Delete',
-          protocol: 'https://example.com/protocols/demo',
-        },
-      ],
-    } as any])).toBeUndefined();
   });
 
   it('requires messages to come from the opener and active origin', () => {

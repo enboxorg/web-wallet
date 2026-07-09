@@ -4,7 +4,7 @@ import { RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
-import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import { useAuth } from '@/enbox/hooks/use-auth';
 import { generateName, generateAvatar, generateBanner } from '@/lib/identity-generators';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { randomUuidEffect } from '@/lib/browser-effects';
@@ -21,6 +21,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 export default function CreateIdentityPage() {
   const navigate = useNavigate();
   const { mutate, isPending, error } = useCreateIdentity();
+  const { dwnEndpoints: walletDwnEndpoints } = useAuth();
 
   // Random seed for generating defaults — changes on "regenerate"
   const [seed, setSeed] = useState(() => runEnboxSync(randomUuidEffect()));
@@ -30,9 +31,7 @@ export default function CreateIdentityPage() {
   const [displayName, setDisplayName] = useState('');
   const [tagline, setTagline] = useState('');
   const [bio, setBio] = useState('');
-  const [dwnEndpoints, setDwnEndpoints] = useState<string[]>([
-    ...DEFAULT_DWN_ENDPOINTS,
-  ]);
+  const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(() => [...walletDwnEndpoints]);
 
   // Image state: blobs for submission, URLs for preview
   const [avatarBlob, setAvatarBlob] = useState<Blob | null>(null);

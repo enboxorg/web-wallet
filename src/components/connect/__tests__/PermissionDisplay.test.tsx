@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
 import type { ConnectPermissionRequest } from '@enbox/agent';
 
 import { PermissionDisplay } from '../PermissionDisplay';
@@ -130,8 +130,30 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
-    expect(screen.getAllByText(/Approval shares the keys needed/i)).toHaveLength(1);
-    expect(screen.getByText(/Some allowed data is stored encrypted/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/Approval permanently shares decryption keys/i)).toHaveLength(1);
+    expect(screen.getByText(/matching ciphertext obtained now or later can still be decrypted/i)).toBeInTheDocument();
+  });
+
+  it('does not claim that write-only encrypted access receives private keys', () => {
+    const permissions = [{
+      protocolDefinition: {
+        protocol: 'https://example.com/protocols/private-tasks',
+        types: {
+          task: { encryptionRequired: true },
+        },
+        structure: {},
+      },
+      permissionScopes: [{
+        interface: 'Records',
+        method: 'Write',
+        protocol: 'https://example.com/protocols/private-tasks',
+      }],
+    }] as unknown as ConnectPermissionRequest[];
+
+    render(<PermissionDisplay permissions={permissions} />);
+
+    expect(screen.getByText(/does not share private decryption keys/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Approval permanently shares decryption keys/i)).not.toBeInTheDocument();
   });
 
   it('merges duplicate permission entries for the same protocol into one access row', () => {
@@ -217,9 +239,9 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText('Wallet setup')).toBeInTheDocument();
     expect(screen.getByText('Will add setup')).toBeInTheDocument();
     expect(screen.getByText('Will add')).toBeInTheDocument();
-    expect(screen.getByText(/does not add permissions beyond the access listed above/i)).toBeInTheDocument();
+    expect(screen.getByText(/Protocol setup controls record authorization/i)).toBeInTheDocument();
     expect(screen.getByText('Technical & setup details')).toBeInTheDocument();
-    expect(screen.getByText(/Stored encrypted. Approval shares the keys/i)).toBeInTheDocument();
+    expect(screen.getByText(/Approval permanently shares decryption keys/i)).toBeInTheDocument();
     expect(screen.getByText('2 types')).toBeInTheDocument();
     expect(screen.getByText('2 paths')).toBeInTheDocument();
     expect(screen.getByText('task/comment')).toBeInTheDocument();
@@ -227,7 +249,7 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText(/"encryptionRequired": true/)).toBeInTheDocument();
   });
 
-  it('calls out older or different protocol setup without technical jargon', () => {
+  it('blocks a conflicting installed protocol setup', () => {
     const permissions = [{
       protocolDefinition: {
         protocol: tasksProtocol,
@@ -246,13 +268,41 @@ describe('PermissionDisplay', () => {
     render(
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={{ [tasksProtocol]: 'update' }}
+        protocolSetupStatuses={{ [tasksProtocol]: 'conflict' }}
       />,
     );
 
-    expect(screen.getByText('Will update setup')).toBeInTheDocument();
-    expect(screen.getByText('Will update')).toBeInTheDocument();
-    expect(screen.queryByText(/schema mismatch/i)).not.toBeInTheDocument();
+    expect(screen.getByText('Protocol setup conflict')).toBeInTheDocument();
+    expect(screen.getByText(/will not replace it during a connection/i)).toBeInTheDocument();
+    expect(screen.getByText('Blocked')).toBeInTheDocument();
+  });
+
+  it('surfaces an unavailable setup check and retries it', () => {
+    const retry = vi.fn();
+    const permissions = [{
+      protocolDefinition: {
+        protocol: tasksProtocol,
+        types: {},
+        structure: {},
+      },
+      permissionScopes: [{
+        interface: 'Records',
+        method: 'Read',
+        protocol: tasksProtocol,
+      }],
+    }] as unknown as ConnectPermissionRequest[];
+
+    render(
+      <PermissionDisplay
+        permissions={permissions}
+        protocolSetupStatuses={{ [tasksProtocol]: 'unavailable' }}
+        onRetryProtocolSetup={retry}
+      />,
+    );
+
+    expect(screen.getByText('Protocol setup could not be verified')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry check' }));
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   it('groups setup work separately from data areas that are already ready', () => {
@@ -322,18 +372,19 @@ describe('PermissionDisplay', () => {
           [profileProtocol]     : 'configured',
           [socialGraphProtocol] : 'configured',
           [tasksProtocol]       : 'install',
-          [notesProtocol]       : 'update',
+          [notesProtocol]       : 'upgrade',
         }}
       />,
     );
 
-    expect(screen.getByText('Will add or update setup')).toBeInTheDocument();
+    expect(screen.getByText('Will add setup')).toBeInTheDocument();
+    expect(screen.getByText('Will upgrade encryption')).toBeInTheDocument();
     expect(screen.getAllByText('Already ready').length).toBeGreaterThan(0);
     expect(screen.getByText(/The wallet will not change these/i)).toBeInTheDocument();
     expect(screen.getByText('Will add')).toBeInTheDocument();
-    expect(screen.getByText('Will update')).toBeInTheDocument();
-    expect(screen.getAllByText('Profile').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Social Graph').length).toBeGreaterThan(0);
+    expect(screen.getByText('Encryption upgrade')).toBeInTheDocument();
+    expect(screen.getAllByText(/identity\.foundation\/protocols\/profile/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/identity\.foundation\/protocols\/social-graph/i).length).toBeGreaterThan(0);
   });
 
   it('summarizes existing app access without repeating a separate notice', () => {
@@ -362,7 +413,7 @@ describe('PermissionDisplay', () => {
 
     expect(screen.getByText('Access lasts 24 hours')).toBeInTheDocument();
     expect(screen.getByText(/already has 2 active sessions/i)).toBeInTheDocument();
-    expect(screen.getByText(/separate 24-hour session/i)).toBeInTheDocument();
+    expect(screen.getByText(/separate session with 24 hours of access/i)).toBeInTheDocument();
     expect(screen.queryByText('Existing app access')).not.toBeInTheDocument();
   });
 });

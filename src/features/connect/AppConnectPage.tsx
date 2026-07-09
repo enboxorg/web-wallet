@@ -27,8 +27,10 @@ import {
 } from '@/components/connect/PermissionDisplay';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { prepareProtocol } from './protocol-install';
-import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
-import { useProtocolSetupStatuses } from './use-protocol-setup-statuses';
+import {
+  protocolSetupAllowsApproval,
+  useProtocolSetupStatuses,
+} from './use-protocol-setup-statuses';
 import {
   denyConnectRequest,
   fetchConnectRequest,
@@ -37,8 +39,14 @@ import {
 } from './connect-effects';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
-import { usePermissions } from '@/enbox/hooks/use-permissions';
+import { ensureRegistrationForDids } from '@/enbox/registration';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
+import {
+  isDidSupportedByRequest,
+  preflightRelayConnectRequest,
+  preflightRelayDelegateEncryption,
+  validateConnectPermissionSemantics,
+} from './connect-request-preflight';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
 
@@ -60,6 +68,11 @@ function getDeepLinkParams(): { requestUri: string; encryptionKey: string } | nu
   return { requestUri: parsed.requestUri, encryptionKey: parsed.encryptionKeyBase64Url };
 }
 
+function hasSensitiveConnectFragment(): boolean {
+  const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+  return fragment.has('request_uri') || fragment.has('encryption_key');
+}
+
 export default function AppConnectPage() {
   const agent = useAgent();
   const navigate = useNavigate();
@@ -75,7 +88,7 @@ export default function AppConnectPage() {
 
   // Start in 'loading' when the URL carries deep-link connect parameters so
   // the camera never starts for a link-initiated flow.
-  const [phase, setPhase] = useState<Phase>(() => (getDeepLinkParams() ? 'loading' : 'scanning'));
+  const [phase, setPhase] = useState<Phase>(() => (hasSensitiveConnectFragment() ? 'loading' : 'scanning'));
   const deepLinkHandledRef = useRef(false);
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
@@ -89,19 +102,35 @@ export default function AppConnectPage() {
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pinCopied, setPinCopied] = useState(false);
-  const { data: selectedPermissions } = usePermissions(selectedDid);
+  const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
   const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
-  const protocolSetupStatuses = useProtocolSetupStatuses(selectedDid, agent, permissionRequests);
+  const protocolSetupStatuses = useProtocolSetupStatuses(
+    selectedDid,
+    agent,
+    permissionRequests,
+    protocolSetupRetryKey,
+  );
+  const protocolSetupReady = protocolSetupAllowsApproval(permissionRequests, protocolSetupStatuses);
 
   // Build identity options for the selector
-  const identityOptions = (identities ?? []).map((id: any) => ({
-    value: id.did.uri as string,
-    label: id.metadata?.name ?? truncateDid(id.did.uri),
-  }));
+  const identityOptions = (identities ?? [])
+    .filter((identity: any) =>
+      connectionRequest === undefined
+      || isDidSupportedByRequest(identity.did.uri, connectionRequest.supportedDidMethods)
+    )
+    .map((identity: any) => ({
+      value: identity.did.uri as string,
+      label: identity.metadata?.name ?? truncateDid(identity.did.uri),
+    }));
 
   // Auto-select first identity
   useEffect(() => {
-    if (!selectedDid && identityOptions.length > 0) {
+    const selectedExists = identityOptions.some((option: { value: string }) => option.value === selectedDid);
+    if (identityOptions.length === 0) {
+      if (selectedDid !== '') setSelectedDid('');
+      return;
+    }
+    if (identityOptions.length > 0 && !selectedExists) {
       setSelectedDid(identityOptions[0].value);
     }
   }, [identityOptions, selectedDid]);
@@ -216,6 +245,8 @@ export default function AppConnectPage() {
   async function processConnectParams(requestUri: string, encryptionKey: string) {
     try {
       const request = await fetchConnectRequest(requestUri, encryptionKey);
+      const preflight = preflightRelayConnectRequest(request);
+      await validateConnectPermissionSemantics(preflight);
       setConnectionRequest(request);
       setPhase('request');
     } catch (err) {
@@ -247,8 +278,18 @@ export default function AppConnectPage() {
   // mode's double-invoked effects (the relay request may be one-time-use).
   useEffect(() => {
     const deepLink = getDeepLinkParams();
-    if (!deepLink || deepLinkHandledRef.current) return;
+    if (!hasSensitiveConnectFragment() || deepLinkHandledRef.current) return;
     deepLinkHandledRef.current = true;
+    window.history.replaceState(
+      window.history.state,
+      '',
+      `${window.location.pathname}${window.location.search}`,
+    );
+    if (!deepLink) {
+      setErrorMessage('Invalid connection URI: missing request_uri or encryption_key');
+      setPhase('error');
+      return;
+    }
     void processConnectParamsRef.current(deepLink.requestUri, deepLink.encryptionKey);
   }, []);
 
@@ -257,10 +298,22 @@ export default function AppConnectPage() {
 
     setPhase('authorizing');
     try {
-      // Install protocols on ALL DWN endpoints before creating grants.
-      // The agent's internal prepareProtocol only sends to the first
-      // successful endpoint, which leaves the protocol missing on others.
-      // The wallet's prepareProtocol sends to all endpoints via Promise.all.
+      const preflight = preflightRelayConnectRequest(connectionRequest);
+      if (!isDidSupportedByRequest(selectedDid, connectionRequest.supportedDidMethods)) {
+        throw new Error('The selected identity uses a DID method the requester does not support.');
+      }
+      await preflightRelayDelegateEncryption(agent, connectionRequest, preflight);
+
+      const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
+      if (dwnEndpoints.length === 0) {
+        throw new Error('This identity does not have any remote DWN endpoints configured.');
+      }
+      await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
+
+      // Install protocols on every reachable owner DWN before creating grants.
+      // The SDK skips remote fan-out when a protocol is already local. The
+      // wallet sends the current owner-signed configure message to every
+      // endpoint before grant creation.
       //
       // Run prepareProtocol for each requested permission in parallel —
       // each call independently performs DID resolution + per-endpoint
@@ -268,8 +321,8 @@ export default function AppConnectPage() {
       // number of permissions and was the dominant cause of the
       // "Authorizing..." UI hang on slow connections.
       await Promise.all(
-        connectionRequest.permissionRequests.map((perm) =>
-          prepareProtocol(selectedDid, agent, perm.protocolDefinition),
+        preflight.definitions.map((definition) =>
+          prepareProtocol(selectedDid, agent, definition),
         ),
       );
 
@@ -311,14 +364,7 @@ export default function AppConnectPage() {
     setFlashOn(scannerRef.current?.isFlashOn() ?? false);
   }
 
-  const existingSessions = connectionRequest
-    ? findMatchingActiveConnectSessions(selectedPermissions, {
-      origin  : connectionRequest.clientMetadata?.origin,
-      appName : connectionRequest.appName,
-    })
-    : [];
-  const requesterLabel = connectionRequest?.clientMetadata?.origin
-    || (connectionRequest?.clientDid ? truncateDid(connectionRequest.clientDid) : 'Unknown requester');
+  const requesterLabel = connectionRequest?.clientDid ?? 'Unknown requester';
   const requestSummary = connectionRequest
     ? getConnectPermissionAskSummary(permissionRequests)
     : '';
@@ -472,21 +518,21 @@ export default function AppConnectPage() {
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-base font-semibold text-text-primary">
-                  {requesterLabel}
+                  {connectionRequest.clientDid ? truncateDid(connectionRequest.clientDid) : requesterLabel}
                 </p>
                 {connectionRequest.appName && (
                   <p className="mt-0.5 truncate text-xs text-text-secondary">
-                    App name: {connectionRequest.appName}
+                    Reported app name: {connectionRequest.appName}
                   </p>
                 )}
                 {connectionRequest.clientMetadata?.origin && (
                   <p className="mt-0.5 font-mono text-[10px] text-text-ghost">
-                    Client DID: {truncateDid(connectionRequest.clientDid)}
+                    Reported origin: {connectionRequest.clientMetadata.origin}
                   </p>
                 )}
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
-                    {existingSessions.length > 0 ? 'Returning connection' : 'First connection'}
+                    Signed relay request
                   </span>
                 </div>
               </div>
@@ -513,7 +559,7 @@ export default function AppConnectPage() {
           ) : (
             <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center">
               <p className="text-xs text-warning">
-                No identities found. Create an identity first.
+                No identity uses a DID method supported by this request.
               </p>
             </div>
           )}
@@ -521,8 +567,9 @@ export default function AppConnectPage() {
           <PermissionDisplay
             permissions={connectionRequest.permissionRequests}
             protocolSetupStatuses={protocolSetupStatuses}
-            existingSessionCount={existingSessions.length}
             requesterLabel={requesterLabel}
+            sessionDurationSeconds={connectionRequest.requestedSessionTtlSeconds}
+            onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
           />
 
           {/* Action buttons — stacked on mobile */}
@@ -538,7 +585,7 @@ export default function AppConnectPage() {
             <Button
               className="w-full min-h-[44px] sm:flex-1"
               onClick={handleApprove}
-              disabled={!selectedDid}
+              disabled={!selectedDid || !protocolSetupReady}
             >
               <Check className="h-4 w-4" />
               Approve

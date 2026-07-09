@@ -20,8 +20,12 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ConnectPermissionRequest } from '@enbox/agent';
-import { getProtocolInfo, isKnownProtocol } from '@/lib/protocol-names';
-import type { ProtocolSetupStatus } from '@/features/connect/protocol-install';
+import {
+  protocolDefinitionsMatch,
+  type ProtocolSetupStatus,
+} from '@/features/connect/protocol-install';
+import { formatConnectSessionDuration } from '@/features/connect/connect-session-duration';
+import { getCanonicalProtocolDefinition, getProtocolInfo } from '@/lib/protocol-names';
 import {
   formatActionPhrase,
   getDisplayScopes,
@@ -30,11 +34,6 @@ import {
   mergePermissionRequestsByProtocol,
 } from './connect-scope-display';
 import type { DisplayScope, PermissionRisk } from './connect-scope-display';
-import { CONNECT_SESSION_DURATION_LABEL } from './SessionExpiryNotice';
-
-const CONNECT_SESSION_NOUN_LABEL = CONNECT_SESSION_DURATION_LABEL === '24 hours'
-  ? '24-hour session'
-  : `${CONNECT_SESSION_DURATION_LABEL} session`;
 
 interface PermissionDisplayProps {
   /** The permission requests from the dapp. */
@@ -45,6 +44,10 @@ interface PermissionDisplayProps {
   existingSessionCount?: number;
   /** Trust anchor shown in section copy, usually the verified origin. */
   requesterLabel?: string;
+  /** Requested connect session lifetime. Defaults and caps match the SDK. */
+  sessionDurationSeconds?: number;
+  /** Retry a failed protocol setup check. */
+  onRetryProtocolSetup?: () => void;
 }
 
 type ProtocolDefinition = ConnectPermissionRequest['protocolDefinition'];
@@ -58,6 +61,7 @@ type ProtocolAccess = {
   displayScopes: DisplayScope[];
   paths: string[];
   hasEncryptedTypes: boolean;
+  sharesDecryptionKeys: boolean;
   setupStatus: ProtocolSetupStatus;
 };
 
@@ -72,11 +76,14 @@ const SETUP_STATUS_DISPLAY: Record<ProtocolSetupStatus, SetupStatusDisplay> = {
   configured: {
     label : 'Already ready',
   },
+  conflict: {
+    label : 'Blocked',
+  },
   install: {
     label : 'Will add',
   },
-  update: {
-    label : 'Will update',
+  upgrade: {
+    label : 'Encryption upgrade',
   },
   unavailable: {
     label : 'Needs verification',
@@ -164,16 +171,22 @@ function getProtocolAccess(
     );
     const hasEncryptedTypes = Object.values(permission.protocolDefinition.types ?? {})
       .some(isEncryptedType);
+    const canonicalDefinition = getCanonicalProtocolDefinition(protocolUri);
+    const isCanonicalProtocol = canonicalDefinition !== undefined
+      && protocolDefinitionsMatch(canonicalDefinition, permission.protocolDefinition);
 
     return {
       permission,
       protocolUri,
       name: info.name,
       description: info.description,
-      isKnownProtocol: isKnownProtocol(protocolUri),
+      isKnownProtocol: isCanonicalProtocol,
       displayScopes: getDisplayScopes(permission.permissionScopes),
       paths,
       hasEncryptedTypes,
+      sharesDecryptionKeys: permission.permissionScopes.some((scope) =>
+        scope.interface === 'Records' && scope.method === 'Read'
+      ),
       setupStatus: protocolSetupStatuses?.[protocolUri] ?? 'checking',
     };
   });
@@ -219,7 +232,7 @@ function AccessRows({
   requesterLabel?: string;
 }) {
   const requesterSentenceLabel = hostLabel(requesterLabel);
-  const encryptedAccess = access.filter((item) => item.hasEncryptedTypes);
+  const encryptedAccess = access.filter((item) => item.hasEncryptedTypes && item.sharesDecryptionKeys);
   const showSharedEncryptedNote = encryptedAccess.length > 1;
 
   return (
@@ -270,12 +283,18 @@ function AccessRows({
                 )}
               </div>
 
-              {item.hasEncryptedTypes && !showSharedEncryptedNote && (
+              {item.hasEncryptedTypes && item.sharesDecryptionKeys && !showSharedEncryptedNote && (
                 <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
-                    Stored encrypted. Approval shares the keys needed for this app to read allowed data during this session.
+                    Approval permanently shares decryption keys for this scope. Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
                   </span>
+                </p>
+              )}
+              {item.hasEncryptedTypes && !item.sharesDecryptionKeys && (
+                <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
+                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>Stored encrypted. This approval does not share private decryption keys.</span>
                 </p>
               )}
             </div>
@@ -287,7 +306,7 @@ function AccessRows({
         <p className="inline-flex items-start gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2 text-xs leading-relaxed text-text-secondary">
           <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>
-            Some allowed data is stored encrypted. Approval shares the keys needed for this app to read allowed data during this session.
+            Approval permanently shares decryption keys for these scopes. Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
           </span>
         </p>
       )}
@@ -295,14 +314,22 @@ function AccessRows({
   );
 }
 
-function SessionTerms({ existingSessionCount }: { existingSessionCount: number }) {
+function SessionTerms({
+  existingSessionCount,
+  sessionDurationSeconds,
+}: {
+  existingSessionCount: number;
+  sessionDurationSeconds?: number;
+}) {
+  const durationLabel = formatConnectSessionDuration(sessionDurationSeconds);
+
   return (
     <section className="rounded-xl border border-border-default bg-surface-2 p-4">
       <div className="flex items-start gap-3">
         <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
         <div className="min-w-0">
           <p className="text-sm font-medium text-text-primary">
-            Access lasts {CONNECT_SESSION_DURATION_LABEL}
+            Access lasts {durationLabel}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-text-secondary">
             It expires automatically. You can revoke it later from this identity&apos;s Permissions tab.
@@ -315,7 +342,7 @@ function SessionTerms({ existingSessionCount }: { existingSessionCount: number }
           <History className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
           <p className="text-xs leading-relaxed text-text-secondary">
             This requester already has {sessionCountLabel(existingSessionCount)} for this identity.
-            Approving creates a separate {CONNECT_SESSION_NOUN_LABEL}.
+            Approving creates a separate session with {durationLabel} of access.
           </p>
         </div>
       )}
@@ -325,9 +352,12 @@ function SessionTerms({ existingSessionCount }: { existingSessionCount: number }
 
 function SetupStatusBadge({ status }: { status: ProtocolSetupStatus }) {
   const display = SETUP_STATUS_DISPLAY[status];
+  const classes = status === 'conflict'
+    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+    : 'border-border-subtle bg-surface-1 text-text-secondary';
 
   return (
-    <span className="inline-flex shrink-0 items-center rounded-full border border-border-subtle bg-surface-1 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+    <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${classes}`}>
       {display.label}
     </span>
   );
@@ -389,26 +419,15 @@ function SetupDetailGroup({
   );
 }
 
-function setupChangeTitle(items: ProtocolAccess[]): string {
-  const hasInstall = items.some((item) => item.setupStatus === 'install');
-  const hasUpdate = items.some((item) => item.setupStatus === 'update');
-
-  if (hasInstall && hasUpdate) return 'Will add or update setup';
-  if (hasUpdate) return 'Will update setup';
-  return 'Will add setup';
-}
-
 function SetupDetails({ access }: { access: ProtocolAccess[] }) {
-  const setupChanges = access.filter((item) =>
-    item.setupStatus === 'install'
-    || item.setupStatus === 'update'
-  );
+  const setupChanges = access.filter((item) => item.setupStatus === 'install');
+  const encryptionUpgrades = access.filter((item) => item.setupStatus === 'upgrade');
+  const conflicts = access.filter((item) => item.setupStatus === 'conflict');
   const setupChecks = access.filter((item) =>
     item.setupStatus === 'checking'
     || item.setupStatus === 'unavailable'
   );
   const ready = access.filter((item) => item.setupStatus === 'configured');
-  const hasUpdate = setupChanges.some((item) => item.setupStatus === 'update');
 
   return (
     <section className="space-y-2">
@@ -417,15 +436,27 @@ function SetupDetails({ access }: { access: ProtocolAccess[] }) {
           Wallet setup
         </p>
         <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-          Setup is wallet housekeeping. It does not add permissions beyond the access listed above.
+          Protocol setup controls record authorization. New policies are installed before the app grant; existing policies are never replaced.
         </p>
       </div>
 
       <SetupDetailGroup
-        icon={hasUpdate ? RefreshCw : Download}
-        title={setupChangeTitle(setupChanges)}
-        summary="The wallet prepares these before creating the grant."
+        icon={Download}
+        title="Will add setup"
+        summary="The wallet installs this authorization policy before creating the grant."
         items={setupChanges}
+      />
+      <SetupDetailGroup
+        icon={Lock}
+        title="Will upgrade encryption"
+        summary="The authorization policy is unchanged; the wallet adds its current encryption keys."
+        items={encryptionUpgrades}
+      />
+      <SetupDetailGroup
+        icon={AlertTriangle}
+        title="Setup conflict"
+        summary="The wallet will not replace an existing owner protocol during a connection."
+        items={conflicts}
       />
       <SetupDetailGroup
         icon={setupChecks.some((item) => item.setupStatus === 'unavailable') ? AlertTriangle : Loader2}
@@ -439,6 +470,58 @@ function SetupDetails({ access }: { access: ProtocolAccess[] }) {
         summary="The wallet will not change these."
         items={ready}
       />
+    </section>
+  );
+}
+
+function ProtocolConflictNotice({ access }: { access: ProtocolAccess[] }) {
+  if (!access.some((item) => item.setupStatus === 'conflict')) return null;
+
+  return (
+    <section role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+        <div>
+          <p className="text-sm font-medium text-red-200">Protocol setup conflict</p>
+          <p className="mt-1 text-xs leading-relaxed text-red-200/80">
+            A requested protocol differs from this identity&apos;s installed setup. The wallet will not replace it during a connection.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProtocolSetupUnavailableNotice({
+  access,
+  onRetry,
+}: {
+  access: ProtocolAccess[];
+  onRetry?: () => void;
+}) {
+  if (!access.some((item) => item.setupStatus === 'unavailable')) return null;
+
+  return (
+    <section role="alert" className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-warning">Protocol setup could not be verified</p>
+          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+            Approval remains blocked until the wallet can check the selected identity&apos;s local protocol state.
+          </p>
+          {onRetry && (
+            <button
+              type="button"
+              className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-warning hover:underline"
+              onClick={onRetry}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Retry check
+            </button>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
@@ -545,6 +628,8 @@ export function PermissionDisplay({
   protocolSetupStatuses,
   existingSessionCount = 0,
   requesterLabel,
+  sessionDurationSeconds,
+  onRetryProtocolSetup,
 }: PermissionDisplayProps) {
   if (permissions.length === 0) return null;
 
@@ -553,7 +638,12 @@ export function PermissionDisplay({
   return (
     <div className="space-y-4">
       <AccessRows access={access} requesterLabel={requesterLabel} />
-      <SessionTerms existingSessionCount={existingSessionCount} />
+      <ProtocolConflictNotice access={access} />
+      <ProtocolSetupUnavailableNotice access={access} onRetry={onRetryProtocolSetup} />
+      <SessionTerms
+        existingSessionCount={existingSessionCount}
+        sessionDurationSeconds={sessionDurationSeconds}
+      />
       <TechnicalDetails access={access} />
     </div>
   );

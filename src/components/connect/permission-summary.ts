@@ -1,5 +1,6 @@
 import type { ConnectPermissionRequest } from '@enbox/agent';
-import { getProtocolInfo, isKnownProtocol } from '@/lib/protocol-names';
+import { getCanonicalProtocolDefinition, getProtocolInfo } from '@/lib/protocol-names';
+import { protocolDefinitionsMatch } from '@/features/connect/protocol-install';
 import {
   formatActionPhrase,
   formatList,
@@ -16,9 +17,15 @@ function getPermissionActionPhrase(
   );
 }
 
+function isCanonicalProtocol(permission: ConnectPermissionRequest): boolean {
+  const definition = permission.protocolDefinition;
+  const canonical = getCanonicalProtocolDefinition(definition.protocol);
+  return canonical !== undefined && protocolDefinitionsMatch(canonical, definition);
+}
+
 function getPermissionObjectPhrase(permission: ConnectPermissionRequest): string {
   const protocolUri = permission.protocolDefinition.protocol;
-  if (!isKnownProtocol(protocolUri)) {
+  if (!isCanonicalProtocol(permission)) {
     return 'a custom data type';
   }
 
@@ -31,7 +38,7 @@ function getVisiblePermissionObjectPhrases(
   const visiblePermissions = permissions.slice(0, 2);
   if (
     visiblePermissions.length > 0
-    && visiblePermissions.every((permission) => !isKnownProtocol(permission.protocolDefinition.protocol))
+    && visiblePermissions.every((permission) => !isCanonicalProtocol(permission))
   ) {
     return [
       visiblePermissions.length === 1
@@ -41,7 +48,7 @@ function getVisiblePermissionObjectPhrases(
   }
 
   return visiblePermissions.map((permission) =>
-    isKnownProtocol(permission.protocolDefinition.protocol)
+    isCanonicalProtocol(permission)
       ? getProtocolInfo(permission.protocolDefinition.protocol).name
       : 'a custom data type'
   );

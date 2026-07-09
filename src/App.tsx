@@ -10,7 +10,6 @@ import { useIdentitySyncReconciliation } from '@/enbox/hooks/use-identity-sync-r
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { useSyncQueryInvalidation } from '@/enbox/hooks/use-sync-query-invalidation';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
-import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import {
   hasStoredPasskeyCredential,
   isPasskeyUnlockAvailable,
@@ -44,7 +43,7 @@ const queryClient = new QueryClient({
  * deleted all their identities.
  */
 function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
-  const { agent } = useAuth();
+  const { agent, dwnEndpoints } = useAuth();
   const createIdentity = useCreateIdentity();
   const [isCreating, setIsCreating] = useState(false);
 
@@ -59,7 +58,7 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
           displayName: params.displayName,
           avatar: params.avatar,
           hero: params.hero,
-          dwnEndpoints: DEFAULT_DWN_ENDPOINTS,
+          dwnEndpoints,
         });
         onDone();
       } catch (err) {
@@ -67,7 +66,7 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
         setIsCreating(false);
       }
     },
-    [createIdentity, onDone],
+    [createIdentity, dwnEndpoints, onDone],
   );
 
   return (
@@ -222,6 +221,7 @@ function AuthGate() {
           isLoading={isLoading}
           error={authUiError ?? error}
           onBack={() => setForgotPin(false)}
+          allowEndpointSelection={false}
         />
       );
     }
@@ -259,6 +259,17 @@ function AuthGate() {
     );
   }
 
+  // DWeb Connect popup renders without the app shell. Keep this ahead of the
+  // no-identity onboarding gate so a portable identity can be imported into
+  // an otherwise empty wallet.
+  if (location.pathname === '/dweb-connect') {
+    return (
+      <Suspense fallback={<Loader message="Loading..." />}>
+        <DWebConnectPage />
+      </Suspense>
+    );
+  }
+
   // Unlocked but still loading identity list — show loader briefly
   if (identitiesLoading) {
     return <Loader message="Loading identities..." fullScreen />;
@@ -274,15 +285,6 @@ function AuthGate() {
       <CreateFirstIdentity
         onDone={() => setIdentitySkipped(true)}
       />
-    );
-  }
-
-  // DWeb Connect popup — render without the app shell (no sidebar/tabs)
-  if (location.pathname === '/dweb-connect') {
-    return (
-      <Suspense fallback={<Loader message="Loading..." />}>
-        <DWebConnectPage />
-      </Suspense>
     );
   }
 

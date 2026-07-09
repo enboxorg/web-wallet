@@ -33,7 +33,12 @@ async function buildSignedRequest(overrides: Record<string, unknown> = {}) {
       type        : CLI_CONNECT_REQUEST_TYPE,
       appName     : 'gitd',
       permissions : [{
-        protocolDefinition : { protocol: REPO_PROTOCOL },
+        protocolDefinition : {
+          protocol  : REPO_PROTOCOL,
+          published : false,
+          types     : {},
+          structure : {},
+        },
         permissionScopes   : [{ interface: 'Records', method: 'Write', protocol: REPO_PROTOCOL }],
       }],
       cliDid      : bearer.uri,
@@ -48,7 +53,9 @@ async function buildSignedRequest(overrides: Record<string, unknown> = {}) {
 describe('isLoopbackCallbackUrl', () => {
   it('accepts http loopback hosts', () => {
     expect(isLoopbackCallbackUrl('http://127.0.0.1:7421/callback')).toBe(true);
+    expect(isLoopbackCallbackUrl('http://127.0.0.1/callback')).toBe(true);
     expect(isLoopbackCallbackUrl('http://localhost:9000/cb')).toBe(true);
+    expect(isLoopbackCallbackUrl('http://[::1]:9000/cb')).toBe(true);
   });
 
   it('rejects non-loopback and non-http URLs', () => {
@@ -96,6 +103,11 @@ describe('parseCliConnectRequest', () => {
 
   it('rejects an unrecognized request type', async () => {
     const { request } = await buildSignedRequest({ type: 'something-else' });
+    await expect(parseCliConnectRequest(encodeRequest(request))).rejects.toThrow(/Unrecognized/i);
+  });
+
+  it('rejects an unsupported request version', async () => {
+    const { request } = await buildSignedRequest({ version: 2 });
     await expect(parseCliConnectRequest(encodeRequest(request))).rejects.toThrow(/Unrecognized/i);
   });
 

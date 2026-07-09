@@ -47,6 +47,20 @@ test.describe('Wallet Setup (first visit)', () => {
     await expect(page.getByRole('button', { name: /set up/i })).toBeVisible({ timeout: 5000 });
   });
 
+  test('can replace the managed list with one actor-specific DWN', async ({ page }) => {
+    await enterPin(page, '1234');
+    await expect(page.getByText('Confirm PIN')).toBeVisible({ timeout: 5000 });
+    await enterPin(page, '1234');
+
+    await page.getByRole('button', { name: 'Remove DWN endpoint 2' }).click();
+    await page.getByRole('textbox', { name: 'DWN endpoint 1' }).fill(
+      'https://actor-a.example/dwn',
+    );
+
+    await expect(page.getByRole('textbox', { name: /^DWN endpoint/ })).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Set up' })).toBeEnabled();
+  });
+
   test('shows restore from recovery phrase link', async ({ page }) => {
     await expect(page.getByText(/restore.*recovery phrase/i)).toBeVisible();
   });

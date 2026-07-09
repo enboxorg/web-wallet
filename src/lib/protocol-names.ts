@@ -1,3 +1,14 @@
+import type { DwnProtocolDefinition } from '@enbox/agent';
+
+import {
+  ConnectDefinition,
+  ListsDefinition,
+  PreferencesDefinition,
+  ProfileDefinition,
+  SocialGraphDefinition,
+  StatusDefinition,
+} from '@enbox/protocols';
+
 /** Metadata for a known protocol. */
 export interface ProtocolInfo {
   /** Human-friendly display name. */
@@ -21,6 +32,18 @@ const PROTOCOL_REGISTRY: Record<string, ProtocolInfo> = {
     name        : 'Connect',
     description : 'Wallet discovery and connection records',
   },
+  'https://identity.foundation/protocols/lists': {
+    name        : 'Lists',
+    description : 'Lists, folders, collaborators, and comments',
+  },
+  'https://identity.foundation/protocols/preferences': {
+    name        : 'Preferences',
+    description : 'Theme, locale, privacy, and notification preferences',
+  },
+  'https://identity.foundation/protocols/status': {
+    name        : 'Status',
+    description : 'Published social status updates and replies',
+  },
 
   // ─── Enbox protocols ───────────────────────────────────────────
   'https://enbox.id/protocols/cashu-wallet': {
@@ -32,6 +55,19 @@ const PROTOCOL_REGISTRY: Record<string, ProtocolInfo> = {
     description : 'Send and receive ecash transfers between identities via P2PK',
   },
 };
+
+const CANONICAL_PROTOCOL_DEFINITIONS = new Map<string, DwnProtocolDefinition>([
+  [ProfileDefinition.protocol, ProfileDefinition as DwnProtocolDefinition],
+  [SocialGraphDefinition.protocol, SocialGraphDefinition as DwnProtocolDefinition],
+  [ConnectDefinition.protocol, ConnectDefinition as DwnProtocolDefinition],
+  [ListsDefinition.protocol, ListsDefinition as DwnProtocolDefinition],
+  [PreferencesDefinition.protocol, PreferencesDefinition as DwnProtocolDefinition],
+  [StatusDefinition.protocol, StatusDefinition as DwnProtocolDefinition],
+]);
+
+export function getCanonicalProtocolDefinition(uri: string): DwnProtocolDefinition | undefined {
+  return CANONICAL_PROTOCOL_DEFINITIONS.get(uri);
+}
 
 /** Whether the protocol URI has curated wallet display metadata. */
 export function isKnownProtocol(uri: string): boolean {
