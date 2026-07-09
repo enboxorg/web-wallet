@@ -18,10 +18,6 @@ vi.mock('../../identity-sync', () => ({
   reconcileIdentitySync: mocks.reconcileIdentitySync,
 }));
 
-vi.mock('@/lib/dwn-endpoints', () => ({
-  DEFAULT_DWN_ENDPOINTS: ['https://fly.example/dwn', 'https://aws.example/dwn'],
-}));
-
 vi.mock('sonner', () => ({
   toast: { error: mocks.toastError },
 }));
@@ -54,7 +50,7 @@ describe('useIdentitySyncReconciliation', () => {
       firstTime: false,
       agent: { id: 'agent-1' },
     });
-    mocks.reconcileIdentitySync.mockResolvedValue({ changedDids: [] });
+    mocks.reconcileIdentitySync.mockResolvedValue({ changedDids: [], failedDids: [] });
   });
 
   it('reconciles discovered identities with the wallet sync scope', async () => {
@@ -69,7 +65,6 @@ describe('useIdentitySyncReconciliation', () => {
       expect(mocks.reconcileIdentitySync).toHaveBeenCalledWith(
         { id: 'agent-1' },
         identities,
-        ['https://fly.example/dwn', 'https://aws.example/dwn'],
       );
     });
   });
@@ -78,7 +73,7 @@ describe('useIdentitySyncReconciliation', () => {
     const queryClient = createQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const identities = [{ did: { uri: 'did:dht:new' }, metadata: { name: 'New' } }];
-    mocks.reconcileIdentitySync.mockResolvedValue({ changedDids: ['did:dht:new'] });
+    mocks.reconcileIdentitySync.mockResolvedValue({ changedDids: ['did:dht:new'], failedDids: [] });
 
     renderHook(() => useIdentitySyncReconciliation(identities), {
       wrapper: createWrapper(queryClient),
@@ -102,5 +97,62 @@ describe('useIdentitySyncReconciliation', () => {
     });
 
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+  });
+
+  it('retries a transient per-identity reconciliation failure once', async () => {
+    const queryClient = createQueryClient();
+    const identities = [{ did: { uri: 'did:dht:failed' }, metadata: { name: 'Failed' } }];
+    mocks.reconcileIdentitySync
+      .mockResolvedValueOnce({ changedDids: [], failedDids: ['did:dht:failed'] })
+      .mockResolvedValueOnce({ changedDids: ['did:dht:failed'], failedDids: [] });
+
+    renderHook(() => useIdentitySyncReconciliation(identities), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(mocks.reconcileIdentitySync).toHaveBeenCalledTimes(2));
+    expect(mocks.toastError).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a persistent per-identity reconciliation failure after retry', async () => {
+    const queryClient = createQueryClient();
+    const identities = [{ did: { uri: 'did:dht:failed' }, metadata: { name: 'Failed' } }];
+    mocks.reconcileIdentitySync.mockResolvedValue({
+      changedDids: [],
+      failedDids: ['did:dht:failed'],
+    });
+
+    renderHook(() => useIdentitySyncReconciliation(identities), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
+    expect(mocks.reconcileIdentitySync).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry a persistent failure on an equivalent identity refetch', async () => {
+    const queryClient = createQueryClient();
+    mocks.reconcileIdentitySync.mockResolvedValue({
+      changedDids: [],
+      failedDids: ['did:dht:failed'],
+    });
+    const { rerender } = renderHook(
+      ({ identities }) => useIdentitySyncReconciliation(identities),
+      {
+        initialProps: {
+          identities: [{ did: { uri: 'did:dht:failed' }, metadata: { name: 'Failed' } }],
+        },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+    rerender({
+      identities: [{ did: { uri: 'did:dht:failed' }, metadata: { name: 'Refetched' } }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.reconcileIdentitySync).toHaveBeenCalledTimes(2);
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
   });
 });

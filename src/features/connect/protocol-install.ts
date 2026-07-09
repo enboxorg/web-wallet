@@ -1,17 +1,22 @@
 import { Effect } from 'effect';
+import type { EncryptionKeyDeriver } from '@enbox/dwn-sdk-js';
+
 import { DwnInterface, type DwnProtocolDefinition, getDwnServiceEndpointUrls } from '@enbox/agent';
+import { computeJwkThumbprint } from '@enbox/crypto';
+import { KeyDerivationScheme } from '@enbox/dwn-sdk-js';
 
 import { sdkError } from '@/enbox/effect/errors';
 import { withNetworkPolicy } from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
+import { getCanonicalProtocolDefinition } from '@/lib/protocol-names';
 
 type ProtocolQueryReply = {
   status: { code: number; detail: string };
   entries?: ProtocolConfigureEntry[];
 };
 
-export type ResolvedProtocolSetupStatus = 'configured' | 'install' | 'update';
+export type ResolvedProtocolSetupStatus = 'configured' | 'conflict' | 'install' | 'upgrade';
 export type ProtocolSetupStatus = ResolvedProtocolSetupStatus | 'checking' | 'unavailable';
 
 type ProtocolConfigureEntry = {
@@ -22,12 +27,15 @@ type ProtocolConfigureEntry = {
 
 type PrepareProtocolAgent = {
   did: unknown;
+  dwn: {
+    getEncryptionKeyDeriver: (didUri: string) => Promise<EncryptionKeyDeriver>;
+  };
   rpc: {
     sendDwnRequest: (params: {
       dwnUrl: string;
       targetDid: string;
       message: unknown;
-    }) => Promise<{ status: { code: number; detail: string } }>;
+    }) => Promise<ProtocolQueryReply>;
   };
   processDwnRequest: (params: {
     author: string;
@@ -42,16 +50,6 @@ function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
 }
 
-function getStructureNode(structure: Record<string, any> | undefined, protocolPath: string): Record<string, any> | undefined {
-  if (!structure) return undefined;
-  let current: Record<string, any> | undefined = structure;
-  for (const segment of protocolPath.split('/')) {
-    if (!current || !(segment in current)) return undefined;
-    current = current[segment];
-  }
-  return current;
-}
-
 function normalizeProtocolDefinition(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(normalizeProtocolDefinition);
@@ -63,10 +61,38 @@ function normalizeProtocolDefinition(value: unknown): unknown {
 
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>)
-      .filter(([key, entry]) => key !== '$encryption' && entry !== undefined)
+      .filter(([key, entry]) => key !== '$keyAgreement' && key !== '$encryption' && entry !== undefined)
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([key, entry]) => [key, normalizeProtocolDefinition(entry)]),
   );
+}
+
+function containsWalletManagedKeyAgreement(value: unknown): boolean {
+  if (Array.isArray(value)) {
+    return value.some(containsWalletManagedKeyAgreement);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  return Object.entries(value as Record<string, unknown>).some(([key, entry]) =>
+    key === '$keyAgreement'
+    || key === '$encryption'
+    || containsWalletManagedKeyAgreement(entry)
+  );
+}
+
+function isNormalizedProtocolUri(protocol: string): boolean {
+  try {
+    const url = new URL(protocol);
+    url.search = '';
+    url.hash = '';
+    const normalized = url.href.endsWith('/') ? url.href.slice(0, -1) : url.href;
+    return normalized === protocol;
+  } catch {
+    return false;
+  }
 }
 
 export function protocolDefinitionsMatch(
@@ -86,33 +112,204 @@ export function hasEncryptionConfiguredForEncryptedTypes(
   requestedDefinition: DwnProtocolDefinition,
 ): boolean {
   if (!installedDefinition) return false;
+  if (!protocolHasEncryptedTypes(requestedDefinition)) return true;
+  if (!installedDefinition.$keyAgreement?.publicKeyJwk) return false;
 
-  for (const [protocolPath, typeDef] of Object.entries(requestedDefinition.types ?? {})) {
-    if (!(typeDef as any)?.encryptionRequired) continue;
-    const node = getStructureNode(installedDefinition.structure as Record<string, any> | undefined, protocolPath);
-    if (!node || typeof node !== 'object' || !('$encryption' in node)) {
-      return false;
+  function structureHasRequiredKeys(
+    requestedStructure: Record<string, any>,
+    installedStructure: Record<string, any> | undefined,
+  ): boolean {
+    for (const [nodeName, requestedRuleSet] of Object.entries(requestedStructure)) {
+      if (nodeName.startsWith('$')) continue;
+
+      const installedRuleSet = installedStructure?.[nodeName];
+      if (!installedRuleSet || typeof installedRuleSet !== 'object') return false;
+
+      const isExternalReference = requestedRuleSet?.$ref !== undefined;
+      if (!isExternalReference && !installedRuleSet.$keyAgreement?.publicKeyJwk) {
+        return false;
+      }
+
+      if (!structureHasRequiredKeys(requestedRuleSet, installedRuleSet)) {
+        return false;
+      }
     }
+
+    return true;
   }
 
-  return true;
+  return structureHasRequiredKeys(
+    requestedDefinition.structure as Record<string, any>,
+    installedDefinition.structure as Record<string, any> | undefined,
+  );
+}
+
+type EncryptionKeyState = 'configured' | 'conflict' | 'missing';
+
+async function publicKeysMatch(left: unknown, right: unknown): Promise<boolean> {
+  try {
+    const [leftThumbprint, rightThumbprint] = await Promise.all([
+      computeJwkThumbprint({ jwk: left as any }),
+      computeJwkThumbprint({ jwk: right as any }),
+    ]);
+    return leftThumbprint === rightThumbprint;
+  } catch {
+    return false;
+  }
+}
+
+async function getInstalledEncryptionKeyState(
+  installedDefinition: DwnProtocolDefinition,
+  requestedDefinition: DwnProtocolDefinition,
+  keyDeriver: EncryptionKeyDeriver,
+): Promise<EncryptionKeyState> {
+  let missing = false;
+  const basePath = [KeyDerivationScheme.ProtocolPath, requestedDefinition.protocol];
+  const expectedRootKey = await keyDeriver.derivePublicKey(basePath);
+  const installedRootKey = installedDefinition.$keyAgreement?.publicKeyJwk;
+  if (installedRootKey === undefined) {
+    missing = true;
+  } else if (!await publicKeysMatch(installedRootKey, expectedRootKey)) {
+    return 'conflict';
+  }
+
+  async function inspectStructure(
+    requestedStructure: Record<string, any>,
+    installedStructure: Record<string, any> | undefined,
+    parentPath: string[],
+  ): Promise<EncryptionKeyState> {
+    for (const [nodeName, requestedRuleSet] of Object.entries(requestedStructure)) {
+      if (nodeName.startsWith('$')) continue;
+
+      const installedRuleSet = installedStructure?.[nodeName];
+      if (!installedRuleSet || typeof installedRuleSet !== 'object') return 'missing';
+      const currentPath = [...parentPath, nodeName];
+      if (requestedRuleSet?.$ref === undefined) {
+        const installedKey = installedRuleSet.$keyAgreement?.publicKeyJwk;
+        if (installedKey === undefined) {
+          missing = true;
+        } else {
+          const expectedKey = await keyDeriver.derivePublicKey(currentPath);
+          if (!await publicKeysMatch(installedKey, expectedKey)) return 'conflict';
+        }
+      }
+
+      const childState = await inspectStructure(requestedRuleSet, installedRuleSet, currentPath);
+      if (childState === 'conflict') return 'conflict';
+      if (childState === 'missing') missing = true;
+    }
+    return missing ? 'missing' : 'configured';
+  }
+
+  return inspectStructure(
+    requestedDefinition.structure as Record<string, any>,
+    installedDefinition.structure as Record<string, any> | undefined,
+    basePath,
+  );
+}
+
+async function getVerifiedProtocolSetupStatus(
+  installedDefinition: DwnProtocolDefinition | undefined,
+  requestedDefinition: DwnProtocolDefinition,
+  selectedDid: string,
+  agent: Pick<PrepareProtocolAgent, 'dwn'>,
+): Promise<ResolvedProtocolSetupStatus> {
+  const structuralStatus = getProtocolSetupStatus(installedDefinition, requestedDefinition);
+  if (
+    structuralStatus === 'conflict'
+    || structuralStatus === 'install'
+    || !protocolHasEncryptedTypes(requestedDefinition)
+    || installedDefinition === undefined
+  ) {
+    return structuralStatus;
+  }
+
+  const keyDeriver = await agent.dwn.getEncryptionKeyDeriver(selectedDid);
+  const keyState = await getInstalledEncryptionKeyState(
+    installedDefinition,
+    requestedDefinition,
+    keyDeriver,
+  );
+  if (keyState === 'conflict') return 'conflict';
+  return keyState === 'missing' ? 'upgrade' : 'configured';
 }
 
 export function getProtocolSetupStatus(
   installedDefinition: DwnProtocolDefinition | undefined,
   requestedDefinition: DwnProtocolDefinition,
 ): ResolvedProtocolSetupStatus {
+  if (!isNormalizedProtocolUri(requestedDefinition.protocol)) {
+    return 'conflict';
+  }
+  if (containsWalletManagedKeyAgreement(requestedDefinition)) {
+    return 'conflict';
+  }
+  const canonicalDefinition = getCanonicalProtocolDefinition(requestedDefinition.protocol);
+  if (canonicalDefinition && !protocolDefinitionsMatch(canonicalDefinition, requestedDefinition)) {
+    return 'conflict';
+  }
+
   if (!installedDefinition) {
     return 'install';
   }
 
-  const missingEncryption = protocolHasEncryptedTypes(requestedDefinition)
-    && !hasEncryptionConfiguredForEncryptedTypes(installedDefinition, requestedDefinition);
-  if (missingEncryption || !protocolDefinitionsMatch(installedDefinition, requestedDefinition)) {
-    return 'update';
+  if (!protocolDefinitionsMatch(installedDefinition, requestedDefinition)) {
+    return 'conflict';
   }
 
+  const missingEncryption = protocolHasEncryptedTypes(requestedDefinition)
+    && !hasEncryptionConfiguredForEncryptedTypes(installedDefinition, requestedDefinition);
+  if (missingEncryption) return 'upgrade';
+
   return 'configured';
+}
+
+export function getProtocolSetupConflictMessage(
+  installedDefinition: DwnProtocolDefinition | undefined,
+  requestedDefinition: DwnProtocolDefinition,
+): string | undefined {
+  if (!isNormalizedProtocolUri(requestedDefinition.protocol)) {
+    return `Protocol URI '${requestedDefinition.protocol}' is not normalized.`;
+  }
+  if (containsWalletManagedKeyAgreement(requestedDefinition)) {
+    return `Protocol '${requestedDefinition.protocol}' contains wallet-managed encryption keys. `
+      + 'Requesters must provide the canonical protocol definition without $keyAgreement metadata.';
+  }
+
+  const canonicalDefinition = getCanonicalProtocolDefinition(requestedDefinition.protocol);
+  if (canonicalDefinition && !protocolDefinitionsMatch(canonicalDefinition, requestedDefinition)) {
+    return `Protocol '${requestedDefinition.protocol}' does not match the wallet's pinned canonical definition.`;
+  }
+
+  if (!installedDefinition) {
+    return undefined;
+  }
+
+  if (!protocolDefinitionsMatch(installedDefinition, requestedDefinition)) {
+    return `Protocol '${requestedDefinition.protocol}' is already installed with a different definition. `
+      + 'A connection request cannot replace an owner protocol definition.';
+  }
+
+  return undefined;
+}
+
+export function getRequestedProtocolDefinitionsConflictMessage(
+  definitions: DwnProtocolDefinition[],
+): string | undefined {
+  const byProtocol = new Map<string, DwnProtocolDefinition>();
+
+  for (const definition of definitions) {
+    const unsafeDefinition = getProtocolSetupConflictMessage(undefined, definition);
+    if (unsafeDefinition) return unsafeDefinition;
+
+    const existing = byProtocol.get(definition.protocol);
+    if (existing && !protocolDefinitionsMatch(existing, definition)) {
+      return `The request includes different definitions for protocol '${definition.protocol}'.`;
+    }
+    byProtocol.set(definition.protocol, definition);
+  }
+
+  return undefined;
 }
 
 function getProtocolDefinitionFromEntry(
@@ -123,7 +320,7 @@ function getProtocolDefinitionFromEntry(
 
 export async function queryProtocolSetupStatus(
   selectedDid: string,
-  agent: Pick<PrepareProtocolAgent, 'processDwnRequest'>,
+  agent: Pick<PrepareProtocolAgent, 'dwn' | 'processDwnRequest'>,
   protocolDefinition: DwnProtocolDefinition,
 ): Promise<ResolvedProtocolSetupStatus> {
   const queryResult = await agent.processDwnRequest({
@@ -137,16 +334,18 @@ export async function queryProtocolSetupStatus(
     throw new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`);
   }
 
-  return getProtocolSetupStatus(
+  return getVerifiedProtocolSetupStatus(
     getProtocolDefinitionFromEntry(queryResult.reply.entries?.[0]),
     protocolDefinition,
+    selectedDid,
+    agent,
   );
 }
 
 /**
- * Ensure the requested protocol is installed locally and on all owner DWN
- * endpoints, updating older/different definitions and adding `$encryption`
- * keys when encrypted types require them.
+ * Ensure the requested protocol is installed locally and on each reachable
+ * owner DWN endpoint. Existing definitions are reused only when their canonical
+ * definition matches and all required `$keyAgreement` keys are present.
  */
 export async function prepareProtocol(
   selectedDid: string,
@@ -182,31 +381,28 @@ export function prepareProtocolEffect(
         new Error(`Could not fetch protocol: ${queryResult.reply.status.detail}`),
       );
     }
+    if (queryResult.message === undefined) {
+      return yield* Effect.fail(new Error('Could not query protocol: no signed query message was returned.'));
+    }
 
     const existingEntry = queryResult.reply.entries?.[0];
     const needsEncryption = protocolHasEncryptedTypes(protocolDefinition);
-    const setupStatus = getProtocolSetupStatus(
-      getProtocolDefinitionFromEntry(existingEntry),
-      protocolDefinition,
-    );
+    const installedDefinition = getProtocolDefinitionFromEntry(existingEntry);
+    const setupStatus = yield* Effect.tryPromise({
+      try: async () => getVerifiedProtocolSetupStatus(
+        installedDefinition,
+        protocolDefinition,
+        selectedDid,
+        agent,
+      ),
+      catch: sdkError('connect.protocol.verifyLocal'),
+    });
 
-    let configureMessage: unknown;
-
-    if (setupStatus !== 'configured') {
-      const { message } = yield* Effect.tryPromise({
-        try: async () =>
-          agent.processDwnRequest({
-            author: selectedDid,
-            target: selectedDid,
-            messageType: DwnInterface.ProtocolsConfigure,
-            messageParams: { definition: protocolDefinition },
-            encryption: needsEncryption || undefined,
-          }),
-        catch: sdkError('connect.protocol.configure'),
-      });
-      configureMessage = message;
-    } else {
-      configureMessage = existingEntry;
+    if (setupStatus === 'conflict') {
+      return yield* Effect.fail(new Error(
+        getProtocolSetupConflictMessage(installedDefinition, protocolDefinition)
+        ?? `Protocol '${protocolDefinition.protocol}' has encryption keys that do not match this wallet owner.`,
+      ));
     }
 
     const dwnEndpoints = yield* Effect.tryPromise({
@@ -214,9 +410,103 @@ export function prepareProtocolEffect(
       catch: sdkError('connect.protocol.resolveDwnEndpoints'),
     });
 
-    yield* Effect.forEach(
+    const remoteQueryResults = yield* Effect.forEach(
       dwnEndpoints,
       (endpoint: string) =>
+        withNetworkPolicy(
+          'connect.protocol.queryRemote',
+          Effect.tryPromise({
+            try: async () => agent.rpc.sendDwnRequest({
+              dwnUrl   : endpoint,
+              targetDid: selectedDid,
+              message  : queryResult.message,
+            }),
+            catch: sdkError('connect.protocol.queryRemote'),
+          }),
+          () => sdkTimeout('connect.protocol.queryRemote'),
+        ).pipe(
+          Effect.map((reply) => ({ endpoint, reply })),
+          Effect.catchAll((error) => Effect.sync(() => {
+            console.warn(`prepareProtocol: could not query ${endpoint}:`, error);
+            return undefined;
+          })),
+        ),
+      { concurrency: 'unbounded' },
+    );
+
+    const rejectedRemoteQuery = remoteQueryResults.find(
+      (result) => result !== undefined && result.reply.status.code !== 200,
+    );
+    if (rejectedRemoteQuery !== undefined) {
+      return yield* Effect.fail(new Error(
+        `Could not verify protocol on ${rejectedRemoteQuery.endpoint}: ${rejectedRemoteQuery.reply.status.detail}`,
+      ));
+    }
+
+    const reachableRemoteReplies = remoteQueryResults.filter(
+      (result): result is { endpoint: string; reply: ProtocolQueryReply } =>
+        result !== undefined && result.reply.status.code === 200,
+    );
+    if (reachableRemoteReplies.length === 0) {
+      return yield* Effect.fail(new Error('Could not verify the protocol definition on any DWN endpoint.'));
+    }
+
+    const remoteStates = yield* Effect.forEach(
+      reachableRemoteReplies,
+      ({ endpoint, reply }) => Effect.tryPromise({
+        try: async () => ({
+          endpoint,
+          setupStatus: await getVerifiedProtocolSetupStatus(
+            getProtocolDefinitionFromEntry(reply.entries?.[0]),
+            protocolDefinition,
+            selectedDid,
+            agent,
+          ),
+        }),
+        catch: sdkError('connect.protocol.verifyRemote'),
+      }),
+      { concurrency: 'unbounded' },
+    );
+
+    const conflictingRemote = remoteStates.find((state) => state.setupStatus === 'conflict');
+    if (conflictingRemote !== undefined) {
+      return yield* Effect.fail(new Error(
+        `Protocol '${protocolDefinition.protocol}' conflicts with the latest definition or encryption keys on ${conflictingRemote.endpoint}.`,
+      ));
+    }
+
+    let configureMessage: unknown;
+
+    if (setupStatus === 'install' || setupStatus === 'upgrade') {
+      const { reply, message } = yield* Effect.tryPromise({
+        try: async () =>
+          agent.processDwnRequest({
+            author: selectedDid,
+            target: selectedDid,
+            messageType: DwnInterface.ProtocolsConfigure,
+            messageParams: { definition: protocolDefinition },
+            encryption: needsEncryption || undefined,
+        }),
+        catch: sdkError('connect.protocol.configure'),
+      });
+
+      if (reply.status.code !== 202 && reply.status.code !== 409) {
+        return yield* Effect.fail(new Error(`Could not configure protocol: ${reply.status.detail}`));
+      }
+      if (message === undefined) {
+        return yield* Effect.fail(new Error('Could not configure protocol: no signed message was returned.'));
+      }
+      configureMessage = message;
+    } else {
+      configureMessage = existingEntry;
+    }
+
+    const endpointsNeedingConfigure = remoteStates
+      .filter((state) => state.setupStatus !== 'configured')
+      .map((state) => state.endpoint);
+    yield* Effect.forEach(
+      endpointsNeedingConfigure,
+      (endpoint) =>
         withNetworkPolicy(
           'connect.protocol.sendConfigure',
           Effect.tryPromise({
@@ -230,20 +520,58 @@ export function prepareProtocolEffect(
           }),
           () => sdkTimeout('connect.protocol.sendConfigure'),
         ).pipe(
-          Effect.tap((reply) =>
-            Effect.sync(() => {
-              if (reply.status.code !== 202 && reply.status.code !== 409) {
-                console.warn(`prepareProtocol: endpoint ${endpoint} rejected protocol: ${reply.status.detail}`);
-              }
-            })
-          ),
+          Effect.tap((reply) => Effect.sync(() => {
+            if (reply.status.code !== 202 && reply.status.code !== 409) {
+              console.warn(`prepareProtocol: endpoint ${endpoint} rejected protocol: ${reply.status.detail}`);
+            }
+          })),
           Effect.catchAll((err) =>
             Effect.sync(() => {
               console.warn(`prepareProtocol: failed to send to ${endpoint}:`, err);
             })
           ),
         ),
-      { concurrency: 'unbounded', discard: true },
+      { concurrency: 'unbounded' },
     );
+
+    const changedRemoteStates = remoteStates.filter((state) => state.setupStatus !== 'configured');
+    const verifiedPostconditions = yield* Effect.forEach(
+      changedRemoteStates,
+      ({ endpoint }) =>
+        withNetworkPolicy(
+          'connect.protocol.verifyRemotePostcondition',
+          Effect.tryPromise({
+            try: async () => agent.rpc.sendDwnRequest({
+              dwnUrl   : endpoint,
+              targetDid: selectedDid,
+              message  : queryResult.message,
+            }),
+            catch: sdkError('connect.protocol.verifyRemotePostcondition'),
+          }),
+          () => sdkTimeout('connect.protocol.verifyRemotePostcondition'),
+        ).pipe(
+          Effect.flatMap((reply) => Effect.tryPromise({
+            try: async () => reply.status.code === 200
+              && await getVerifiedProtocolSetupStatus(
+                getProtocolDefinitionFromEntry(reply.entries?.[0]),
+                protocolDefinition,
+                selectedDid,
+                agent,
+              ) === 'configured',
+            catch: sdkError('connect.protocol.verifyRemotePostcondition'),
+          })),
+          Effect.catchAll((error) => Effect.sync(() => {
+            console.warn(`prepareProtocol: could not verify ${endpoint}:`, error);
+            return false;
+          })),
+        ),
+      { concurrency: 'unbounded' },
+    );
+
+    if (verifiedPostconditions.some((verified) => !verified)) {
+      return yield* Effect.fail(new Error(
+        `Could not verify the latest protocol definition on every reachable DWN endpoint for '${protocolDefinition.protocol}'.`,
+      ));
+    }
   });
 }

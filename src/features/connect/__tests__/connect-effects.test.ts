@@ -4,10 +4,12 @@ import {
   createAndSendGrantKeyRecords,
   createDelegateDid,
   createPermissionGrants,
+  createSessionRevocationGrants,
   denyConnectRequest,
   encryptDWebConnectResponse,
   fetchConnectRequest,
   generatePin,
+  selectEncryptedReadGrants,
   submitConnectResponse,
 } from '../connect-effects';
 
@@ -16,7 +18,9 @@ const mocks = vi.hoisted(() => ({
   createPermissionGrants: vi.fn(),
   encryptPostMessagePayload: vi.fn(),
   generateEphemeralKeyPair: vi.fn(),
-  getConnectRequest: vi.fn(),
+  decryptRequest: vi.fn(),
+  verifyJwt: vi.fn(),
+  assertConnectRequest: vi.fn(),
   randomPin: vi.fn(),
   submitConnectResponse: vi.fn(),
   convertPrivateKeyToX25519: vi.fn(),
@@ -27,7 +31,9 @@ vi.mock('@enbox/agent', () => ({
   EnboxConnectProtocol: {
     createGrantKeyRecordsForGrants: mocks.createGrantKeyRecordsForGrants,
     createPermissionGrants: mocks.createPermissionGrants,
-    getConnectRequest: mocks.getConnectRequest,
+    decryptRequest: mocks.decryptRequest,
+    verifyJwt: mocks.verifyJwt,
+    assertConnectRequest: mocks.assertConnectRequest,
     submitConnectResponse: mocks.submitConnectResponse,
   },
 }));
@@ -47,36 +53,110 @@ vi.mock('@enbox/crypto', () => ({
 }));
 
 vi.mock('@enbox/dids', () => ({
+  Did: {
+    parse: (uri: string) => ({ uri, method: uri.split(':')[1] }),
+  },
   DidJwk: {
     create: mocks.didJwkCreate,
   },
 }));
 
 describe('connect Effect adapters', () => {
+  const jwtHeader = btoa(JSON.stringify({ kid: 'did:jwk:client#0' }))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replace(/=+$/, '');
+
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(globalThis, 'fetch', {
+      configurable: true,
+      value: vi.fn(async () => new Response('encrypted-request')),
+    });
+    mocks.decryptRequest.mockResolvedValue(`${jwtHeader}.payload.signature`);
   });
 
   it('wraps connect request fetching and PIN generation', async () => {
-    const request = { state: 'state-1' };
-    mocks.getConnectRequest.mockResolvedValue(request);
+    const request = {
+      clientDid   : 'did:jwk:client',
+      callbackUrl : 'https://relay.example/callback',
+      state       : 'state-1',
+    };
+    mocks.verifyJwt.mockResolvedValue(request);
     mocks.randomPin.mockReturnValue('1234');
 
     await expect(fetchConnectRequest('https://relay.example/request', 'key')).resolves.toBe(request);
     await expect(generatePin(4)).resolves.toBe('1234');
 
-    expect(mocks.getConnectRequest).toHaveBeenCalledWith('https://relay.example/request', 'key');
+    expect(fetch).toHaveBeenCalledWith(
+      new URL('https://relay.example/request'),
+      expect.objectContaining({ redirect: 'error' }),
+    );
+    expect(mocks.decryptRequest).toHaveBeenCalledWith({
+      jwe: 'encrypted-request',
+      encryptionKey: 'key',
+    });
+    expect(mocks.verifyJwt).toHaveBeenCalledWith({ jwt: `${jwtHeader}.payload.signature` });
     expect(mocks.randomPin).toHaveBeenCalledWith({ length: 4 });
   });
 
   it('retries transient connect request fetch failures', async () => {
-    const request = { state: 'state-1' };
-    mocks.getConnectRequest
+    const request = {
+      clientDid   : 'did:jwk:client',
+      callbackUrl : 'https://relay.example/callback',
+      state       : 'state-1',
+    };
+    const fetchMock = vi.mocked(fetch);
+    fetchMock
       .mockRejectedValueOnce(new Error('temporary fetch failure'))
-      .mockResolvedValueOnce(request);
+      .mockResolvedValueOnce(new Response('encrypted-request'));
+    mocks.verifyJwt.mockResolvedValue(request);
 
     await expect(fetchConnectRequest('https://relay.example/request', 'key')).resolves.toBe(request);
-    expect(mocks.getConnectRequest).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects signer substitution and unsafe callback URLs', async () => {
+    mocks.verifyJwt.mockResolvedValue({
+      clientDid   : 'did:jwk:other',
+      callbackUrl : 'https://relay.example/callback',
+    });
+    await expect(fetchConnectRequest('https://relay.example/request', 'key'))
+      .rejects.toThrow('client DID does not match');
+
+    mocks.verifyJwt.mockResolvedValue({
+      clientDid   : 'did:jwk:client',
+      callbackUrl : 'http://remote.example/callback',
+    });
+    await expect(fetchConnectRequest('https://relay.example/request', 'key'))
+      .rejects.toThrow('Connect callback URL must use HTTPS');
+
+    mocks.verifyJwt.mockResolvedValue({
+      clientDid   : 'did:jwk:client',
+      callbackUrl : 'https://other.example/callback',
+    });
+    await expect(fetchConnectRequest('https://relay.example/request', 'key'))
+      .resolves.toEqual(expect.objectContaining({ callbackUrl: 'https://other.example/callback' }));
+  });
+
+  it('rejects unsafe request URLs and invalid relay responses before JWT use', async () => {
+    await expect(fetchConnectRequest('http://remote.example/request', 'key'))
+      .rejects.toThrow('Connect request URI must use HTTPS');
+
+    vi.mocked(fetch).mockResolvedValue(new Response('missing', { status: 404 }));
+    await expect(fetchConnectRequest('https://relay.example/missing', 'key'))
+      .rejects.toThrow('Connect request fetch failed (404)');
+
+    vi.mocked(fetch).mockResolvedValue(new Response('', {
+      headers: { 'content-length': '2000001' },
+    }));
+    await expect(fetchConnectRequest('https://relay.example/large', 'key'))
+      .rejects.toThrow('response is too large');
+
+    vi.mocked(fetch).mockResolvedValue(new Response('encrypted-request'));
+    mocks.decryptRequest.mockResolvedValue('e30.payload.signature');
+    await expect(fetchConnectRequest('https://relay.example/malformed', 'key'))
+      .rejects.toThrow('missing its signing DID');
   });
 
   it('submits connect responses with the provided agent service', async () => {
@@ -127,10 +207,98 @@ describe('connect Effect adapters', () => {
     );
   });
 
+  it('selects private grant-key delivery only for reads of encrypted protocols', () => {
+    const encryptedProtocol = 'https://example.com/protocols/encrypted';
+    const unencryptedProtocol = 'https://example.com/protocols/plaintext';
+    const grants = ['encrypted-read', 'write', 'messages', 'plaintext-read'];
+    const scopes = [
+      { interface: 'Records', method: 'Read', protocol: encryptedProtocol },
+      { interface: 'Records', method: 'Write', protocol: encryptedProtocol },
+      { interface: 'Messages', method: 'Read', protocol: encryptedProtocol },
+      { interface: 'Records', method: 'Read', protocol: unencryptedProtocol },
+    ];
+    const encryptedDefinition = {
+      protocol  : encryptedProtocol,
+      published : false,
+      types     : { message: { encryptionRequired: true } },
+      structure : { message: {} },
+    };
+    const plaintextDefinition = {
+      protocol  : unencryptedProtocol,
+      published : false,
+      types     : { message: {} },
+      structure : { message: {} },
+    };
+
+    expect(selectEncryptedReadGrants(
+      grants,
+      scopes as any,
+      [encryptedDefinition, plaintextDefinition],
+    )).toEqual({
+      grants              : ['encrypted-read'],
+      protocolDefinitions : [encryptedDefinition],
+    });
+    expect(() => selectEncryptedReadGrants(
+      ['encrypted-read'],
+      scopes as any,
+      [encryptedDefinition, plaintextDefinition],
+    )).toThrow('grant count');
+  });
+
+  it('creates and returns narrowly scoped session revocation grants', async () => {
+    let revocationIndex = 0;
+    const agent = {
+      dwn: {
+        getRemoteDwnEndpointUrls: vi.fn(async () => ['https://dwn.example']),
+      },
+      permissions: {
+        createGrant: vi.fn(async () => {
+          revocationIndex += 1;
+          return {
+            message: {
+              encodedData : 'AQ',
+              recordId    : `revocation-${revocationIndex}`,
+            },
+          };
+        }),
+      },
+      rpc: {
+        sendDwnRequest: vi.fn(async () => ({ status: { code: 202, detail: 'Accepted' } })),
+      },
+    };
+    const grants = [{ recordId: 'grant-1' }, { recordId: 'grant-2' }];
+
+    const result = await createSessionRevocationGrants(
+      'did:dht:alice',
+      'did:jwk:delegate',
+      grants as any,
+      '2026-06-24T00:00:00.000000Z',
+      agent as any,
+    );
+
+    expect(agent.permissions.createGrant).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      grantedTo : 'did:jwk:delegate',
+      dateExpires: '2026-06-24T00:00:00.000000Z',
+      scope      : {
+        interface : 'Records',
+        method    : 'Write',
+        protocol  : 'https://identity.foundation/dwn/permissions',
+        contextId : 'grant-1',
+      },
+    }));
+    expect(result.grants).toHaveLength(4);
+    expect(result.sessionRevocations).toEqual([
+      { grantId: 'grant-1', revocationGrantId: 'revocation-1' },
+      { grantId: 'grant-2', revocationGrantId: 'revocation-2' },
+    ]);
+    expect(agent.rpc.sendDwnRequest).toHaveBeenCalledTimes(2);
+  });
+
   it('creates and fans out durable grantKey records for created grants', async () => {
     const agent = {
       dwn: {
-        getDwnEndpointUrlsForTarget: vi.fn(async () => ['https://dwn-a.example', 'https://dwn-b.example']),
+        getDwnEndpointUrlsForTarget: vi.fn(async () => ['http://127.0.0.1:3000']),
+        getRemoteDwnEndpointUrls: vi.fn(async () => ['https://dwn-a.example', 'https://dwn-b.example']),
       },
       rpc: {
         sendDwnRequest: vi.fn(async () => ({ status: { code: 202, detail: 'Accepted' } })),
@@ -165,6 +333,7 @@ describe('connect Effect adapters', () => {
       protocolDefinitions,
     });
     expect(agent.rpc.sendDwnRequest).toHaveBeenCalledTimes(2);
+    expect(agent.dwn.getDwnEndpointUrlsForTarget).not.toHaveBeenCalled();
     expect(agent.rpc.sendDwnRequest).toHaveBeenCalledWith(expect.objectContaining({
       dwnUrl    : 'https://dwn-a.example',
       targetDid : 'did:dht:alice',

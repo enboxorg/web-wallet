@@ -6,6 +6,11 @@ import {
   sanitizeConnectClientMetadata,
   type ConnectClientMetadata,
 } from './connect-session-metadata';
+import {
+  isPlainRecord,
+  preflightConnectPermissions,
+  validateConnectPermissionSemantics,
+} from './connect-request-preflight';
 
 /**
  * Protocol-agnostic CLI connect request/response.
@@ -16,8 +21,9 @@ import {
  * `/cli/connect?request=<base64url>`. The wallet renders an approval UI from
  * whatever the request supplies — there is nothing tool-specific here.
  *
- * On approval the wallet returns a delegate DID + permission grants, delivered
- * to the tool over a loopback HTTP callback (or copy/paste of the JSON).
+ * On approval the wallet returns a delegate DID + permission grants for manual
+ * copy/paste. V1 callbacks receive only denial or failure status because the
+ * proof does not bind the callback URL.
  */
 
 const MAX_APP_NAME_LENGTH = 120;
@@ -25,7 +31,7 @@ const MAX_URL_LENGTH = 2048;
 const MAX_DID_LENGTH = 2048;
 const MAX_CHALLENGE_LENGTH = 512;
 const MAX_PROOF_LENGTH = 8192;
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const DID_PATTERN = /^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/;
 
 export const CLI_CONNECT_REQUEST_TYPE = 'cli-connect-request';
@@ -54,13 +60,10 @@ export interface CliConnectResponse {
   /** Portable delegate DID, including private keys, for the tool to hold. */
   delegateDid: unknown;
   grants: unknown[];
+  sessionRevocations?: Array<{ grantId: string; revocationGrantId: string }>;
   walletOrigin: string;
   expiresAt?: string;
   challenge: string;
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function optionalString(value: unknown, maxLength: number): string | undefined {
@@ -71,19 +74,11 @@ function optionalString(value: unknown, maxLength: number): string | undefined {
 }
 
 function sanitizePermissions(value: unknown): ConnectPermissionRequest[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined;
-
-  const valid = value.every((permission) => {
-    if (!isPlainObject(permission)) return false;
-    const protocolDefinition = permission.protocolDefinition;
-    const permissionScopes = permission.permissionScopes;
-    return isPlainObject(protocolDefinition)
-      && typeof protocolDefinition.protocol === 'string'
-      && protocolDefinition.protocol.length > 0
-      && Array.isArray(permissionScopes);
-  });
-
-  return valid ? value as ConnectPermissionRequest[] : undefined;
+  try {
+    return preflightConnectPermissions(value).permissions;
+  } catch {
+    return undefined;
+  }
 }
 
 /** True when `value` is an `http://` loopback URL safe to deliver a response to. */
@@ -91,7 +86,8 @@ export function isLoopbackCallbackUrl(value: string | undefined): value is strin
   if (!value) return false;
   try {
     const url = new URL(value);
-    return url.protocol === 'http:' && LOCAL_HOSTS.has(url.hostname);
+    return url.protocol === 'http:'
+      && LOCAL_HOSTS.has(url.hostname);
   } catch {
     return false;
   }
@@ -122,7 +118,7 @@ function proofMessage(cliDid: string, challenge: string): Uint8Array {
   return new TextEncoder().encode(`${CLI_CONNECT_REQUEST_TYPE}:${cliDid}:${challenge}`);
 }
 
-/** Verify the request was signed by the holder of `cliDid` (anti-forgery + replay). */
+/** Verify v1 proof-of-control for `cliDid` and the supplied challenge. */
 export async function verifyCliProof(request: CliConnectRequest): Promise<boolean> {
   try {
     const { didDocument } = await DidJwk.resolve(request.cliDid);
@@ -152,7 +148,6 @@ export async function parseCliConnectRequest(raw: string | null): Promise<CliCon
   if (!raw) {
     throw new Error('Missing CLI connect request.');
   }
-
   let decoded: unknown;
   try {
     decoded = decodeRequestPayload(raw);
@@ -160,7 +155,7 @@ export async function parseCliConnectRequest(raw: string | null): Promise<CliCon
     throw new Error('Could not decode the CLI connect request.');
   }
 
-  if (!isPlainObject(decoded) || decoded.type !== CLI_CONNECT_REQUEST_TYPE) {
+  if (!isPlainRecord(decoded) || decoded.type !== CLI_CONNECT_REQUEST_TYPE || decoded.version !== 1) {
     throw new Error('Unrecognized CLI connect request.');
   }
 
@@ -200,6 +195,7 @@ export async function parseCliConnectRequest(raw: string | null): Promise<CliCon
   if (!(await verifyCliProof(request))) {
     throw new Error('The CLI connect request proof could not be verified.');
   }
+  await validateConnectPermissionSemantics(preflightConnectPermissions(request.permissions));
 
   return request;
 }

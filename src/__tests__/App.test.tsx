@@ -12,12 +12,14 @@ const mocks = vi.hoisted(() => ({
     unlocked    : false,
     firstTime   : false,
     agent       : null,
+    dwnEndpoints: ['https://wallet-default.example/dwn'],
   },
   connect: vi.fn(),
   unlock: vi.fn(),
   restore: vi.fn(),
   lock: vi.fn(),
   setPhrase: vi.fn(),
+  createIdentity: vi.fn(),
 }));
 
 vi.mock('@/enbox/provider', () => ({
@@ -44,8 +46,31 @@ vi.mock('@/enbox/hooks/use-identity-sync-reconciliation', () => ({
   useIdentitySyncReconciliation: vi.fn(),
 }));
 
+vi.mock('@/enbox/hooks/use-sync-query-invalidation', () => ({
+  useSyncQueryInvalidation: vi.fn(),
+}));
+
 vi.mock('@/enbox/hooks/use-identity-mutations', () => ({
-  useCreateIdentity: () => ({ mutateAsync: vi.fn() }),
+  useCreateIdentity: () => ({ mutateAsync: mocks.createIdentity }),
+}));
+
+vi.mock('@/features/auth/SetupIdentityStep', () => ({
+  SetupIdentityStep: ({
+    onCreateIdentity,
+  }: {
+    onCreateIdentity: (params: { displayName: string; avatar: Blob; hero: Blob }) => Promise<void>;
+  }) => (
+    <button
+      type="button"
+      onClick={() => onCreateIdentity({
+        displayName: 'Alice',
+        avatar: new Blob(['avatar']),
+        hero: new Blob(['hero']),
+      })}
+    >
+      Create first identity
+    </button>
+  ),
 }));
 
 vi.mock('@/stores/backup-seed-store', () => ({
@@ -97,9 +122,13 @@ vi.mock('@/features/auth/SetupScreen', () => ({
   ),
 }));
 
-function renderApp() {
+vi.mock('@/features/connect/DWebConnectPage', () => ({
+  default: () => <h1>DWeb Connect Mock</h1>,
+}));
+
+function renderApp(initialEntry = '/') {
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <App />
     </MemoryRouter>,
   );
@@ -112,7 +141,9 @@ describe('App auth restore flow', () => {
     mocks.authState.unlocked = false;
     mocks.authState.firstTime = false;
     mocks.authState.agent = null;
+    mocks.authState.dwnEndpoints = ['https://wallet-default.example/dwn'];
     mocks.restore.mockResolvedValue(undefined);
+    mocks.createIdentity.mockResolvedValue({ did: { uri: 'did:dht:alice' } });
   });
 
   it('clears forgot-PIN mode after successful phrase restore', async () => {
@@ -132,5 +163,28 @@ describe('App auth restore flow', () => {
       );
     });
     expect(screen.getByRole('heading', { name: 'Unlock Mock' })).toBeInTheDocument();
+  });
+
+  it('renders DWeb Connect before empty-wallet identity onboarding', async () => {
+    mocks.authState.unlocked = true;
+    mocks.authState.agent = { agentDid: { uri: 'did:dht:agent' } } as never;
+
+    renderApp('/dweb-connect');
+
+    expect(await screen.findByRole('heading', { name: 'DWeb Connect Mock' })).toBeInTheDocument();
+    expect(screen.queryByText(/create identity/i)).not.toBeInTheDocument();
+  });
+
+  it('seeds the first identity with the wallet endpoint selection', async () => {
+    const user = userEvent.setup();
+    mocks.authState.unlocked = true;
+    mocks.authState.agent = { agentDid: { uri: 'did:dht:agent' } } as never;
+
+    renderApp();
+    await user.click(screen.getByRole('button', { name: 'Create first identity' }));
+
+    expect(mocks.createIdentity).toHaveBeenCalledWith(expect.objectContaining({
+      dwnEndpoints: ['https://wallet-default.example/dwn'],
+    }));
   });
 });

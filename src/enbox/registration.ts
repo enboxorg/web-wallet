@@ -1,8 +1,8 @@
 /**
  * DWN tenant registration logic.
  *
- * After a session is restored the agent DID and every identity DID must be
- * registered as tenants on the configured remote DWN endpoints.
+ * After a session is restored, each DID must be registered only with the
+ * remote endpoints advertised in that DID's document.
  * AuthManager.connectVault() handles this for first-time setup, but
  * restoreSession() does NOT — so we run it manually after every unlock.
  *
@@ -14,8 +14,6 @@ import { Effect } from 'effect';
 import { DwnRegistrar } from '@enbox/dwn-clients';
 import type { ServerInfo } from '@enbox/dwn-clients';
 
-import { STORAGE_KEYS } from '@/lib/constants';
-import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
 import type { EnboxAgent, RegistrationTokenData } from './types';
 import {
   CurrentAgent,
@@ -25,40 +23,9 @@ import {
 import {
   DwnRegistrationError,
   registrationError,
-  sdkError,
 } from './effect/errors';
 import { withNetworkPolicy } from './effect/network-policy';
-import { runEnboxPromise, runEnboxSync } from './effect/runtime';
-import {
-  decodeRegistrationTokensJsonEffect,
-  encodeRegistrationTokensJsonEffect,
-} from './effect/schemas';
-
-// ── Token persistence ──────────────────────────────────────────────
-
-export function getStoredTokens(): Record<string, RegistrationTokenData> {
-  return runEnboxSync(getStoredTokensEffect());
-}
-
-export function storeTokens(tokens: Record<string, RegistrationTokenData>): void {
-  runEnboxSync(storeTokensEffect(tokens));
-}
-
-export function getStoredTokensEffect() {
-  return localStorageGetEffect(STORAGE_KEYS.REGISTRATION_TOKENS).pipe(
-    Effect.flatMap(decodeRegistrationTokensJsonEffect),
-    Effect.catchAll(() => Effect.succeed({})),
-  );
-}
-
-export function storeTokensEffect(tokens: Record<string, RegistrationTokenData>) {
-  return encodeRegistrationTokensJsonEffect(tokens).pipe(
-    Effect.flatMap((serialized) =>
-      localStorageSetEffect(STORAGE_KEYS.REGISTRATION_TOKENS, serialized)
-    ),
-    Effect.catchAll(() => Effect.void),
-  );
-}
+import { runEnboxPromise } from './effect/runtime';
 
 function isTokenExpired(token: RegistrationTokenData): boolean {
   if (!token.expiresAt) return false;
@@ -189,6 +156,10 @@ function registerDidWithEndpointEffect(
 ) {
   return Effect.gen(function* () {
     let updated = { ...tokens };
+    if (serverInfo.registrationRequirements.length === 0) {
+      return updated;
+    }
+
     const requiresProviderAuth =
       serverInfo.registrationRequirements?.includes('provider-auth-v0') &&
       serverInfo.providerAuth !== undefined;
@@ -223,36 +194,29 @@ function registerDidWithEndpointEffect(
   });
 }
 
-/**
- * Ensure all agent and identity DIDs are registered as tenants on every
- * configured DWN endpoint.
- */
-export async function ensureRegistration(
+/** Register only the specified owner DIDs at request-supplied endpoints. */
+export async function ensureRegistrationForDids(
   agent: EnboxAgent,
   dwnEndpoints: string[],
+  dids: string[],
 ): Promise<void> {
   await runEnboxPromise(
-    ensureRegistrationEffect(dwnEndpoints).pipe(
+    ensureRegistrationEffect(dwnEndpoints, dids).pipe(
       Effect.provide(enboxLiveLayer(agent)),
     ),
   );
 }
 
-export function ensureRegistrationEffect(dwnEndpoints: string[]) {
+export function ensureRegistrationEffect(dwnEndpoints: string[], dids: string[]) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     const tokenStore = yield* RegistrationTokenStore;
 
-    const agentDid: string = agent.agentDid.uri;
-    const identities = yield* Effect.tryPromise({
-      try: async (): Promise<any[]> => agent.identity.list(),
-      catch: sdkError('identity.list'),
-    });
-
-    const didsToRegister = new Set<string>([agentDid]);
-    for (const identity of identities) {
-      didsToRegister.add(identity.metadata.connectedDid ?? identity.did.uri);
-    }
+    const didsToRegister = new Set(dids);
+    const failures: unknown[] = [];
+    const successesByDid = new Map(
+      [...didsToRegister].map((did) => [did, 0]),
+    );
 
     let tokens = yield* tokenStore.get;
 
@@ -268,6 +232,7 @@ export function ensureRegistrationEffect(dwnEndpoints: string[]) {
         Effect.catchAll((err) =>
           Effect.sync(() => {
             console.warn(`Could not reach DWN endpoint ${endpoint} for registration:`, err);
+            failures.push(err);
             return undefined;
           })
         ),
@@ -276,17 +241,42 @@ export function ensureRegistrationEffect(dwnEndpoints: string[]) {
       if (!serverInfo) continue;
 
       for (const did of didsToRegister) {
-        tokens = yield* registerDidWithEndpointEffect(endpoint, did, serverInfo, tokens).pipe(
+        const registration = yield* registerDidWithEndpointEffect(endpoint, did, serverInfo, tokens).pipe(
+          Effect.map((updatedTokens) => ({ updatedTokens, succeeded: true as const })),
           Effect.catchAll((err) =>
             Effect.sync(() => {
               console.warn(`DWN registration of ${did} with ${endpoint} failed:`, err);
-              return tokens;
+              failures.push(err);
+              return { updatedTokens: tokens, succeeded: false as const };
             })
           ),
         );
+        tokens = registration.updatedTokens;
+        if (registration.succeeded) {
+          successesByDid.set(did, (successesByDid.get(did) ?? 0) + 1);
+        }
       }
     }
 
     yield* tokenStore.set(tokens);
+    const failedDids = [...successesByDid]
+      .filter(([, successes]) => successes === 0)
+      .map(([did]) => did);
+    if (failedDids.length > 0) {
+      return yield* Effect.fail(
+        new DwnRegistrationError({
+          operation: 'tenant.register',
+          cause: { failedDids, failures },
+          message: `Unable to register ${failedDids.join(', ')} with any configured DWN endpoint.`,
+        }),
+      );
+    }
+
+    const successfulRegistrations = [...successesByDid.values()]
+      .reduce((total, successes) => total + successes, 0);
+    return {
+      failed: dwnEndpoints.length * didsToRegister.size - successfulRegistrations,
+      succeeded: successfulRegistrations,
+    };
   });
 }

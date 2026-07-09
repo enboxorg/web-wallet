@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
 
-import { getProtocolName, getProtocolInfo, getScopeLabel } from '../protocol-names';
+import {
+  getCanonicalProtocolDefinition,
+  getProtocolInfo,
+  getProtocolName,
+  getScopeLabel,
+} from '../protocol-names';
 
 describe('getProtocolName', () => {
   // ── Known protocol URIs ───────────────────────────────────────────
@@ -94,6 +99,19 @@ describe('getProtocolInfo', () => {
     const info = getProtocolInfo('https://example.com/my-thing');
     expect(info.name).toBe('My Thing');
     expect(info.description).toContain('https://example.com/my-thing');
+  });
+});
+
+describe('getCanonicalProtocolDefinition', () => {
+  it('pins every protocol definition exported by the shared protocol package', () => {
+    for (const name of ['profile', 'social-graph', 'connect', 'lists', 'preferences', 'status']) {
+      const uri = `https://identity.foundation/protocols/${name}`;
+      expect(getCanonicalProtocolDefinition(uri)?.protocol).toBe(uri);
+    }
+  });
+
+  it('does not treat display-only Cashu metadata as a pinned definition', () => {
+    expect(getCanonicalProtocolDefinition('https://enbox.id/protocols/cashu-wallet')).toBeUndefined();
   });
 });
 

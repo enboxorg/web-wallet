@@ -20,6 +20,10 @@ vi.mock('@/lib/passkeys', () => ({
   storePasskeyCredential: passkeyMocks.storePasskeyCredential,
 }));
 
+vi.mock('@/components/ui/EndpointHealth', () => ({
+  EndpointHealth: ({ url }: { url: string }) => <span>{url}</span>,
+}));
+
 import { SetupScreen } from '../SetupScreen';
 
 describe('SetupScreen', () => {
@@ -92,7 +96,7 @@ describe('SetupScreen', () => {
     });
   });
 
-  it('shows default DWN endpoints as chips', async () => {
+  it('shows default DWN endpoints in editable fields', async () => {
     render(<SetupScreen {...defaults} />);
     enterPin('1234');
 
@@ -103,9 +107,12 @@ describe('SetupScreen', () => {
     enterPin('1234');
 
     await waitFor(() => {
-      // Endpoints are displayed without protocol prefix
-      expect(screen.getByText('enbox-dwn.fly.dev')).toBeInTheDocument();
-      expect(screen.getByText('dev.aws.dwn.enbox.id')).toBeInTheDocument();
+      expect(screen.getByRole('textbox', { name: 'DWN endpoint 1' })).toHaveValue(
+        'https://enbox-dwn.fly.dev',
+      );
+      expect(screen.getByRole('textbox', { name: 'DWN endpoint 2' })).toHaveValue(
+        'https://dev.aws.dwn.enbox.id',
+      );
     });
   });
 
@@ -130,6 +137,65 @@ describe('SetupScreen', () => {
     expect(onSetup).toHaveBeenCalledWith('4321', expect.any(Array));
     expect(onSetup.mock.calls[0][1]).toContain('https://enbox-dwn.fly.dev');
     expect(passkeyMocks.markPinAuthMethod).toHaveBeenCalledOnce();
+  });
+
+  it('can replace the managed endpoints with one custom DWN', async () => {
+    const onSetup = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<SetupScreen {...defaults} onSetup={onSetup} />);
+
+    enterPin('4321');
+    await screen.findByText('Confirm PIN');
+    enterPin('4321');
+    await screen.findByText('DWN Endpoints');
+
+    await user.click(screen.getByRole('button', { name: 'Remove DWN endpoint 2' }));
+    const endpoint = screen.getByRole('textbox', { name: 'DWN endpoint 1' });
+    await user.clear(endpoint);
+    await user.type(endpoint, 'https://actor-a.example/dwn/');
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+
+    expect(onSetup).toHaveBeenCalledWith('4321', ['https://actor-a.example/dwn/']);
+  });
+
+  it('can add another DWN endpoint', async () => {
+    const onSetup = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<SetupScreen {...defaults} onSetup={onSetup} />);
+
+    enterPin('4321');
+    await screen.findByText('Confirm PIN');
+    enterPin('4321');
+    await screen.findByText('DWN Endpoints');
+
+    await user.click(screen.getByRole('button', { name: 'Add endpoint' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'DWN endpoint 3' }),
+      'https://actor-a-backup.example/dwn',
+    );
+    await user.click(screen.getByRole('button', { name: 'Set up' }));
+
+    expect(onSetup).toHaveBeenCalledWith('4321', [
+      'https://enbox-dwn.fly.dev',
+      'https://dev.aws.dwn.enbox.id',
+      'https://actor-a-backup.example/dwn',
+    ]);
+  });
+
+  it('requires at least one endpoint before setup', async () => {
+    const user = userEvent.setup();
+    render(<SetupScreen {...defaults} />);
+
+    enterPin('4321');
+    await screen.findByText('Confirm PIN');
+    enterPin('4321');
+    await screen.findByText('DWN Endpoints');
+
+    await user.click(screen.getByRole('button', { name: 'Remove DWN endpoint 2' }));
+    await user.click(screen.getByRole('button', { name: 'Remove DWN endpoint 1' }));
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Add at least one DWN endpoint');
+    expect(screen.getByRole('button', { name: 'Set up' })).toBeDisabled();
   });
 
   it('defaults to passkey setup when passkeys are supported', async () => {

@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
 
-import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import { normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
 
 import { ensureRegistrationEffect } from './registration';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
@@ -21,6 +21,7 @@ type IdentityLike = {
 
 export type IdentitySyncReconcileResult = {
   changedDids: string[];
+  failedDids: string[];
 };
 
 function getErrorMessage(error: unknown): string {
@@ -63,18 +64,16 @@ function getSyncOptionsEffect(did: string) {
   });
 }
 
-function applySyncOptionsEffect(did: string) {
+function applySyncOptionsEffect(
+  did: string,
+  existing: SyncIdentityOptions | undefined,
+) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-    const existing = yield* getSyncOptionsEffect(did);
     const options = {
       ...(existing?.delegateDid && { delegateDid: existing.delegateDid }),
       protocols: IDENTITY_SYNC_PROTOCOLS,
     };
-
-    if (sameProtocolScope(existing)) {
-      return false;
-    }
 
     if (existing && typeof agent.sync.updateIdentityOptions === 'function') {
       yield* Effect.tryPromise({
@@ -118,10 +117,9 @@ function applySyncOptionsEffect(did: string) {
 export async function reconcileIdentitySync(
   agent: EnboxAgent,
   identities: unknown[],
-  dwnEndpoints: string[] = DEFAULT_DWN_ENDPOINTS,
 ): Promise<IdentitySyncReconcileResult> {
   return runEnboxPromise(
-    reconcileIdentitySyncEffect(identities, dwnEndpoints).pipe(
+    reconcileIdentitySyncEffect(identities).pipe(
       Effect.provide(enboxLiveLayer(agent)),
     ),
   );
@@ -129,35 +127,44 @@ export async function reconcileIdentitySync(
 
 export function reconcileIdentitySyncEffect(
   identities: unknown[],
-  dwnEndpoints: string[] = DEFAULT_DWN_ENDPOINTS,
 ) {
   return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
     const dids = [...new Set(identities.map(getIdentityDid).filter(Boolean) as string[])];
     if (dids.length === 0) {
-      return { changedDids: [] };
+      return { changedDids: [], failedDids: [] };
     }
-
-    const didsToChange: string[] = [];
-    for (const did of dids) {
-      const existing = yield* getSyncOptionsEffect(did);
-      if (!sameProtocolScope(existing)) {
-        didsToChange.push(did);
-      }
-    }
-
-    if (didsToChange.length === 0) {
-      return { changedDids: [] };
-    }
-
-    yield* ensureRegistrationEffect(dwnEndpoints);
 
     const changedDids: string[] = [];
-    for (const did of didsToChange) {
-      if (yield* applySyncOptionsEffect(did)) {
+    const failedDids: string[] = [];
+    for (const did of dids) {
+      const changed = yield* Effect.gen(function* () {
+        const existing = yield* getSyncOptionsEffect(did);
+        if (sameProtocolScope(existing)) {
+          return false;
+        }
+        const dwnEndpoints = yield* Effect.tryPromise({
+          try: async () => normalizeDwnEndpoints(
+            await agent.dwn.getRemoteDwnEndpointUrls(did),
+          ),
+          catch: sdkError('identitySync.resolveDwnEndpoints'),
+        });
+        yield* ensureRegistrationEffect(dwnEndpoints, [did]);
+        return yield* applySyncOptionsEffect(did, existing);
+      }).pipe(
+        Effect.catchAll((error) =>
+          Effect.sync(() => {
+            console.warn(`Identity sync reconciliation failed for ${did}:`, error);
+            failedDids.push(did);
+            return false;
+          })
+        ),
+      );
+      if (changed) {
         changedDids.push(did);
       }
     }
 
-    return { changedDids };
+    return { changedDids, failedDids };
   });
 }

@@ -42,6 +42,20 @@ describe('getConnectPermissionAskSummary', () => {
     expect(getConnectPermissionAskSummary(permissions)).toBe('wants to view a custom data type.');
   });
 
+  it('describes an internal scope when it is the only granted capability', () => {
+    const permissions = [
+      permissionRequest('https://example.com/protocols/tasks', [{
+        interface: 'Messages',
+        method: 'Read',
+        protocol: 'https://example.com/protocols/tasks',
+      }]),
+    ];
+
+    expect(getConnectPermissionAskSummary(permissions)).toBe(
+      'wants to view messages from a custom data type.',
+    );
+  });
+
   it('collapses repeated unknown protocol placeholders in longer summaries', () => {
     const permissions = [
       permissionRequest('https://example.com/protocols/tasks', [
@@ -68,6 +82,16 @@ describe('getConnectPermissionAskSummary', () => {
     ];
 
     expect(getConnectPermissionAskSummary(permissions)).toBe('wants access to 2 custom data types and 1 more.');
+  });
+
+  it('does not trust a known display name without a pinned definition', () => {
+    const permissions = [permissionRequest('https://enbox.id/protocols/cashu-wallet', [{
+      interface : 'Records',
+      method    : 'Read',
+      protocol  : 'https://enbox.id/protocols/cashu-wallet',
+    }])];
+
+    expect(getConnectPermissionAskSummary(permissions)).toBe('wants to view a custom data type.');
   });
 
   it('merges duplicate protocol entries before writing the headline ask', () => {

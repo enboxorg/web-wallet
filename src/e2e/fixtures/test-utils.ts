@@ -36,11 +36,14 @@ export async function waitForAppShell(page: Page) {
 
 /** Clear all site data (IndexedDB, localStorage, sessionStorage). */
 export async function clearSiteData(page: Page) {
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-    indexedDB.databases().then(dbs => {
-      dbs.forEach(db => { if (db.name) indexedDB.deleteDatabase(db.name); });
+  const origin = new URL(page.url()).origin;
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send('Storage.clearDataForOrigin', {
+      origin,
+      storageTypes: 'all',
     });
-  });
+  } finally {
+    await session.detach();
+  }
 }

@@ -22,7 +22,7 @@ import {
 import type { EnboxAgent } from '../types';
 import { IDENTITY_SYNC_PROTOCOLS, installProtocolsEffect } from '../protocols';
 import { ensureRegistrationEffect } from '../registration';
-import { DEFAULT_DWN_ENDPOINTS, WALLET_URL } from '@/lib/dwn-endpoints';
+import { normalizeDwnEndpoints, WALLET_URL } from '@/lib/dwn-endpoints';
 import {
   DuplicateIdentityError,
   IdentityNotFoundError,
@@ -32,6 +32,12 @@ import {
 import { CurrentAgent, enboxLiveLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
 import { normalizeProfileImageBlob } from '@/lib/profile-images';
+import {
+  ensurePortableOwnerPublished,
+  portableOwnerDocumentsMatch,
+  type ValidatedPortableOwnerIdentity,
+  validatePortableOwnerIdentity,
+} from '@/features/connect/portable-owner-identity';
 import { clearCachedProfileImagesEffect } from '../effect/profile-image-cache';
 import { publishWalletEvent } from '../effect/wallet-events';
 
@@ -236,6 +242,10 @@ export async function createIdentity(
 export function createIdentityEffect(params: CreateIdentityParams) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
+    const dwnEndpoints = yield* Effect.try({
+      try   : () => normalizeDwnEndpoints(params.dwnEndpoints),
+      catch : sdkError('identity.validateDwnEndpoints'),
+    });
     let createdIdentity: any | undefined;
 
   // 1. Create the DID + identity
@@ -250,7 +260,7 @@ export function createIdentityEffect(params: CreateIdentityParams) {
                 {
                   id: 'dwn',
                   type: 'DecentralizedWebNode',
-                  serviceEndpoint: params.dwnEndpoints,
+                  serviceEndpoint: dwnEndpoints,
                   enc: '#enc',
                   sig: '#sig',
                 },
@@ -280,7 +290,7 @@ export function createIdentityEffect(params: CreateIdentityParams) {
       //    Must happen before sync registration — with live sync active,
       //    registerIdentity hot-adds a subscription that requires the DID
       //    to be a recognised tenant on the remote DWN.
-      yield* ensureRegistrationEffect(params.dwnEndpoints);
+      yield* ensureRegistrationEffect(dwnEndpoints, [did]);
 
       // 3. Install protocols locally before writing records. Remote propagation
       //    is handled by sync through replicated admission dependencies.
@@ -510,42 +520,117 @@ export function exportIdentityEffect(did: string) {
 export async function importIdentity(
   agent: EnboxAgent,
   portableIdentity: any,
+  options: ImportIdentityOptions = {},
 ) {
   return runEnboxPromise(
-    importIdentityEffect(portableIdentity).pipe(
+    importIdentityEffect(portableIdentity, options).pipe(
       Effect.provide(enboxLiveLayer(agent)),
     ),
   );
 }
 
-export function importIdentityEffect(portableIdentity: any) {
+type ImportIdentityOptions = {
+  allowExistingExact?: boolean;
+  ensurePublished?: boolean;
+};
+
+export async function importValidatedIdentity(
+  agent: EnboxAgent,
+  validatedIdentity: ValidatedPortableOwnerIdentity,
+  options: ImportIdentityOptions = {},
+) {
+  return runEnboxPromise(
+    importValidatedIdentityEffect(validatedIdentity, options).pipe(
+      Effect.provide(enboxLiveLayer(agent)),
+    ),
+  );
+}
+
+export function importIdentityEffect(
+  portableIdentity: any,
+  options: ImportIdentityOptions = {},
+) {
+  return Effect.tryPromise({
+    try: async () => validatePortableOwnerIdentity(portableIdentity),
+    catch: sdkError('identity.validatePortableOwner'),
+  }).pipe(
+    Effect.flatMap((validatedIdentity) => importValidatedIdentityEffect(validatedIdentity, options)),
+  );
+}
+
+function importValidatedIdentityEffect(
+  validatedIdentity: ValidatedPortableOwnerIdentity,
+  options: ImportIdentityOptions,
+) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-    const existing = yield* getIdentityEffect(portableIdentity.portableDid?.uri);
+    const existing = yield* getIdentityEffect(validatedIdentity.did);
+    let identity: any;
     if (existing) {
-      return yield* Effect.fail(
-        new DuplicateIdentityError({
-          did: portableIdentity.portableDid?.uri,
-          message: 'Identity already exists',
+      if (!options.allowExistingExact) {
+        return yield* Effect.fail(
+          new DuplicateIdentityError({
+            did: validatedIdentity.did,
+            message: 'Identity already exists',
+          }),
+        );
+      }
+      const existingPortableIdentity = yield* Effect.tryPromise({
+        try: async () => existing.export(),
+        catch: sdkError('identity.exportExisting'),
+      });
+      if (!portableOwnerDocumentsMatch(
+        existingPortableIdentity.portableDid.document,
+        validatedIdentity.portableIdentity.portableDid.document,
+      )) {
+        return yield* Effect.fail(
+          new DuplicateIdentityError({
+            did: validatedIdentity.did,
+            message: 'Identity already exists',
+          }),
+        );
+      }
+      identity = existing;
+    }
+
+    if (options.ensurePublished) {
+      yield* Effect.tryPromise({
+        try: async () => ensurePortableOwnerPublished(validatedIdentity),
+        catch: sdkError('identity.publishPortableOwner'),
+      });
+    }
+
+    const importedNewIdentity = existing === undefined;
+    if (importedNewIdentity) {
+      identity = yield* Effect.tryPromise({
+        try: async (): Promise<any> => agent.identity.import({
+          portableIdentity: validatedIdentity.portableIdentity,
         }),
+        catch: sdkError('identity.import'),
+      });
+    }
+    const did = identity.did.uri;
+    if (did !== validatedIdentity.did) {
+      yield* deleteLocalIdentityBestEffortEffect(did);
+      return yield* Effect.fail(
+        sdkError('identity.importDidMismatch')(
+          new Error('Imported identity does not match the validated owner DID.'),
+        ),
       );
     }
 
-    const identity = yield* Effect.tryPromise({
-      try: async (): Promise<any> => agent.identity.import({ portableIdentity }),
-      catch: sdkError('identity.import'),
-    });
-    const did = identity.did.uri;
-
-    yield* Effect.gen(function* () {
+    const prepareImportedIdentity = Effect.gen(function* () {
       // Register imported identity as DWN tenant before sync (same reason as createIdentity)
-      yield* ensureRegistrationEffect(DEFAULT_DWN_ENDPOINTS);
+      yield* ensureRegistrationEffect(validatedIdentity.dwnEndpoints, [did]);
 
       // Install protocols locally before registering sync and writing records.
       yield* installProtocolsEffect(did);
-    }).pipe(
-      Effect.tapError(() => deleteLocalIdentityBestEffortEffect(did)),
-    );
+    });
+    yield* importedNewIdentity
+      ? prepareImportedIdentity.pipe(
+          Effect.tapError(() => deleteLocalIdentityBestEffortEffect(did)),
+        )
+      : prepareImportedIdentity;
 
     // Register for sync
     yield* registerIdentityForSyncEffect(did);
@@ -583,14 +668,29 @@ export async function updateDwnEndpoints(
 export function updateDwnEndpointsEffect(params: UpdateDwnEndpointsParams) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
+    const endpoints = yield* Effect.try({
+      try   : () => normalizeDwnEndpoints(params.endpoints),
+      catch : sdkError('identity.validateDwnEndpoints'),
+    });
+    yield* ensureRegistrationEffect(endpoints, [params.did]);
     yield* Effect.tryPromise({
       try: () =>
         agent.identity.setDwnEndpoints({
           didUri: params.did,
-          endpoints: params.endpoints,
+          endpoints,
         }),
       catch: sdkError('identity.setDwnEndpoints'),
     });
+    const syncOptions = yield* Effect.tryPromise({
+      try: async () => agent.sync.getIdentityOptions(params.did),
+      catch: sdkError('sync.getIdentityOptions'),
+    });
+    if (syncOptions !== undefined) {
+      yield* Effect.tryPromise({
+        try: async () => agent.sync.updateIdentityOptions({ did: params.did, options: syncOptions }),
+        catch: sdkError('sync.updateIdentityOptions'),
+      });
+    }
     yield* publishWalletEvent({
       _tag : 'identity.dwnEndpoints.updated',
       did  : params.did,

@@ -2,13 +2,12 @@ import { Effect, Schedule } from 'effect';
 import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
 
 import { STORAGE_KEYS } from '@/lib/constants';
-import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import { getConfiguredDwnEndpoints, normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
 import { localStorageGetEffect } from '@/lib/browser-effects';
 import { DwnRegistrationError, sdkError } from './effect/errors';
 import { withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
-import { getStoredTokens, storeTokens } from './registration';
 
 export type WalletAuthManager = Awaited<ReturnType<typeof AuthManager.create>>;
 export type WalletSession = Awaited<ReturnType<WalletAuthManager['restoreSession']>>;
@@ -70,7 +69,7 @@ export function createWalletAuthManagerEffect() {
   return Effect.tryPromise({
     try: () =>
       AuthManager.create({
-        dwnEndpoints: DEFAULT_DWN_ENDPOINTS,
+        dwnEndpoints: getConfiguredDwnEndpoints(),
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
         registration: {
           onSuccess: () => {},
@@ -78,8 +77,7 @@ export function createWalletAuthManagerEffect() {
             console.warn('EnboxAuthProvider: DWN registration failed:', err),
           onProviderAuthRequired: (request: ProviderAuthRequest) =>
             runEnboxPromise(resolveProviderAuthEffect(request)),
-          registrationTokens: getStoredTokens(),
-          onRegistrationTokens: storeTokens,
+          persistTokens: true,
         },
       } as Parameters<typeof AuthManager.create>[0]),
     catch: sdkError('authManager.create'),
@@ -126,7 +124,7 @@ export function connectVaultEffect(
     try: () =>
       auth.connectVault({
         password,
-        dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
+        dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints ?? getConfiguredDwnEndpoints()),
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
       } as Parameters<WalletAuthManager['connectVault']>[0]),
     catch: sdkError('authManager.connectVault'),
@@ -151,7 +149,7 @@ export function restoreFromPhraseEffect(
       auth.restoreFromPhrase({
         password,
         recoveryPhrase,
-        dwnEndpoints: dwnEndpoints ?? DEFAULT_DWN_ENDPOINTS,
+        dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints ?? getConfiguredDwnEndpoints()),
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
       } as Parameters<WalletAuthManager['restoreFromPhrase']>[0]),
     catch: sdkError('authManager.restoreFromPhrase'),

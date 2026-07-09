@@ -1,11 +1,15 @@
 import { useEffect, useState, useCallback } from 'react';
 import { KeyRound, ShieldCheck } from 'lucide-react';
+import { DwnEndpointEditor } from '@/components/ui/DwnEndpointEditor';
 import { PinInput } from '@/components/ui/PinInput';
 import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
 import { StepIndicator } from '@/components/ui/StepIndicator';
 import { PIN_LENGTH } from '@/lib/constants';
-import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
+import {
+  getConfiguredDwnEndpoints,
+  getDwnEndpointValidationError,
+} from '@/lib/dwn-endpoints';
 import {
   canCheckPasskeySupport,
   isPasskeySupported,
@@ -48,7 +52,7 @@ export function SetupScreen({ onSetup, isLoading, error, onSwitchToRestore }: Se
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
-  const [dwnEndpoints] = useState<string[]>(DEFAULT_DWN_ENDPOINTS);
+  const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(getConfiguredDwnEndpoints);
   const passkeySupported = passkeySupport === 'supported';
 
   useEffect(() => {
@@ -198,6 +202,7 @@ export function SetupScreen({ onSetup, isLoading, error, onSwitchToRestore }: Se
             {step === 'endpoints' && (
               <StepEndpoints
                 endpoints={dwnEndpoints}
+                onEndpointsChange={setDwnEndpoints}
                 authMethod={authMethod}
                 onBack={handleBack}
                 onSetup={handleSetup}
@@ -373,6 +378,7 @@ function StepConfirmPin({
 
 function StepEndpoints({
   endpoints,
+  onEndpointsChange,
   authMethod,
   onBack,
   onSetup,
@@ -380,6 +386,7 @@ function StepEndpoints({
   error,
 }: {
   endpoints: string[];
+  onEndpointsChange: (endpoints: string[]) => void;
   authMethod: WalletAuthMethod;
   onBack: () => void;
   onSetup: () => Promise<void>;
@@ -401,16 +408,11 @@ function StepEndpoints({
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-2 justify-center">
-        {endpoints.map((endpoint) => (
-          <span
-            key={endpoint}
-            className="inline-flex items-center rounded-full bg-surface-2 px-3 py-1 text-xs text-text-secondary border border-border-default"
-          >
-            {endpoint.replace(/^https?:\/\//, '')}
-          </span>
-        ))}
-      </div>
+      <DwnEndpointEditor endpoints={endpoints} onChange={onEndpointsChange} />
+
+      <p className="text-center text-xs text-text-tertiary">
+        DWN operators can observe your DID and traffic metadata. New identities will use this list by default.
+      </p>
 
       {error && (
         <p className="text-sm text-error" role="alert">
@@ -422,7 +424,11 @@ function StepEndpoints({
         <Button variant="ghost" onClick={onBack} disabled={isLoading}>
           Back
         </Button>
-        <Button onClick={onSetup} loading={isLoading}>
+        <Button
+          onClick={onSetup}
+          loading={isLoading}
+          disabled={getDwnEndpointValidationError(endpoints) !== null}
+        >
           {authMethod === 'passkey' ? 'Create passkey and set up' : 'Set up'}
         </Button>
       </div>

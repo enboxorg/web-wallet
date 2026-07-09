@@ -1,16 +1,19 @@
 import type { ConnectPermissionRequest } from '@enbox/agent';
+import { Did } from '@enbox/dids';
 import type { DWebConnectRequest } from '@/stores/dweb-connect-store';
 import {
   sanitizeConnectClientMetadata,
   type ConnectClientMetadata,
 } from './connect-session-metadata';
+import {
+  isPlainRecord,
+  preflightConnectPermissions,
+} from './connect-request-preflight';
 
 const MAX_APP_NAME_LENGTH = 120;
 const MAX_URL_LENGTH = 2048;
 const MAX_EPHEMERAL_KEY_LENGTH = 4096;
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1']);
-const DID_PATTERN = /^did:[a-z0-9]+:[A-Za-z0-9._:%-]+$/;
-
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 export interface SanitizedDWebConnectRequest {
   origin: string;
   data: Record<string, unknown>;
@@ -19,14 +22,9 @@ export interface SanitizedDWebConnectRequest {
   appIcon?: string;
   clientMetadata: ConnectClientMetadata;
   portableIdentity?: unknown;
-  ephemeralPublicKey?: string;
+  portableIdentityDid?: string;
+  ephemeralPublicKey: string;
   requestedDid?: string;
-}
-
-const READ_LIKE_REMOVED_RECORD_METHODS = new Set(['Query', 'Subscribe', 'Count']);
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isLocalHttpOrigin(url: URL): boolean {
@@ -86,55 +84,78 @@ function sanitizeIconUrl(value: unknown, requestOrigin: string): string | undefi
 
 function sanitizeRequestedDid(value: unknown): string | undefined {
   const did = optionalString(value, MAX_URL_LENGTH);
-  if (!did || !DID_PATTERN.test(did)) return undefined;
+  if (!did) return undefined;
+  const parsed = Did.parse(did);
+  if (!parsed || parsed.uri !== did || parsed.path || parsed.query || parsed.fragment) return undefined;
   return did;
 }
 
-function sanitizePermissions(value: unknown): ConnectPermissionRequest[] | undefined {
-  if (!Array.isArray(value) || value.length === 0) return undefined;
+function decodeBase64Url(value: string): Uint8Array | undefined {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
 
-  const valid = value.every((permission) => {
-    if (!isPlainObject(permission)) return false;
-    const protocolDefinition = permission.protocolDefinition;
-    const permissionScopes = permission.permissionScopes;
-    return isPlainObject(protocolDefinition)
-      && typeof protocolDefinition.protocol === 'string'
-      && protocolDefinition.protocol.length > 0
-      && Array.isArray(permissionScopes);
-  });
-
-  return valid ? value as ConnectPermissionRequest[] : undefined;
+  try {
+    const padded = value.replace(/-/g, '+').replace(/_/g, '/')
+      .padEnd(Math.ceil(value.length / 4) * 4, '=');
+    return Uint8Array.from(atob(padded), (character) => character.charCodeAt(0));
+  } catch {
+    return undefined;
+  }
 }
 
-export function getUnsupportedConnectPermissionError(
-  permissions: ConnectPermissionRequest[],
-): string | undefined {
-  for (const permission of permissions) {
-    for (const scope of permission.permissionScopes as unknown[]) {
-      if (!isPlainObject(scope)) continue;
+function sanitizeEphemeralPublicKey(value: unknown): string | undefined {
+  const publicKey = optionalString(value, MAX_EPHEMERAL_KEY_LENGTH);
+  if (!publicKey) return undefined;
 
-      if (
-        scope.interface === 'Records'
-        && typeof scope.method === 'string'
-        && READ_LIKE_REMOVED_RECORD_METHODS.has(scope.method)
-      ) {
-        return `Records.${scope.method} is no longer supported in DWeb Connect. The app must request Records.Read instead.`;
-      }
+  const bytes = decodeBase64Url(publicKey);
+  if (bytes?.length !== 65 || bytes[0] !== 0x04) return undefined;
+  return publicKey;
+}
 
-      if (scope.interface === 'Protocols' && scope.method === 'Configure') {
-        return 'Protocols.Configure cannot be delegated through DWeb Connect. The wallet configures protocols during approval.';
-      }
-    }
+function sanitizePortableIdentityDid(value: unknown): string | undefined {
+  if (!isPlainRecord(value) || !isPlainRecord(value.portableDid) || !isPlainRecord(value.metadata)) {
+    return undefined;
   }
 
-  return undefined;
+  const portableDid = sanitizeRequestedDid(value.portableDid.uri);
+  const metadataDid = sanitizeRequestedDid(value.metadata.uri);
+  return portableDid === metadataDid ? portableDid : undefined;
+}
+
+export async function isValidDWebConnectEphemeralPublicKey(publicKey: string): Promise<boolean> {
+  const bytes = decodeBase64Url(publicKey);
+  if (bytes === undefined) return false;
+
+  try {
+    const rawKey = bytes.buffer.slice(
+      bytes.byteOffset,
+      bytes.byteOffset + bytes.byteLength,
+    ) as ArrayBuffer;
+    await crypto.subtle.importKey(
+      'raw',
+      rawKey,
+      { name: 'ECDH', namedCurve: 'P-256' },
+      false,
+      [],
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function sanitizePermissions(value: unknown): ConnectPermissionRequest[] | undefined {
+  try {
+    return preflightConnectPermissions(value).permissions;
+  } catch {
+    return undefined;
+  }
 }
 
 export function sanitizeDWebConnectRequest(
   request: DWebConnectRequest,
 ): SanitizedDWebConnectRequest | undefined {
   const origin = normalizeTrustedOrigin(request.origin);
-  if (!origin || !isPlainObject(request.data)) return undefined;
+  if (!origin || !isPlainRecord(request.data)) return undefined;
   if (request.data.type !== 'dweb-connect-authorization-request') return undefined;
 
   const permissions = sanitizePermissions(
@@ -142,10 +163,17 @@ export function sanitizeDWebConnectRequest(
   );
   if (!permissions) return undefined;
 
-  const ephemeralPublicKey = optionalString(
-    request.data.ephemeralPublicKey,
-    MAX_EPHEMERAL_KEY_LENGTH,
-  );
+  const ephemeralPublicKey = sanitizeEphemeralPublicKey(request.data.ephemeralPublicKey);
+  if (!ephemeralPublicKey) return undefined;
+
+  const portableIdentity = request.data.portableIdentity;
+  const portableIdentityDid = portableIdentity === undefined
+    ? undefined
+    : sanitizePortableIdentityDid(portableIdentity);
+  if (portableIdentity !== undefined && !portableIdentityDid) return undefined;
+
+  const requestedDid = sanitizeRequestedDid(request.data.did);
+  if (portableIdentityDid && requestedDid && portableIdentityDid !== requestedDid) return undefined;
 
   return {
     origin,
@@ -154,9 +182,10 @@ export function sanitizeDWebConnectRequest(
     appName: optionalString(request.data.appName, MAX_APP_NAME_LENGTH),
     appIcon: sanitizeIconUrl(request.data.appIcon, origin),
     clientMetadata: sanitizeConnectClientMetadata(request.data.clientMetadata, origin),
-    portableIdentity: request.data.portableIdentity,
+    portableIdentity,
+    portableIdentityDid,
     ephemeralPublicKey,
-    requestedDid: sanitizeRequestedDid(request.data.did),
+    requestedDid,
   };
 }
 

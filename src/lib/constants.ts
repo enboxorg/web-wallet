@@ -54,6 +54,7 @@ export const STORAGE_KEYS = {
   IDENTITIES: 'identities',
   REGISTRATION_TOKENS: 'enbox:registrationTokens',
   LOCAL_DWN_ENDPOINT: 'enbox:enbox:auth:localDwnEndpoint',
+  WALLET_DWN_ENDPOINTS: 'enbox:walletDwnEndpoints',
   THEME: 'enbox:theme',
 } as const;
 

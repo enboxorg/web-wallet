@@ -2,14 +2,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Effect, Layer } from 'effect';
 import { DwnRegistrar } from '@enbox/dwn-clients';
 
-import { ensureRegistrationEffect, getStoredTokens, storeTokens } from '../registration';
+import { ensureRegistrationEffect } from '../registration';
 import { runEnboxPromise } from '../effect/runtime';
 import {
   RegistrationTokenStore,
   currentAgentLayer,
 } from '../effect/services';
 import type { RegistrationTokenData } from '../types';
-import { STORAGE_KEYS } from '@/lib/constants';
 
 vi.mock('@enbox/dwn-clients', () => ({
   DwnRegistrar: {
@@ -37,7 +36,7 @@ function createAgent() {
     },
     rpc: {
       getServerInfo: vi.fn(async () => ({
-        registrationRequirements: [],
+        registrationRequirements: ['proof-of-work-sha256-v0'],
       })),
     },
   };
@@ -67,9 +66,10 @@ async function runWithAgentAndStore(
   agent: ReturnType<typeof createAgent>,
   tokenStore: ReturnType<typeof createTokenStore>,
   endpoints: string[],
+  dids: string[] = ['did:dht:agent'],
 ) {
   return runEnboxPromise(
-    ensureRegistrationEffect(endpoints).pipe(
+    ensureRegistrationEffect(endpoints, dids).pipe(
       Effect.provide(Layer.merge(currentAgentLayer(agent), tokenStore.layer)),
     ),
   );
@@ -84,44 +84,18 @@ describe('ensureRegistrationEffect', () => {
     vi.mocked(DwnRegistrar.registerTenantWithToken).mockResolvedValue(undefined as never);
   });
 
-  it('decodes persisted provider-auth tokens through Schema and falls back on invalid storage', () => {
-    const endpoint = 'https://dwn.example';
-
-    storeTokens({
-      [endpoint]: {
-        registrationToken : 'token',
-        refreshToken      : 'refresh',
-        expiresAt         : 123,
-        tokenUrl          : 'https://provider.example/token',
-        refreshUrl        : 'https://provider.example/refresh',
-      },
-    });
-
-    expect(getStoredTokens()).toEqual({
-      [endpoint]: {
-        registrationToken : 'token',
-        refreshToken      : 'refresh',
-        expiresAt         : 123,
-        tokenUrl          : 'https://provider.example/token',
-        refreshUrl        : 'https://provider.example/refresh',
-      },
-    });
-
-    localStorage.setItem(
-      STORAGE_KEYS.REGISTRATION_TOKENS,
-      '{"https://dwn.example":{"registrationToken":1}}',
-    );
-
-    expect(getStoredTokens()).toEqual({});
-  });
-
-  it('registers the agent DID and connected identity DIDs with proof-of-work registration', async () => {
+  it('registers only the supplied DIDs with proof-of-work registration', async () => {
     const agent = createAgent();
     const tokenStore = createTokenStore();
 
-    await runWithAgentAndStore(agent, tokenStore, ['https://dwn.example']);
+    await runWithAgentAndStore(
+      agent,
+      tokenStore,
+      ['https://dwn.example'],
+      ['did:dht:agent', 'did:dht:owner', 'did:dht:bob'],
+    );
 
-    expect(agent.identity.list).toHaveBeenCalledOnce();
+    expect(agent.identity.list).not.toHaveBeenCalled();
     expect(agent.rpc.getServerInfo).toHaveBeenCalledWith('https://dwn.example');
     expect(DwnRegistrar.registerTenant).toHaveBeenCalledWith(
       'https://dwn.example',
@@ -138,11 +112,44 @@ describe('ensureRegistrationEffect', () => {
     expect(tokenStore.set).toHaveBeenCalledWith({});
   });
 
+  it('registers only explicit owner DIDs at request-supplied endpoints', async () => {
+    const agent = createAgent();
+    const tokenStore = createTokenStore();
+
+    await runEnboxPromise(
+      ensureRegistrationEffect(['https://requester-dwn.example'], ['did:dht:imported']).pipe(
+        Effect.provide(Layer.merge(currentAgentLayer(agent), tokenStore.layer)),
+      ),
+    );
+
+    expect(agent.identity.list).not.toHaveBeenCalled();
+    expect(DwnRegistrar.registerTenant).toHaveBeenCalledTimes(1);
+    expect(DwnRegistrar.registerTenant).toHaveBeenCalledWith(
+      'https://requester-dwn.example',
+      'did:dht:imported',
+    );
+  });
+
+  it('treats an endpoint with no registration requirements as ready', async () => {
+    const agent = createAgent();
+    agent.rpc.getServerInfo.mockResolvedValue({ registrationRequirements: [] });
+    const tokenStore = createTokenStore();
+
+    await expect(runWithAgentAndStore(
+      agent,
+      tokenStore,
+      ['https://open-dwn.example'],
+    )).resolves.toEqual({ failed: 0, succeeded: 1 });
+
+    expect(DwnRegistrar.registerTenant).not.toHaveBeenCalled();
+    expect(DwnRegistrar.registerTenantWithToken).not.toHaveBeenCalled();
+  });
+
   it('retries transient server info failures before skipping an endpoint', async () => {
     const agent = createAgent();
     agent.rpc.getServerInfo
       .mockRejectedValueOnce(new Error('temporary network failure'))
-      .mockResolvedValueOnce({ registrationRequirements: [] });
+      .mockResolvedValueOnce({ registrationRequirements: ['proof-of-work-sha256-v0'] });
     const tokenStore = createTokenStore();
 
     await runWithAgentAndStore(agent, tokenStore, ['https://dwn.example']);
@@ -152,6 +159,49 @@ describe('ensureRegistrationEffect', () => {
       'https://dwn.example',
       'did:dht:agent',
     );
+  });
+
+  it('fails when no configured endpoint accepts the DID registration', async () => {
+    const agent = createAgent();
+    const tokenStore = createTokenStore();
+    vi.mocked(DwnRegistrar.registerTenant).mockRejectedValue(new Error('registration rejected'));
+
+    await expect(runWithAgentAndStore(
+      agent,
+      tokenStore,
+      ['https://dwn.example'],
+    )).rejects.toThrow('Unable to register did:dht:agent with any configured DWN endpoint');
+  });
+
+  it('succeeds when at least one configured endpoint accepts the DID', async () => {
+    const agent = createAgent();
+    const tokenStore = createTokenStore();
+    vi.mocked(DwnRegistrar.registerTenant)
+      .mockRejectedValueOnce(new Error('first endpoint rejected'))
+      .mockResolvedValueOnce(undefined as never);
+
+    await expect(runWithAgentAndStore(
+      agent,
+      tokenStore,
+      ['https://dwn-a.example', 'https://dwn-b.example'],
+    )).resolves.toEqual({ failed: 1, succeeded: 1 });
+  });
+
+  it('fails a bulk request when any supplied DID has no successful endpoint', async () => {
+    const agent = createAgent();
+    const tokenStore = createTokenStore();
+    vi.mocked(DwnRegistrar.registerTenant).mockImplementation(async (_endpoint, did) => {
+      if (did === 'did:dht:bob') {
+        throw new Error('bob rejected');
+      }
+    });
+
+    await expect(runWithAgentAndStore(
+      agent,
+      tokenStore,
+      ['https://dwn.example'],
+      ['did:dht:alice', 'did:dht:bob'],
+    )).rejects.toThrow('Unable to register did:dht:bob with any configured DWN endpoint');
   });
 
   it('refreshes expired provider-auth tokens through the injected token store', async () => {

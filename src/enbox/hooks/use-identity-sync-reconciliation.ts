@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
-import { DEFAULT_DWN_ENDPOINTS } from '@/lib/dwn-endpoints';
 import { useAuthStore } from '@/stores/auth-store';
 
 import { getIdentityDid, reconcileIdentitySync } from '../identity-sync';
@@ -29,7 +28,7 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
   }, [identities]);
 
   useEffect(() => {
-    if (!agent || !identities?.length || !identityKey) {
+    if (!agent || !identityKey) {
       return;
     }
 
@@ -40,6 +39,7 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
       }
 
       runningRef.current = true;
+      let retriesRemaining = 1;
       try {
         do {
           rerunRef.current = false;
@@ -51,7 +51,6 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
           const result = await reconcileIdentitySync(
             latest.agent,
             latest.identities,
-            DEFAULT_DWN_ENDPOINTS,
           );
 
           if (result.changedDids.length > 0) {
@@ -60,6 +59,14 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
               queryClient.invalidateQueries({
                 queryKey: queryKeys.identities.profile(did),
               });
+            }
+          }
+          if (result.failedDids.length > 0) {
+            if (retriesRemaining > 0) {
+              retriesRemaining -= 1;
+              rerunRef.current = true;
+            } else {
+              toast.error('Failed to set up sync for one or more identities. Reload the wallet to retry.');
             }
           }
         } while (rerunRef.current);
@@ -74,5 +81,5 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
     }
 
     void run();
-  }, [agent, identities, identityKey, queryClient]);
+  }, [agent, identityKey, queryClient]);
 }

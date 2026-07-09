@@ -33,6 +33,9 @@ const desiredProtocols = [
 
 function createAgent(existingOptions: Record<string, unknown> = {}) {
   return {
+    dwn: {
+      getRemoteDwnEndpointUrls: vi.fn(async () => ['https://dwn.example']),
+    },
     sync: {
       getIdentityOptions: vi.fn(async (did: string) => existingOptions[did]),
       registerIdentity: vi.fn(),
@@ -52,9 +55,12 @@ describe('reconcileIdentitySync', () => {
     const identity = { did: { uri: 'did:dht:new' }, metadata: { name: 'New' } };
     const agent = createAgent();
 
-    const result = await reconcileIdentitySync(agent, [identity], ['https://dwn.example']);
+    const result = await reconcileIdentitySync(agent, [identity]);
 
-    expect(mocks.ensureRegistration).toHaveBeenCalledWith(['https://dwn.example']);
+    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
+      ['https://dwn.example'],
+      ['did:dht:new'],
+    );
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did: 'did:dht:new',
       options: { protocols: desiredProtocols },
@@ -69,7 +75,7 @@ describe('reconcileIdentitySync', () => {
       'did:dht:existing': { protocols: 'all' },
     });
 
-    const result = await reconcileIdentitySync(agent, [identity], ['https://dwn.example']);
+    const result = await reconcileIdentitySync(agent, [identity]);
 
     expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
     expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
@@ -86,7 +92,7 @@ describe('reconcileIdentitySync', () => {
       'did:dht:known': { protocols: desiredProtocols },
     });
 
-    const result = await reconcileIdentitySync(agent, [identity], ['https://dwn.example']);
+    const result = await reconcileIdentitySync(agent, [identity]);
 
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
@@ -102,11 +108,43 @@ describe('reconcileIdentitySync', () => {
     };
     const agent = createAgent();
 
-    await reconcileIdentitySync(agent, [identity], ['https://dwn.example']);
+    await reconcileIdentitySync(agent, [identity]);
+
+    expect(agent.dwn.getRemoteDwnEndpointUrls).toHaveBeenCalledWith('did:dht:owner');
+    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
+      ['https://dwn.example'],
+      ['did:dht:owner'],
+    );
 
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did: 'did:dht:owner',
       options: { protocols: desiredProtocols },
     });
+  });
+
+  it('continues reconciling later identities when one DID endpoint cannot be resolved', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const agent = createAgent();
+    agent.dwn.getRemoteDwnEndpointUrls.mockImplementation(async (did: string) => {
+      if (did === 'did:dht:bad') {
+        throw new Error('resolution failed');
+      }
+      return ['https://dwn.example'];
+    });
+
+    const result = await reconcileIdentitySync(agent, [
+      { did: { uri: 'did:dht:bad' }, metadata: { name: 'Bad' } },
+      { did: { uri: 'did:dht:good' }, metadata: { name: 'Good' } },
+    ]);
+
+    expect(result).toEqual({
+      changedDids: ['did:dht:good'],
+      failedDids: ['did:dht:bad'],
+    });
+    expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
+      did: 'did:dht:good',
+      options: { protocols: desiredProtocols },
+    });
+    warn.mockRestore();
   });
 });
