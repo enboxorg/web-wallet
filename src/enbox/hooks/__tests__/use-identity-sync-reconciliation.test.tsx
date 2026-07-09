@@ -129,4 +129,30 @@ describe('useIdentitySyncReconciliation', () => {
     await waitFor(() => expect(mocks.toastError).toHaveBeenCalled());
     expect(mocks.reconcileIdentitySync).toHaveBeenCalledTimes(2);
   });
+
+  it('does not retry a persistent failure on an equivalent identity refetch', async () => {
+    const queryClient = createQueryClient();
+    mocks.reconcileIdentitySync.mockResolvedValue({
+      changedDids: [],
+      failedDids: ['did:dht:failed'],
+    });
+    const { rerender } = renderHook(
+      ({ identities }) => useIdentitySyncReconciliation(identities),
+      {
+        initialProps: {
+          identities: [{ did: { uri: 'did:dht:failed' }, metadata: { name: 'Failed' } }],
+        },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+
+    await waitFor(() => expect(mocks.toastError).toHaveBeenCalledTimes(1));
+    rerender({
+      identities: [{ did: { uri: 'did:dht:failed' }, metadata: { name: 'Refetched' } }],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(mocks.reconcileIdentitySync).toHaveBeenCalledTimes(2);
+    expect(mocks.toastError).toHaveBeenCalledTimes(1);
+  });
 });

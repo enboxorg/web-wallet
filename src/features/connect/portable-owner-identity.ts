@@ -11,7 +11,14 @@ import {
   Secp256r1,
   X25519,
 } from '@enbox/crypto';
-import { Did, DidDht, identityKeyToIdentifier, isPortableDid, utils as didUtils } from '@enbox/dids';
+import {
+  Did,
+  DidDht,
+  DidDhtDocument,
+  identityKeyToIdentifier,
+  isPortableDid,
+  utils as didUtils,
+} from '@enbox/dids';
 
 import { normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
 
@@ -24,6 +31,13 @@ const VERIFICATION_RELATIONSHIPS = [
   'capabilityInvocation',
   'capabilityDelegation',
 ] as const;
+
+const DID_DHT_DEFAULT_ALGORITHM_BY_CURVE: Record<string, string> = {
+  Ed25519   : 'EdDSA',
+  'P-256'   : 'ES256',
+  secp256k1 : 'ES256K',
+  X25519    : 'ECDH-ES+A256KW',
+};
 
 export type ValidatedPortableOwnerIdentity = {
   did: string;
@@ -49,8 +63,56 @@ function stableJson(value: unknown): string {
   return JSON.stringify(stableValue(value));
 }
 
+function normalizeDidDhtDocumentForComparison(document: DidDocument): DidDocument {
+  const normalized = cloneJson(document);
+  for (const method of normalized.verificationMethod ?? []) {
+    const publicKey = method.publicKeyJwk;
+    const defaultAlgorithm = publicKey?.crv === undefined
+      ? undefined
+      : DID_DHT_DEFAULT_ALGORITHM_BY_CURVE[publicKey.crv];
+    // @enbox/dids <= 0.1.3 encoded an absent registered-key algorithm as the literal
+    // string "undefined". DID-DHT resolution also materializes the default.
+    // See enboxorg/enbox#1229.
+    if (
+      publicKey !== undefined
+      && defaultAlgorithm !== undefined
+      && (
+        publicKey.alg === undefined
+        || publicKey.alg === defaultAlgorithm
+        || publicKey.alg === 'undefined'
+      )
+    ) {
+      delete publicKey.alg;
+    }
+  }
+  return normalized;
+}
+
 export function portableOwnerDocumentsMatch(left: DidDocument, right: DidDocument): boolean {
-  return stableJson(left) === stableJson(right);
+  return stableJson(normalizeDidDhtDocumentForComparison(left))
+    === stableJson(normalizeDidDhtDocumentForComparison(right));
+}
+
+async function assertDidDhtDocumentRoundTrips(portableDid: PortableDid): Promise<void> {
+  try {
+    const packet = await DidDhtDocument.toDnsPacket({
+      didDocument : portableDid.document,
+      didMetadata : portableDid.metadata,
+    });
+    const resolution = await DidDhtDocument.fromDnsPacket({
+      didUri    : portableDid.uri,
+      dnsPacket : packet,
+    });
+    if (
+      resolution.didDocument === undefined
+      || resolution.didDocument === null
+      || !portableOwnerDocumentsMatch(resolution.didDocument, portableDid.document)
+    ) {
+      throw new Error('round-trip mismatch');
+    }
+  } catch {
+    throw invalidPortableIdentity('the DID document cannot be represented losslessly by did:dht');
+  }
 }
 
 function cloneJson<T>(value: T): T {
@@ -60,7 +122,10 @@ function cloneJson<T>(value: T): T {
 function assertOwnerController(document: DidDocument, did: string): void {
   const controller = document.controller;
   if (controller === undefined || controller === did) return;
-  if (Array.isArray(controller) && controller.length === 1 && controller[0] === did) return;
+  if (Array.isArray(controller) && controller.length === 1 && controller[0] === did) {
+    document.controller = did;
+    return;
+  }
   throw invalidPortableIdentity('the DID document has an external controller');
 }
 
@@ -85,6 +150,7 @@ function validateDwnEndpoints(document: DidDocument, did: string): string[] {
   ) {
     throw invalidPortableIdentity('the DWN service endpoints are malformed');
   }
+  dwnServices[0].serviceEndpoint = rawEndpoints;
 
   try {
     return normalizeDwnEndpoints(rawEndpoints as string[]);
@@ -251,9 +317,17 @@ async function validatePrivateKeys(
 
   const methodPublicKeys = new Map<string, Jwk>();
   for (const method of methods.values()) {
-    const thumbprint = await computeJwkThumbprint({ jwk: method.publicKeyJwk! });
-    assertJwkAlgorithm(method.publicKeyJwk!);
-    methodPublicKeys.set(thumbprint, method.publicKeyJwk!);
+    const publicKey = method.publicKeyJwk!;
+    const thumbprint = await computeJwkThumbprint({ jwk: publicKey });
+    assertJwkAlgorithm(publicKey);
+    if (publicKey.kid !== undefined && publicKey.kid !== thumbprint) {
+      throw invalidPortableIdentity('a public key ID does not match its JWK thumbprint');
+    }
+    publicKey.kid = thumbprint;
+    if (publicKey.alg === undefined && publicKey.crv !== undefined) {
+      publicKey.alg = DID_DHT_DEFAULT_ALGORITHM_BY_CURVE[publicKey.crv];
+    }
+    methodPublicKeys.set(thumbprint, publicKey);
   }
 
   const privateThumbprints = new Set<string>();
@@ -293,11 +367,19 @@ export async function ensurePortableOwnerPublished(
   const resolution = await DidDht.resolve(validatedIdentity.did);
   const resolutionError = resolution.didResolutionMetadata.error;
 
-  if (resolutionError === undefined && resolution.didDocument !== undefined) {
-    if (stableJson(resolution.didDocument) !== stableJson(portableDid.document)) {
+  if (
+    resolutionError === undefined
+    && resolution.didDocument !== undefined
+    && resolution.didDocument !== null
+  ) {
+    if (!portableOwnerDocumentsMatch(resolution.didDocument, portableDid.document)) {
       throw invalidPortableIdentity('the published did:dht document differs from the imported document');
     }
-    portableDid.metadata = { published: true };
+    portableDid.metadata = {
+      ...portableDid.metadata,
+      ...resolution.didDocumentMetadata,
+      published: true,
+    };
     return;
   }
   if (resolutionError !== 'notFound') {
@@ -309,7 +391,13 @@ export async function ensurePortableOwnerPublished(
   if (publication.didRegistrationMetadata.error !== undefined) {
     throw invalidPortableIdentity(`the did:dht document could not be published (${publication.didRegistrationMetadata.error})`);
   }
-  portableDid.metadata = { published: true };
+  if (publication.didDocumentMetadata.published !== true) {
+    throw invalidPortableIdentity('the did:dht document could not be published (publication was not acknowledged)');
+  }
+  portableDid.metadata = {
+    ...portableDid.metadata,
+    ...publication.didDocumentMetadata,
+  };
 }
 
 /** Validate and normalize an imported identity before it reaches the wallet KMS. */
@@ -346,6 +434,7 @@ export async function validatePortableOwnerIdentity(input: unknown): Promise<Val
   assertVerificationRelationships(portableDid.document, verificationMethods);
   await assertMethodBinding(portableDid, verificationMethods);
   portableDid.privateKeys = await validatePrivateKeys(portableDid, verificationMethods);
+  await assertDidDhtDocumentRoundTrips(portableDid);
 
   return {
     did: portableDid.uri,

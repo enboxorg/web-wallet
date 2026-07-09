@@ -28,7 +28,7 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
   }, [identities]);
 
   useEffect(() => {
-    if (!agent || !identities?.length || !identityKey) {
+    if (!agent || !identityKey) {
       return;
     }
 
@@ -81,5 +81,5 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
     }
 
     void run();
-  }, [agent, identities, identityKey, queryClient]);
+  }, [agent, identityKey, queryClient]);
 }

@@ -42,6 +42,20 @@ describe('getConnectPermissionAskSummary', () => {
     expect(getConnectPermissionAskSummary(permissions)).toBe('wants to view a custom data type.');
   });
 
+  it('describes an internal scope when it is the only granted capability', () => {
+    const permissions = [
+      permissionRequest('https://example.com/protocols/tasks', [{
+        interface: 'Messages',
+        method: 'Read',
+        protocol: 'https://example.com/protocols/tasks',
+      }]),
+    ];
+
+    expect(getConnectPermissionAskSummary(permissions)).toBe(
+      'wants to view messages from a custom data type.',
+    );
+  });
+
   it('collapses repeated unknown protocol placeholders in longer summaries', () => {
     const permissions = [
       permissionRequest('https://example.com/protocols/tasks', [

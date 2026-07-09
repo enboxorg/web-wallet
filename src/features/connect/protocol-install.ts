@@ -434,6 +434,15 @@ export function prepareProtocolEffect(
       { concurrency: 'unbounded' },
     );
 
+    const rejectedRemoteQuery = remoteQueryResults.find(
+      (result) => result !== undefined && result.reply.status.code !== 200,
+    );
+    if (rejectedRemoteQuery !== undefined) {
+      return yield* Effect.fail(new Error(
+        `Could not verify protocol on ${rejectedRemoteQuery.endpoint}: ${rejectedRemoteQuery.reply.status.detail}`,
+      ));
+    }
+
     const reachableRemoteReplies = remoteQueryResults.filter(
       (result): result is { endpoint: string; reply: ProtocolQueryReply } =>
         result !== undefined && result.reply.status.code === 200,

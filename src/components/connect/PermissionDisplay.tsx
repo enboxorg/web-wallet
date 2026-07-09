@@ -31,6 +31,7 @@ import {
   getDisplayScopes,
   getHighestPermissionRisk,
   getPermissionActions,
+  isInternalConnectScope,
   mergePermissionRequestsByProtocol,
 } from './connect-scope-display';
 import type { DisplayScope, PermissionRisk } from './connect-scope-display';
@@ -245,6 +246,10 @@ function AccessRows({
         {access.map((item, index) => {
           const actions = getPermissionActions(item.displayScopes);
           const risk = getHighestPermissionRisk(actions);
+          const supportScopes = item.permission.permissionScopes.filter(isInternalConnectScope);
+          const hasPrimaryScopes = item.permission.permissionScopes.some(
+            (scope) => !isInternalConnectScope(scope),
+          );
 
           return (
             <div
@@ -295,6 +300,11 @@ function AccessRows({
                 <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>Stored encrypted. This approval does not share private decryption keys.</span>
+                </p>
+              )}
+              {hasPrimaryScopes && supportScopes.length > 0 && (
+                <p className="mt-2 text-xs leading-relaxed text-text-secondary">
+                  Additional grants: {supportScopes.map((scope) => `${scope.interface}.${scope.method}`).join(', ')}.
                 </p>
               )}
             </div>
@@ -610,6 +620,20 @@ function TechnicalDetails({ access }: { access: ProtocolAccess[] }) {
                     </div>
                   </div>
                 )}
+
+                <div>
+                  <p className="mb-1.5 text-xs text-text-ghost">Granted scopes</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.permission.permissionScopes.map((scope, index) => (
+                      <span
+                        key={`${scope.interface}.${scope.method}.${index}`}
+                        className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
+                      >
+                        {scope.interface}.{scope.method}
+                      </span>
+                    ))}
+                  </div>
+                </div>
 
                 <pre className="max-h-72 overflow-auto rounded-md bg-surface-1 p-3 font-mono text-[11px] leading-relaxed text-text-tertiary">
                   {protocolJson}

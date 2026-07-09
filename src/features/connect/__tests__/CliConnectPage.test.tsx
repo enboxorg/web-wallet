@@ -18,6 +18,8 @@ const mocks = vi.hoisted(() => ({
   parseCliConnectRequest: vi.fn(),
   postCliCallback: vi.fn(),
   prepareProtocol: vi.fn(),
+  protocolSetupStatus: 'install',
+  publishWalletEvent: vi.fn(),
 }));
 
 vi.mock('@/enbox/hooks/use-agent', () => ({ useAgent: () => mocks.agent }));
@@ -31,23 +33,22 @@ vi.mock('@/enbox/registration', () => ({
 }));
 vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/enbox/effect/wallet-events')>(),
-  publishWalletEvent: vi.fn(() => Effect.void),
+  publishWalletEvent: mocks.publishWalletEvent,
 }));
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
   prepareProtocol: mocks.prepareProtocol,
 }));
-vi.mock('../use-protocol-setup-statuses', () => ({
-  protocolSetupAllowsApproval: vi.fn(() => true),
-  useProtocolSetupStatuses: vi.fn(() => ({ [PROTOCOL]: 'install' })),
+vi.mock('../use-protocol-setup-statuses', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../use-protocol-setup-statuses')>(),
+  useProtocolSetupStatuses: vi.fn(() => ({ [PROTOCOL]: mocks.protocolSetupStatus })),
 }));
-vi.mock('../connect-effects', () => ({
+vi.mock('../connect-effects', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../connect-effects')>(),
   createAndSendGrantKeyRecords: mocks.createAndSendGrantKeyRecords,
   createDelegateDid: mocks.createDelegateDid,
   createPermissionGrants: mocks.createPermissionGrants,
   createSessionRevocationGrants: mocks.createSessionRevocationGrants,
-  selectEncryptedReadGrants: (grants: unknown[], scopes: Array<{ interface: string; method: string }>) =>
-    grants.filter((_, index) => scopes[index].interface === 'Records' && scopes[index].method === 'Read'),
 }));
 vi.mock('../cli-connect-messages', async (importOriginal) => ({
   ...await importOriginal<typeof import('../cli-connect-messages')>(),
@@ -59,8 +60,14 @@ const permissionRequest = {
   protocolDefinition: {
     protocol  : PROTOCOL,
     published : false,
-    types     : {},
-    structure : {},
+    types     : {
+      message: {
+        schema             : `${PROTOCOL}/schema/message`,
+        dataFormats        : ['application/json'],
+        encryptionRequired : true,
+      },
+    },
+    structure : { message: {} },
   },
   permissionScopes: [
     { interface: 'Records', method: 'Read', protocol: PROTOCOL },
@@ -85,6 +92,7 @@ describe('CliConnectPage', () => {
     vi.clearAllMocks();
     window.history.replaceState({}, '', '/cli/connect?request=encoded');
     mocks.parseCliConnectRequest.mockResolvedValue(cliRequest);
+    mocks.protocolSetupStatus = 'install';
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
@@ -103,6 +111,7 @@ describe('CliConnectPage', () => {
       sessionRevocations: [{ grantId: 'read-grant', revocationGrantId: 'revoke-grant' }],
     });
     mocks.postCliCallback.mockResolvedValue(true);
+    mocks.publishWalletEvent.mockReturnValue(Effect.void);
   });
 
   it('returns a complete response after targeted registration and key delivery', async () => {
@@ -147,6 +156,53 @@ describe('CliConnectPage', () => {
       error: 'denied',
       challenge: 'challenge-123',
     });
+  });
+
+  it('does not deliver a private key for an unencrypted protocol read', async () => {
+    mocks.parseCliConnectRequest.mockResolvedValue({
+      ...cliRequest,
+      permissions: [{
+        ...permissionRequest,
+        protocolDefinition: {
+          ...permissionRequest.protocolDefinition,
+          types: { message: { schema: `${PROTOCOL}/schema/message` } },
+        },
+      }],
+    });
+
+    render(<CliConnectPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+
+    expect(await screen.findByText('Approved!')).toBeInTheDocument();
+    expect(mocks.createAndSendGrantKeyRecords).not.toHaveBeenCalled();
+  });
+
+  it('keeps approval disabled while protocol setup is blocked', async () => {
+    mocks.protocolSetupStatus = 'conflict';
+
+    render(<CliConnectPage />);
+
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeDisabled();
+    expect(mocks.createDelegateDid).not.toHaveBeenCalled();
+  });
+
+  it('keeps a completed approval successful when event publication fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('event unavailable')));
+
+    try {
+      render(<CliConnectPage />);
+      fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+
+      expect(await screen.findByText('Approved!')).toBeInTheDocument();
+      await waitFor(() => expect(warn).toHaveBeenCalledWith(
+        'CLI connect approval event failed:',
+        expect.anything(),
+      ));
+      expect(mocks.postCliCallback).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('returns a challenge-bound failure when approval side effects fail', async () => {

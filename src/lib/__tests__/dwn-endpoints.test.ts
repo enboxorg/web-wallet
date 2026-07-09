@@ -76,4 +76,26 @@ describe('DWN endpoint configuration', () => {
       warn.mockRestore();
     }
   });
+
+  it('uses hosted defaults when the build override is invalid', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubEnv(
+      'VITE_DWN_ENDPOINTS',
+      'https://duplicate.example,https://DUPLICATE.example/',
+    );
+    vi.resetModules();
+
+    try {
+      const endpoints = await import('../dwn-endpoints');
+      expect(endpoints.DEFAULT_DWN_ENDPOINTS).toEqual([
+        'https://enbox-dwn.fly.dev',
+        'https://dev.aws.dwn.enbox.id',
+      ]);
+      expect(endpoints.getConfiguredDwnEndpoints()).toEqual(endpoints.DEFAULT_DWN_ENDPOINTS);
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllEnvs();
+      warn.mockRestore();
+    }
+  });
 });

@@ -29,6 +29,15 @@ function readTokens(agent: any) {
   );
 }
 
+function writeTokens(agent: any) {
+  return runEnboxPromise(
+    Effect.gen(function* () {
+      const store = yield* RegistrationTokenStore;
+      yield* store.set(tokens);
+    }).pipe(Effect.provide(registrationTokenStoreLayer(agent))),
+  );
+}
+
 describe('registrationTokenStoreLayer', () => {
   beforeEach(() => {
     localStorage.clear();
@@ -65,12 +74,7 @@ describe('registrationTokenStoreLayer', () => {
     };
     localStorage.setItem(STORAGE_KEYS.REGISTRATION_TOKENS, 'legacy');
 
-    await runEnboxPromise(
-      Effect.gen(function* () {
-        const store = yield* RegistrationTokenStore;
-        yield* store.set(tokens);
-      }).pipe(Effect.provide(registrationTokenStoreLayer(agent))),
-    );
+    await writeTokens(agent);
 
     expect(agent.secrets.put).toHaveBeenCalledWith(
       REGISTRATION_TOKENS_SECRET_KEY,
@@ -79,18 +83,58 @@ describe('registrationTokenStoreLayer', () => {
     expect(localStorage.getItem(STORAGE_KEYS.REGISTRATION_TOKENS)).toBeNull();
   });
 
-  it('removes a stale plaintext copy when vault-backed tokens already exist', async () => {
+  it('reports a vault failure when registration tokens cannot be saved', async () => {
+    const agent = {
+      secrets: {
+        get: vi.fn(async () => undefined),
+        put: vi.fn(async () => { throw new Error('vault locked'); }),
+      },
+    };
+
+    await expect(writeTokens(agent)).rejects.toThrow('vault locked');
+  });
+
+  it('merges disjoint plaintext tokens into an existing vault copy', async () => {
     const encryptedTokens = Convert.string(JSON.stringify(tokens)).toUint8Array();
+    const legacyTokens = {
+      'https://legacy.example': {
+        registrationToken : 'legacy-registration-token',
+        refreshToken      : 'legacy-refresh-token',
+        expiresAt         : 456,
+        tokenUrl          : 'https://legacy.example/token',
+        refreshUrl        : 'https://legacy.example/refresh',
+      },
+    };
+    let savedTokens: Uint8Array | undefined;
     const agent = {
       secrets: {
         get: vi.fn(async () => encryptedTokens),
+        put: vi.fn(async (_key: string, value: Uint8Array) => {
+          savedTokens = value;
+        }),
+      },
+    };
+    localStorage.setItem(STORAGE_KEYS.REGISTRATION_TOKENS, JSON.stringify(legacyTokens));
+
+    await expect(readTokens(agent)).resolves.toEqual({ ...legacyTokens, ...tokens });
+    expect(JSON.parse(Convert.uint8Array(savedTokens!).toString())).toEqual({
+      ...legacyTokens,
+      ...tokens,
+    });
+    expect(localStorage.getItem(STORAGE_KEYS.REGISTRATION_TOKENS)).toBeNull();
+  });
+
+  it('does not replace vault tokens when the secret store cannot be read', async () => {
+    const agent = {
+      secrets: {
+        get: vi.fn(async () => { throw new Error('vault locked'); }),
         put: vi.fn(async () => undefined),
       },
     };
     localStorage.setItem(STORAGE_KEYS.REGISTRATION_TOKENS, JSON.stringify(tokens));
 
-    await expect(readTokens(agent)).resolves.toEqual(tokens);
+    await expect(readTokens(agent)).rejects.toThrow('vault locked');
     expect(agent.secrets.put).not.toHaveBeenCalled();
-    expect(localStorage.getItem(STORAGE_KEYS.REGISTRATION_TOKENS)).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEYS.REGISTRATION_TOKENS)).toBe(JSON.stringify(tokens));
   });
 });

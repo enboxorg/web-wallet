@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DwnInterface, type DwnProtocolDefinition, getDwnServiceEndpointUrls } from '@enbox/agent';
+import { KeyDerivationScheme } from '@enbox/dwn-sdk-js';
 import { ProfileDefinition } from '@enbox/protocols';
 
 import {
@@ -24,17 +25,20 @@ const queryMessage = { descriptor: { method: 'Query' } };
 const configureMessage = { descriptor: { method: 'Configure' } };
 
 function createDwn() {
+  const keysByPath = new Map([
+    [JSON.stringify([KeyDerivationScheme.ProtocolPath, encryptedProtocol.protocol]), 'protocol-key'],
+    [JSON.stringify([KeyDerivationScheme.ProtocolPath, encryptedProtocol.protocol, 'mint']), 'mint-key'],
+    [JSON.stringify([KeyDerivationScheme.ProtocolPath, encryptedProtocol.protocol, 'mint', 'proof']), 'proof-key'],
+  ]);
+  const derivePublicKey = vi.fn(async (path: string[]) => ({
+    kty : 'OKP',
+    crv : 'X25519',
+    x   : keysByPath.get(JSON.stringify(path)) ?? 'unexpected-path-key',
+  }));
+
   return {
     getEncryptionKeyDeriver: vi.fn().mockResolvedValue({
-      derivePublicKey: vi.fn(async (path: string[]) => {
-        const finalSegment = path.at(-1);
-        const x = finalSegment === 'mint'
-          ? 'mint-key'
-          : finalSegment === 'proof'
-            ? 'proof-key'
-            : 'protocol-key';
-        return { kty: 'OKP', crv: 'X25519', x };
-      }),
+      derivePublicKey,
     }),
   };
 }
@@ -155,6 +159,29 @@ describe('protocol-install', () => {
       { dwn: createDwn(), processDwnRequest },
       encryptedProtocol,
     )).resolves.toBe('configured');
+  });
+
+  it('verifies installed encryption keys against every complete owner derivation path', async () => {
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: {
+        status  : { code: 200, detail: 'OK' },
+        entries : [{ descriptor: { definition: installedEncryptedProtocol } }],
+      },
+    });
+    const dwn = createDwn();
+
+    await expect(queryProtocolSetupStatus(
+      'did:example:owner',
+      { dwn, processDwnRequest },
+      encryptedProtocol,
+    )).resolves.toBe('configured');
+
+    const keyDeriver = await dwn.getEncryptionKeyDeriver.mock.results[0].value;
+    expect(keyDeriver.derivePublicKey.mock.calls).toEqual([
+      [[KeyDerivationScheme.ProtocolPath, encryptedProtocol.protocol]],
+      [[KeyDerivationScheme.ProtocolPath, encryptedProtocol.protocol, 'mint']],
+      [[KeyDerivationScheme.ProtocolPath, encryptedProtocol.protocol, 'mint', 'proof']],
+    ]);
   });
 
   it('detects older or different installed protocol definitions', () => {
@@ -473,6 +500,32 @@ describe('protocol-install', () => {
     }, notesProtocol)).rejects.toThrow('conflicts with the latest definition');
     expect(processDwnRequest).toHaveBeenCalledTimes(1);
     expect(sendDwnRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when a reachable endpoint rejects the protocol query', async () => {
+    mockedGetDwnServiceEndpointUrls.mockResolvedValue([
+      'https://owner-a.example',
+      'https://owner-b.example',
+    ]);
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply   : protocolQueryReply(),
+      message : queryMessage,
+    });
+    const sendDwnRequest = vi.fn(async ({ dwnUrl }: { dwnUrl: string }) =>
+      dwnUrl === 'https://owner-a.example'
+        ? { status: { code: 500, detail: 'Server error' } }
+        : protocolQueryReply()
+    );
+
+    await expect(prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, notesProtocol)).rejects.toThrow(
+      'Could not verify protocol on https://owner-a.example: Server error',
+    );
+    expect(processDwnRequest).toHaveBeenCalledTimes(1);
   });
 
   it('fails when local protocol configuration is rejected', async () => {

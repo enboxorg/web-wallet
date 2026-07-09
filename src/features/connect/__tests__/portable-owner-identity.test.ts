@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PortableIdentity } from '@enbox/agent';
 
 import { Ed25519 } from '@enbox/crypto';
-import { DidDht, DidJwk } from '@enbox/dids';
+import { DidDht, DidDhtDocument, DidJwk } from '@enbox/dids';
 
 import {
   ensurePortableOwnerPublished,
@@ -116,6 +116,15 @@ describe('portable owner identity validation', () => {
     await expect(validatePortableOwnerIdentity(contradictory)).rejects.toThrow('algorithm contradicts');
   });
 
+  it('rejects an explicit public key ID that does not match its JWK thumbprint', async () => {
+    const contradictory = await dhtFixture();
+    contradictory.portableDid.document.verificationMethod![1].publicKeyJwk!.kid = 'wrong-key-id';
+
+    await expect(validatePortableOwnerIdentity(contradictory)).rejects.toThrow(
+      'public key ID does not match',
+    );
+  });
+
   it('accepts standard X25519 key-agreement algorithm metadata', async () => {
     const portableIdentity = await dhtFixture();
     portableIdentity.portableDid.document.verificationMethod![2].publicKeyJwk!.alg = 'ECDH-ES';
@@ -136,18 +145,29 @@ describe('portable owner identity validation', () => {
     await expect(validatePortableOwnerIdentity(credentials)).rejects.toThrow('cannot contain credentials');
   });
 
+  it('rejects document fields that cannot survive DID-DHT publication', async () => {
+    const lossy = await dhtFixture();
+    lossy.portableDid.document.capabilityDelegation = [];
+
+    await expect(validatePortableOwnerIdentity(lossy)).rejects.toThrow(
+      'cannot be represented losslessly by did:dht',
+    );
+  });
+
   it('verifies an existing published document or publishes a new one', async () => {
     const existing = await validatePortableOwnerIdentity(await dhtFixture());
+    existing.portableIdentity.portableDid.metadata.versionId = '7';
     const publish = vi.spyOn(DidDht, 'publish');
     vi.spyOn(DidDht, 'resolve').mockResolvedValue({
       didDocument           : structuredClone(existing.portableIdentity.portableDid.document),
-      didDocumentMetadata   : {},
+      didDocumentMetadata   : { published: true, versionId: '9' },
       didResolutionMetadata : {},
     } as any);
 
     await ensurePortableOwnerPublished(existing);
     expect(publish).not.toHaveBeenCalled();
     expect(existing.portableIdentity.portableDid.metadata.published).toBe(true);
+    expect(existing.portableIdentity.portableDid.metadata.versionId).toBe('9');
 
     vi.restoreAllMocks();
     const unpublished = await validatePortableOwnerIdentity(await dhtFixture());
@@ -158,13 +178,74 @@ describe('portable owner identity validation', () => {
     } as any);
     const publishNew = vi.spyOn(DidDht, 'publish').mockResolvedValue({
       didDocument           : unpublished.portableIdentity.portableDid.document,
-      didDocumentMetadata   : {},
+      didDocumentMetadata   : { published: true, versionId: '11' },
       didRegistrationMetadata: {},
     } as any);
 
     await ensurePortableOwnerPublished(unpublished);
     expect(publishNew).toHaveBeenCalledTimes(1);
     expect(unpublished.portableIdentity.portableDid.metadata.published).toBe(true);
+    expect(unpublished.portableIdentity.portableDid.metadata.versionId).toBe('11');
+  });
+
+  it('accepts the real DID-DHT DNS representation of the imported document', async () => {
+    const existing = await validatePortableOwnerIdentity(await dhtFixture());
+    const packet = await DidDhtDocument.toDnsPacket({
+      didDocument : existing.portableIdentity.portableDid.document,
+      didMetadata : existing.portableIdentity.portableDid.metadata,
+    });
+    const resolution = await DidDhtDocument.fromDnsPacket({
+      didUri    : existing.did,
+      dnsPacket : packet,
+    });
+    vi.spyOn(DidDht, 'resolve').mockResolvedValue(resolution);
+
+    await expect(ensurePortableOwnerPublished(existing)).resolves.toBeUndefined();
+  });
+
+  it('canonicalizes equivalent DID-DHT document representations before publication checks', async () => {
+    const fixture = await dhtFixture();
+    fixture.portableDid.document.controller = [fixture.portableDid.uri];
+    fixture.portableDid.document.service![0].serviceEndpoint = 'https://dwn.example';
+    for (const method of fixture.portableDid.document.verificationMethod ?? []) {
+      delete method.publicKeyJwk!.kid;
+    }
+    const signingMethod = fixture.portableDid.document.verificationMethod
+      ?.find((method) => method.id.endsWith('#sig'));
+    delete signingMethod!.publicKeyJwk!.alg;
+
+    const existing = await validatePortableOwnerIdentity(fixture);
+    expect(existing.portableIdentity.portableDid.document.controller).toBe(existing.did);
+    expect(existing.portableIdentity.portableDid.document.service![0].serviceEndpoint).toEqual([
+      'https://dwn.example',
+    ]);
+    const packet = await DidDhtDocument.toDnsPacket({
+      didDocument : existing.portableIdentity.portableDid.document,
+      didMetadata : existing.portableIdentity.portableDid.metadata,
+    });
+    const resolution = await DidDhtDocument.fromDnsPacket({
+      didUri    : existing.did,
+      dnsPacket : packet,
+    });
+    vi.spyOn(DidDht, 'resolve').mockResolvedValue(resolution);
+
+    await expect(ensurePortableOwnerPublished(existing)).resolves.toBeUndefined();
+  });
+
+  it('rejects a publication attempt that was not acknowledged', async () => {
+    const unpublished = await validatePortableOwnerIdentity(await dhtFixture());
+    vi.spyOn(DidDht, 'resolve').mockResolvedValue({
+      didDocument           : undefined,
+      didDocumentMetadata   : {},
+      didResolutionMetadata : { error: 'notFound' },
+    } as any);
+    vi.spyOn(DidDht, 'publish').mockResolvedValue({
+      didDocument           : unpublished.portableIdentity.portableDid.document,
+      didDocumentMetadata   : { published: false },
+      didRegistrationMetadata: {},
+    } as any);
+
+    await expect(ensurePortableOwnerPublished(unpublished)).rejects.toThrow('publication was not acknowledged');
   });
 
   it('rejects connected identities', async () => {

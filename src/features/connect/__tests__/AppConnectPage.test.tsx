@@ -53,12 +53,9 @@ vi.mock('../connect-effects', () => ({
   submitConnectResponse: mocks.submitConnectResponse,
 }));
 
-vi.mock('../protocol-install', () => ({
-  getRequestedProtocolDefinitionsConflictMessage: vi.fn(),
-  getProtocolSetupStatus: vi.fn(() => 'install'),
+vi.mock('../protocol-install', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../protocol-install')>(),
   prepareProtocol: mocks.prepareProtocol,
-  protocolDefinitionsMatch: vi.fn(() => true),
-  protocolHasEncryptedTypes: vi.fn(() => false),
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
 
@@ -265,6 +262,20 @@ describe('AppConnectPage', () => {
     expect(await screen.findByText(/No identity uses a DID method supported/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
     expect(mocks.prepareProtocol).not.toHaveBeenCalled();
+  });
+
+  it('blocks approval when protocol verification finds a conflict', async () => {
+    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.queryProtocolSetupStatus.mockResolvedValue('conflict');
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    expect(await screen.findByText('Protocol setup conflict')).toBeInTheDocument();
+    expect(approve).toBeDisabled();
+    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
+    expect(mocks.submitConnectResponse).not.toHaveBeenCalled();
   });
 
   it('prepares an identical requested protocol only once', async () => {

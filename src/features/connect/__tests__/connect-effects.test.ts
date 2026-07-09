@@ -207,16 +207,42 @@ describe('connect Effect adapters', () => {
     );
   });
 
-  it('delivers private grant keys only for Records.Read scopes', () => {
-    const grants = ['read', 'write', 'messages'];
+  it('selects private grant-key delivery only for reads of encrypted protocols', () => {
+    const encryptedProtocol = 'https://example.com/protocols/encrypted';
+    const unencryptedProtocol = 'https://example.com/protocols/plaintext';
+    const grants = ['encrypted-read', 'write', 'messages', 'plaintext-read'];
     const scopes = [
-      { interface: 'Records', method: 'Read', protocol: 'https://example.com/protocols/demo' },
-      { interface: 'Records', method: 'Write', protocol: 'https://example.com/protocols/demo' },
-      { interface: 'Messages', method: 'Read', protocol: 'https://example.com/protocols/demo' },
+      { interface: 'Records', method: 'Read', protocol: encryptedProtocol },
+      { interface: 'Records', method: 'Write', protocol: encryptedProtocol },
+      { interface: 'Messages', method: 'Read', protocol: encryptedProtocol },
+      { interface: 'Records', method: 'Read', protocol: unencryptedProtocol },
     ];
+    const encryptedDefinition = {
+      protocol  : encryptedProtocol,
+      published : false,
+      types     : { message: { encryptionRequired: true } },
+      structure : { message: {} },
+    };
+    const plaintextDefinition = {
+      protocol  : unencryptedProtocol,
+      published : false,
+      types     : { message: {} },
+      structure : { message: {} },
+    };
 
-    expect(selectEncryptedReadGrants(grants, scopes as any)).toEqual(['read']);
-    expect(() => selectEncryptedReadGrants(['read'], scopes as any)).toThrow('grant count');
+    expect(selectEncryptedReadGrants(
+      grants,
+      scopes as any,
+      [encryptedDefinition, plaintextDefinition],
+    )).toEqual({
+      grants              : ['encrypted-read'],
+      protocolDefinitions : [encryptedDefinition],
+    });
+    expect(() => selectEncryptedReadGrants(
+      ['encrypted-read'],
+      scopes as any,
+      [encryptedDefinition, plaintextDefinition],
+    )).toThrow('grant count');
   });
 
   it('creates and returns narrowly scoped session revocation grants', async () => {

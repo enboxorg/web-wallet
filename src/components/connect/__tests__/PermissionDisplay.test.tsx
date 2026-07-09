@@ -10,7 +10,7 @@ const profileProtocol = 'https://identity.foundation/protocols/profile';
 const socialGraphProtocol = 'https://identity.foundation/protocols/social-graph';
 
 describe('PermissionDisplay', () => {
-  it('shows user-facing record scopes and hides internal connect support scopes', () => {
+  it('keeps support scopes out of the summary while disclosing every granted scope', () => {
     const permissions = [{
       protocolDefinition: {
         protocol: 'https://example.com/protocols/demo',
@@ -56,9 +56,30 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText('Add or edit')).toBeInTheDocument();
     expect(screen.getByText('Delete')).toBeInTheDocument();
     expect(screen.queryByText('Query')).not.toBeInTheDocument();
-    expect(screen.queryByText('Protocols.Query')).not.toBeInTheDocument();
-    expect(screen.queryByText('Messages.Read')).not.toBeInTheDocument();
+    expect(screen.getByText('Additional grants: Protocols.Query, Messages.Read.')).toBeInTheDocument();
+    expect(screen.getAllByText('Protocols.Query')).toHaveLength(1);
+    expect(screen.getAllByText('Messages.Read')).toHaveLength(1);
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
+  });
+
+  it('shows the effective capability when a request contains only a support scope', () => {
+    const permissions = [{
+      protocolDefinition: {
+        protocol: 'https://example.com/protocols/demo',
+        types: {},
+        structure: {},
+      },
+      permissionScopes: [{
+        interface: 'Messages',
+        method: 'Read',
+        protocol: 'https://example.com/protocols/demo',
+      }],
+    }] as unknown as ConnectPermissionRequest[];
+
+    render(<PermissionDisplay permissions={permissions} />);
+
+    expect(screen.getByText('View messages from a custom data type')).toBeInTheDocument();
+    expect(screen.getByText('Messages.Read')).toBeInTheDocument();
   });
 
   it('does not promote unknown protocol slugs into trusted data names', () => {

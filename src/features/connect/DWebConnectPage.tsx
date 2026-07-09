@@ -96,13 +96,17 @@ export default function DWebConnectPage() {
   const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
 
   const isPopup = useMemo(() => !!window.opener, []);
-  const { data: selectedPermissions } = usePermissions(hasPortableIdentity ? '' : selectedDid);
 
   // Build identity options
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? []).map((id: any) => ({
     value: id.did.uri as string,
     label: id.metadata?.name ?? truncateDid(id.did.uri),
   }));
+  const portableIdentityAlreadyOwned = hasPortableIdentity
+    && identityOptions.some((option) => option.value === portableIdentityDid);
+  const { data: selectedPermissions } = usePermissions(
+    hasPortableIdentity && !portableIdentityAlreadyOwned ? '' : selectedDid,
+  );
 
   // Auto-select requested identity when owned, otherwise first identity.
   useEffect(() => {
@@ -310,15 +314,21 @@ export default function DWebConnectPage() {
       );
 
       setStatusMessage('Creating encrypted key deliveries...');
-      const encryptedReadGrants = selectEncryptedReadGrants(allGrants, preflight.scopes);
-      await createAndSendGrantKeyRecords(
-        approvalDid,
-        delegateBearerDid.uri,
-        delegateX25519PrivateKey,
-        encryptedReadGrants,
+      const encryptedReadSelection = selectEncryptedReadGrants(
+        allGrants,
+        preflight.scopes,
         preflight.definitions,
-        agent,
       );
+      if (encryptedReadSelection.grants.length > 0) {
+        await createAndSendGrantKeyRecords(
+          approvalDid,
+          delegateBearerDid.uri,
+          delegateX25519PrivateKey,
+          encryptedReadSelection.grants,
+          encryptedReadSelection.protocolDefinitions,
+          agent,
+        );
+      }
 
       setStatusMessage('Preparing session revocation...');
       const grantBundle = await createSessionRevocationGrants(
@@ -350,11 +360,11 @@ export default function DWebConnectPage() {
       setPhase('done');
       approvalCompletedRef.current = true;
 
-      await runEnboxPromise(publishWalletEvent({
+      void runEnboxPromise(publishWalletEvent({
         _tag         : 'connect.approved',
         origin,
         connectedDid : approvalDid,
-      }));
+      })).catch((err: unknown) => console.warn('DWeb connect approval event failed:', err));
 
       // Auto-close after a few seconds
       setTimeout(() => window.close(), 3000);
@@ -422,8 +432,6 @@ export default function DWebConnectPage() {
   const existingSessions = useMemo(() =>
     findMatchingActiveConnectSessions(selectedPermissions, { origin, appName }),
   [selectedPermissions, origin, appName]);
-  const portableIdentityAlreadyOwned = hasPortableIdentity
-    && identityOptions.some((option) => option.value === portableIdentityDid);
   const shouldCheckPortableProtocol = portableIdentityAlreadyOwned || !hasPortableIdentity;
   const checkedProtocolSetupStatuses = useProtocolSetupStatuses(
     selectedDid,

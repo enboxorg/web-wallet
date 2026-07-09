@@ -2,6 +2,10 @@ import { STORAGE_KEYS } from './constants';
 
 const LOCAL_DWN_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const STORED_ENDPOINTS_VERSION = 1;
+const BUILT_IN_DWN_ENDPOINTS = [
+  'https://enbox-dwn.fly.dev',
+  'https://dev.aws.dwn.enbox.id',
+] as const;
 
 /**
  * Default DWN (Decentralised Web Node) endpoints.
@@ -12,15 +16,22 @@ const STORED_ENDPOINTS_VERSION = 1;
  * `VITE_DWN_ENDPOINTS=http://localhost:3000 bun dev`.
  */
 export const DEFAULT_DWN_ENDPOINTS: string[] = (() => {
-  const raw =
-    (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_DWN_ENDPOINTS) || '';
+  const raw = import.meta.env.VITE_DWN_ENDPOINTS || '';
   const overrides = String(raw)
     .split(',')
     .map((endpoint: string) => endpoint.trim())
     .filter(Boolean);
-  if (overrides.length > 0) { return overrides; }
-  return ['https://enbox-dwn.fly.dev', 'https://dev.aws.dwn.enbox.id'];
+  return resolveDefaultDwnEndpoints(overrides.length > 0 ? overrides : BUILT_IN_DWN_ENDPOINTS);
 })();
+
+function resolveDefaultDwnEndpoints(configured: readonly string[]): string[] {
+  try {
+    return normalizeDwnEndpoints(configured);
+  } catch (error) {
+    console.warn('Invalid VITE_DWN_ENDPOINTS configuration; using hosted defaults:', error);
+    return [...BUILT_IN_DWN_ENDPOINTS];
+  }
+}
 
 /** Normalize and validate one remote DWN endpoint. */
 export function normalizeDwnEndpoint(
@@ -79,7 +90,7 @@ export function getConfiguredDwnEndpoints(): string[] {
   try {
     const serialized = globalThis.localStorage?.getItem(STORAGE_KEYS.WALLET_DWN_ENDPOINTS);
     if (!serialized) {
-      return normalizeDwnEndpoints(DEFAULT_DWN_ENDPOINTS);
+      return [...DEFAULT_DWN_ENDPOINTS];
     }
 
     const stored = JSON.parse(serialized) as { version?: unknown; endpoints?: unknown };
@@ -88,11 +99,11 @@ export function getConfiguredDwnEndpoints(): string[] {
       || !Array.isArray(stored.endpoints)
       || !stored.endpoints.every((endpoint) => typeof endpoint === 'string')
     ) {
-      return normalizeDwnEndpoints(DEFAULT_DWN_ENDPOINTS);
+      return [...DEFAULT_DWN_ENDPOINTS];
     }
     return normalizeDwnEndpoints(stored.endpoints);
   } catch {
-    return normalizeDwnEndpoints(DEFAULT_DWN_ENDPOINTS);
+    return [...DEFAULT_DWN_ENDPOINTS];
   }
 }
 

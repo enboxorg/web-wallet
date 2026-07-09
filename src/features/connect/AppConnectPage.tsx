@@ -364,7 +364,9 @@ export default function AppConnectPage() {
     setFlashOn(scannerRef.current?.isFlashOn() ?? false);
   }
 
-  const requesterLabel = connectionRequest?.clientDid ?? 'Unknown requester';
+  const requesterLabel = connectionRequest?.clientDid
+    ? truncateDid(connectionRequest.clientDid)
+    : 'Unknown requester';
   const requestSummary = connectionRequest
     ? getConnectPermissionAskSummary(permissionRequests)
     : '';
@@ -517,8 +519,11 @@ export default function AppConnectPage() {
                 <Link2 className="h-5 w-5" />
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-semibold text-text-primary">
-                  {connectionRequest.clientDid ? truncateDid(connectionRequest.clientDid) : requesterLabel}
+                <p
+                  className="truncate text-base font-semibold text-text-primary"
+                  title={connectionRequest.clientDid}
+                >
+                  {requesterLabel}
                 </p>
                 {connectionRequest.appName && (
                   <p className="mt-0.5 truncate text-xs text-text-secondary">

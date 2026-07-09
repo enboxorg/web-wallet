@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
@@ -21,10 +22,10 @@ const mocks = vi.hoisted(() => ({
   encryptDWebConnectResponse: vi.fn(),
   ensureRegistrationForDids: vi.fn(),
   importValidatedIdentity: vi.fn(),
-  selectEncryptedReadGrants: vi.fn((grants: unknown[]) => grants),
   validatePortableOwnerIdentity: vi.fn(),
   prepareProtocol: vi.fn(),
   queryProtocolSetupStatus: vi.fn(),
+  publishWalletEvent: vi.fn(),
   permissions: [] as any[],
   identities: [
     {
@@ -47,8 +48,8 @@ vi.mock('@/enbox/hooks/use-identities', () => ({
 }));
 
 vi.mock('@/enbox/hooks/use-permissions', () => ({
-  usePermissions: () => ({
-    data      : mocks.permissions,
+  usePermissions: (did: string) => ({
+    data      : did ? mocks.permissions : [],
     isLoading : false,
     isError   : false,
   }),
@@ -58,25 +59,27 @@ vi.mock('@/enbox/registration', () => ({
   ensureRegistrationForDids: mocks.ensureRegistrationForDids,
 }));
 
+vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/enbox/effect/wallet-events')>(),
+  publishWalletEvent: mocks.publishWalletEvent,
+}));
+
 vi.mock('@/enbox/mutations/identity-mutations', () => ({
   importValidatedIdentity: mocks.importValidatedIdentity,
 }));
 
-vi.mock('../connect-effects', () => ({
+vi.mock('../connect-effects', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../connect-effects')>(),
   createAndSendGrantKeyRecords: mocks.createAndSendGrantKeyRecords,
   createDelegateDid: mocks.createDelegateDid,
   createPermissionGrants: mocks.createPermissionGrants,
   createSessionRevocationGrants: mocks.createSessionRevocationGrants,
   encryptDWebConnectResponse: mocks.encryptDWebConnectResponse,
-  selectEncryptedReadGrants: mocks.selectEncryptedReadGrants,
 }));
 
-vi.mock('../protocol-install', () => ({
-  getRequestedProtocolDefinitionsConflictMessage: vi.fn(),
-  getProtocolSetupStatus: vi.fn(() => 'install'),
+vi.mock('../protocol-install', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../protocol-install')>(),
   prepareProtocol: mocks.prepareProtocol,
-  protocolDefinitionsMatch: vi.fn(() => true),
-  protocolHasEncryptedTypes: vi.fn(() => false),
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
 
@@ -90,8 +93,14 @@ const permissionRequest = {
   protocolDefinition: {
     protocol  : 'https://example.com/protocols/tasks',
     published : false,
-    types     : {},
-    structure : {},
+    types     : {
+      task: {
+        schema             : 'https://example.com/protocols/tasks/schema/task',
+        dataFormats        : ['application/json'],
+        encryptionRequired : true,
+      },
+    },
+    structure : { task: {} },
   },
   permissionScopes: [
     {
@@ -173,6 +182,7 @@ describe('DWebConnectPage', () => {
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
+    mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.validatePortableOwnerIdentity.mockImplementation(async (portableIdentity: any) => ({
       did: portableIdentity.portableDid.uri,
       dwnEndpoints: ['https://portable-dwn.example'],
@@ -254,6 +264,62 @@ describe('DWebConnectPage', () => {
       },
       'https://app.example',
     );
+  });
+
+  it('does not deliver a private key for an unencrypted protocol read', async () => {
+    useDWebConnectStore.setState({
+      pendingRequests: [{
+        ...connectRequest(),
+        data: {
+          ...connectRequest().data,
+          permissions: [{
+            ...permissionRequest,
+            protocolDefinition: {
+              ...permissionRequest.protocolDefinition,
+              types: {
+                task: {
+                  schema      : 'https://example.com/protocols/tasks/schema/task',
+                  dataFormats : ['application/json'],
+                },
+              },
+            },
+          }],
+        },
+      }],
+      walletReady: false,
+    });
+
+    render(<DWebConnectPage />);
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1));
+    expect(mocks.createAndSendGrantKeyRecords).not.toHaveBeenCalled();
+  });
+
+  it('does not replace a delivered success when event publication fails', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('event unavailable')));
+
+    try {
+      render(<DWebConnectPage />);
+      const approve = await screen.findByRole('button', { name: 'Approve' });
+      await waitFor(() => expect(approve).toBeEnabled());
+      fireEvent.click(approve);
+
+      await waitFor(() => expect(warn).toHaveBeenCalledWith(
+        'DWeb connect approval event failed:',
+        expect.anything(),
+      ));
+      expect(window.opener.postMessage).not.toHaveBeenCalledWith(
+        { type: 'dweb-connect-authorization-response', error: 'connection_failed' },
+        'https://app.example',
+      );
+      expect(await screen.findByText('Connected!')).toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('creates grants once with all requested scopes after preparing each protocol', async () => {
@@ -425,6 +491,49 @@ describe('DWebConnectPage', () => {
     expect(await screen.findByText('Protocol setup conflict')).toBeInTheDocument();
     expect(approve).toBeDisabled();
     expect(mocks.importValidatedIdentity).not.toHaveBeenCalled();
+  });
+
+  it('shows existing sessions when a portable identity is already owned', async () => {
+    const portableIdentity = {
+      portableDid : { uri: 'did:dht:portable' },
+      metadata    : { uri: 'did:dht:portable', name: 'Portable' },
+    };
+    mocks.identities = [{
+      did: { uri: 'did:dht:portable' },
+      metadata: { name: 'Portable' },
+    }];
+    mocks.permissions = [{
+      id          : 'grant-existing',
+      grantee     : 'did:jwk:existing',
+      dateGranted : '2026-06-23T00:00:00.000Z',
+      dateExpires : '2999-06-24T00:00:00.000Z',
+      scope       : permissionRequest.permissionScopes[0],
+      connectSession: {
+        id        : 'session-existing',
+        createdAt : '2026-06-23T00:00:00.000Z',
+        expiresAt : '2999-06-24T00:00:00.000Z',
+        appName   : 'Example App',
+        origin    : 'https://app.example',
+        transport : 'postMessage',
+      },
+      revoke: vi.fn(),
+    }];
+    useDWebConnectStore.setState({
+      pendingRequests: [{
+        ...connectRequest(),
+        data: {
+          ...connectRequest().data,
+          did: 'did:dht:portable',
+          portableIdentity,
+        },
+      }],
+      walletReady: false,
+    });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText('Returning connection')).toBeInTheDocument();
+    expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
   });
 
   it('keeps portable approval blocked until existing identities are known', async () => {

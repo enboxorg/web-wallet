@@ -18,6 +18,8 @@ import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
 
+import { protocolHasEncryptedTypes } from './protocol-install';
+
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
 }
@@ -332,14 +334,35 @@ export function createPermissionGrants(
 export function selectEncryptedReadGrants<T>(
   grants: T[],
   scopes: ConnectPermissionRequest['permissionScopes'],
-): T[] {
+  protocolDefinitions: DwnProtocolDefinition[],
+): { grants: T[]; protocolDefinitions: DwnProtocolDefinition[] } {
   if (grants.length !== scopes.length) {
     throw new Error('Connect grant count does not match the approved permission scopes.');
   }
 
-  return grants.filter((_, index) =>
-    scopes[index].interface === 'Records' && scopes[index].method === 'Read'
+  const encryptedDefinitions = new Map(
+    protocolDefinitions
+      .filter(protocolHasEncryptedTypes)
+      .map((definition) => [definition.protocol, definition]),
   );
+  const selectedProtocols = new Set<string>();
+  const selectedGrants = grants.filter((_, index) => {
+    const scope = scopes[index];
+    const protocol = 'protocol' in scope ? scope.protocol : undefined;
+    const selected = scope.interface === 'Records'
+      && scope.method === 'Read'
+      && typeof protocol === 'string'
+      && encryptedDefinitions.has(protocol);
+    if (selected) selectedProtocols.add(protocol);
+    return selected;
+  });
+
+  return {
+    grants: selectedGrants,
+    protocolDefinitions: protocolDefinitions.filter((definition) =>
+      selectedProtocols.has(definition.protocol)
+    ),
+  };
 }
 
 export type ConnectSessionRevocation = {

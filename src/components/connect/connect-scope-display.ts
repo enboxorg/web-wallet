@@ -33,6 +33,19 @@ const RECORD_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key'>> =
   },
 };
 
+const SUPPORT_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key'>> = {
+  'Messages.Read': {
+    label  : 'View messages',
+    phrase : 'view messages from',
+    risk   : 'view',
+  },
+  'Protocols.Query': {
+    label  : 'Inspect setup',
+    phrase : 'inspect setup for',
+    risk   : 'view',
+  },
+};
+
 export function isInternalConnectScope(scope: DwnPermissionScope): boolean {
   return (
     (scope?.interface === 'Protocols' && scope?.method === 'Query')
@@ -44,17 +57,17 @@ export function getDisplayScopes(
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
 ): DisplayScope[] {
   const scopes = new Map<string, DisplayScope>();
+  const supportScopes = new Map<string, DisplayScope>();
 
   for (const scope of permissionScopes) {
-    if (isInternalConnectScope(scope)) continue;
-
     const scopeInterface = scope.interface;
     const method = scope.method;
     const key = `${scopeInterface}.${method}`;
-    scopes.set(key, { interface: scopeInterface, method });
+    const target = isInternalConnectScope(scope) ? supportScopes : scopes;
+    target.set(key, { interface: scopeInterface, method });
   }
 
-  return [...scopes.values()];
+  return [...(scopes.size > 0 ? scopes : supportScopes).values()];
 }
 
 export function mergePermissionRequestsByProtocol(
@@ -85,17 +98,20 @@ export function mergePermissionRequestsByProtocol(
 
 export function getPermissionActions(scopes: DisplayScope[]): PermissionAction[] {
   return scopes.map((scope) => {
-    if (scope.interface === 'Records' && RECORD_PERMISSION_ACTIONS[scope.method]) {
-      const action = RECORD_PERMISSION_ACTIONS[scope.method];
+    const key = `${scope.interface}.${scope.method}`;
+    const action = scope.interface === 'Records'
+      ? RECORD_PERMISSION_ACTIONS[scope.method]
+      : SUPPORT_PERMISSION_ACTIONS[key];
+    if (action) {
       return {
         ...action,
-        key: `${scope.interface}.${scope.method}`,
+        key,
       };
     }
 
     const label = getScopeLabel(scope);
     return {
-      key    : `${scope.interface}.${scope.method}`,
+      key,
       label,
       phrase : label,
       risk   : 'other',

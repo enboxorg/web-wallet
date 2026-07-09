@@ -120,7 +120,6 @@ export default function CliConnectPage() {
       const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
         appName        : request.appName,
         clientMetadata : request.clientMetadata,
-        transport      : 'relay',
       });
 
       setStatusMessage('Creating grants...');
@@ -133,15 +132,21 @@ export default function CliConnectPage() {
       );
 
       setStatusMessage('Creating encrypted key deliveries...');
-      const encryptedReadGrants = selectEncryptedReadGrants(grants, preflight.scopes);
-      await createAndSendGrantKeyRecords(
-        selectedDid,
-        delegateBearerDid.uri,
-        delegateX25519PrivateKey,
-        encryptedReadGrants,
+      const encryptedReadSelection = selectEncryptedReadGrants(
+        grants,
+        preflight.scopes,
         preflight.definitions,
-        agent,
       );
+      if (encryptedReadSelection.grants.length > 0) {
+        await createAndSendGrantKeyRecords(
+          selectedDid,
+          delegateBearerDid.uri,
+          delegateX25519PrivateKey,
+          encryptedReadSelection.grants,
+          encryptedReadSelection.protocolDefinitions,
+          agent,
+        );
+      }
 
       setStatusMessage('Preparing session revocation...');
       const grantBundle = await createSessionRevocationGrants(
@@ -171,11 +176,11 @@ export default function CliConnectPage() {
       approvalCompletedRef.current = true;
       setPhase('done');
 
-      await runEnboxPromise(publishWalletEvent({
+      void runEnboxPromise(publishWalletEvent({
         _tag         : 'connect.approved',
         origin       : request.appName ?? 'cli',
         connectedDid : selectedDid,
-      }));
+      })).catch((err: unknown) => console.warn('CLI connect approval event failed:', err));
     } catch (err) {
       console.error('CLI connect error:', err);
       if (request.callbackUrl) {
