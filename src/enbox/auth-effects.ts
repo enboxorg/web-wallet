@@ -1,5 +1,5 @@
 import { Effect, Schedule } from 'effect';
-import { AuthManager, requestLocalDwnDiscovery } from '@enbox/auth';
+import { AuthManager } from '@enbox/auth';
 
 import { STORAGE_KEYS } from '@/lib/constants';
 import { getConfiguredDwnEndpoints, normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
@@ -82,6 +82,25 @@ export function createWalletAuthManagerEffect() {
       } as Parameters<typeof AuthManager.create>[0]),
     catch: sdkError('authManager.create'),
   });
+}
+
+// ── Local DWN discovery (DORMANT — pending migration) ──────────────
+//
+// @enbox/auth 0.6.61 removed `requestLocalDwnDiscovery` (the `dwn://connect`
+// auto-redirect discovery) in favor of an explicit, user-gesture localhost
+// pairing model: `probeLocalDwn`, `initiateLocalDwnPairing`,
+// `requestLocalDwnPairing`, `discoverLocalDwnPairing`. Existing pairings are
+// restored automatically by the AuthManager on boot.
+//
+// The discovery effects below are kept intact but DORMANT (gated behind
+// `LOCAL_DWN_DISCOVERY_ENABLED` in provider.tsx) so the in-progress local-DWN
+// pairing work can resume from here. To revive: replace this placeholder with
+// the pairing primitives above, wired to a user gesture in the provider.
+function requestLocalDwnDiscovery(): void {
+  throw new Error(
+    'requestLocalDwnDiscovery was removed in @enbox/auth 0.6.61; migrate to the ' +
+      'localhost-pairing API (probeLocalDwn / initiateLocalDwnPairing / requestLocalDwnPairing).',
+  );
 }
 
 export function requestLocalDwnDiscoveryEffect() {

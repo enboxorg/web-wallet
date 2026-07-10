@@ -49,8 +49,15 @@ import { runEnboxPromise, runEnboxSync } from './effect/runtime';
 import { withWalletOperationLock } from './effect/keyed-mutex';
 import { publishWalletEvent } from './effect/wallet-events';
 
-// ── Local DWN discovery ────────────────────────────────────────────
-
+// ── Local DWN discovery (DORMANT — pending migration) ──────────────
+//
+// @enbox/auth 0.6.61 removed the wallet-driven `dwn://connect` auto-trigger
+// in favor of an explicit, user-gesture localhost-pairing model, and the
+// AuthManager now restores any previously paired local DWN on boot. The
+// pre-auth discovery block below is kept intact but gated off so the
+// in-progress pairing work can resume from here. Flip this to `true` (and
+// migrate `requestLocalDwnDiscoveryEffect` to the new pairing API) to revive.
+const LOCAL_DWN_DISCOVERY_ENABLED = false;
 const DWN_DISCOVERY_TIMEOUT_MS = 3_000;
 const AUTH_OPERATION_LOCK_KEY = 'auth:vault';
 
@@ -236,18 +243,23 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let cancelled = false;
 
     async function init() {
-      const hasFragment = globalThis.location?.hash?.length > 1;
-      const cachedEndpoint = runEnboxSync(localStorageGetEffect(STORAGE_KEYS.LOCAL_DWN_ENDPOINT));
+      // DORMANT: see LOCAL_DWN_DISCOVERY_ENABLED above. Kept intact for the
+      // in-progress local-DWN pairing migration; the AuthManager restores any
+      // previously paired local DWN on boot, so this pre-auth trigger is off.
+      if (LOCAL_DWN_DISCOVERY_ENABLED) {
+        const hasFragment = globalThis.location?.hash?.length > 1;
+        const cachedEndpoint = runEnboxSync(localStorageGetEffect(STORAGE_KEYS.LOCAL_DWN_ENDPOINT));
 
-      // Only attempt local DWN discovery on desktop. On mobile/touch
-      // devices there's no local DWN, and the dwn:// URL open triggers
-      // a blocked popup warning in mobile browsers.
-      const isTouchDevice = 'ontouchstart' in globalThis || navigator.maxTouchPoints > 0;
-      if (!hasFragment && !cachedEndpoint && !isTouchDevice) {
-        await runEnboxPromise(
-          requestLocalDwnDiscoveryUntilEndpointEffect(DWN_DISCOVERY_TIMEOUT_MS),
-        );
-        if (cancelled) return;
+        // Only attempt local DWN discovery on desktop. On mobile/touch
+        // devices there's no local DWN, and the dwn:// URL open triggers
+        // a blocked popup warning in mobile browsers.
+        const isTouchDevice = 'ontouchstart' in globalThis || navigator.maxTouchPoints > 0;
+        if (!hasFragment && !cachedEndpoint && !isTouchDevice) {
+          await runEnboxPromise(
+            requestLocalDwnDiscoveryUntilEndpointEffect(DWN_DISCOVERY_TIMEOUT_MS),
+          );
+          if (cancelled) return;
+        }
       }
 
       const auth = await runEnboxPromise(createWalletAuthManagerEffect());
