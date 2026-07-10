@@ -2,17 +2,19 @@
 /**
  * Generates the themed Enbox brand assets committed under `public/`:
  *
- *   logo-blue.svg / logo-rose.svg   — the dot-grid mark, one per product accent
+ *   logo-blue.svg / logo-rose.svg   — the stacked-squares mark, one per accent
  *   og-blue.png  / og-rose.png      — 1200×630 Open Graph card (mark on dark)
  *
- * The mark is a 5×5 dot grid whose dot size and color depth increase toward
- * the center (tiers keyed by Manhattan distance from the center dot). The
- * geometry matches the original `logo.png` raster; palettes follow the
- * product accents in `src/app.css` (`--accent` rose #ff6b8a, blue #3b82f6).
+ * The mark is three overlapping rounded squares receding into depth (back
+ * square dimmest, front square brightest) with a dot at the intersection.
+ * Palettes map that dim → mid → bright ramp onto the product accents from
+ * `src/app.css` (`--accent` rose #ff6b8a, blue #3b82f6). Icon sources carry
+ * the dark brand tile (#0a0a0f) full-bleed so generated apple-touch and
+ * maskable icons never composite the bright front square onto white.
  *
  * Run from the repo root after changing palettes or geometry:
  *
- *   node scripts/generate-brand-assets.mjs
+ *   bun scripts/generate-brand-assets.mjs
  */
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -21,57 +23,44 @@ import sharp from 'sharp';
 
 const publicDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../public');
 
-// Lightest (outer corners) → darkest (center dot).
+const BACKGROUND = '#0a0a0f';
+
+// [back square, mid square, front square]; the dot shares the front color.
 const PALETTES = {
-  blue: ['#6cb3ff', '#4ba2ff', '#2d92ff', '#1385ff', '#0064cf'],
-  rose: ['#ffb3c6', '#ff8fa6', '#ff6b8a', '#f2476e', '#cc2955'],
+  blue: ['#1d4ed8', '#3b82f6', '#dbeafe'],
+  rose: ['#cc2955', '#ff6b8a', '#ffe1e8'],
 };
 
-const VIEWBOX = 153;
-const CENTERS = [11, 43.5, 76.5, 109.5, 142];
+const VIEWBOX = 40;
 
-/** Dot tier for grid cell (row, col): [radius, palette index]. */
-function dotTier(row, col) {
-  const dr = Math.abs(row - 2);
-  const dc = Math.abs(col - 2);
-  switch (dr + dc) {
-    case 0: return [14.8, 4];
-    case 1: return [12.85, 3];
-    case 2: return dr === 1 ? [11, 2] : [10.2, 2];
-    case 3: return [9.2, 1];
-    default: return [7.25, 0];
-  }
+/** The stacked-squares mark, drawn in viewBox 0 0 40 40. */
+function markShapes(palette) {
+  const [back, mid, front] = palette;
+  return `  <rect x="4" y="4" width="20" height="20" rx="4" stroke="${back}" stroke-width="1.5" fill="none"/>
+  <rect x="10" y="10" width="20" height="20" rx="4" stroke="${mid}" stroke-width="1.5" fill="none"/>
+  <rect x="16" y="16" width="20" height="20" rx="4" stroke="${front}" stroke-width="1.5" fill="none"/>
+  <circle cx="26" cy="26" r="2.5" fill="${front}"/>`;
 }
 
 function markSvg(palette) {
-  const circles = [];
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
-      const [radius, tier] = dotTier(row, col);
-      circles.push(`  <circle cx="${CENTERS[col]}" cy="${CENTERS[row]}" r="${radius}" fill="${palette[tier]}"/>`);
-    }
-  }
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX} ${VIEWBOX}">\n${circles.join('\n')}\n</svg>\n`;
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX} ${VIEWBOX}">
+  <rect width="${VIEWBOX}" height="${VIEWBOX}" fill="${BACKGROUND}"/>
+${markShapes(palette)}
+</svg>
+`;
 }
 
 function ogSvg(palette) {
   const width = 1200;
   const height = 630;
-  const markSize = 360;
+  const markSize = 400;
   const x = (width - markSize) / 2;
   const y = (height - markSize) / 2;
   const scale = markSize / VIEWBOX;
-  const circles = [];
-  for (let row = 0; row < 5; row++) {
-    for (let col = 0; col < 5; col++) {
-      const [radius, tier] = dotTier(row, col);
-      circles.push(`    <circle cx="${CENTERS[col]}" cy="${CENTERS[row]}" r="${radius}" fill="${palette[tier]}"/>`);
-    }
-  }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-  <rect width="${width}" height="${height}" fill="#0a0a0f"/>
+  <rect width="${width}" height="${height}" fill="${BACKGROUND}"/>
   <g transform="translate(${x} ${y}) scale(${scale})">
-${circles.join('\n')}
+${markShapes(palette)}
   </g>
 </svg>`;
 }
