@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, Check, X, AlertCircle, Import } from 'lucide-react';
-import { EnboxConnectProtocol, type ConnectPermissionRequest } from '@enbox/agent';
+import { Globe, Check, X, AlertCircle } from 'lucide-react';
+import { WalletPostMessageTransport } from '@enbox/browser';
+import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
 import { Effect } from 'effect';
 
 import { Button } from '@/components/ui/Button';
@@ -13,38 +14,20 @@ import { getConnectPermissionAskSummary } from '@/components/connect/permission-
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
-import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
 import { truncateDid } from '@/lib/utils';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
-import { importValidatedIdentity } from '@/enbox/mutations/identity-mutations';
 import { ensureRegistrationForDids } from '@/enbox/registration';
-import { prepareProtocol } from './protocol-install';
+import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kernel';
 import {
-  createAndSendGrantKeyRecords,
-  createDelegateDid,
-  createPermissionGrants,
-  createSessionRevocationGrants,
-  encryptDWebConnectResponse,
-  selectEncryptedReadGrants,
-} from './connect-effects';
-import {
-  isDWebConnectRequestEvent,
-  isValidDWebConnectEphemeralPublicKey,
-  normalizeTrustedOrigin,
-  referrerOrigin,
-  sanitizeDWebConnectRequest,
-} from './dweb-connect-messages';
-import {
-  preflightConnectPermissions,
+  isDidSupportedByRequest,
+  preflightConnectRequest,
+  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
-import {
-  type ValidatedPortableOwnerIdentity,
-  validatePortableOwnerIdentity,
-} from './portable-owner-identity';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
+import { prepareProtocol } from './protocol-install';
 import {
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
@@ -62,70 +45,41 @@ function connectErrorMessage(error: unknown): string {
   return message;
 }
 
-function permissionSummaryContinuation(summary: string): string {
-  return summary
-    .replace(/^wants to /, '')
-    .replace(/^wants access to /, 'get access to ');
-}
-
 export default function DWebConnectPage() {
   const agent = useAgent();
-  const { data: identities, isLoading: identitiesLoading } = useIdentities();
-  const consumeRequest = useDWebConnectStore((s) => s.consumeRequest);
+  const { data: identities } = useIdentities();
 
   const [phase, setPhase] = useState<Phase>('waiting');
-  const [_pendingRequest, setPendingRequest] = useState<DWebConnectRequest | null>(null);
-  const activeOriginRef = useRef('');
-  const hasAcceptedRequestRef = useRef(false);
-  const isValidatingRequestRef = useRef(false);
+  const transportRef = useRef<WalletPostMessageTransport>();
+  const transportStartedRef = useRef(false);
   const approvalCompletedRef = useRef(false);
-  const portableIdentityImportedRef = useRef(false);
-  const [permissions, setPermissions] = useState<ConnectPermissionRequest[]>([]);
+  const [connectRequest, setConnectRequest] = useState<ConnectRequest>();
   const [origin, setOrigin] = useState('');
-  const [appName, setAppName] = useState<string | undefined>();
-  const [hasPortableIdentity, setHasPortableIdentity] = useState(false);
-  const [portableIdentityValidation, setPortableIdentityValidation] = useState<
-    ValidatedPortableOwnerIdentity | undefined
-  >();
-  const [portableIdentityDid, setPortableIdentityDid] = useState('');
-  const [portableDwnEndpoints, setPortableDwnEndpoints] = useState<string[]>([]);
-  const [requestedDid, setRequestedDid] = useState('');
   const [selectedDid, setSelectedDid] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
 
   const isPopup = useMemo(() => !!window.opener, []);
+  const permissions = connectRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
+  const appName = connectRequest?.appName;
 
-  // Build identity options
-  const identityOptions: Array<{ value: string; label: string }> = (identities ?? []).map((id: any) => ({
-    value: id.did.uri as string,
-    label: id.metadata?.name ?? truncateDid(id.did.uri),
-  }));
-  const portableIdentityAlreadyOwned = hasPortableIdentity
-    && identityOptions.some((option) => option.value === portableIdentityDid);
-  const { data: selectedPermissions } = usePermissions(
-    hasPortableIdentity && !portableIdentityAlreadyOwned ? '' : selectedDid,
-  );
+  // Build identity options, limited to DID methods the requester supports.
+  const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
+    .filter((id: any) =>
+      connectRequest === undefined
+      || isDidSupportedByRequest(id.did.uri, connectRequest.supportedDidMethods)
+    )
+    .map((id: any) => ({
+      value: id.did.uri as string,
+      label: id.metadata?.name ?? truncateDid(id.did.uri),
+    }));
+  const { data: selectedPermissions } = usePermissions(selectedDid);
 
-  // Auto-select requested identity when owned, otherwise first identity.
+  // Auto-select first identity
   useEffect(() => {
-    if (portableIdentityDid) {
-      if (selectedDid !== portableIdentityDid) {
-        setSelectedDid(portableIdentityDid);
-      }
-      return;
-    }
-
     if (identityOptions.length === 0) {
       if (selectedDid !== '') setSelectedDid('');
-      return;
-    }
-
-    const requested = requestedDid
-      && identityOptions.some((option) => option.value === requestedDid);
-    if (requested && selectedDid !== requestedDid) {
-      setSelectedDid(requestedDid);
       return;
     }
 
@@ -133,229 +87,111 @@ export default function DWebConnectPage() {
     if (!selectedDid || !selectedExists) {
       setSelectedDid(identityOptions[0].value);
     }
-  }, [identityOptions, portableIdentityDid, requestedDid, selectedDid]);
+  }, [identityOptions, selectedDid]);
 
   // Not opened as a popup
   useEffect(() => {
     if (!isPopup) { setPhase('not-popup'); }
   }, [isPopup]);
 
-  // Listen for postMessage events and check the store buffer
+  // Create the wallet transport and await the sealed request. The transport
+  // pins the dapp origin (from an option or `document.referrer`, never `'*'`),
+  // emits the `loaded` beacon, and opens the request via the kernel — ECDH-ES
+  // decryption against its ephemeral key, `apv` origin binding value-checked
+  // against this wallet's origin, JWT verification, and shape assertion.
+  //
+  // The ref guards against React strict mode's double-invoked effects: the
+  // transport (and its beacon) is created once per popup lifetime, so the
+  // dapp never sees two beacons and the request listener is never torn down
+  // mid-handshake.
   useEffect(() => {
-    if (!isPopup) { return; }
+    if (!isPopup || transportStartedRef.current) { return; }
+    transportStartedRef.current = true;
 
-    async function applyRequest(req: DWebConnectRequest): Promise<void> {
-      if (hasAcceptedRequestRef.current || isValidatingRequestRef.current) {
-        return;
-      }
-      isValidatingRequestRef.current = true;
+    (async () => {
       try {
-        const sanitized = sanitizeDWebConnectRequest(req);
-        if (!sanitized) {
-          throw new Error('Invalid DWeb Connect request.');
-        }
-        if (!await isValidDWebConnectEphemeralPublicKey(sanitized.ephemeralPublicKey)) {
-          throw new Error('DWeb Connect requires a valid encrypted response channel.');
-        }
-        await validateConnectPermissionSemantics(preflightConnectPermissions(sanitized.permissions));
-        let portableEndpoints: string[] = [];
-        let validatedIdentity: ValidatedPortableOwnerIdentity | undefined;
-        if (sanitized.portableIdentity !== undefined) {
-          validatedIdentity = await validatePortableOwnerIdentity(
-            sanitized.portableIdentity,
-          );
-          if (validatedIdentity.did !== sanitized.portableIdentityDid) {
-            throw new Error('The portable identity target does not match its validated DID.');
-          }
-          portableEndpoints = validatedIdentity.dwnEndpoints;
+        const transport = await WalletPostMessageTransport.create();
+        transportRef.current = transport;
+
+        // Wallet policy: only converse with HTTPS (or local development)
+        // dapp origins. The transport pins the origin; the wallet decides
+        // whether that origin is acceptable at all.
+        if (!isTrustedDappOrigin(transport.dappOrigin)) {
+          // Do not converse with the untrusted origin at all — close the
+          // transport and drop it so the failure path below sends nothing.
+          transport.close();
+          transportRef.current = undefined;
+          throw new Error('This connection request comes from an untrusted origin.');
         }
 
-        if (activeOriginRef.current && activeOriginRef.current !== sanitized.origin) {
-          return;
-        }
+        const request = await transport.awaitRequest();
+        // Full request preflight — the same wallet policy the relay path
+        // applies: scope allow-list and dry-run validators, session TTL
+        // bounds, delegate DID canonicality, and supported DID methods.
+        await validateConnectPermissionSemantics(preflightConnectRequest(request));
 
-        activeOriginRef.current = sanitized.origin;
-        hasAcceptedRequestRef.current = true;
-        approvalCompletedRef.current = false;
-        portableIdentityImportedRef.current = false;
-        setPendingRequest(req);
-        setOrigin(sanitized.origin);
-        setPermissions(sanitized.permissions);
-        setAppName(sanitized.appName);
-        setRequestedDid(sanitized.requestedDid ?? '');
-        setHasPortableIdentity(!!sanitized.portableIdentity);
-        setPortableIdentityValidation(validatedIdentity);
-        setPortableIdentityDid(sanitized.portableIdentityDid ?? '');
-        setPortableDwnEndpoints(portableEndpoints);
-        if (sanitized.portableIdentityDid) {
-          setSelectedDid(sanitized.portableIdentityDid);
-        }
+        setConnectRequest(request);
+        setOrigin(transport.dappOrigin);
         setPhase('request');
       } catch (error) {
-        const failureOrigin = normalizeTrustedOrigin(req.origin);
-        if (failureOrigin && window.opener) {
-          activeOriginRef.current = failureOrigin;
-          hasAcceptedRequestRef.current = true;
-          approvalCompletedRef.current = true;
-          setOrigin(failureOrigin);
-          window.opener.postMessage(
-            { type: 'dweb-connect-authorization-response', error: 'connection_failed' },
-            failureOrigin,
-          );
+        // Signal the dapp so it stops waiting, then surface the error.
+        approvalCompletedRef.current = true;
+        try {
+          transportRef.current?.deny();
+        } catch {
+          // The transport may never have been created — nothing to signal.
         }
         setErrorMessage(connectErrorMessage(error));
         setPhase('error');
-      } finally {
-        isValidatingRequestRef.current = false;
       }
-    }
-
-    function handleMessage(event: MessageEvent) {
-      if (
-        event.data?.type === 'dweb-connect-authorization-request'
-        && isDWebConnectRequestEvent(event, window.opener, activeOriginRef.current)
-      ) {
-        void applyRequest({
-          origin    : event.origin,
-          data      : event.data,
-          timestamp : Date.now(),
-        });
-      }
-    }
-
-    window.addEventListener('message', handleMessage);
-
-    // Check for buffered requests
-    const buffered = consumeRequest();
-    if (buffered) { void applyRequest(buffered); }
-
-    // Signal to opener that the wallet is ready
-    window.opener?.postMessage(
-      { type: 'dweb-connect-loaded' },
-      referrerOrigin(document.referrer) ?? '*',
-    );
-
-    return () => window.removeEventListener('message', handleMessage);
-  }, [isPopup, consumeRequest]);
+    })();
+  }, [isPopup]);
 
   // ── Approve flow ──────────────────────────────────────────────
 
   async function runApproveFlow() {
-    if (!agent || !selectedDid || !origin) { return; }
+    const transport = transportRef.current;
+    if (!agent || !selectedDid || !connectRequest || !transport) { return; }
     if (approvalCompletedRef.current) { return; }
 
     setPhase('connecting');
-    setStatusMessage(hasPortableIdentity ? 'Importing identity...' : 'Preparing identity...');
 
     try {
-      const sanitizedRequest = _pendingRequest
-        ? sanitizeDWebConnectRequest(_pendingRequest)
-        : undefined;
-      if (!sanitizedRequest) {
-        throw new Error('Invalid DWeb Connect request.');
+      const preflight = preflightConnectRequest(connectRequest);
+      if (!isDidSupportedByRequest(selectedDid, connectRequest.supportedDidMethods)) {
+        throw new Error('The selected identity uses a DID method the requester does not support.');
       }
-
-      const preflight = preflightConnectPermissions(permissions);
-
-      const validatedPortableIdentity = sanitizedRequest.portableIdentity === undefined
-        ? undefined
-        : portableIdentityValidation;
-      if (sanitizedRequest.portableIdentity !== undefined && validatedPortableIdentity === undefined) {
-        throw new Error('The portable identity has not been validated.');
-      }
-      const approvalDid = validatedPortableIdentity?.did ?? selectedDid;
-
-      if (hasPortableIdentity && validatedPortableIdentity) {
-        if (!portableIdentityImportedRef.current) {
-          setStatusMessage('Importing identity...');
-          const importedIdentity = await importValidatedIdentity(
-            agent,
-            validatedPortableIdentity,
-            { allowExistingExact: true, ensurePublished: true },
-          );
-          if (importedIdentity.did.uri !== approvalDid) {
-            throw new Error('The imported identity does not match the requested identity.');
-          }
-          portableIdentityImportedRef.current = true;
-        }
-      }
+      await preflightDelegateEncryption(agent, connectRequest, preflight);
 
       setStatusMessage('Preparing identity...');
-      const dwnEndpoints = validatedPortableIdentity?.dwnEndpoints
-        ?? await agent.dwn.getRemoteDwnEndpointUrls(approvalDid);
-      if (!Array.isArray(dwnEndpoints) || dwnEndpoints.length === 0) {
+      const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
+      if (dwnEndpoints.length === 0) {
         throw new Error('This identity does not have any DWN endpoints configured.');
       }
-      if (validatedPortableIdentity === undefined) {
-        await ensureRegistrationForDids(agent, dwnEndpoints, [approvalDid]);
-      }
+      await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
 
+      // Install (or encryption-upgrade) each requested protocol on every
+      // reachable owner DWN endpoint BEFORE the approval ceremony — the
+      // ceremony only installs when nothing is installed locally; repair and
+      // fail-closed remote verification are the wallet's responsibility.
       setStatusMessage('Preparing protocols...');
       for (const protocolDefinition of preflight.definitions) {
-        await prepareProtocol(approvalDid, agent, protocolDefinition);
+        await prepareProtocol(selectedDid, agent, protocolDefinition);
       }
 
-      setStatusMessage('Creating delegate...');
-      const { delegateBearerDid, delegatePortableDid, delegateX25519PrivateKey } = await createDelegateDid();
-      const connectSession = EnboxConnectProtocol.createConnectSessionMetadata({
-        appName        : sanitizedRequest.appName,
-        appIcon        : sanitizedRequest.appIcon,
-        clientMetadata : sanitizedRequest.clientMetadata,
-        transport      : 'postMessage',
-      });
-
+      // The ceremony creates and delivers the grants, grant keys, and
+      // session revocation grants, and returns the sealed response for the
+      // transport to post back.
       setStatusMessage('Creating grants...');
-      const allGrants = await createPermissionGrants(
-        approvalDid,
-        delegateBearerDid.uri,
-        preflight.scopes,
-        agent,
-        connectSession,
-      );
-
-      setStatusMessage('Creating encrypted key deliveries...');
-      const encryptedReadSelection = selectEncryptedReadGrants(
-        allGrants,
-        preflight.scopes,
-        preflight.definitions,
-      );
-      if (encryptedReadSelection.grants.length > 0) {
-        await createAndSendGrantKeyRecords(
-          approvalDid,
-          delegateBearerDid.uri,
-          delegateX25519PrivateKey,
-          encryptedReadSelection.grants,
-          encryptedReadSelection.protocolDefinitions,
-          agent,
-        );
-      }
-
-      setStatusMessage('Preparing session revocation...');
-      const grantBundle = await createSessionRevocationGrants(
-        approvalDid,
-        delegateBearerDid.uri,
-        allGrants,
-        connectSession.expiresAt,
+      const idToken = await approvePopupConnectRequest(
+        selectedDid,
+        connectRequest,
+        transport.dappOrigin,
         agent,
       );
 
       setStatusMessage('Returning grants...');
-
-      const responsePayload: Record<string, unknown> = {
-        delegateDid  : delegatePortableDid,
-        connectedDid : approvalDid,
-        grants       : grantBundle.grants,
-        sessionRevocations: grantBundle.sessionRevocations,
-      };
-
-      const encryptedPayload = await encryptDWebConnectResponse(
-        responsePayload,
-        sanitizedRequest.ephemeralPublicKey,
-      );
-      window.opener.postMessage(
-        { type: 'dweb-connect-authorization-response', encryptedPayload },
-        origin,
-      );
+      transport.sendResponse(idToken);
 
       setPhase('done');
       approvalCompletedRef.current = true;
@@ -363,7 +199,7 @@ export default function DWebConnectPage() {
       void runEnboxPromise(publishWalletEvent({
         _tag         : 'connect.approved',
         origin,
-        connectedDid : approvalDid,
+        connectedDid : selectedDid,
       })).catch((err: unknown) => console.warn('DWeb connect approval event failed:', err));
 
       // Auto-close after a few seconds
@@ -372,18 +208,17 @@ export default function DWebConnectPage() {
       console.error('DWeb connect error:', err);
       setErrorMessage(connectErrorMessage(err));
       approvalCompletedRef.current = true;
-      if (origin && window.opener) {
-        window.opener.postMessage(
-          { type: 'dweb-connect-authorization-response', error: 'connection_failed' },
-          origin,
-        );
+      try {
+        transport.deny();
+      } catch {
+        // Best-effort — the dapp times out if the deny cannot be delivered.
       }
       setPhase('error');
     }
   }
 
   async function handleApprove() {
-    const lockKey = `dweb-connect:${origin}:${_pendingRequest?.timestamp ?? selectedDid}`;
+    const lockKey = `dweb-connect:${origin}:${connectRequest?.state ?? selectedDid}`;
 
     await runEnboxPromise(
       withWalletOperationLock(
@@ -398,33 +233,24 @@ export default function DWebConnectPage() {
 
   function handleDeny() {
     approvalCompletedRef.current = true;
-    if (origin && window.opener) {
-      window.opener.postMessage(
-        { type: 'dweb-connect-authorization-response', error: 'denied' },
-        origin,
-      );
+    try {
+      transportRef.current?.deny();
       runEnboxPromise(publishWalletEvent({
         _tag: 'connect.denied',
         origin,
       })).catch((err: unknown) => {
         console.warn('DWeb connect deny event failed:', err);
       });
+    } catch {
+      // Best-effort — close regardless.
     }
     window.close();
   }
 
   function handleErrorAction() {
-    setErrorMessage('');
-    if (hasAcceptedRequestRef.current) {
-      window.close();
-      return;
-    }
-
-    setPhase('waiting');
-    window.opener?.postMessage(
-      { type: 'dweb-connect-loaded' },
-      referrerOrigin(document.referrer) ?? '*',
-    );
+    // The transport and the relay request pointer are single-use: once the
+    // handshake has failed there is nothing to retry inside this popup.
+    window.close();
   }
 
   // ── Derived display values ────────────────────────────────────
@@ -432,37 +258,18 @@ export default function DWebConnectPage() {
   const existingSessions = useMemo(() =>
     findMatchingActiveConnectSessions(selectedPermissions, { origin, appName }),
   [selectedPermissions, origin, appName]);
-  const shouldCheckPortableProtocol = portableIdentityAlreadyOwned || !hasPortableIdentity;
-  const checkedProtocolSetupStatuses = useProtocolSetupStatuses(
+  const protocolSetupStatuses = useProtocolSetupStatuses(
     selectedDid,
     agent,
-    shouldCheckPortableProtocol ? permissions : EMPTY_PERMISSION_REQUESTS,
+    permissions,
     protocolSetupRetryKey,
   );
-  const protocolSetupStatuses = useMemo(() =>
-    hasPortableIdentity && identitiesLoading
-      ? Object.fromEntries(permissions.map((permission) => [
-        permission.protocolDefinition.protocol,
-        'checking' as const,
-      ]))
-      : hasPortableIdentity && !portableIdentityAlreadyOwned
-      ? Object.fromEntries(permissions.map((permission) => [
-        permission.protocolDefinition.protocol,
-        'install' as const,
-      ]))
-      : checkedProtocolSetupStatuses,
-  [checkedProtocolSetupStatuses, hasPortableIdentity, identitiesLoading, permissions, portableIdentityAlreadyOwned]);
   const protocolSetupReady = protocolSetupAllowsApproval(permissions, protocolSetupStatuses);
   const requestSummary = useMemo(
     () => getConnectPermissionAskSummary(permissions),
     [permissions],
   );
   const requesterLabel = origin || 'Unknown origin';
-  const isIdentityOverride = Boolean(
-    requestedDid
-    && selectedDid
-    && selectedDid !== requestedDid
-  );
 
   // ── Render ────────────────────────────────────────────────────
 
@@ -510,7 +317,7 @@ export default function DWebConnectPage() {
           <AlertCircle className="h-10 w-10 text-error" />
           <p className="text-sm text-error">{errorMessage}</p>
           <Button variant="secondary" onClick={handleErrorAction}>
-            {hasAcceptedRequestRef.current ? 'Close' : 'Try Again'}
+            Close
           </Button>
         </div>
       )}
@@ -537,53 +344,16 @@ export default function DWebConnectPage() {
                   <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
                     {existingSessions.length > 0 ? 'Returning connection' : 'First connection'}
                   </span>
-                  {hasPortableIdentity && (
-                    <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
-                      Shared owner import
-                    </span>
-                  )}
                 </div>
               </div>
             </div>
             <p className="text-sm leading-relaxed text-text-secondary">
-              {hasPortableIdentity
-                ? `wants to share an owner identity and then ${permissionSummaryContinuation(requestSummary)}`
-                : requestSummary}
+              {requestSummary}
             </p>
           </div>
 
-          {/* Import indicator */}
-          {hasPortableIdentity && (
-            <div className="flex items-center gap-2 rounded-lg border border-blue-500/20 bg-blue-500/10 px-3 py-2">
-              <Import className="h-4 w-4 text-blue-400 shrink-0" />
-              <p className="text-xs text-blue-300">
-                This app is sharing an owner-key copy. It can retain those keys and remain an owner until the identity keys are rotated.
-                The wallet will publish the supplied DID document, import the copy, and reconnect the app as a delegate.
-              </p>
-            </div>
-          )}
-
           {/* Identity selector */}
-          {hasPortableIdentity ? (
-            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-              <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-                Import and approve as
-              </p>
-              <p className="mt-2 font-mono text-xs text-text-primary">
-                {truncateDid(portableIdentityDid)}
-              </p>
-              <p className="mt-3 text-xs font-medium uppercase tracking-wider text-text-ghost">
-                Supplied DWN endpoints
-              </p>
-              <div className="mt-1 space-y-1">
-                {portableDwnEndpoints.map((endpoint) => (
-                  <p key={endpoint} className="break-all font-mono text-[11px] text-text-secondary">
-                    {endpoint}
-                  </p>
-                ))}
-              </div>
-            </section>
-          ) : identityOptions.length > 0 ? (
+          {identityOptions.length > 0 ? (
             <section className="rounded-xl border border-border-default bg-surface-2 p-4">
               <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
                 Approve as
@@ -595,11 +365,6 @@ export default function DWebConnectPage() {
                 value={selectedDid}
                 onChange={(e) => setSelectedDid(e.target.value)}
               />
-              {isIdentityOverride && (
-                <p className="mt-2 text-xs leading-relaxed text-amber-300">
-                  This app requested {truncateDid(requestedDid)}. You selected a different identity.
-                </p>
-              )}
             </section>
           ) : (
             <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center">
@@ -614,6 +379,7 @@ export default function DWebConnectPage() {
             protocolSetupStatuses={protocolSetupStatuses}
             existingSessionCount={existingSessions.length}
             requesterLabel={requesterLabel}
+            sessionDurationSeconds={connectRequest?.requestedSessionTtlSeconds}
             onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
           />
 
@@ -625,7 +391,7 @@ export default function DWebConnectPage() {
             </Button>
             <Button className="flex-1" onClick={handleApprove} disabled={!selectedDid || !protocolSetupReady}>
               <Check className="h-4 w-4" />
-              {hasPortableIdentity ? 'Import & Connect' : 'Approve'}
+              Approve
             </Button>
           </div>
         </div>

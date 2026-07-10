@@ -1,40 +1,41 @@
+import { StrictMode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useDWebConnectStore, type DWebConnectRequest } from '@/stores/dweb-connect-store';
 import DWebConnectPage from '../DWebConnectPage';
 
-const mocks = vi.hoisted(() => ({
-  agent: {
-    id: 'agent-1',
-    dwn: {
-      getRemoteDwnEndpointUrls: vi.fn(),
+const mocks = vi.hoisted(() => {
+  const transport = {
+    dappOrigin   : 'https://app.example',
+    awaitRequest : vi.fn(),
+    sendResponse : vi.fn(),
+    deny         : vi.fn(),
+    close        : vi.fn(),
+  };
+  return {
+    agent: {
+      id: 'agent-1',
+      dwn: {
+        getRemoteDwnEndpointUrls: vi.fn(),
+      },
     },
-    rpc: {
-      getServerInfo: vi.fn(),
-    },
-  },
-  createAndSendGrantKeyRecords: vi.fn(),
-  createDelegateDid: vi.fn(),
-  createPermissionGrants: vi.fn(),
-  createSessionRevocationGrants: vi.fn(),
-  encryptDWebConnectResponse: vi.fn(),
-  ensureRegistrationForDids: vi.fn(),
-  importValidatedIdentity: vi.fn(),
-  validatePortableOwnerIdentity: vi.fn(),
-  prepareProtocol: vi.fn(),
-  queryProtocolSetupStatus: vi.fn(),
-  publishWalletEvent: vi.fn(),
-  permissions: [] as any[],
-  identities: [
-    {
-      did: { uri: 'did:dht:alice' },
-      metadata: { name: 'Alice' },
-    },
-  ] as any[],
-  identitiesLoading: false,
-}));
+    approvePopupConnectRequest: vi.fn(),
+    createTransport: vi.fn(),
+    ensureRegistrationForDids: vi.fn(),
+    prepareProtocol: vi.fn(),
+    queryProtocolSetupStatus: vi.fn(),
+    publishWalletEvent: vi.fn(),
+    transport,
+    permissions: [] as any[],
+    identities: [
+      {
+        did: { uri: 'did:dht:alice' },
+        metadata: { name: 'Alice' },
+      },
+    ] as any[],
+  };
+});
 
 vi.mock('@/enbox/hooks/use-agent', () => ({
   useAgent: () => mocks.agent,
@@ -43,7 +44,7 @@ vi.mock('@/enbox/hooks/use-agent', () => ({
 vi.mock('@/enbox/hooks/use-identities', () => ({
   useIdentities: () => ({
     data      : mocks.identities,
-    isLoading : mocks.identitiesLoading,
+    isLoading : false,
   }),
 }));
 
@@ -64,17 +65,15 @@ vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
   publishWalletEvent: mocks.publishWalletEvent,
 }));
 
-vi.mock('@/enbox/mutations/identity-mutations', () => ({
-  importValidatedIdentity: mocks.importValidatedIdentity,
+vi.mock('@enbox/browser', () => ({
+  WalletPostMessageTransport: {
+    create: mocks.createTransport,
+  },
 }));
 
-vi.mock('../connect-effects', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../connect-effects')>(),
-  createAndSendGrantKeyRecords: mocks.createAndSendGrantKeyRecords,
-  createDelegateDid: mocks.createDelegateDid,
-  createPermissionGrants: mocks.createPermissionGrants,
-  createSessionRevocationGrants: mocks.createSessionRevocationGrants,
-  encryptDWebConnectResponse: mocks.encryptDWebConnectResponse,
+vi.mock('../connect-kernel', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../connect-kernel')>(),
+  approvePopupConnectRequest: mocks.approvePopupConnectRequest,
 }));
 
 vi.mock('../protocol-install', async (importOriginal) => ({
@@ -82,12 +81,6 @@ vi.mock('../protocol-install', async (importOriginal) => ({
   prepareProtocol: mocks.prepareProtocol,
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
-
-vi.mock('../portable-owner-identity', () => ({
-  validatePortableOwnerIdentity: mocks.validatePortableOwnerIdentity,
-}));
-
-const EPHEMERAL_PUBLIC_KEY = 'BD9WY6815Q2-il2LQsSmn0XqWzkCtWClUfHQ5gStlg5xBKyBlwPlNDXXASI1ZWBtZAvYHj2pRKKZF_6e_RCHdKI';
 
 const permissionRequest = {
   protocolDefinition: {
@@ -111,326 +104,182 @@ const permissionRequest = {
   ],
 };
 
-const secondPermissionRequest = {
-  protocolDefinition: {
-    protocol  : 'https://example.com/protocols/profile',
-    published : false,
-    types     : {},
-    structure : {},
-  },
-  permissionScopes: [
-    {
-      interface: 'Records',
-      method: 'Read',
-      protocol: 'https://example.com/protocols/profile',
-    },
-    {
-      interface: 'Records',
-      method: 'Write',
-      protocol: 'https://example.com/protocols/profile',
-    },
-  ],
-};
-
-function connectRequest(): DWebConnectRequest {
+function connectRequest() {
   return {
-    origin: 'https://app.example',
-    timestamp: 1,
-    data: {
-      type: 'dweb-connect-authorization-request',
-      appName: 'Example App',
-      ephemeralPublicKey: EPHEMERAL_PUBLIC_KEY,
-      permissions: [permissionRequest],
-    },
+    clientDid      : 'did:jwk:dapp-client',
+    appName        : 'Example App',
+    clientMetadata : { origin: 'https://claimed.example' },
+    reply          : { mode: 'post_message' },
+    state          : 'state-1',
+    nonce          : 'nonce-1',
+    responseKey    : { kty: 'OKP', crv: 'X25519', x: 'client-response-key' },
+    supportedDidMethods: ['did:dht', 'did:jwk'],
+    permissionRequests: [permissionRequest],
   };
 }
 
 describe('DWebConnectPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useDWebConnectStore.setState({
-      pendingRequests: [connectRequest()],
-      walletReady: false,
-    });
     Object.defineProperty(window, 'opener', {
       configurable: true,
       value: { postMessage: vi.fn() },
-    });
-    Object.defineProperty(document, 'referrer', {
-      configurable: true,
-      value: 'https://app.example/request',
     });
     Object.defineProperty(window, 'close', {
       configurable: true,
       value: vi.fn(),
     });
 
-    mocks.createDelegateDid.mockResolvedValue({
-      delegateBearerDid: { uri: 'did:jwk:delegate' },
-      delegatePortableDid: { uri: 'did:jwk:delegate', privateKeys: [] },
-      delegateX25519PrivateKey: { kty: 'OKP', crv: 'X25519', d: 'secret', x: 'public' },
-    });
-    mocks.createPermissionGrants.mockResolvedValue([{ id: 'grant-1' }]);
-    mocks.createSessionRevocationGrants.mockResolvedValue({
-      grants: [{ id: 'grant-1' }, { id: 'revoke-grant-1' }],
-      sessionRevocations: [{ grantId: 'grant-1', revocationGrantId: 'revoke-grant-1' }],
-    });
-    mocks.createAndSendGrantKeyRecords.mockResolvedValue([]);
-    mocks.encryptDWebConnectResponse.mockResolvedValue({ iv: 'encrypted' });
+    mocks.transport.dappOrigin = 'https://app.example';
+    mocks.createTransport.mockResolvedValue(mocks.transport);
+    mocks.transport.awaitRequest.mockResolvedValue(connectRequest());
+    mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
-    mocks.agent.rpc.getServerInfo.mockResolvedValue({ server: '@enbox/dwn-server' });
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
-    mocks.validatePortableOwnerIdentity.mockImplementation(async (portableIdentity: any) => ({
-      did: portableIdentity.portableDid.uri,
-      dwnEndpoints: ['https://portable-dwn.example'],
-      portableIdentity,
-    }));
     mocks.permissions = [];
     mocks.identities = [{
       did: { uri: 'did:dht:alice' },
       metadata: { name: 'Alice' },
     }];
-    mocks.identitiesLoading = false;
   });
 
-  it('coalesces duplicate approve clicks into one delegate grant response', async () => {
+  it('shows guidance when not opened as a popup', async () => {
+    Object.defineProperty(window, 'opener', { configurable: true, value: null });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/This page handles connection requests/i)).toBeInTheDocument();
+    expect(mocks.createTransport).not.toHaveBeenCalled();
+  });
+
+  it('shows the consent UI with the transport-pinned dapp origin', async () => {
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    // The requester label is the transport-authenticated origin, not the
+    // request's claimed clientMetadata.origin.
+    expect(screen.getByText('https://app.example')).toBeInTheDocument();
+    expect(screen.queryByText('https://claimed.example')).not.toBeInTheDocument();
+    expect(screen.getByText(/Reported app name:\s*Example App/i)).toBeInTheDocument();
+  });
+
+  it('approves via the ceremony and posts the sealed response', async () => {
     render(<DWebConnectPage />);
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
-    expect(screen.getByText('https://app.example')).toBeInTheDocument();
-    expect(screen.getByText(/Reported app name:\s*Example App/i)).toBeInTheDocument();
-    expect(screen.getByText('First connection')).toBeInTheDocument();
-    expect(screen.getByText('wants to view a custom data type.')).toBeInTheDocument();
-    expect(screen.getByText('What app.example will be able to do')).toBeInTheDocument();
-    expect(screen.getByText('Access lasts 24 hours')).toBeInTheDocument();
-
     await waitFor(() => expect(approve).toBeEnabled());
-    fireEvent.click(approve);
     fireEvent.click(approve);
 
     await waitFor(() => {
-      expect(mocks.createDelegateDid).toHaveBeenCalledTimes(1);
-      expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1);
-      expect(mocks.createAndSendGrantKeyRecords).toHaveBeenCalledTimes(1);
+      expect(mocks.transport.sendResponse).toHaveBeenCalledWith('sealed-response-jwe');
     });
-    expect(mocks.agent.dwn.getRemoteDwnEndpointUrls).toHaveBeenCalledWith('did:dht:alice');
     expect(mocks.ensureRegistrationForDids).toHaveBeenCalledWith(
       mocks.agent,
       ['https://dwn.example'],
       ['did:dht:alice'],
     );
-    expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
+    expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
-      'did:jwk:delegate',
-      permissionRequest.permissionScopes,
-      mocks.agent,
-      expect.objectContaining({
-        appName   : 'Example App',
-        origin    : 'https://app.example',
-        transport : 'postMessage',
-      }),
-    );
-    expect(mocks.createAndSendGrantKeyRecords).toHaveBeenCalledWith(
-      'did:dht:alice',
-      'did:jwk:delegate',
-      { kty: 'OKP', crv: 'X25519', d: 'secret', x: 'public' },
-      [{ id: 'grant-1' }],
-      [permissionRequest.protocolDefinition],
-      mocks.agent,
-    );
-    expect(mocks.createSessionRevocationGrants).toHaveBeenCalledWith(
-      'did:dht:alice',
-      'did:jwk:delegate',
-      [{ id: 'grant-1' }],
-      expect.any(String),
-      mocks.agent,
-    );
-    expect(mocks.encryptDWebConnectResponse).toHaveBeenCalledWith(
-      {
-        delegateDid  : { uri: 'did:jwk:delegate', privateKeys: [] },
-        connectedDid : 'did:dht:alice',
-        grants       : [{ id: 'grant-1' }, { id: 'revoke-grant-1' }],
-        sessionRevocations: [{ grantId: 'grant-1', revocationGrantId: 'revoke-grant-1' }],
-      },
-      EPHEMERAL_PUBLIC_KEY,
-    );
-    expect(window.opener.postMessage).toHaveBeenCalledWith(
-      {
-        type: 'dweb-connect-authorization-response',
-        encryptedPayload: { iv: 'encrypted' },
-      },
+      expect.objectContaining({ clientDid: 'did:jwk:dapp-client', state: 'state-1' }),
       'https://app.example',
-    );
-  });
-
-  it('does not deliver a private key for an unencrypted protocol read', async () => {
-    useDWebConnectStore.setState({
-      pendingRequests: [{
-        ...connectRequest(),
-        data: {
-          ...connectRequest().data,
-          permissions: [{
-            ...permissionRequest,
-            protocolDefinition: {
-              ...permissionRequest.protocolDefinition,
-              types: {
-                task: {
-                  schema      : 'https://example.com/protocols/tasks/schema/task',
-                  dataFormats : ['application/json'],
-                },
-              },
-            },
-          }],
-        },
-      }],
-      walletReady: false,
-    });
-
-    render(<DWebConnectPage />);
-    const approve = await screen.findByRole('button', { name: 'Approve' });
-    await waitFor(() => expect(approve).toBeEnabled());
-    fireEvent.click(approve);
-
-    await waitFor(() => expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1));
-    expect(mocks.createAndSendGrantKeyRecords).not.toHaveBeenCalled();
-  });
-
-  it('does not replace a delivered success when event publication fails', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('event unavailable')));
-
-    try {
-      render(<DWebConnectPage />);
-      const approve = await screen.findByRole('button', { name: 'Approve' });
-      await waitFor(() => expect(approve).toBeEnabled());
-      fireEvent.click(approve);
-
-      await waitFor(() => expect(warn).toHaveBeenCalledWith(
-        'DWeb connect approval event failed:',
-        expect.anything(),
-      ));
-      expect(window.opener.postMessage).not.toHaveBeenCalledWith(
-        { type: 'dweb-connect-authorization-response', error: 'connection_failed' },
-        'https://app.example',
-      );
-      expect(await screen.findByText('Connected!')).toBeInTheDocument();
-    } finally {
-      warn.mockRestore();
-    }
-  });
-
-  it('creates grants once with all requested scopes after preparing each protocol', async () => {
-    useDWebConnectStore.setState({
-      pendingRequests: [{
-        ...connectRequest(),
-        data: {
-          ...connectRequest().data,
-          permissions: [permissionRequest, secondPermissionRequest],
-        },
-      }],
-      walletReady: false,
-    });
-
-    render(<DWebConnectPage />);
-
-    const approve = await screen.findByRole('button', { name: 'Approve' });
-    await waitFor(() => expect(approve).toBeEnabled());
-    fireEvent.click(approve);
-
-    await waitFor(() => {
-      expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1);
-    });
-    expect(mocks.prepareProtocol).toHaveBeenCalledTimes(2);
-    expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
-      'did:dht:alice',
-      'did:jwk:delegate',
-      [
-        ...permissionRequest.permissionScopes,
-        ...secondPermissionRequest.permissionScopes,
-      ],
       mocks.agent,
-      expect.objectContaining({
-        appName   : 'Example App',
-        origin    : 'https://app.example',
-        transport : 'postMessage',
-      }),
     );
-  });
-
-  it('rejects unsupported scopes before registration or wallet-owned writes', async () => {
-    useDWebConnectStore.setState({
-      pendingRequests: [{
-        ...connectRequest(),
-        data: {
-          ...connectRequest().data,
-          permissions: [{
-            ...permissionRequest,
-            permissionScopes: [{
-              interface : 'Records',
-              method    : 'Query',
-              protocol  : permissionRequest.protocolDefinition.protocol,
-            }],
-          }],
-        },
-      }],
-      walletReady: false,
-    });
-
-    render(<DWebConnectPage />);
-
-    expect(await screen.findByText('Invalid DWeb Connect request.')).toBeInTheDocument();
-    expect(window.opener.postMessage).toHaveBeenCalledWith(
-      { type: 'dweb-connect-authorization-response', error: 'connection_failed' },
-      'https://app.example',
+    // Protocols are prepared by the wallet before the ceremony.
+    expect(mocks.prepareProtocol).toHaveBeenCalledWith(
+      'did:dht:alice',
+      mocks.agent,
+      expect.objectContaining({ protocol: 'https://example.com/protocols/tasks' }),
     );
-    expect(mocks.importValidatedIdentity).not.toHaveBeenCalled();
-    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
-    expect(mocks.createPermissionGrants).not.toHaveBeenCalled();
-  });
-
-  it('treats a validation error response as terminal for the current client', async () => {
-    const invalidRequest = connectRequest();
-    invalidRequest.data.permissions = [{
-      ...permissionRequest,
-      permissionScopes: [{
-        interface : 'Records',
-        method    : 'Query',
-        protocol  : permissionRequest.protocolDefinition.protocol,
-      }],
-    }];
-    useDWebConnectStore.setState({ pendingRequests: [invalidRequest], walletReady: false });
-
-    render(<DWebConnectPage />);
-    expect(await screen.findByRole('button', { name: 'Close' })).toBeInTheDocument();
-    window.dispatchEvent(new MessageEvent('message', {
-      data   : connectRequest().data,
-      origin : 'https://app.example',
-      source : window.opener,
+    expect(mocks.prepareProtocol.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.approvePopupConnectRequest.mock.invocationCallOrder[0]);
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
+    expect(mocks.publishWalletEvent).toHaveBeenCalledWith(expect.objectContaining({
+      _tag         : 'connect.approved',
+      origin       : 'https://app.example',
+      connectedDid : 'did:dht:alice',
     }));
+  });
 
+  it('locks out duplicate approvals: the consent actions unmount on first click', async () => {
+    let releaseApproval: (value: string) => void = () => {};
+    mocks.approvePopupConnectRequest.mockImplementation(
+      () => new Promise<string>((resolve) => { releaseApproval = resolve; }),
+    );
+
+    render(<DWebConnectPage />);
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    // The double-submit protection: the page leaves the 'request' phase
+    // synchronously on approve, so the Approve button is unmounted before a
+    // second click can reach it — the non-idempotent ceremony cannot be
+    // started twice from the UI.
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
     });
+
+    releaseApproval('sealed-response-jwe');
+
+    await waitFor(() => {
+      expect(mocks.transport.sendResponse).toHaveBeenCalledTimes(1);
+    });
+    expect(mocks.approvePopupConnectRequest).toHaveBeenCalledTimes(1);
   });
 
-  it('notifies the opener immediately when approval fails', async () => {
-    mocks.prepareProtocol.mockRejectedValue(new Error('Remote protocol conflict'));
+  it('denies through the transport and closes the popup', async () => {
+    render(<DWebConnectPage />);
+
+    const deny = await screen.findByRole('button', { name: 'Deny' });
+    fireEvent.click(deny);
+
+    expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
+    expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
+    expect(window.close).toHaveBeenCalled();
+    expect(mocks.publishWalletEvent).toHaveBeenCalledWith(expect.objectContaining({
+      _tag   : 'connect.denied',
+      origin : 'https://app.example',
+    }));
+  });
+
+  it('denies and shows an error when the ceremony fails', async () => {
+    mocks.approvePopupConnectRequest.mockRejectedValue(
+      new Error('Could not send permission grant to any DWN endpoint.'),
+    );
 
     render(<DWebConnectPage />);
+
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
 
-    expect(await screen.findByText('Remote protocol conflict')).toBeInTheDocument();
-    expect(window.opener.postMessage).toHaveBeenCalledWith(
-      { type: 'dweb-connect-authorization-response', error: 'connection_failed' },
-      'https://app.example',
-    );
-    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(await screen.findByText(/Could not write the approved permission grants/i)).toBeInTheDocument();
+    expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
+    expect(mocks.transport.sendResponse).not.toHaveBeenCalled();
+  });
+
+  it('denies and shows an error when the request fails wallet preflight', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      permissionRequests: [{
+        ...permissionRequest,
+        permissionScopes: [{
+          interface : 'Protocols',
+          method    : 'Configure',
+          protocol  : 'https://example.com/protocols/tasks',
+        }],
+      }],
+    });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/Protocols\.Configure cannot be delegated/i)).toBeInTheDocument();
+    expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   });
 
   it('shows when the app already has an active connect session', async () => {
@@ -459,163 +308,69 @@ describe('DWebConnectPage', () => {
 
     expect(await screen.findByText('Returning connection')).toBeInTheDocument();
     expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
-    expect(screen.getByText(/separate session with 24 hours of access/i)).toBeInTheDocument();
   });
 
-  it('checks protocol conflicts when an identical portable DID already exists', async () => {
-    const portableIdentity = {
-      portableDid : { uri: 'did:dht:portable' },
-      metadata    : { uri: 'did:dht:portable', name: 'Portable' },
-    };
-    mocks.identities = [{
-      did: { uri: 'did:dht:portable' },
-      metadata: { name: 'Portable' },
-    }];
-    mocks.queryProtocolSetupStatus.mockResolvedValue('conflict');
-    useDWebConnectStore.setState({
-      pendingRequests: [{
-        ...connectRequest(),
-        data: {
-          ...connectRequest().data,
-          did: 'did:dht:portable',
-          portableIdentity,
-        },
-      }],
-      walletReady: false,
+  it('creates the transport once across strict-mode remounts', async () => {
+    // StrictMode double-invokes effects — without the ref guard the page
+    // would create two transports and emit two `loaded` beacons.
+    render(<StrictMode><DWebConnectPage /></StrictMode>);
+
+    await screen.findByRole('button', { name: 'Approve' });
+    expect(mocks.createTransport).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a hostile session lifetime at arrival and denies without crashing', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      requestedSessionTtlSeconds: 0,
     });
 
     render(<DWebConnectPage />);
 
-    const approve = await screen.findByRole('button', { name: 'Import & Connect' });
-    await waitFor(() => expect(mocks.queryProtocolSetupStatus).toHaveBeenCalled());
-    expect(await screen.findByText('Protocol setup conflict')).toBeInTheDocument();
-    expect(approve).toBeDisabled();
-    expect(mocks.importValidatedIdentity).not.toHaveBeenCalled();
+    expect(await screen.findByText(/invalid session lifetime/i)).toBeInTheDocument();
+    expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   });
 
-  it('shows existing sessions when a portable identity is already owned', async () => {
-    const portableIdentity = {
-      portableDid : { uri: 'did:dht:portable' },
-      metadata    : { uri: 'did:dht:portable', name: 'Portable' },
-    };
-    mocks.identities = [{
-      did: { uri: 'did:dht:portable' },
-      metadata: { name: 'Portable' },
-    }];
-    mocks.permissions = [{
-      id          : 'grant-existing',
-      grantee     : 'did:jwk:existing',
-      dateGranted : '2026-06-23T00:00:00.000Z',
-      dateExpires : '2999-06-24T00:00:00.000Z',
-      scope       : permissionRequest.permissionScopes[0],
-      connectSession: {
-        id        : 'session-existing',
-        createdAt : '2026-06-23T00:00:00.000Z',
-        expiresAt : '2999-06-24T00:00:00.000Z',
-        appName   : 'Example App',
-        origin    : 'https://app.example',
-        transport : 'postMessage',
-      },
-      revoke: vi.fn(),
-    }];
-    useDWebConnectStore.setState({
-      pendingRequests: [{
-        ...connectRequest(),
-        data: {
-          ...connectRequest().data,
-          did: 'did:dht:portable',
-          portableIdentity,
-        },
-      }],
-      walletReady: false,
+  it('refuses to converse with an untrusted dapp origin', async () => {
+    mocks.transport.dappOrigin = 'http://evil.example';
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/untrusted origin/i)).toBeInTheDocument();
+    // The wallet never posts anything back to the untrusted origin.
+    expect(mocks.transport.close).toHaveBeenCalled();
+    expect(mocks.transport.deny).not.toHaveBeenCalled();
+    expect(mocks.transport.awaitRequest).not.toHaveBeenCalled();
+  });
+
+  it('hides identities the requester does not support', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      supportedDidMethods: ['did:jwk'],
     });
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText('Returning connection')).toBeInTheDocument();
-    expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
+    // Alice is did:dht — filtered out, so approval is impossible.
+    expect(await screen.findByText(/No identities found/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
   });
 
-  it('keeps portable approval blocked until existing identities are known', async () => {
-    const portableIdentity = {
-      portableDid : { uri: 'did:dht:portable' },
-      metadata    : { uri: 'did:dht:portable', name: 'Portable' },
-    };
-    mocks.identities = [];
-    mocks.identitiesLoading = true;
-    useDWebConnectStore.setState({
-      pendingRequests: [{
-        ...connectRequest(),
-        data: {
-          ...connectRequest().data,
-          did: 'did:dht:portable',
-          portableIdentity,
-        },
-      }],
-      walletReady: false,
-    });
+  it('keeps the delivered success when event publication fails', async () => {
+    mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('analytics down')));
 
     render(<DWebConnectPage />);
 
-    const approve = await screen.findByRole('button', { name: 'Import & Connect' });
-    expect(approve).toBeDisabled();
-    expect(mocks.queryProtocolSetupStatus).not.toHaveBeenCalled();
-    expect(mocks.importValidatedIdentity).not.toHaveBeenCalled();
-  });
-
-  it('imports and approves a portable identity without a pre-existing identity', async () => {
-    const portableIdentity = {
-      portableDid : { uri: 'did:dht:portable' },
-      metadata    : { uri: 'did:dht:portable', name: 'Portable' },
-    };
-    mocks.identities = [];
-    mocks.importValidatedIdentity.mockResolvedValue({ did: { uri: 'did:dht:portable' } });
-    useDWebConnectStore.setState({
-      pendingRequests: [{
-        ...connectRequest(),
-        data: {
-          ...connectRequest().data,
-          did: 'did:dht:portable',
-          portableIdentity,
-        },
-      }],
-      walletReady: false,
-    });
-
-    render(<DWebConnectPage />);
-
-    expect(await screen.findByText('Import and approve as')).toBeInTheDocument();
-    expect(screen.queryByText(/No identities found/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Import & Connect' }));
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
 
     await waitFor(() => {
-      expect(mocks.importValidatedIdentity).toHaveBeenCalledWith(
-        mocks.agent,
-        expect.objectContaining({
-          did: 'did:dht:portable',
-          portableIdentity,
-        }),
-        { allowExistingExact: true, ensurePublished: true },
-      );
-      expect(mocks.createPermissionGrants).toHaveBeenCalledTimes(1);
+      expect(mocks.transport.sendResponse).toHaveBeenCalledWith('sealed-response-jwe');
     });
-    expect(mocks.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalledWith('did:dht:portable');
-    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
-    expect(mocks.prepareProtocol).toHaveBeenCalledWith(
-      'did:dht:portable',
-      mocks.agent,
-      permissionRequest.protocolDefinition,
-    );
-    expect(mocks.createPermissionGrants).toHaveBeenCalledWith(
-      'did:dht:portable',
-      'did:jwk:delegate',
-      permissionRequest.permissionScopes,
-      mocks.agent,
-      expect.any(Object),
-    );
-    expect(mocks.encryptDWebConnectResponse).toHaveBeenCalledWith(
-      expect.objectContaining({ connectedDid: 'did:dht:portable' }),
-      EPHEMERAL_PUBLIC_KEY,
-    );
+    // The response was delivered; a failed analytics event must not replace
+    // the success screen with an error.
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 });

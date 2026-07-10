@@ -1,4 +1,4 @@
-import type { ConnectPermissionRequest } from '@enbox/agent';
+import type { ConnectPermissionRequest } from '@enbox/connect';
 import { getCanonicalProtocolDefinition, getProtocolInfo } from '@/lib/protocol-names';
 import { protocolDefinitionsMatch } from '@/features/connect/protocol-install';
 import {

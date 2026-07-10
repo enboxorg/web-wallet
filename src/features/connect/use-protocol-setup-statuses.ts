@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { ConnectPermissionRequest } from '@enbox/agent';
+import type { ConnectPermissionRequest } from '@enbox/connect';
 
 import {
   getProtocolSetupStatus,

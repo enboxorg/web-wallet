@@ -13,9 +13,9 @@ import {
   SwitchCamera,
 } from 'lucide-react';
 import {
-  EnboxConnectProtocol,
-  type EnboxConnectRequest,
-} from '@enbox/agent';
+  parseWalletConnectUri,
+  type ConnectRequest,
+} from '@enbox/connect';
 
 import { Button } from '@/components/ui/Button';
 
@@ -32,25 +32,26 @@ import {
   useProtocolSetupStatuses,
 } from './use-protocol-setup-statuses';
 import {
+  approveConnectRequest,
   denyConnectRequest,
   fetchConnectRequest,
   generatePin,
-  submitConnectResponse,
-} from './connect-effects';
+  getRelayCallbackUrl,
+} from './connect-kernel';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { ensureRegistrationForDids } from '@/enbox/registration';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 import {
   isDidSupportedByRequest,
-  preflightRelayConnectRequest,
-  preflightRelayDelegateEncryption,
+  preflightConnectRequest,
+  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
 
-const EMPTY_PERMISSION_REQUESTS: EnboxConnectRequest['permissionRequests'] = [];
+const EMPTY_PERMISSION_REQUESTS: ConnectRequest['permissionRequests'] = [];
 
 /**
  * Extracts the connect deep-link parameters from the current URL.
@@ -62,10 +63,8 @@ const EMPTY_PERMISSION_REQUESTS: EnboxConnectRequest['permissionRequests'] = [];
  * web server. When both parameters are present the page skips the scanner and
  * feeds them straight into the same connect-request flow the scanner uses.
  */
-function getDeepLinkParams(): { requestUri: string; encryptionKey: string } | null {
-  const parsed = EnboxConnectProtocol.parseWalletConnectUri(window.location.href);
-  if (!parsed) return null;
-  return { requestUri: parsed.requestUri, encryptionKey: parsed.encryptionKeyBase64Url };
+function getDeepLinkParams(): { requestUri: string; encryptionKey: Uint8Array } | null {
+  return parseWalletConnectUri(window.location.href) ?? null;
 }
 
 function hasSensitiveConnectFragment(): boolean {
@@ -97,7 +96,7 @@ export default function AppConnectPage() {
   const [hasFlash, setHasFlash] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
 
-  const [connectionRequest, setConnectionRequest] = useState<EnboxConnectRequest>();
+  const [connectionRequest, setConnectionRequest] = useState<ConnectRequest>();
   const [selectedDid, setSelectedDid] = useState('');
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -242,10 +241,10 @@ export default function AppConnectPage() {
 
   // ── Connect flow ─────────────────────────────────────────────────
 
-  async function processConnectParams(requestUri: string, encryptionKey: string) {
+  async function processConnectParams(requestUri: string, encryptionKey: Uint8Array) {
     try {
       const request = await fetchConnectRequest(requestUri, encryptionKey);
-      const preflight = preflightRelayConnectRequest(request);
+      const preflight = preflightConnectRequest(request);
       await validateConnectPermissionSemantics(preflight);
       setConnectionRequest(request);
       setPhase('request');
@@ -258,12 +257,12 @@ export default function AppConnectPage() {
 
   async function processConnectUri(uri: string) {
     try {
-      const parsed = EnboxConnectProtocol.parseWalletConnectUri(uri);
+      const parsed = parseWalletConnectUri(uri);
       if (!parsed) {
         throw new Error('Invalid connection URI: missing request_uri or encryption_key');
       }
 
-      await processConnectParams(parsed.requestUri, parsed.encryptionKeyBase64Url);
+      await processConnectParams(parsed.requestUri, parsed.encryptionKey);
     } catch (err) {
       console.error('Connect flow error:', err);
       setErrorMessage((err as Error).message || 'Failed to process connection request.');
@@ -298,11 +297,11 @@ export default function AppConnectPage() {
 
     setPhase('authorizing');
     try {
-      const preflight = preflightRelayConnectRequest(connectionRequest);
+      const preflight = preflightConnectRequest(connectionRequest);
       if (!isDidSupportedByRequest(selectedDid, connectionRequest.supportedDidMethods)) {
         throw new Error('The selected identity uses a DID method the requester does not support.');
       }
-      await preflightRelayDelegateEncryption(agent, connectionRequest, preflight);
+      await preflightDelegateEncryption(agent, connectionRequest, preflight);
 
       const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
       if (dwnEndpoints.length === 0) {
@@ -310,25 +309,30 @@ export default function AppConnectPage() {
       }
       await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
 
-      // Install protocols on every reachable owner DWN before creating grants.
-      // The SDK skips remote fan-out when a protocol is already local. The
-      // wallet sends the current owner-signed configure message to every
-      // endpoint before grant creation.
+      // Install (or encryption-upgrade) each requested protocol on every
+      // reachable owner DWN endpoint BEFORE the approval ceremony, with
+      // strict remote conflict detection and postcondition verification. The
+      // agent ceremony only installs a protocol when nothing is installed
+      // locally — repairing an installed-but-unencrypted definition and
+      // fail-closed remote verification are the wallet's responsibility.
       //
       // Run prepareProtocol for each requested permission in parallel —
       // each call independently performs DID resolution + per-endpoint
       // fan-out, so doing them sequentially multiplied wall-time by the
-      // number of permissions and was the dominant cause of the
-      // "Authorizing..." UI hang on slow connections.
+      // number of permissions.
       await Promise.all(
         preflight.definitions.map((definition) =>
           prepareProtocol(selectedDid, agent, definition),
         ),
       );
 
+      // The ceremony creates and delivers the grants, grant keys, and
+      // session revocation grants, then the sealed response is posted to the
+      // relay callback. The PIN strengthens the response encryption key and
+      // never leaves this device except by the user typing it into the app.
       const generatedPin = await generatePin(4);
       setPin(generatedPin);
-      await submitConnectResponse(selectedDid, connectionRequest, generatedPin, agent);
+      await approveConnectRequest(selectedDid, connectionRequest, generatedPin, agent);
       setPhase('pin');
     } catch (err) {
       console.error('Authorization error:', err);
@@ -342,7 +346,7 @@ export default function AppConnectPage() {
     // immediately instead of timing out after 5 minutes.
     if (connectionRequest) {
       try {
-        await denyConnectRequest(connectionRequest.callbackUrl, connectionRequest.state);
+        await denyConnectRequest(getRelayCallbackUrl(connectionRequest), connectionRequest.state);
       } catch {
         // Best-effort — navigate home regardless.
       }
