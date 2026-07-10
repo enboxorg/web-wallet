@@ -28,9 +28,15 @@ describe('UnlockScreen', () => {
     const onUnlock = vi.fn();
     render(<UnlockScreen {...defaults} onUnlock={onUnlock} />);
 
+    // Drive each box's onChange directly instead of simulated typing:
+    // PinInput's auto-focus timers (100ms/300ms) can steal focus between a
+    // click and its keystroke, dropping a digit into an occupied box where
+    // it is rejected — which made keyboard-based variants of this test
+    // intermittently fail under load.
     const inputs = screen.getAllByRole('textbox');
-    await userEvent.setup().click(inputs[0]);
-    await userEvent.setup().keyboard('1234');
+    ['1', '2', '3', '4'].forEach((digit, index) => {
+      fireEvent.change(inputs[index], { target: { value: digit } });
+    });
 
     await waitFor(() => {
       expect(onUnlock).toHaveBeenCalledWith('1234');

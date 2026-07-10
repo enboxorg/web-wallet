@@ -13,8 +13,8 @@ vi.mock('@enbox/agent', async (importOriginal) => ({
 import {
   isDidSupportedByRequest,
   preflightConnectPermissions,
-  preflightRelayDelegateEncryption,
-  preflightRelayConnectRequest,
+  preflightDelegateEncryption,
+  preflightConnectRequest,
   validateConnectPermissionSemantics,
 } from '../connect-request-preflight';
 
@@ -143,13 +143,13 @@ describe('connect request preflight', () => {
   });
 
   it('applies relay TTL, delegate DID, and supported-method checks', () => {
-    expect(() => preflightRelayConnectRequest(relayRequest({ requestedSessionTtlSeconds: 0.5 })))
+    expect(() => preflightConnectRequest(relayRequest({ requestedSessionTtlSeconds: 0.5 })))
       .toThrow('invalid session lifetime');
-    expect(() => preflightRelayConnectRequest(relayRequest({ delegateDid: ' did:jwk:delegate' })))
+    expect(() => preflightConnectRequest(relayRequest({ delegateDid: ' did:jwk:delegate' })))
       .toThrow('invalid delegate DID');
-    expect(() => preflightRelayConnectRequest(relayRequest({ supportedDidMethods: [] })))
+    expect(() => preflightConnectRequest(relayRequest({ supportedDidMethods: [] })))
       .toThrow('invalid supported DID methods');
-    expect(preflightRelayConnectRequest(relayRequest({ requestedSessionTtlSeconds: 90 * 24 * 60 * 60 + 1 })).scopes)
+    expect(preflightConnectRequest(relayRequest({ requestedSessionTtlSeconds: 90 * 24 * 60 * 60 + 1 })).scopes)
       .toHaveLength(1);
   });
 
@@ -171,10 +171,10 @@ describe('connect request preflight', () => {
       delegateDid: 'did:jwk:delegate',
       permissionRequests: encryptedPermissions,
     });
-    const preflight = preflightRelayConnectRequest(request);
+    const preflight = preflightConnectRequest(request);
     const agent = { id: 'agent' } as any;
 
-    await preflightRelayDelegateEncryption(agent, request, preflight);
+    await preflightDelegateEncryption(agent, request, preflight);
 
     expect(mocks.getEncryptionKeyInfo).toHaveBeenCalledWith(agent, 'did:jwk:delegate');
   });

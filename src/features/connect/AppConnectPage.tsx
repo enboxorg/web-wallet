@@ -26,6 +26,7 @@ import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
+import { prepareProtocol } from './protocol-install';
 import {
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
@@ -43,8 +44,8 @@ import { ensureRegistrationForDids } from '@/enbox/registration';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 import {
   isDidSupportedByRequest,
-  preflightRelayConnectRequest,
-  preflightRelayDelegateEncryption,
+  preflightConnectRequest,
+  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 
@@ -243,7 +244,7 @@ export default function AppConnectPage() {
   async function processConnectParams(requestUri: string, encryptionKey: Uint8Array) {
     try {
       const request = await fetchConnectRequest(requestUri, encryptionKey);
-      const preflight = preflightRelayConnectRequest(request);
+      const preflight = preflightConnectRequest(request);
       await validateConnectPermissionSemantics(preflight);
       setConnectionRequest(request);
       setPhase('request');
@@ -296,11 +297,11 @@ export default function AppConnectPage() {
 
     setPhase('authorizing');
     try {
-      const preflight = preflightRelayConnectRequest(connectionRequest);
+      const preflight = preflightConnectRequest(connectionRequest);
       if (!isDidSupportedByRequest(selectedDid, connectionRequest.supportedDidMethods)) {
         throw new Error('The selected identity uses a DID method the requester does not support.');
       }
-      await preflightRelayDelegateEncryption(agent, connectionRequest, preflight);
+      await preflightDelegateEncryption(agent, connectionRequest, preflight);
 
       const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
       if (dwnEndpoints.length === 0) {
@@ -308,8 +309,24 @@ export default function AppConnectPage() {
       }
       await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
 
-      // The approval ceremony installs the requested protocols (with
-      // endpoint fan-out), creates and delivers the grants, grant keys, and
+      // Install (or encryption-upgrade) each requested protocol on every
+      // reachable owner DWN endpoint BEFORE the approval ceremony, with
+      // strict remote conflict detection and postcondition verification. The
+      // agent ceremony only installs a protocol when nothing is installed
+      // locally — repairing an installed-but-unencrypted definition and
+      // fail-closed remote verification are the wallet's responsibility.
+      //
+      // Run prepareProtocol for each requested permission in parallel —
+      // each call independently performs DID resolution + per-endpoint
+      // fan-out, so doing them sequentially multiplied wall-time by the
+      // number of permissions.
+      await Promise.all(
+        preflight.definitions.map((definition) =>
+          prepareProtocol(selectedDid, agent, definition),
+        ),
+      );
+
+      // The ceremony creates and delivers the grants, grant keys, and
       // session revocation grants, then the sealed response is posted to the
       // relay callback. The PIN strengthens the response encryption key and
       // never leaves this device except by the user typing it into the app.

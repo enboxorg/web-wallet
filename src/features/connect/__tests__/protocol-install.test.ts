@@ -1,15 +1,28 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type DwnProtocolDefinition } from '@enbox/agent';
+import { DwnInterface, type DwnProtocolDefinition, getDwnServiceEndpointUrls } from '@enbox/agent';
 import { KeyDerivationScheme } from '@enbox/dwn-sdk-js';
 import { ProfileDefinition } from '@enbox/protocols';
 
 import {
   getProtocolSetupStatus,
   hasEncryptionConfiguredForEncryptedTypes,
+  prepareProtocol,
   protocolDefinitionsMatch,
   protocolHasEncryptedTypes,
   queryProtocolSetupStatus,
 } from '../protocol-install';
+
+vi.mock('@enbox/agent', async () => {
+  const actual = await vi.importActual<typeof import('@enbox/agent')>('@enbox/agent');
+  return {
+    ...actual,
+    getDwnServiceEndpointUrls: vi.fn(),
+  };
+});
+
+const mockedGetDwnServiceEndpointUrls = vi.mocked(getDwnServiceEndpointUrls);
+const queryMessage = { descriptor: { method: 'Query' } };
+const configureMessage = { descriptor: { method: 'Configure' } };
 
 function createDwn() {
   const keysByPath = new Map([
@@ -28,6 +41,29 @@ function createDwn() {
       derivePublicKey,
     }),
   };
+}
+
+function protocolQueryReply(definition?: DwnProtocolDefinition) {
+  return {
+    status  : { code: 200, detail: 'OK' },
+    entries : definition === undefined ? [] : [{ descriptor: { definition } }],
+  };
+}
+
+function createRemoteRpc(
+  before: DwnProtocolDefinition | undefined,
+  after: DwnProtocolDefinition | undefined,
+  configureStatus = { code: 202, detail: 'Accepted' },
+) {
+  let queryCount = 0;
+  return vi.fn(async ({ message }: { message: unknown }) => {
+    if (message === queryMessage) {
+      const definition = queryCount === 0 ? before : after;
+      queryCount += 1;
+      return protocolQueryReply(definition);
+    }
+    return { status: configureStatus };
+  });
 }
 
 const encryptedProtocol: DwnProtocolDefinition = {
@@ -78,6 +114,7 @@ const notesProtocol: DwnProtocolDefinition = {
 describe('protocol-install', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedGetDwnServiceEndpointUrls.mockResolvedValue(['https://owner.example']);
   });
 
   it('detects encrypted protocols', () => {
@@ -159,8 +196,112 @@ describe('protocol-install', () => {
     expect(getProtocolSetupStatus(olderInstalledDefinition, notesProtocol)).toBe('conflict');
   });
 
-  it('treats a policy-identical encrypted install that is missing $keyAgreement as an upgrade', () => {
+  it('configures encrypted protocols with encryption: true when first installing', async () => {
+    const processDwnRequest = vi
+      .fn()
+      .mockResolvedValueOnce({ reply: protocolQueryReply(), message: queryMessage })
+      .mockResolvedValueOnce({ reply: { status: { code: 202, detail: 'Accepted' } }, message: configureMessage });
+    const sendDwnRequest = createRemoteRpc(undefined, installedEncryptedProtocol);
+
+    await prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, encryptedProtocol);
+
+    expect(processDwnRequest).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      author: 'did:example:owner',
+      target: 'did:example:owner',
+      messageType: DwnInterface.ProtocolsConfigure,
+      encryption: true,
+    }));
+    expect(sendDwnRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not create a new configure message when the installed protocol is current', async () => {
+    const installedEntry = {
+      descriptor: {
+        method: 'Configure',
+        definition: installedEncryptedProtocol,
+      },
+    };
+    const processDwnRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        reply   : { status: { code: 200, detail: 'OK' }, entries: [installedEntry] },
+        message : queryMessage,
+      });
+    const sendDwnRequest = createRemoteRpc(installedEncryptedProtocol, installedEncryptedProtocol);
+
+    await prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, encryptedProtocol);
+
+    expect(processDwnRequest).toHaveBeenCalledTimes(1);
+    expect(sendDwnRequest).toHaveBeenCalledTimes(1);
+    expect(sendDwnRequest).not.toHaveBeenCalledWith(expect.objectContaining({ message: installedEntry }));
+  });
+
+  it('fans out the existing signed configure when local setup is current but a remote is missing it', async () => {
+    const installedEntry = {
+      descriptor: {
+        method: 'Configure',
+        definition: installedEncryptedProtocol,
+      },
+    };
+    const processDwnRequest = vi.fn().mockResolvedValueOnce({
+      reply   : { status: { code: 200, detail: 'OK' }, entries: [installedEntry] },
+      message : queryMessage,
+    });
+    const sendDwnRequest = createRemoteRpc(undefined, installedEncryptedProtocol);
+
+    await prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, encryptedProtocol);
+
+    expect(processDwnRequest).toHaveBeenCalledTimes(1);
+    expect(sendDwnRequest).toHaveBeenCalledWith(expect.objectContaining({
+      message: installedEntry,
+    }));
+    expect(sendDwnRequest).toHaveBeenCalledTimes(3);
+  });
+
+  it('upgrades a policy-identical encrypted install that is missing $keyAgreement', async () => {
+    const staleInstalled = {
+      descriptor: { definition: encryptedProtocol },
+    };
+    const processDwnRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        reply   : { status: { code: 200, detail: 'OK' }, entries: [staleInstalled] },
+        message : queryMessage,
+      })
+      .mockResolvedValueOnce({
+        reply   : { status: { code: 202, detail: 'Accepted' } },
+        message : configureMessage,
+      });
+    const sendDwnRequest = createRemoteRpc(encryptedProtocol, installedEncryptedProtocol);
+
     expect(getProtocolSetupStatus(encryptedProtocol, encryptedProtocol)).toBe('upgrade');
+    await prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, encryptedProtocol);
+
+    expect(processDwnRequest).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      messageType: DwnInterface.ProtocolsConfigure,
+      encryption: true,
+    }));
+    expect(sendDwnRequest).toHaveBeenCalledTimes(3);
   });
 
   it('treats legacy $encryption metadata as a policy-identical upgrade', () => {
@@ -248,13 +389,54 @@ describe('protocol-install', () => {
     expect(getProtocolSetupStatus(partialInstall, roleProtocol)).toBe('upgrade');
   });
 
-  it('rejects requester-supplied wallet key metadata', () => {
+  it('rejects installed protocols when the definition differs', async () => {
+    const olderInstalledDefinition: DwnProtocolDefinition = {
+      ...notesProtocol,
+      types: {
+        note: { schema: 'old-note' },
+      },
+    };
+    const processDwnRequest = vi
+      .fn()
+      .mockResolvedValueOnce({
+        reply: {
+          status  : { code: 200, detail: 'OK' },
+          entries : [{ descriptor: { definition: olderInstalledDefinition } }],
+        },
+        message: queryMessage,
+      });
+    const sendDwnRequest = vi.fn().mockResolvedValue({ status: { code: 202, detail: 'Accepted' } });
+
+    await expect(prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, notesProtocol)).rejects.toThrow('already installed with a different definition');
+
+    expect(processDwnRequest).toHaveBeenCalledTimes(1);
+    expect(sendDwnRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects requester-supplied wallet key metadata', async () => {
     const requestedDefinition: DwnProtocolDefinition = {
       ...notesProtocol,
       $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'requester-key' } },
     };
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: { status: { code: 200, detail: 'OK' }, entries: [] },
+      message: queryMessage,
+    });
+    const sendDwnRequest = vi.fn();
 
     expect(getProtocolSetupStatus(undefined, requestedDefinition)).toBe('conflict');
+    await expect(prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, requestedDefinition)).rejects.toThrow('contains wallet-managed encryption keys');
+    expect(processDwnRequest).toHaveBeenCalledTimes(1);
   });
 
   it('rejects a spoofed definition for a wallet-pinned protocol URI', () => {
@@ -299,4 +481,89 @@ describe('protocol-install', () => {
     )).resolves.toBe('conflict');
   });
 
+  it('rejects a conflicting remote latest definition before local configuration', async () => {
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply   : protocolQueryReply(),
+      message : queryMessage,
+    });
+    const remoteConflict = {
+      ...notesProtocol,
+      types: { note: { schema: 'https://example.com/schemas/other' } },
+    } as DwnProtocolDefinition;
+    const sendDwnRequest = createRemoteRpc(remoteConflict, remoteConflict);
+
+    await expect(prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, notesProtocol)).rejects.toThrow('conflicts with the latest definition');
+    expect(processDwnRequest).toHaveBeenCalledTimes(1);
+    expect(sendDwnRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails closed when a reachable endpoint rejects the protocol query', async () => {
+    mockedGetDwnServiceEndpointUrls.mockResolvedValue([
+      'https://owner-a.example',
+      'https://owner-b.example',
+    ]);
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply   : protocolQueryReply(),
+      message : queryMessage,
+    });
+    const sendDwnRequest = vi.fn(async ({ dwnUrl }: { dwnUrl: string }) =>
+      dwnUrl === 'https://owner-a.example'
+        ? { status: { code: 500, detail: 'Server error' } }
+        : protocolQueryReply()
+    );
+
+    await expect(prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, notesProtocol)).rejects.toThrow(
+      'Could not verify protocol on https://owner-a.example: Server error',
+    );
+    expect(processDwnRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails when local protocol configuration is rejected', async () => {
+    const processDwnRequest = vi
+      .fn()
+      .mockResolvedValueOnce({ reply: protocolQueryReply(), message: queryMessage })
+      .mockResolvedValueOnce({ reply: { status: { code: 400, detail: 'Invalid definition' } } });
+    const sendDwnRequest = createRemoteRpc(undefined, undefined);
+
+    await expect(prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, notesProtocol)).rejects.toThrow('Could not configure protocol: Invalid definition');
+    expect(sendDwnRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails when remote replies do not converge to the requested latest protocol', async () => {
+    mockedGetDwnServiceEndpointUrls.mockResolvedValue([
+      'https://owner-a.example',
+      'https://owner-b.example',
+    ]);
+    const processDwnRequest = vi
+      .fn()
+      .mockResolvedValueOnce({ reply: protocolQueryReply(), message: queryMessage })
+      .mockResolvedValueOnce({
+        reply   : { status: { code: 202, detail: 'Accepted' } },
+        message : configureMessage,
+      });
+    const sendDwnRequest = createRemoteRpc(undefined, undefined, { code: 202, detail: 'Accepted as history' });
+
+    await expect(prepareProtocol('did:example:owner', {
+      did: {},
+      dwn: createDwn(),
+      processDwnRequest,
+      rpc: { sendDwnRequest },
+    }, notesProtocol)).rejects.toThrow('Could not verify the latest protocol definition');
+    expect(sendDwnRequest).toHaveBeenCalledTimes(6);
+  });
 });

@@ -144,6 +144,12 @@ export function generatePin(length = 4): Promise<string> {
  * delivery, encrypted-read grant keys, and session revocation grants all
  * happen inside `executeConnectApproval`; the PIN strengthens the response
  * encryption key and never transits.
+ *
+ * The ceremony itself is deliberately NOT wrapped in the retrying network
+ * policy: it is not idempotent (it mints a delegate and writes grants — a
+ * retry would duplicate them) and it enforces its own per-request delivery
+ * budgets internally. Only the final, replay-tolerant callback POST rides
+ * the network policy.
  */
 export function approveConnectRequestEffect(
   selectedDid: string,
@@ -153,25 +159,29 @@ export function approveConnectRequestEffect(
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     const callbackUrl = getRelayCallbackUrl(request);
+    const idToken = yield* Effect.tryPromise({
+      try: async () => {
+        const approval = await executeConnectApproval({
+          agent,
+          providerDid : selectedDid,
+          request,
+          transport   : 'relay',
+        });
+        return ConnectProvider.sealApprovedResponse({
+          request,
+          providerDid : selectedDid,
+          approval,
+          signer      : approval.responseSigner,
+          pin,
+        });
+      },
+      catch: sdkError('connect.submitConnectResponse'),
+    });
+
     return yield* withNetworkPolicy(
       'connect.submitConnectResponse',
       Effect.tryPromise({
-        try: async () => {
-          const approval = await executeConnectApproval({
-            agent,
-            providerDid : selectedDid,
-            request,
-            transport   : 'relay',
-          });
-          const idToken = await ConnectProvider.sealApprovedResponse({
-            request,
-            providerDid : selectedDid,
-            approval,
-            signer      : approval.responseSigner,
-            pin,
-          });
-          await postRelayResponse({ callbackUrl, state: request.state, idToken });
-        },
+        try: async () => postRelayResponse({ callbackUrl, state: request.state, idToken }),
         catch: sdkError('connect.submitConnectResponse'),
       }),
       () => sdkTimeout('connect.submitConnectResponse'),
@@ -193,12 +203,32 @@ export function approveConnectRequest(
 }
 
 /**
+ * Wallet policy: a dapp origin must be a well-formed HTTPS origin (or plain
+ * localhost for development). The popup transport pins the origin it talks
+ * to, but does not impose a scheme policy — that is the wallet's call.
+ */
+export function isTrustedDappOrigin(origin: string): boolean {
+  if (!origin || origin === 'null') return false;
+  try {
+    const url = new URL(origin);
+    if (url.origin !== origin) return false;
+    return url.protocol === 'https:'
+      || (url.protocol === 'http:' && LOCAL_RELAY_HOSTS.has(url.hostname));
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Runs the approval ceremony for a popup (postMessage) request and returns
  * the sealed response JWE for the page to hand to
  * `WalletPostMessageTransport.sendResponse`. The request's claimed
  * `clientMetadata.origin` is overwritten with the transport-authenticated
  * dapp origin before it is stamped into the session metadata; popup responses
  * use no PIN — the sealed channel is origin-bound end to end.
+ *
+ * Like the relay path, the non-idempotent ceremony runs without the retrying
+ * network policy (see `approveConnectRequestEffect`).
  */
 export function approvePopupConnectRequestEffect(
   selectedDid: string,
@@ -207,30 +237,26 @@ export function approvePopupConnectRequestEffect(
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-    return yield* withNetworkPolicy(
-      'dwebConnect.submitConnectResponse',
-      Effect.tryPromise({
-        try: async () => {
-          const approval = await executeConnectApproval({
-            agent,
-            providerDid : selectedDid,
-            request     : {
-              ...request,
-              clientMetadata: { ...request.clientMetadata, origin: dappOrigin },
-            },
-            transport: 'postMessage',
-          });
-          return ConnectProvider.sealApprovedResponse({
-            request,
-            providerDid : selectedDid,
-            approval,
-            signer      : approval.responseSigner,
-          });
-        },
-        catch: sdkError('dwebConnect.submitConnectResponse'),
-      }),
-      () => sdkTimeout('dwebConnect.submitConnectResponse'),
-    );
+    return yield* Effect.tryPromise({
+      try: async () => {
+        const approval = await executeConnectApproval({
+          agent,
+          providerDid : selectedDid,
+          request     : {
+            ...request,
+            clientMetadata: { ...request.clientMetadata, origin: dappOrigin },
+          },
+          transport: 'postMessage',
+        });
+        return ConnectProvider.sealApprovedResponse({
+          request,
+          providerDid : selectedDid,
+          approval,
+          signer      : approval.responseSigner,
+        });
+      },
+      catch: sdkError('dwebConnect.submitConnectResponse'),
+    });
   });
 }
 

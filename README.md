@@ -198,7 +198,7 @@ Current Effect boundaries:
 - `src/enbox/effect/services.ts` defines `CurrentAgent` and `RegistrationTokenStore` services plus browser and memory-backed layers.
 - `src/enbox/auth-effects.ts` wraps AuthManager create/connect/unlock/restore/lock flows.
 - `src/enbox/registration.ts`, `protocols.ts`, `identity-sync.ts`, `queries/identity-queries.ts`, and `mutations/identity-mutations.ts` expose composable Effect programs with Promise adapters for React Query.
-- `src/features/connect/connect-effects.ts`, `protocol-install.ts`, and `src/features/search/public-profile.ts` keep feature-level Enbox/DWN side effects behind Effect adapters.
+- `src/features/connect/connect-kernel.ts` (the `@enbox/connect` kernel adapter: bounded relay fetch, approval ceremony, sealed response delivery), `protocol-install.ts`, and `src/features/search/public-profile.ts` keep feature-level Enbox/DWN side effects behind Effect adapters.
 - `src/lib/passkeys.ts` wraps WebAuthn, PRF, WebCrypto, IndexedDB, and passkey credential persistence behind Effect programs while preserving the existing public async API.
 - `src/lib/browser-effects.ts` centralizes browser storage, clipboard/share, endpoint health, random UUID, and service worker registration effects used by stores, settings, search history, provider session cache, and bootstrap code.
 

@@ -1,3 +1,4 @@
+import { StrictMode } from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -22,6 +23,7 @@ const mocks = vi.hoisted(() => {
     approvePopupConnectRequest: vi.fn(),
     createTransport: vi.fn(),
     ensureRegistrationForDids: vi.fn(),
+    prepareProtocol: vi.fn(),
     queryProtocolSetupStatus: vi.fn(),
     publishWalletEvent: vi.fn(),
     transport,
@@ -76,6 +78,7 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
 
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
+  prepareProtocol: mocks.prepareProtocol,
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
 
@@ -127,11 +130,13 @@ describe('DWebConnectPage', () => {
       value: vi.fn(),
     });
 
+    mocks.transport.dappOrigin = 'https://app.example';
     mocks.createTransport.mockResolvedValue(mocks.transport);
     mocks.transport.awaitRequest.mockResolvedValue(connectRequest());
     mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
+    mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.permissions = [];
@@ -182,6 +187,14 @@ describe('DWebConnectPage', () => {
       'https://app.example',
       mocks.agent,
     );
+    // Protocols are prepared by the wallet before the ceremony.
+    expect(mocks.prepareProtocol).toHaveBeenCalledWith(
+      'did:dht:alice',
+      mocks.agent,
+      expect.objectContaining({ protocol: 'https://example.com/protocols/tasks' }),
+    );
+    expect(mocks.prepareProtocol.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.approvePopupConnectRequest.mock.invocationCallOrder[0]);
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
     expect(mocks.publishWalletEvent).toHaveBeenCalledWith(expect.objectContaining({
       _tag         : 'connect.approved',
@@ -190,7 +203,7 @@ describe('DWebConnectPage', () => {
     }));
   });
 
-  it('coalesces duplicate approve clicks into one ceremony run', async () => {
+  it('locks out duplicate approvals: the consent actions unmount on first click', async () => {
     let releaseApproval: (value: string) => void = () => {};
     mocks.approvePopupConnectRequest.mockImplementation(
       () => new Promise<string>((resolve) => { releaseApproval = resolve; }),
@@ -201,9 +214,15 @@ describe('DWebConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
-    fireEvent.click(approve);
 
-    await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledTimes(1));
+    // The double-submit protection: the page leaves the 'request' phase
+    // synchronously on approve, so the Approve button is unmounted before a
+    // second click can reach it — the non-idempotent ceremony cannot be
+    // started twice from the UI.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    });
+
     releaseApproval('sealed-response-jwe');
 
     await waitFor(() => {
@@ -292,9 +311,66 @@ describe('DWebConnectPage', () => {
   });
 
   it('creates the transport once across strict-mode remounts', async () => {
-    render(<DWebConnectPage />);
+    // StrictMode double-invokes effects — without the ref guard the page
+    // would create two transports and emit two `loaded` beacons.
+    render(<StrictMode><DWebConnectPage /></StrictMode>);
 
     await screen.findByRole('button', { name: 'Approve' });
     expect(mocks.createTransport).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a hostile session lifetime at arrival and denies without crashing', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      requestedSessionTtlSeconds: 0,
+    });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/invalid session lifetime/i)).toBeInTheDocument();
+    expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+  });
+
+  it('refuses to converse with an untrusted dapp origin', async () => {
+    mocks.transport.dappOrigin = 'http://evil.example';
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/untrusted origin/i)).toBeInTheDocument();
+    // The wallet never posts anything back to the untrusted origin.
+    expect(mocks.transport.close).toHaveBeenCalled();
+    expect(mocks.transport.deny).not.toHaveBeenCalled();
+    expect(mocks.transport.awaitRequest).not.toHaveBeenCalled();
+  });
+
+  it('hides identities the requester does not support', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      supportedDidMethods: ['did:jwk'],
+    });
+
+    render(<DWebConnectPage />);
+
+    // Alice is did:dht — filtered out, so approval is impossible.
+    expect(await screen.findByText(/No identities found/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
+  });
+
+  it('keeps the delivered success when event publication fails', async () => {
+    mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('analytics down')));
+
+    render(<DWebConnectPage />);
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => {
+      expect(mocks.transport.sendResponse).toHaveBeenCalledWith('sealed-response-jwe');
+    });
+    // The response was delivered; a failed analytics event must not replace
+    // the success screen with an error.
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 });

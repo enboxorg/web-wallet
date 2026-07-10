@@ -235,7 +235,7 @@ function parseCanonicalDid(value: string): Did | undefined {
   return parsed;
 }
 
-export function preflightRelayConnectRequest(request: ConnectRequest): ConnectPermissionPreflight {
+export function preflightConnectRequest(request: ConnectRequest): ConnectPermissionPreflight {
   const result = preflightConnectPermissions(request.permissionRequests);
   resolveConnectSessionDurationSeconds(request.requestedSessionTtlSeconds);
 
@@ -260,7 +260,7 @@ export function isDidSupportedByRequest(didUri: string, supportedDidMethods: str
   return parsed !== undefined && supportedDidMethods.includes(`did:${parsed.method}`);
 }
 
-export async function preflightRelayDelegateEncryption(
+export async function preflightDelegateEncryption(
   agent: Parameters<typeof getEncryptionKeyInfo>[0],
   request: ConnectRequest,
   preflight: ConnectPermissionPreflight,

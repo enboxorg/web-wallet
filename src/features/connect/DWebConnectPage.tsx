@@ -19,12 +19,15 @@ import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { ensureRegistrationForDids } from '@/enbox/registration';
-import { approvePopupConnectRequest } from './connect-kernel';
+import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kernel';
 import {
-  preflightConnectPermissions,
+  isDidSupportedByRequest,
+  preflightConnectRequest,
+  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
+import { prepareProtocol } from './protocol-install';
 import {
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
@@ -61,11 +64,16 @@ export default function DWebConnectPage() {
   const permissions = connectRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const appName = connectRequest?.appName;
 
-  // Build identity options
-  const identityOptions: Array<{ value: string; label: string }> = (identities ?? []).map((id: any) => ({
-    value: id.did.uri as string,
-    label: id.metadata?.name ?? truncateDid(id.did.uri),
-  }));
+  // Build identity options, limited to DID methods the requester supports.
+  const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
+    .filter((id: any) =>
+      connectRequest === undefined
+      || isDidSupportedByRequest(id.did.uri, connectRequest.supportedDidMethods)
+    )
+    .map((id: any) => ({
+      value: id.did.uri as string,
+      label: id.metadata?.name ?? truncateDid(id.did.uri),
+    }));
   const { data: selectedPermissions } = usePermissions(selectedDid);
 
   // Auto-select first identity
@@ -105,10 +113,22 @@ export default function DWebConnectPage() {
         const transport = await WalletPostMessageTransport.create();
         transportRef.current = transport;
 
+        // Wallet policy: only converse with HTTPS (or local development)
+        // dapp origins. The transport pins the origin; the wallet decides
+        // whether that origin is acceptable at all.
+        if (!isTrustedDappOrigin(transport.dappOrigin)) {
+          // Do not converse with the untrusted origin at all — close the
+          // transport and drop it so the failure path below sends nothing.
+          transport.close();
+          transportRef.current = undefined;
+          throw new Error('This connection request comes from an untrusted origin.');
+        }
+
         const request = await transport.awaitRequest();
-        await validateConnectPermissionSemantics(
-          preflightConnectPermissions(request.permissionRequests),
-        );
+        // Full request preflight — the same wallet policy the relay path
+        // applies: scope allow-list and dry-run validators, session TTL
+        // bounds, delegate DID canonicality, and supported DID methods.
+        await validateConnectPermissionSemantics(preflightConnectRequest(request));
 
         setConnectRequest(request);
         setOrigin(transport.dappOrigin);
@@ -137,6 +157,12 @@ export default function DWebConnectPage() {
     setPhase('connecting');
 
     try {
+      const preflight = preflightConnectRequest(connectRequest);
+      if (!isDidSupportedByRequest(selectedDid, connectRequest.supportedDidMethods)) {
+        throw new Error('The selected identity uses a DID method the requester does not support.');
+      }
+      await preflightDelegateEncryption(agent, connectRequest, preflight);
+
       setStatusMessage('Preparing identity...');
       const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
       if (dwnEndpoints.length === 0) {
@@ -144,9 +170,18 @@ export default function DWebConnectPage() {
       }
       await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
 
-      // The approval ceremony prepares the requested protocols, creates and
-      // delivers the grants, grant keys, and session revocation grants, and
-      // returns the sealed response for the transport to post back.
+      // Install (or encryption-upgrade) each requested protocol on every
+      // reachable owner DWN endpoint BEFORE the approval ceremony — the
+      // ceremony only installs when nothing is installed locally; repair and
+      // fail-closed remote verification are the wallet's responsibility.
+      setStatusMessage('Preparing protocols...');
+      for (const protocolDefinition of preflight.definitions) {
+        await prepareProtocol(selectedDid, agent, protocolDefinition);
+      }
+
+      // The ceremony creates and delivers the grants, grant keys, and
+      // session revocation grants, and returns the sealed response for the
+      // transport to post back.
       setStatusMessage('Creating grants...');
       const idToken = await approvePopupConnectRequest(
         selectedDid,
