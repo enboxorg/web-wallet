@@ -1,9 +1,11 @@
 import type {
-  ConnectPermissionRequest,
   DwnPermissionScope,
   DwnProtocolDefinition,
-  EnboxConnectRequest,
 } from '@enbox/agent';
+import type {
+  ConnectPermissionRequest,
+  ConnectRequest,
+} from '@enbox/connect';
 import type {
   EncryptionKeyDeriver,
   MessageSigner,
@@ -233,7 +235,7 @@ function parseCanonicalDid(value: string): Did | undefined {
   return parsed;
 }
 
-export function preflightRelayConnectRequest(request: EnboxConnectRequest): ConnectPermissionPreflight {
+export function preflightRelayConnectRequest(request: ConnectRequest): ConnectPermissionPreflight {
   const result = preflightConnectPermissions(request.permissionRequests);
   resolveConnectSessionDurationSeconds(request.requestedSessionTtlSeconds);
 
@@ -260,7 +262,7 @@ export function isDidSupportedByRequest(didUri: string, supportedDidMethods: str
 
 export async function preflightRelayDelegateEncryption(
   agent: Parameters<typeof getEncryptionKeyInfo>[0],
-  request: EnboxConnectRequest,
+  request: ConnectRequest,
   preflight: ConnectPermissionPreflight,
 ): Promise<void> {
   if (request.delegateDid !== undefined && preflight.hasEncryptedReadScopes) {

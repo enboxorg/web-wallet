@@ -11,7 +11,6 @@ const SocialGraphPage = lazy(() => import('@/features/social/SocialGraphPage'));
 const SearchPage = lazy(() => import('@/features/search/SearchPage'));
 const AppConnectPage = lazy(() => import('@/features/connect/AppConnectPage'));
 const DWebConnectPage = lazy(() => import('@/features/connect/DWebConnectPage'));
-const CliConnectPage = lazy(() => import('@/features/connect/CliConnectPage'));
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const SecurityPage = lazy(() => import('@/features/settings/SecurityPage'));
 const BackupPage = lazy(() => import('@/features/settings/BackupPage'));
@@ -28,7 +27,6 @@ export const routes: RouteObject[] = [
   { path: 'search/:did', element: <SearchPage /> },
   { path: 'connect/app', element: <AppConnectPage /> },
   { path: 'dweb-connect', element: <DWebConnectPage /> },
-  { path: 'cli/connect', element: <CliConnectPage /> },
   { path: 'settings', element: <SettingsPage /> },
   { path: 'settings/security', element: <SecurityPage /> },
   { path: 'settings/backup', element: <BackupPage /> },

@@ -259,9 +259,7 @@ function AuthGate() {
     );
   }
 
-  // DWeb Connect popup renders without the app shell. Keep this ahead of the
-  // no-identity onboarding gate so a portable identity can be imported into
-  // an otherwise empty wallet.
+  // DWeb Connect popup renders without the app shell.
   if (location.pathname === '/dweb-connect') {
     return (
       <Suspense fallback={<Loader message="Loading..." />}>

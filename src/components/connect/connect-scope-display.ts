@@ -1,4 +1,5 @@
-import type { ConnectPermissionRequest, DwnPermissionScope } from '@enbox/agent';
+import type { DwnPermissionScope } from '@enbox/agent';
+import type { ConnectPermissionRequest } from '@enbox/connect';
 import { getScopeLabel } from '@/lib/protocol-names';
 
 export type DisplayScope = {

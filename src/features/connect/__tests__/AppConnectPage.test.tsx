@@ -9,12 +9,11 @@ const mocks = vi.hoisted(() => ({
     id: 'agent-1',
     dwn: { getRemoteDwnEndpointUrls: vi.fn() },
   },
+  approveConnectRequest: vi.fn(),
   denyConnectRequest: vi.fn(),
   ensureRegistrationForDids: vi.fn(),
   fetchConnectRequest: vi.fn(),
   generatePin: vi.fn(),
-  submitConnectResponse: vi.fn(),
-  prepareProtocol: vi.fn(),
   queryProtocolSetupStatus: vi.fn(),
   scannerHasCamera: vi.fn(),
 }));
@@ -46,16 +45,16 @@ vi.mock('@/enbox/hooks/use-permissions', () => ({
   }),
 }));
 
-vi.mock('../connect-effects', () => ({
+vi.mock('../connect-kernel', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../connect-kernel')>(),
+  approveConnectRequest: mocks.approveConnectRequest,
   denyConnectRequest: mocks.denyConnectRequest,
   fetchConnectRequest: mocks.fetchConnectRequest,
   generatePin: mocks.generatePin,
-  submitConnectResponse: mocks.submitConnectResponse,
 }));
 
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
-  prepareProtocol: mocks.prepareProtocol,
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
 
@@ -74,15 +73,20 @@ vi.mock('qr-scanner', () => ({
   },
 }));
 
+// 32 zero bytes, base64url-encoded — parseWalletConnectUri validates the
+// fragment key is exactly 32 bytes, so the deep-link tests need a real one.
+const ENCRYPTION_KEY_B64U = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const DEEP_LINK_FRAGMENT = `#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=${ENCRYPTION_KEY_B64U}`;
+
 const connectRequest = {
   clientDid      : 'did:jwk:cli-client',
   appName        : 'meshd',
   clientMetadata : { origin: 'meshd-cli' },
   delegateDid    : 'did:jwk:pre-supplied-delegate',
-  callbackUrl    : 'https://relay.example/connect/callback',
+  reply          : { mode: 'direct_post', callbackUrl: 'https://relay.example/connect/callback' },
   state          : 'state-1',
   nonce          : 'nonce-1',
-  responseMode   : 'direct_post',
+  responseKey    : { kty: 'OKP', crv: 'X25519', x: 'client-response-key' },
   supportedDidMethods: ['did:dht'],
   permissionRequests: [
     {
@@ -128,22 +132,23 @@ describe('AppConnectPage', () => {
   });
 
   it('fetches the connect request from request_uri + encryption_key in the URI fragment', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
 
     renderWithProviders(<AppConnectPage />, {
-      initialRoute: '/connect/app#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u',
+      initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
     });
 
     // Deep link goes straight to the consent UI...
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(screen.getByText(/Reported app name:\s*meshd/i)).toBeInTheDocument();
 
-    // ...via the same fetch path the scanner uses.
+    // ...via the same fetch path the scanner uses, with the fragment key
+    // decoded to its 32 raw bytes.
     expect(mocks.fetchConnectRequest).toHaveBeenCalledTimes(1);
     expect(mocks.fetchConnectRequest).toHaveBeenCalledWith(
       'https://relay.example/connect/abc123.jwt',
-      'enc-key-b64u',
+      new Uint8Array(32),
     );
     expect(window.location.hash).toBe('');
 
@@ -152,10 +157,10 @@ describe('AppConnectPage', () => {
   });
 
   it('scrubs an incomplete secret-bearing fragment before showing an error', async () => {
-    setPageUrl('#encryption_key=enc-key-b64u');
+    setPageUrl(`#encryption_key=${ENCRYPTION_KEY_B64U}`);
 
     renderWithProviders(<AppConnectPage />, {
-      initialRoute: '/connect/app#encryption_key=enc-key-b64u',
+      initialRoute: `/connect/app#encryption_key=${ENCRYPTION_KEY_B64U}`,
     });
 
     expect(await screen.findByText(/missing request_uri or encryption_key/i)).toBeInTheDocument();
@@ -163,12 +168,11 @@ describe('AppConnectPage', () => {
     expect(mocks.fetchConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('runs the normal approval flow after a deep-link fetch', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+  it('runs the approval ceremony after a deep-link fetch', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.submitConnectResponse.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
@@ -177,19 +181,14 @@ describe('AppConnectPage', () => {
     fireEvent.click(approve);
 
     await waitFor(() => {
-      expect(mocks.submitConnectResponse).toHaveBeenCalledTimes(1);
+      expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
     });
-    expect(mocks.prepareProtocol).toHaveBeenCalledWith(
-      'did:dht:alice',
-      mocks.agent,
-      connectRequest.permissionRequests[0].protocolDefinition,
-    );
     expect(mocks.ensureRegistrationForDids).toHaveBeenCalledWith(
       mocks.agent,
       ['https://dwn.example'],
       ['did:dht:alice'],
     );
-    expect(mocks.submitConnectResponse).toHaveBeenCalledWith(
+    expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       connectRequest,
       '1234',
@@ -201,7 +200,7 @@ describe('AppConnectPage', () => {
   });
 
   it('shows an error when the deep-link connect request cannot be fetched', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fexpired.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockRejectedValue(new Error('Request expired'));
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -210,8 +209,27 @@ describe('AppConnectPage', () => {
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
   });
 
+  it('sends a denial to the relay callback when the user denies', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.denyConnectRequest.mockResolvedValue(undefined);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const deny = await screen.findByRole('button', { name: 'Deny' });
+    fireEvent.click(deny);
+
+    await waitFor(() => {
+      expect(mocks.denyConnectRequest).toHaveBeenCalledWith(
+        'https://relay.example/connect/callback',
+        'state-1',
+      );
+    });
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+  });
+
   it('shows the requested relay session lifetime', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
       requestedSessionTtlSeconds: 90 * 24 * 60 * 60,
@@ -223,7 +241,7 @@ describe('AppConnectPage', () => {
   });
 
   it('rejects an invalid relay session lifetime before approval', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
       requestedSessionTtlSeconds: 0.5,
@@ -232,12 +250,11 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     expect(await screen.findByText(/invalid session lifetime/i)).toBeInTheDocument();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
-    expect(mocks.submitConnectResponse).not.toHaveBeenCalled();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid supplied delegate before protocol setup', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
       delegateDid: ' did:jwk:delegate',
@@ -246,12 +263,11 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     expect(await screen.findByText(/invalid delegate DID/i)).toBeInTheDocument();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
-    expect(mocks.submitConnectResponse).not.toHaveBeenCalled();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
   it('blocks approval when no identity uses a requester-supported DID method', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
       supportedDidMethods: ['did:jwk'],
@@ -261,11 +277,11 @@ describe('AppConnectPage', () => {
 
     expect(await screen.findByText(/No identity uses a DID method supported/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
   it('blocks approval when protocol verification finds a conflict', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.queryProtocolSetupStatus.mockResolvedValue('conflict');
 
@@ -274,12 +290,11 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     expect(await screen.findByText('Protocol setup conflict')).toBeInTheDocument();
     expect(approve).toBeDisabled();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
-    expect(mocks.submitConnectResponse).not.toHaveBeenCalled();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('prepares an identical requested protocol only once', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+  it('approves a request with duplicate protocol definitions once', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
       permissionRequests: [
@@ -294,21 +309,19 @@ describe('AppConnectPage', () => {
         },
       ],
     });
-    mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.submitConnectResponse.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
 
-    await waitFor(() => expect(mocks.submitConnectResponse).toHaveBeenCalledTimes(1));
-    expect(mocks.prepareProtocol).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
   });
 
   it('rejects mismatched permission scopes before protocol setup', async () => {
-    setPageUrl('#request_uri=https%3A%2F%2Frelay.example%2Fconnect%2Fabc123.jwt&encryption_key=enc-key-b64u');
+    setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
       permissionRequests: [{
@@ -323,7 +336,6 @@ describe('AppConnectPage', () => {
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     expect(await screen.findByText(/permission scopes must match/i)).toBeInTheDocument();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
-    expect(mocks.submitConnectResponse).not.toHaveBeenCalled();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 });
