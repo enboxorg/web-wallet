@@ -20,16 +20,20 @@ export function AppBar({ isDesktop = true, title, className }: AppBarProps) {
   return (
     <header
       className={cn(
-        'sticky top-0 z-[var(--z-sticky)] flex items-center h-14',
+        'sticky top-0 z-[var(--z-sticky)]',
         'bg-surface-glass backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]',
-        'border-b border-border-subtle px-5',
+        'border-b border-border-subtle',
         className,
       )}
       data-testid="appbar"
     >
+      {/* Inner container mirrors the main content column so the bar's
+          contents align with the page gutter, and its height matches the
+          sidebar's brand row on desktop. */}
+      <div className="relative mx-auto flex h-14 w-full max-w-[var(--content-width)] items-center px-[var(--content-gutter)] lg:h-16">
       {/* Mobile: centred brand */}
       {!isDesktop && (
-        <span className="text-lg font-bold tracking-tight text-text-primary select-none">
+        <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-xl font-bold tracking-tight text-text-primary select-none">
           en<span className="text-accent">b</span>ox
         </span>
       )}
@@ -59,6 +63,7 @@ export function AppBar({ isDesktop = true, title, className }: AppBarProps) {
         >
           {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
         </button>
+      </div>
       </div>
     </header>
   );
