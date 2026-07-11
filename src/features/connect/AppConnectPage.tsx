@@ -26,7 +26,6 @@ import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
-import { prepareProtocol } from './protocol-install';
 import {
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
@@ -309,26 +308,11 @@ export default function AppConnectPage() {
       }
       await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
 
-      // Install (or encryption-upgrade) each requested protocol on every
-      // reachable owner DWN endpoint BEFORE the approval ceremony, with
-      // strict remote conflict detection and postcondition verification. The
-      // agent ceremony only installs a protocol when nothing is installed
-      // locally — repairing an installed-but-unencrypted definition and
-      // fail-closed remote verification are the wallet's responsibility.
-      //
-      // Run prepareProtocol for each requested permission in parallel —
-      // each call independently performs DID resolution + per-endpoint
-      // fan-out, so doing them sequentially multiplied wall-time by the
-      // number of permissions.
-      await Promise.all(
-        preflight.definitions.map((definition) =>
-          prepareProtocol(selectedDid, agent, definition),
-        ),
-      );
-
-      // The ceremony creates and delivers the grants, grant keys, and
-      // session revocation grants, then the sealed response is posted to the
-      // relay callback. The PIN strengthens the response encryption key and
+      // The ceremony owns protocol preparation end to end (agent >=0.8.17):
+      // install, encryption upgrades, and fail-closed remote verification
+      // across reachable owner endpoints. It then creates and delivers the
+      // grants, grant keys, and session revocation grants, and the sealed
+      // response is posted to the relay callback. The PIN strengthens the response encryption key and
       // never leaves this device except by the user typing it into the app.
       const generatedPin = await generatePin(4);
       setPin(generatedPin);
