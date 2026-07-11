@@ -18,31 +18,31 @@ import type { NavItem } from '@/components/layout/types';
 export const sidebarItems: NavItem[] = [
   {
     path: '/',
-    label: 'Identities',
+    label: 'Profiles',
     icon: <Users size={20} />,
-    section: 'Identity',
+    section: 'Profiles',
   },
   {
     path: '/identities/create',
-    label: 'Create Identity',
+    label: 'New profile',
     icon: <UserPlus size={20} />,
-    section: 'Identity',
+    section: 'Profiles',
   },
   {
     path: '/identities/import',
     label: 'Import',
     icon: <Download size={20} />,
-    section: 'Identity',
+    section: 'Profiles',
   },
   {
     path: '/social',
-    label: 'Social Graph',
+    label: 'Connections',
     icon: <Network size={20} />,
-    section: 'Identity',
+    section: 'Profiles',
   },
   {
     path: '/search',
-    label: 'Search DIDs',
+    label: 'Find people',
     icon: <Search size={20} />,
     section: 'Discover',
   },
@@ -74,7 +74,7 @@ export const sidebarItems: NavItem[] = [
 export const bottomTabItems: NavItem[] = [
   {
     path: '/',
-    label: 'Identities',
+    label: 'Profiles',
     icon: <Users size={22} />,
   },
   {

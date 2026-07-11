@@ -72,7 +72,7 @@ function FirstIdentityGate({ onDone }: { onDone: () => void }) {
       })
       .catch((err) => {
         console.warn('Auto identity creation failed:', err);
-        toast.error('We could not create your identity automatically — set it up below.');
+        toast.error('We could not set up your profile automatically — create it below.');
         setAutoMode(false);
       })
       .finally(() => {
@@ -93,7 +93,7 @@ function FirstIdentityGate({ onDone }: { onDone: () => void }) {
         });
         onDone();
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to create identity');
+        toast.error(err instanceof Error ? err.message : 'Failed to create profile');
         setIsCreating(false);
       }
     },
@@ -101,7 +101,7 @@ function FirstIdentityGate({ onDone }: { onDone: () => void }) {
   );
 
   if (autoMode) {
-    return <Loader message="Creating your identity..." fullScreen />;
+    return <Loader message="Setting up your profile..." fullScreen />;
   }
 
   return (
@@ -308,7 +308,7 @@ function AuthGate() {
 
   // Unlocked but still loading identity list — show loader briefly
   if (identitiesLoading) {
-    return <Loader message="Loading identities..." fullScreen />;
+    return <Loader message="Loading your profiles..." fullScreen />;
   }
 
   // Unlocked with no identities — show full-screen identity creation

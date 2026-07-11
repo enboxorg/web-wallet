@@ -127,7 +127,7 @@ export default function CreateIdentityPage() {
       },
       {
         onSuccess: (identity) => {
-          toast.success('Identity created successfully');
+          toast.success('Profile created');
           const did = identity.did.uri;
           navigate(`/identity/${encodeURIComponent(did)}`);
         },
@@ -138,8 +138,8 @@ export default function CreateIdentityPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Create Identity"
-        description="Create a new decentralised identity with DID:DHT."
+        title="New profile"
+        description="Set up a new profile to share with apps."
         backTo="/"
         actions={
           <Button type="button" variant="ghost" size="sm" onClick={handleRegenerate}>
@@ -243,7 +243,7 @@ export default function CreateIdentityPage() {
             </Button>
           </Link>
           <Button type="submit" loading={isPending} className="w-full sm:w-auto">
-            Create Identity
+            Create profile
           </Button>
         </div>
       </form>

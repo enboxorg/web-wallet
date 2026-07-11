@@ -91,10 +91,10 @@ export default function IdentityDetailsPage() {
       a.download = `identity-${truncateDid(did, 6)}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success('Identity exported');
+      toast.success('Profile exported');
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to export identity',
+        err instanceof Error ? err.message : 'Failed to export profile',
       );
     }
   }
@@ -102,29 +102,29 @@ export default function IdentityDetailsPage() {
   async function handleDelete() {
     try {
       await deleteIdentity.mutateAsync(did);
-      toast.success('Identity deleted');
+      toast.success('Profile deleted');
       navigate('/');
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to delete identity',
+        err instanceof Error ? err.message : 'Failed to delete profile',
       );
     }
   }
 
   if (identitiesLoading || profileLoading) {
-    return <Loader message="Loading identity..." />;
+    return <Loader message="Loading profile..." />;
   }
 
   if (!identity && !identitiesLoading) {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
         <UserX size={48} className="text-text-ghost" />
-        <h1 className="text-xl font-semibold text-text-primary">Identity not found</h1>
+        <h1 className="text-xl font-semibold text-text-primary">Profile not found</h1>
         <p className="text-sm text-text-secondary">
           This identity may have been deleted or the DID is invalid.
         </p>
         <Link to="/">
-          <Button>Go to Identities</Button>
+          <Button>Go to profiles</Button>
         </Link>
       </div>
     );
@@ -142,7 +142,7 @@ export default function IdentityDetailsPage() {
           <Link
             to="/"
             className="mt-1.5 rounded-lg p-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors lg:hidden"
-            aria-label="Back to identities"
+            aria-label="Back to profiles"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
@@ -253,7 +253,7 @@ export default function IdentityDetailsPage() {
       <Dialog
         open={qrOpen}
         onClose={() => setQrOpen(false)}
-        title="Share Identity"
+        title="Share profile"
       >
         <div className="flex flex-col items-center gap-5">
           {/* QR code on white background for scan visibility in any theme */}
@@ -311,7 +311,7 @@ export default function IdentityDetailsPage() {
               className="w-full"
               onClick={async () => {
                 await runEnboxPromise(shareEffect({
-                  title: profile?.displayName || 'Enbox Identity',
+                  title: profile?.displayName || 'Enbox profile',
                   text: did,
                   url: `${window.location.origin}/search/${encodeURIComponent(did)}`,
                 }));
@@ -332,11 +332,11 @@ export default function IdentityDetailsPage() {
       <Dialog
         open={deleteOpen}
         onClose={() => { setDeleteOpen(false); setDeleteConfirmText(''); }}
-        title="Delete Identity"
+        title="Delete profile"
       >
         <div className="space-y-4">
           <p className="text-sm text-text-secondary">
-            This will permanently delete this identity and all its data.
+            This will permanently delete this profile and all its data.
             This action <strong className="text-text-primary">cannot be undone</strong>.
           </p>
           <div>

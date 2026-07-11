@@ -28,7 +28,7 @@ export function SeedPhraseWarningBanner() {
       <ShieldAlert size={18} className="shrink-0" />
       <div className="flex-1 min-w-0">
         <span className="font-medium">Back up your wallet</span>
-        <span className="hidden sm:inline text-warning/70"> — export your identities to keep your DIDs and data safe.</span>
+        <span className="hidden sm:inline text-warning/70"> — export your profiles to keep your data safe.</span>
       </div>
       <span className="text-xs text-warning/60 shrink-0">Back up</span>
     </button>

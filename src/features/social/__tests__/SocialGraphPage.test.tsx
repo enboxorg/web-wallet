@@ -116,9 +116,9 @@ describe('SocialGraphPage', () => {
 
   it('renders wallet-level social graph management for the first identity', () => {
     renderWithProviders(<SocialGraphPage />, { initialRoute: '/social' });
-    const identitySelector = within(screen.getByLabelText('Social graph identity'));
+    const identitySelector = within(screen.getByLabelText('Social graph profile'));
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Social Graph' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 1, name: 'Connections' })).toBeInTheDocument();
     expect(identitySelector.getByRole('button', { name: /alice/i })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('Alice Friend')).toBeInTheDocument();
     expect(screen.getByText('Alice Group')).toBeInTheDocument();
@@ -128,7 +128,7 @@ describe('SocialGraphPage', () => {
 
   it('switches the managed identity', async () => {
     const { user } = renderWithProviders(<SocialGraphPage />, { initialRoute: '/social' });
-    const identitySelector = within(screen.getByLabelText('Social graph identity'));
+    const identitySelector = within(screen.getByLabelText('Social graph profile'));
 
     await user.click(identitySelector.getByRole('button', { name: /bob work/i }));
 
@@ -143,9 +143,9 @@ describe('SocialGraphPage', () => {
 
     renderWithProviders(<SocialGraphPage />, { initialRoute: '/social' });
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Social Graph' })).toBeInTheDocument();
-    expect(screen.getByText('No identities yet')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /create identity/i })).toHaveAttribute(
+    expect(screen.getByRole('heading', { level: 1, name: 'Connections' })).toBeInTheDocument();
+    expect(screen.getByText('No profiles yet')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /new profile/i })).toHaveAttribute(
       'href',
       '/identities/create',
     );

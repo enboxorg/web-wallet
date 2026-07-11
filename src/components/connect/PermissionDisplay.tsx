@@ -342,7 +342,7 @@ function SessionTerms({
             Access lasts {durationLabel}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-            It expires automatically. You can revoke it later from this identity&apos;s Permissions tab.
+            It expires automatically. You can revoke it later from this profile&apos;s Permissions tab.
           </p>
         </div>
       </div>
@@ -494,7 +494,7 @@ function ProtocolConflictNotice({ access }: { access: ProtocolAccess[] }) {
         <div>
           <p className="text-sm font-medium text-red-200">Protocol setup conflict</p>
           <p className="mt-1 text-xs leading-relaxed text-red-200/80">
-            A requested protocol differs from this identity&apos;s installed setup. The wallet will not replace it during a connection.
+            A requested protocol differs from this profile&apos;s installed setup. The wallet will not replace it during a connection.
           </p>
         </div>
       </div>
@@ -518,7 +518,7 @@ function ProtocolSetupUnavailableNotice({
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-warning">Protocol setup could not be verified</p>
           <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-            Approval remains blocked until the wallet can check the selected identity&apos;s local protocol state.
+            Approval remains blocked until the wallet can check the selected profile&apos;s local protocol state.
           </p>
           {onRetry && (
             <button

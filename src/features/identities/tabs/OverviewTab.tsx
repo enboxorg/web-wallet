@@ -36,7 +36,7 @@ export default function OverviewTab({ did }: OverviewTabProps) {
       <EmptyState
         icon={<ExternalLink />}
         title="Set up your profile"
-        description="Add a display name, avatar, and bio to personalize this identity."
+        description="Add a display name, avatar, and bio to personalize this profile."
         action={
           <Link
             to={`/identity/${encodeURIComponent(did)}/edit`}
@@ -121,7 +121,7 @@ export default function OverviewTab({ did }: OverviewTabProps) {
             className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-1 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
           >
             <Search size={16} />
-            Search DIDs
+            Find people
           </Link>
         </div>
       )}

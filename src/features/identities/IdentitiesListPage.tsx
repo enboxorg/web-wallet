@@ -87,13 +87,13 @@ export default function IdentitiesListPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Identities"
-        description="Manage your decentralised identities."
+        title="Profiles"
+        description="The profiles you share with your apps."
         actions={
           <Link to="/identities/create">
             <Button size="sm">
               <UserPlus size={16} />
-              Create Identity
+              New profile
             </Button>
           </Link>
         }
@@ -103,7 +103,7 @@ export default function IdentitiesListPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-ghost pointer-events-none" />
           <Input
-            placeholder="Search by name, persona, or DID…"
+            placeholder="Search your profiles…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-9"
@@ -124,15 +124,15 @@ export default function IdentitiesListPage() {
         ) : (
           <EmptyState
             icon={<Search />}
-            title="No identities match your search"
+            title="No profiles match your search"
             description="Try a different search term or clear the filter."
           />
         )
       ) : (
         <EmptyState
           icon={<Users />}
-          title="No identities yet"
-          description="Create your first decentralised identity to get started."
+          title="No profiles yet"
+          description="Create your first profile to get started."
           action={
             <Link to="/identities/create">
               <Button size="md">Create your first identity</Button>

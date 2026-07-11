@@ -290,7 +290,7 @@ describe('AppConnectPage', () => {
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
-    expect(await screen.findByText(/No identity uses a DID method supported/i)).toBeInTheDocument();
+    expect(await screen.findByText(/None of your profiles are supported/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
     expect(mocks.prepareProtocol).not.toHaveBeenCalled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();

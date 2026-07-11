@@ -42,7 +42,7 @@ export default function ActivityTab({ did }: ActivityTabProps) {
       <EmptyState
         icon={<Clock />}
         title="No recent activity"
-        description="DWN records for this identity will appear here once data is synced."
+        description="Activity for this profile will appear here once data syncs."
       />
     );
   }

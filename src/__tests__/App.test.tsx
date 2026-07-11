@@ -172,7 +172,7 @@ describe('App auth restore flow', () => {
     renderApp('/dweb-connect');
 
     expect(await screen.findByRole('heading', { name: 'DWeb Connect Mock' })).toBeInTheDocument();
-    expect(screen.queryByText(/create identity/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/new profile/i)).not.toBeInTheDocument();
   });
 
   it('seeds the first identity with the wallet endpoint selection', async () => {

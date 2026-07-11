@@ -18,7 +18,7 @@ const settingsLinks = [
   {
     path: '/settings/backup',
     label: 'Backup & Recovery',
-    description: 'Recovery phrase and identity export',
+    description: 'Recovery phrase and profile export',
     icon: KeyRound,
   },
 ];

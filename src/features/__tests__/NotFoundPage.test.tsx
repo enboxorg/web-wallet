@@ -20,7 +20,7 @@ describe('NotFoundPage', () => {
 
   it('has a link to "/"', () => {
     render(<NotFoundPage />);
-    const link = screen.getByRole('link', { name: /go to identities/i });
+    const link = screen.getByRole('link', { name: /go to profiles/i });
     expect(link).toBeInTheDocument();
     expect(link).toHaveAttribute('href', '/');
   });

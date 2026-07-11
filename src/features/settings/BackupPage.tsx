@@ -44,7 +44,7 @@ export default function BackupPage() {
 
   const handleExportAll = useCallback(async () => {
     if (!identities || identities.length === 0) {
-      toast.error('No identities to export');
+      toast.error('No profiles to export');
       return;
     }
 
@@ -63,7 +63,7 @@ export default function BackupPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `enbox-identities-${Date.now()}.json`;
+      a.download = `enbox-profiles-${Date.now()}.json`;
       a.click();
       URL.revokeObjectURL(url);
 
@@ -75,7 +75,7 @@ export default function BackupPage() {
       setLastExport(now);
     } catch (err) {
       toast.error(
-        err instanceof Error ? err.message : 'Failed to export identities',
+        err instanceof Error ? err.message : 'Failed to export profiles',
       );
     } finally {
       setExporting(false);
@@ -98,7 +98,7 @@ export default function BackupPage() {
         <div className="flex items-center gap-2">
           <Download className="h-5 w-5 text-accent" />
           <h2 className="text-lg font-medium text-text-primary">
-            Export Identities
+            Export profiles
           </h2>
           <span className="rounded-full bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent">
             Recommended
@@ -114,7 +114,7 @@ export default function BackupPage() {
         <div className="flex items-center gap-3 rounded-lg bg-surface-2 p-3">
           <Upload className="h-4 w-4 text-text-tertiary shrink-0" />
           <p className="text-xs text-text-tertiary">
-            To restore a JSON backup, use <strong>Import Identities</strong> from the sidebar after
+            To restore a JSON backup, use <strong>Import profiles</strong> from the sidebar after
             unlocking or restoring your wallet.
           </p>
         </div>
@@ -159,8 +159,8 @@ export default function BackupPage() {
                 <div className="text-sm text-warning space-y-1">
                   <p>
                     <strong>Important:</strong> The recovery phrase restores your <em>wallet vault</em> and
-                    can recover identities that have synced to your configured remote DWNs.
-                    Keep a JSON export as an extra backup for identity keys and metadata.
+                    can recover profiles that have synced to your network.
+                    Keep an exported backup file as an extra safety net.
                   </p>
                   <p>
                     Once confirmed, this phrase will be permanently removed from the app.

@@ -247,7 +247,7 @@ export default function SocialGraphTab({ did }: SocialGraphTabProps) {
         <EmptyState
           icon={<Users />}
           title="No social graph records"
-          description="Friends, groups, and blocked DIDs for this identity appear here."
+          description="Friends, groups, and blocked people for this profile appear here."
         />
         <SocialDialogs
           friendDialogOpen={friendDialogOpen}
@@ -383,7 +383,7 @@ export default function SocialGraphTab({ did }: SocialGraphTabProps) {
           <EmptyState
             icon={<UserPlus />}
             title="No friends"
-            description="Add DIDs to make them available to friend-scoped protocols."
+            description="Add people to share friend-only content with."
             className="rounded-lg border border-border-default bg-surface-1"
           />
         )}
@@ -499,7 +499,7 @@ export default function SocialGraphTab({ did }: SocialGraphTabProps) {
           <EmptyState
             icon={<FolderPlus />}
             title="No groups"
-            description="Create groups to organize DIDs for protocol-specific access."
+            description="Create groups to organize the people you share with."
             className="rounded-lg border border-border-default bg-surface-1"
           />
         )}
@@ -548,7 +548,7 @@ export default function SocialGraphTab({ did }: SocialGraphTabProps) {
         ) : (
           <EmptyState
             icon={<Shield />}
-            title="No blocked DIDs"
+            title="No blocked people"
             className="rounded-lg border border-border-default bg-surface-1"
           />
         )}
@@ -729,7 +729,7 @@ function SocialDialogs({
         </form>
       </Dialog>
 
-      <Dialog open={blockDialogOpen} onClose={closeBlockDialog} title="Block DID">
+      <Dialog open={blockDialogOpen} onClose={closeBlockDialog} title="Block someone">
         <form className="space-y-4" onSubmit={handleBlockDid}>
           {formError && <ErrorAlert message={formError} />}
           <Input
@@ -745,7 +745,7 @@ function SocialDialogs({
             onChange={(e) => setBlockForm((form) => ({ ...form, reason: e.target.value }))}
             maxLength={SOCIAL_FIELD_LIMITS.blockReason}
           />
-          <DialogActions onCancel={closeBlockDialog} loading={pending} submitLabel="Block DID" danger />
+          <DialogActions onCancel={closeBlockDialog} loading={pending} submitLabel="Block someone" danger />
         </form>
       </Dialog>
     </>

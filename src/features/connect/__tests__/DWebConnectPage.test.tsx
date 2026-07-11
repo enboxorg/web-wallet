@@ -376,7 +376,7 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     // Alice is did:dht — filtered out, so approval is impossible.
-    expect(await screen.findByText(/No identities found/i)).toBeInTheDocument();
+    expect(await screen.findByText(/No profiles here yet/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
   });
 

@@ -190,14 +190,14 @@ export default function DWebConnectPage() {
     try {
       const preflight = preflightConnectRequest(connectRequest);
       if (!isDidSupportedByRequest(approveAsDid, connectRequest.supportedDidMethods)) {
-        throw new Error('The selected identity uses a DID method the requester does not support.');
+        throw new Error('This profile uses an ID type the app does not support.');
       }
       await preflightDelegateEncryption(liveAgent, connectRequest, preflight);
 
-      setStatusMessage('Preparing identity...');
+      setStatusMessage('Getting your profile ready...');
       const dwnEndpoints = await liveAgent.dwn.getRemoteDwnEndpointUrls(approveAsDid);
       if (dwnEndpoints.length === 0) {
-        throw new Error('This identity does not have any DWN endpoints configured.');
+        throw new Error('This profile does not have any sync endpoints configured.');
       }
       await ensureRegistrationForDids(liveAgent, dwnEndpoints, [approveAsDid]);
 
@@ -285,7 +285,7 @@ export default function DWebConnectPage() {
       throw new Error('Wallet was created but could not be unlocked.');
     }
 
-    setStatusMessage('Creating your identity...');
+    setStatusMessage('Setting up your profile...');
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
     const approvalDid = identity.did.uri;
     setSelectedDid(approvalDid);
@@ -493,9 +493,9 @@ export default function DWebConnectPage() {
                 </p>
               </div>
               <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
-                We'll set up your Enbox wallet and a fresh identity on this device,
+                We'll set up your Enbox wallet and a fresh profile on this device,
                 then connect it to {appName ?? requesterLabel}. You can customise
-                your identity any time.
+                your profile any time.
               </p>
             </section>
           ) : identityOptions.length > 0 ? (
@@ -505,7 +505,7 @@ export default function DWebConnectPage() {
               </p>
               <Select
                 id="dweb-connect-identity"
-                aria-label="Approve as identity"
+                aria-label="Approve as profile"
                 options={identityOptions}
                 value={selectedDid}
                 onChange={(e) => setSelectedDid(e.target.value)}
@@ -514,7 +514,7 @@ export default function DWebConnectPage() {
           ) : (
             <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center">
               <p className="text-xs text-warning">
-                No identities found. Close this window, create an identity first, then try again.
+                No profiles here yet. Close this window, create a profile first, then try again.
               </p>
             </div>
           )}
@@ -592,7 +592,7 @@ export default function DWebConnectPage() {
               </div>
               {onboardingSupported && (
                 <p className="mx-auto max-w-xs text-center text-xs leading-relaxed text-text-tertiary">
-                  New to Enbox? This sets up a wallet and identity on this device,
+                  New to Enbox? This sets up a wallet and profile on this device,
                   then connects it to {appName ?? requesterLabel}. Nothing else to fill in.
                 </p>
               )}

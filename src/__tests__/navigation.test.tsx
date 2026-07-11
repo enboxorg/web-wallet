@@ -13,7 +13,7 @@ describe('wallet navigation', () => {
       expect.arrayContaining([
         expect.objectContaining({
           path: '/social',
-          label: 'Social Graph',
+          label: 'Connections',
         }),
       ]),
     );
