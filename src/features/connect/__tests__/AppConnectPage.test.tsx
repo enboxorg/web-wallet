@@ -2,7 +2,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test-utils';
-import AppConnectPage from '../AppConnectPage';
+import AppConnectPage, { __resetDeepLinkSessionForTests } from '../AppConnectPage';
 import { useAuthStore } from '@/stores/auth-store';
 
 const mocks = vi.hoisted(() => ({
@@ -149,6 +149,7 @@ function setPageUrl(search: string) {
 describe('AppConnectPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    __resetDeepLinkSessionForTests();
     mocks.authState.firstTime = false;
     useAuthStore.setState({
       initialized: true,
@@ -381,6 +382,70 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     expect(await screen.findByText(/permission scopes must match/i)).toBeInTheDocument();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+  });
+
+  it('adopts the ceremony after a remount instead of falling back to the scanner', async () => {
+    // The fragment is stripped on first parse and the relay pointer is
+    // single-use, so a remount (e.g. AuthGate re-branching while inline
+    // onboarding flips the auth store) must restore the fetched request —
+    // never show the scanner or refetch the consumed pointer.
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+
+    const first = renderWithProviders(<AppConnectPage />, {
+      initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
+    });
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+    first.unmount();
+
+    // Remount with the fragment long gone.
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText(/No camera found/i)).not.toBeInTheDocument();
+    expect(mocks.fetchConnectRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.scannerHasCamera).not.toHaveBeenCalled();
+  });
+
+  it('adopts a still-loading ceremony after a remount', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    let resolveFetch: (value: typeof connectRequest) => void = () => undefined;
+    mocks.fetchConnectRequest.mockImplementation(
+      () => new Promise((resolve) => { resolveFetch = resolve; }),
+    );
+
+    const first = renderWithProviders(<AppConnectPage />, {
+      initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
+    });
+    expect(await screen.findByText(/Fetching connection request/i)).toBeInTheDocument();
+    first.unmount();
+
+    // Remount while the fetch is still in flight — the new instance waits
+    // on the same promise and lands on the consent UI when it settles.
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    expect(await screen.findByText(/Fetching connection request/i)).toBeInTheDocument();
+
+    resolveFetch(connectRequest);
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(mocks.fetchConnectRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the ceremony when the user denies, so the scanner returns', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.denyConnectRequest.mockResolvedValue(undefined);
+
+    const first = renderWithProviders(<AppConnectPage />, {
+      initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Deny' }));
+    await waitFor(() => expect(mocks.denyConnectRequest).toHaveBeenCalled());
+    first.unmount();
+
+    // A later plain visit is a fresh scan, not a stale ceremony.
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    expect(await screen.findByText(/No camera found/i)).toBeInTheDocument();
   });
 
   describe('deep-link arrival with no wallet (relay-path onboarding)', () => {
