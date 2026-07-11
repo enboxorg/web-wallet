@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test-utils';
 import AppConnectPage from '../AppConnectPage';
+import { useAuthStore } from '@/stores/auth-store';
 
 const mocks = vi.hoisted(() => ({
   agent: {
@@ -16,10 +17,44 @@ const mocks = vi.hoisted(() => ({
   generatePin: vi.fn(),
   queryProtocolSetupStatus: vi.fn(),
   scannerHasCamera: vi.fn(),
+  authState: { firstTime: false as boolean },
+  connectVault: vi.fn(),
+  autoCreateIdentity: vi.fn(),
+  preparePasskeyVaultPassword: vi.fn(),
+  storePasskeyCredential: vi.fn(),
 }));
 
 vi.mock('@/enbox/hooks/use-agent', () => ({
   useAgent: () => mocks.agent,
+}));
+
+vi.mock('@/enbox/hooks/use-auth', () => ({
+  useAuth: () => ({
+    initialized: true,
+    unlocked: !mocks.authState.firstTime,
+    firstTime: mocks.authState.firstTime,
+    agent: mocks.authState.firstTime ? null : mocks.agent,
+    connect: mocks.connectVault,
+    unlock: vi.fn(),
+    restore: vi.fn(),
+    lock: vi.fn(),
+    dwnEndpoints: ['https://dwn.example'],
+    error: null,
+    isLoading: false,
+  }),
+}));
+
+vi.mock('@/lib/auto-identity', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/auto-identity')>(),
+  autoCreateIdentity: mocks.autoCreateIdentity,
+}));
+
+vi.mock('@/lib/passkeys', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/lib/passkeys')>(),
+  canCheckPasskeySupport: () => true,
+  isPasskeySupported: async () => true,
+  preparePasskeyVaultPassword: mocks.preparePasskeyVaultPassword,
+  storePasskeyCredential: mocks.storePasskeyCredential,
 }));
 
 vi.mock('@/enbox/hooks/use-identities', () => ({
@@ -114,6 +149,13 @@ function setPageUrl(search: string) {
 describe('AppConnectPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.authState.firstTime = false;
+    useAuthStore.setState({
+      initialized: true,
+      unlocked: true,
+      firstTime: false,
+      agent: mocks.agent as never,
+    });
     mocks.scannerHasCamera.mockResolvedValue(false);
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
@@ -339,5 +381,70 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     expect(await screen.findByText(/permission scopes must match/i)).toBeInTheDocument();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+  });
+
+  describe('deep-link arrival with no wallet (relay-path onboarding)', () => {
+    beforeEach(() => {
+      mocks.authState.firstTime = true;
+      useAuthStore.setState({
+        initialized: true,
+        unlocked: false,
+        firstTime: true,
+        agent: null,
+      });
+      mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+      mocks.generatePin.mockResolvedValue('1234');
+      mocks.approveConnectRequest.mockResolvedValue(undefined);
+      mocks.preparePasskeyVaultPassword.mockResolvedValue({
+        password: 'wrapped-vault-password',
+        credential: { credentialId: 'cred-1' },
+      });
+      // connect() unlocks the vault: reflect that in the store so the
+      // approve flow finds the live agent right after onboarding.
+      mocks.connectVault.mockImplementation(async () => {
+        useAuthStore.setState({ agent: mocks.agent as never, unlocked: true, firstTime: false });
+        return 'recovery phrase words';
+      });
+      mocks.autoCreateIdentity.mockResolvedValue({ did: { uri: 'did:dht:fresh' } });
+    });
+
+    it('offers create-wallet-and-connect and completes approval with the new profile', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      renderWithProviders(<AppConnectPage />, { initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}` });
+
+      const create = await screen.findByRole('button', { name: /create wallet & connect/i });
+      expect(screen.getByText(/No wallet here yet/)).toBeInTheDocument();
+      // The approve-as selector is replaced by the onboarding explainer.
+      expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+
+      fireEvent.click(create);
+
+      await waitFor(() => {
+        expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
+          'did:dht:fresh',
+          connectRequest,
+          '1234',
+          mocks.agent,
+        );
+      });
+      expect(mocks.connectVault).toHaveBeenCalledWith('wrapped-vault-password', ['https://dwn.example']);
+      expect(mocks.autoCreateIdentity).toHaveBeenCalledWith(mocks.agent, ['https://dwn.example']);
+      expect(mocks.storePasskeyCredential).toHaveBeenCalledWith({ credentialId: 'cred-1' });
+
+      // The pairing code screen closes the loop.
+      expect(await screen.findByText('1234')).toBeInTheDocument();
+    });
+
+    it('does not offer onboarding when the requester rejects did:dht', async () => {
+      mocks.fetchConnectRequest.mockResolvedValue({
+        ...connectRequest,
+        supportedDidMethods: ['did:jwk'],
+      });
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      renderWithProviders(<AppConnectPage />, { initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}` });
+
+      await screen.findByText(/None of your profiles are supported/i);
+      expect(screen.queryByRole('button', { name: /create wallet & connect/i })).not.toBeInTheDocument();
+    });
   });
 });
