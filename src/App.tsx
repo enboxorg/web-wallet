@@ -33,6 +33,8 @@ import { RestoreWalletPage } from '@/features/auth/RestoreWalletPage';
 import { sidebarItems, bottomTabItems } from '@/nav-items';
 import { routes } from '@/routes';
 import DWebConnectPage from '@/features/connect/DWebConnectPage';
+import AppConnectPage, { hasSensitiveConnectFragment } from '@/features/connect/AppConnectPage';
+import { EnboxLogo } from '@/features/auth/EnboxLogo';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -256,6 +258,28 @@ function AuthGate() {
       <Suspense fallback={<Loader message="Loading..." />}>
         <DWebConnectPage />
       </Suspense>
+    );
+  }
+
+  // Relay deep links (QR scans / dapp hand-offs) get the same treatment:
+  // a fresh phone that scanned a dapp's code lands directly on the
+  // approval screen and can create its wallet inline. Only bypass the
+  // shell when the URL actually carries the sealed request pointer —
+  // plain visits to /connect/app keep the normal welcome/unlock flow.
+  if (
+    location.pathname === '/connect/app'
+    && firstTime
+    && hasSensitiveConnectFragment()
+  ) {
+    return (
+      <div className="flex min-h-screen flex-col">
+        <div className="flex justify-center pb-2 pt-6">
+          <EnboxLogo size="sm" />
+        </div>
+        <Suspense fallback={<Loader message="Loading..." />}>
+          <AppConnectPage />
+        </Suspense>
+      </div>
     );
   }
 
