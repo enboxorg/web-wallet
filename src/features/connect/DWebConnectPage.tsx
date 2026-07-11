@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, Check, X, AlertCircle } from 'lucide-react';
+import { Globe, Check, X, AlertCircle, Fingerprint, ShieldCheck, Sparkles } from 'lucide-react';
 import { WalletPostMessageTransport } from '@enbox/browser';
 import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
 import { Effect } from 'effect';
@@ -11,10 +11,23 @@ import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
-import { useAgent } from '@/enbox/hooks/use-agent';
+import { PinInput } from '@/components/ui/PinInput';
+import { useAuth } from '@/enbox/hooks/use-auth';
+import { useAuthStore } from '@/stores/auth-store';
+import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { truncateDid } from '@/lib/utils';
+import { PIN_LENGTH } from '@/lib/constants';
+import { autoCreateIdentity } from '@/lib/auto-identity';
+import {
+  canCheckPasskeySupport,
+  isPasskeySupported,
+  isPasskeyVaultUnsupportedError,
+  markPinAuthMethod,
+  preparePasskeyVaultPassword,
+  storePasskeyCredential,
+} from '@/lib/passkeys';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
@@ -45,8 +58,14 @@ function connectErrorMessage(error: unknown): string {
   return message;
 }
 
+/** Inline onboarding sub-state while there is no wallet yet. */
+type OnboardStep = 'idle' | 'pin-create' | 'pin-confirm';
+
 export default function DWebConnectPage() {
-  const agent = useAgent();
+  // Nullable on purpose: this page renders before onboarding too.
+  const agent = useAuthStore((s) => s.agent);
+  const { firstTime, connect: connectVault, dwnEndpoints: defaultDwnEndpoints } = useAuth();
+  const setBackupPhrase = useBackupSeedStore((s) => s.setPhrase);
   const { data: identities } = useIdentities();
 
   const [phase, setPhase] = useState<Phase>('waiting');
@@ -59,6 +78,13 @@ export default function DWebConnectPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
+
+  // Inline onboarding state (no wallet yet)
+  const [onboardStep, setOnboardStep] = useState<OnboardStep>('idle');
+  const [onboardPin, setOnboardPin] = useState('');
+  const [onboardPinError, setOnboardPinError] = useState<string | null>(null);
+  const [onboardError, setOnboardError] = useState<string | null>(null);
+  const [onboardBusy, setOnboardBusy] = useState(false);
 
   const isPopup = useMemo(() => !!window.opener, []);
   const permissions = connectRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
@@ -149,26 +175,31 @@ export default function DWebConnectPage() {
 
   // ── Approve flow ──────────────────────────────────────────────
 
-  async function runApproveFlow() {
+  async function runApproveFlow(overrideDid?: string) {
+    // Read the agent from the store, not the render closure — the
+    // create-wallet-and-connect path calls this right after onboarding,
+    // before this component re-renders with the fresh agent.
+    const liveAgent = useAuthStore.getState().agent;
+    const approveAsDid = overrideDid ?? selectedDid;
     const transport = transportRef.current;
-    if (!agent || !selectedDid || !connectRequest || !transport) { return; }
+    if (!liveAgent || !approveAsDid || !connectRequest || !transport) { return; }
     if (approvalCompletedRef.current) { return; }
 
     setPhase('connecting');
 
     try {
       const preflight = preflightConnectRequest(connectRequest);
-      if (!isDidSupportedByRequest(selectedDid, connectRequest.supportedDidMethods)) {
+      if (!isDidSupportedByRequest(approveAsDid, connectRequest.supportedDidMethods)) {
         throw new Error('The selected identity uses a DID method the requester does not support.');
       }
-      await preflightDelegateEncryption(agent, connectRequest, preflight);
+      await preflightDelegateEncryption(liveAgent, connectRequest, preflight);
 
       setStatusMessage('Preparing identity...');
-      const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
+      const dwnEndpoints = await liveAgent.dwn.getRemoteDwnEndpointUrls(approveAsDid);
       if (dwnEndpoints.length === 0) {
         throw new Error('This identity does not have any DWN endpoints configured.');
       }
-      await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
+      await ensureRegistrationForDids(liveAgent, dwnEndpoints, [approveAsDid]);
 
       // Install (or encryption-upgrade) each requested protocol on every
       // reachable owner DWN endpoint BEFORE the approval ceremony — the
@@ -176,7 +207,7 @@ export default function DWebConnectPage() {
       // fail-closed remote verification are the wallet's responsibility.
       setStatusMessage('Preparing protocols...');
       for (const protocolDefinition of preflight.definitions) {
-        await prepareProtocol(selectedDid, agent, protocolDefinition);
+        await prepareProtocol(approveAsDid, liveAgent, protocolDefinition);
       }
 
       // The ceremony creates and delivers the grants, grant keys, and
@@ -184,10 +215,10 @@ export default function DWebConnectPage() {
       // transport to post back.
       setStatusMessage('Creating grants...');
       const idToken = await approvePopupConnectRequest(
-        selectedDid,
+        approveAsDid,
         connectRequest,
         transport.dappOrigin,
-        agent,
+        liveAgent,
       );
 
       setStatusMessage('Returning grants...');
@@ -199,7 +230,7 @@ export default function DWebConnectPage() {
       void runEnboxPromise(publishWalletEvent({
         _tag         : 'connect.approved',
         origin,
-        connectedDid : selectedDid,
+        connectedDid : approveAsDid,
       })).catch((err: unknown) => console.warn('DWeb connect approval event failed:', err));
 
       // Auto-close after a few seconds
@@ -217,18 +248,102 @@ export default function DWebConnectPage() {
     }
   }
 
-  async function handleApprove() {
+  async function handleApprove(overrideDid?: string) {
     const lockKey = `dweb-connect:${origin}:${connectRequest?.state ?? selectedDid}`;
 
     await runEnboxPromise(
       withWalletOperationLock(
         lockKey,
         Effect.tryPromise({
-          try: runApproveFlow,
+          try: () => runApproveFlow(overrideDid),
           catch: (err) => err,
         }),
       ),
     );
+  }
+
+  // ── Inline onboarding: create wallet, identity, then connect ──
+  //
+  // NOTE: these handlers are deliberately NOT memoized — they must close
+  // over the freshest request state, which arrives via the transport
+  // after first render.
+
+  async function completeOnboardingAndConnect(vaultPassword: string, viaPasskey: boolean) {
+    setPhase('connecting');
+    setStatusMessage('Creating your wallet...');
+
+    const recoveryPhrase = await connectVault(vaultPassword, defaultDwnEndpoints);
+    if (!viaPasskey) {
+      markPinAuthMethod();
+    }
+    if (recoveryPhrase) {
+      setBackupPhrase(recoveryPhrase);
+    }
+
+    const liveAgent = useAuthStore.getState().agent;
+    if (!liveAgent) {
+      throw new Error('Wallet was created but could not be unlocked.');
+    }
+
+    setStatusMessage('Creating your identity...');
+    const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
+    const approvalDid = identity.did.uri;
+    setSelectedDid(approvalDid);
+
+    await handleApprove(approvalDid);
+  }
+
+  async function handleCreateWalletAndConnect() {
+    if (onboardBusy) return;
+    setOnboardError(null);
+    setOnboardBusy(true);
+    try {
+      const passkeyOk = canCheckPasskeySupport() && (await isPasskeySupported());
+      if (!passkeyOk) {
+        setOnboardStep('pin-create');
+        return;
+      }
+      const prepared = await preparePasskeyVaultPassword();
+      await completeOnboardingAndConnect(prepared.password, true);
+      storePasskeyCredential(prepared.credential);
+    } catch (err) {
+      setPhase('request');
+      setStatusMessage('');
+      if (isPasskeyVaultUnsupportedError(err)) {
+        setOnboardStep('pin-create');
+        return;
+      }
+      const message = err instanceof Error ? err.message : 'Failed to create wallet';
+      setOnboardError(/cancelled/i.test(message) ? null : message);
+    } finally {
+      setOnboardBusy(false);
+    }
+  }
+
+  function handleOnboardPinCreated(value: string) {
+    setOnboardPin(value);
+    setOnboardPinError(null);
+    setOnboardStep('pin-confirm');
+  }
+
+  async function handleOnboardPinConfirmed(value: string) {
+    if (value !== onboardPin) {
+      setOnboardPinError('PINs do not match. Try again.');
+      return;
+    }
+    setOnboardPinError(null);
+    setOnboardBusy(true);
+    try {
+      await completeOnboardingAndConnect(onboardPin, false);
+    } catch (err) {
+      setPhase('request');
+      setStatusMessage('');
+      setOnboardError(err instanceof Error ? err.message : 'Failed to create wallet');
+      setOnboardStep('pin-create');
+      setOnboardPin('');
+    } finally {
+      setOnboardBusy(false);
+    }
   }
 
   function handleDeny() {
@@ -258,12 +373,28 @@ export default function DWebConnectPage() {
   const existingSessions = useMemo(() =>
     findMatchingActiveConnectSessions(selectedPermissions, { origin, appName }),
   [selectedPermissions, origin, appName]);
-  const protocolSetupStatuses = useProtocolSetupStatuses(
+  const needsOnboarding = firstTime && !agent;
+  // Auto-created identities are did:dht — only offer inline onboarding
+  // when the requester accepts that method.
+  const onboardingSupported = needsOnboarding
+    && (connectRequest === undefined
+      || connectRequest.supportedDidMethods.includes('did:dht'));
+  const checkedProtocolSetupStatuses = useProtocolSetupStatuses(
     selectedDid,
-    agent,
-    permissions,
+    agent as NonNullable<typeof agent>,
+    agent ? permissions : EMPTY_PERMISSION_REQUESTS,
     protocolSetupRetryKey,
   );
+  // Before a wallet exists nothing is installed locally, so every
+  // requested protocol will be added during approval.
+  const protocolSetupStatuses = useMemo(() =>
+    needsOnboarding
+      ? Object.fromEntries(permissions.map((permission) => [
+        permission.protocolDefinition.protocol,
+        'install' as const,
+      ]))
+      : checkedProtocolSetupStatuses,
+  [checkedProtocolSetupStatuses, needsOnboarding, permissions]);
   const protocolSetupReady = protocolSetupAllowsApproval(permissions, protocolSetupStatuses);
   const requestSummary = useMemo(
     () => getConnectPermissionAskSummary(permissions),
@@ -352,8 +483,22 @@ export default function DWebConnectPage() {
             </p>
           </div>
 
-          {/* Identity selector */}
-          {identityOptions.length > 0 ? (
+          {/* Identity section */}
+          {onboardingSupported ? (
+            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+              <div className="flex items-center gap-2 text-accent">
+                <Sparkles size={16} />
+                <p className="text-sm font-semibold text-text-primary">
+                  No wallet here yet — we'll make one
+                </p>
+              </div>
+              <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+                We'll set up your Enbox wallet and a fresh identity on this device,
+                then connect it to {appName ?? requesterLabel}. You can customise
+                your identity any time.
+              </p>
+            </section>
+          ) : identityOptions.length > 0 ? (
             <section className="rounded-xl border border-border-default bg-surface-2 p-4">
               <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
                 Approve as
@@ -383,17 +528,76 @@ export default function DWebConnectPage() {
             onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
           />
 
+          {onboardError && (
+            <p className="text-center text-sm text-error" role="alert">
+              {onboardError}
+            </p>
+          )}
+
           {/* Actions */}
-          <div className="mt-auto flex gap-3 pt-4">
-            <Button variant="secondary" className="flex-1" onClick={handleDeny}>
-              <X className="h-4 w-4" />
-              Deny
-            </Button>
-            <Button className="flex-1" onClick={handleApprove} disabled={!selectedDid || !protocolSetupReady}>
-              <Check className="h-4 w-4" />
-              Approve
-            </Button>
-          </div>
+          {onboardingSupported && onboardStep !== 'idle' ? (
+            <div className="mt-auto flex flex-col items-center gap-4 rounded-xl border border-border-default bg-surface-1 p-5">
+              <div className="flex items-center gap-2 text-accent">
+                <ShieldCheck size={16} />
+                <p className="text-sm font-semibold text-text-primary">
+                  {onboardStep === 'pin-create' ? 'Create a PIN for your new wallet' : 'Confirm your PIN'}
+                </p>
+              </div>
+              <PinInput
+                key={onboardStep}
+                length={PIN_LENGTH}
+                onComplete={onboardStep === 'pin-create' ? handleOnboardPinCreated : handleOnboardPinConfirmed}
+                error={onboardStep === 'pin-confirm' && !!onboardPinError}
+                disabled={onboardBusy}
+                autoFocus
+              />
+              {onboardPinError && (
+                <p className="text-sm text-error" role="alert">{onboardPinError}</p>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={onboardBusy}
+                onClick={() => {
+                  setOnboardPin('');
+                  setOnboardPinError(null);
+                  setOnboardStep(onboardStep === 'pin-confirm' ? 'pin-create' : 'idle');
+                }}
+              >
+                Back
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-auto flex flex-col gap-3 pt-4">
+              <div className="flex gap-3">
+                <Button variant="secondary" className="flex-1" onClick={handleDeny} disabled={onboardBusy}>
+                  <X className="h-4 w-4" />
+                  Deny
+                </Button>
+                {onboardingSupported ? (
+                  <Button
+                    className="flex-[2]"
+                    onClick={handleCreateWalletAndConnect}
+                    loading={onboardBusy}
+                  >
+                    <Fingerprint className="h-4 w-4" />
+                    Create wallet & connect
+                  </Button>
+                ) : (
+                  <Button className="flex-1" onClick={() => handleApprove()} disabled={!selectedDid || !protocolSetupReady}>
+                    <Check className="h-4 w-4" />
+                    Approve
+                  </Button>
+                )}
+              </div>
+              {onboardingSupported && (
+                <p className="mx-auto max-w-xs text-center text-xs leading-relaxed text-text-tertiary">
+                  New to Enbox? This sets up a wallet and identity on this device,
+                  then connects it to {appName ?? requesterLabel}. Nothing else to fill in.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>

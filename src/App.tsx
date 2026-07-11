@@ -1,4 +1,4 @@
-import { Suspense, useState, useCallback, useEffect, useMemo } from 'react';
+import { Suspense, useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Routes, Route, useLocation } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'sonner';
@@ -10,6 +10,12 @@ import { useIdentitySyncReconciliation } from '@/enbox/hooks/use-identity-sync-r
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { useSyncQueryInvalidation } from '@/enbox/hooks/use-sync-query-invalidation';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
+import { queryKeys } from '@/enbox/queries/query-keys';
+import {
+  autoCreateIdentity,
+  clearJustOnboarded,
+  consumeJustOnboarded,
+} from '@/lib/auto-identity';
 import {
   hasStoredPasskeyCredential,
   isPasskeyUnlockAvailable,
@@ -21,7 +27,7 @@ import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AppShell } from '@/components/layout/AppShell';
 import { DragDropOverlay } from '@/components/layout/DragDropOverlay';
 import { UnlockScreen } from '@/features/auth/UnlockScreen';
-import { SetupScreen } from '@/features/auth/SetupScreen';
+import { WelcomeScreen } from '@/features/auth/WelcomeScreen';
 import { SetupIdentityStep } from '@/features/auth/SetupIdentityStep';
 import { RestoreWalletPage } from '@/features/auth/RestoreWalletPage';
 import { sidebarItems, bottomTabItems } from '@/nav-items';
@@ -39,15 +45,40 @@ const queryClient = new QueryClient({
 
 /**
  * Shown when the wallet is unlocked but has no identities.
- * Covers both first-time onboarding and returning users who
- * deleted all their identities.
+ *
+ * Fresh onboarding (the tab just created its vault) crafts the first
+ * identity automatically — generated name, avatar, and banner — so the
+ * happy path stays at a single tap. Returning users who deleted all
+ * their identities get the interactive creation card instead.
  */
-function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
+function FirstIdentityGate({ onDone }: { onDone: () => void }) {
   const { agent, dwnEndpoints } = useAuth();
   const createIdentity = useCreateIdentity();
   const [isCreating, setIsCreating] = useState(false);
+  const [autoMode, setAutoMode] = useState(() => consumeJustOnboarded());
+  const autoStartedRef = useRef(false);
 
   const seed = agent?.agentDid?.uri ?? 'default-seed';
+
+  // Zero-click path: craft the identity silently right after onboarding.
+  useEffect(() => {
+    if (!autoMode || !agent || autoStartedRef.current) return;
+    autoStartedRef.current = true;
+
+    autoCreateIdentity(agent, dwnEndpoints)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
+        onDone();
+      })
+      .catch((err) => {
+        console.warn('Auto identity creation failed:', err);
+        toast.error('We could not create your identity automatically — set it up below.');
+        setAutoMode(false);
+      })
+      .finally(() => {
+        clearJustOnboarded();
+      });
+  }, [autoMode, agent, dwnEndpoints, onDone]);
 
   const handleCreate = useCallback(
     async (params: { displayName: string; avatar: Blob; hero: Blob }) => {
@@ -69,6 +100,10 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
     [createIdentity, dwnEndpoints, onDone],
   );
 
+  if (autoMode) {
+    return <Loader message="Creating your identity..." fullScreen />;
+  }
+
   return (
     <div className="flex min-h-screen items-center justify-center bg-surface-0 px-4 animate-[fadeIn_0.3s_ease-out]">
       <div className="w-full max-w-md">
@@ -88,9 +123,9 @@ function CreateFirstIdentity({ onDone }: { onDone: () => void }) {
  *
  * Flow:
  * 1. Not initialized → Loader
- * 2. First time → SetupScreen (passkey when available, otherwise PIN) or RestoreWalletPage
+ * 2. First time → WelcomeScreen (one-tap passkey setup, PIN fallback) or RestoreWalletPage
  * 3. Returning user, locked → UnlockScreen
- * 4. Unlocked, no identities → CreateFirstIdentity (full-screen)
+ * 4. Unlocked, no identities → FirstIdentityGate (auto after onboarding)
  * 5. Unlocked, has identities → App shell with routes
  */
 function AuthGate() {
@@ -212,6 +247,18 @@ function AuthGate() {
     return <Loader message="Initialising wallet..." fullScreen />;
   }
 
+  // DWeb Connect renders without the app shell when the wallet is
+  // unlocked, or when there is no wallet yet — in which case the page
+  // runs one-tap onboarding inline and lands on the connect request.
+  // Returning-but-locked users still unlock first (the branch below).
+  if (location.pathname === '/dweb-connect' && (unlocked || firstTime)) {
+    return (
+      <Suspense fallback={<Loader message="Loading..." />}>
+        <DWebConnectPage />
+      </Suspense>
+    );
+  }
+
   // Wallet is locked — show setup or unlock screen
   if (!unlocked) {
     if (forgotPin) {
@@ -237,7 +284,7 @@ function AuthGate() {
         );
       }
       return (
-        <SetupScreen
+        <WelcomeScreen
           onSetup={handleSetup}
           onSwitchToRestore={() => setShowRestore(true)}
           isLoading={isLoading}
@@ -259,15 +306,6 @@ function AuthGate() {
     );
   }
 
-  // DWeb Connect popup renders without the app shell.
-  if (location.pathname === '/dweb-connect') {
-    return (
-      <Suspense fallback={<Loader message="Loading..." />}>
-        <DWebConnectPage />
-      </Suspense>
-    );
-  }
-
   // Unlocked but still loading identity list — show loader briefly
   if (identitiesLoading) {
     return <Loader message="Loading identities..." fullScreen />;
@@ -280,7 +318,7 @@ function AuthGate() {
   const hasIdentities = identities && identities.length > 0;
   if (!hasIdentities && !identitySkipped) {
     return (
-      <CreateFirstIdentity
+      <FirstIdentityGate
         onDone={() => setIdentitySkipped(true)}
       />
     );

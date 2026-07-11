@@ -4,6 +4,7 @@ import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DWebConnectPage from '../DWebConnectPage';
+import { useAuthStore } from '@/stores/auth-store';
 
 const mocks = vi.hoisted(() => {
   const transport = {
@@ -39,6 +40,22 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@/enbox/hooks/use-agent', () => ({
   useAgent: () => mocks.agent,
+}));
+
+vi.mock('@/enbox/hooks/use-auth', () => ({
+  useAuth: () => ({
+    initialized: true,
+    unlocked: true,
+    firstTime: false,
+    agent: mocks.agent,
+    connect: vi.fn(),
+    unlock: vi.fn(),
+    restore: vi.fn(),
+    lock: vi.fn(),
+    dwnEndpoints: ['https://dwn.example'],
+    error: null,
+    isLoading: false,
+  }),
 }));
 
 vi.mock('@/enbox/hooks/use-identities', () => ({
@@ -121,6 +138,12 @@ function connectRequest() {
 describe('DWebConnectPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    useAuthStore.setState({
+      initialized: true,
+      unlocked: true,
+      firstTime: false,
+      agent: mocks.agent as never,
+    });
     Object.defineProperty(window, 'opener', {
       configurable: true,
       value: { postMessage: vi.fn() },

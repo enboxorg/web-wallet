@@ -42,10 +42,23 @@ function markShapes(palette) {
   <circle cx="26" cy="26" r="2.5" fill="${front}"/>`;
 }
 
+/**
+ * Icon safe-zone inset. The mark's bounding box spans 4..36 of the 40-unit
+ * viewBox — nearly full-bleed. Icons rendered from this source show up in
+ * small chromes (passkey pickers, install prompts, tab strips) where the
+ * tile is often circle-cropped or displayed at 16-32px, so the mark needs
+ * breathing room: scale it about the tile centre to ~60% of the tile,
+ * leaving ≥20% margin on every side (inside the maskable safe zone).
+ */
+const ICON_MARK_SCALE = 0.75;
+
 function markSvg(palette) {
+  const c = VIEWBOX / 2;
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${VIEWBOX} ${VIEWBOX}">
   <rect width="${VIEWBOX}" height="${VIEWBOX}" fill="${BACKGROUND}"/>
+  <g transform="translate(${c} ${c}) scale(${ICON_MARK_SCALE}) translate(${-c} ${-c})">
 ${markShapes(palette)}
+  </g>
 </svg>
 `;
 }
