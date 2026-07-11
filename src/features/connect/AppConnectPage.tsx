@@ -93,6 +93,30 @@ export function hasSensitiveConnectFragment(): boolean {
   return fragment.has('request_uri') || fragment.has('encryption_key');
 }
 
+/** Outcome of fetching the sealed deep-link request. */
+type DeepLinkOutcome = { request: ConnectRequest } | { error: string };
+
+/** One deep-link ceremony: the fetch promise plus its settled outcome. */
+type DeepLinkSession = { promise: Promise<DeepLinkOutcome>; settled?: DeepLinkOutcome };
+
+// Module-cached deep-link session. The sealed pointer is single-use and
+// the fragment is stripped from the URL after the first parse, so a
+// remount of this page mid-ceremony (StrictMode double-effects, AuthGate
+// re-branching while inline onboarding flips the auth store) must adopt
+// the in-flight or fetched request instead of falling back to the scanner
+// or refetching a consumed pointer.
+let deepLinkSession: DeepLinkSession | undefined;
+
+/** Ends the deep-link ceremony (deny, done, or explicit retry). */
+function clearDeepLinkSession(): void {
+  deepLinkSession = undefined;
+}
+
+/** Test-only: reset the module session between cases. */
+export function __resetDeepLinkSessionForTests(): void {
+  clearDeepLinkSession();
+}
+
 /** Inline onboarding sub-state while there is no wallet yet. */
 type OnboardStep = 'idle' | 'pin-create' | 'pin-confirm';
 
@@ -110,13 +134,13 @@ export default function AppConnectPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const processConnectUriRef = useRef(processConnectUri);
   processConnectUriRef.current = processConnectUri;
-  const processConnectParamsRef = useRef(processConnectParams);
-  processConnectParamsRef.current = processConnectParams;
 
-  // Start in 'loading' when the URL carries deep-link connect parameters so
-  // the camera never starts for a link-initiated flow.
-  const [phase, setPhase] = useState<Phase>(() => (hasSensitiveConnectFragment() ? 'loading' : 'scanning'));
-  const deepLinkHandledRef = useRef(false);
+  // Start in 'loading' when the URL carries deep-link connect parameters —
+  // or when a deep-link session is already in flight (remount) — so the
+  // camera never starts for a link-initiated flow.
+  const [phase, setPhase] = useState<Phase>(() => (
+    deepLinkSession !== undefined || hasSensitiveConnectFragment() ? 'loading' : 'scanning'
+  ));
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
   const [cameras, setCameras] = useState<Scanner.Camera[]>([]);
@@ -321,25 +345,70 @@ export default function AppConnectPage() {
   }
 
   // Deep-link flow: when the page is opened with `request_uri` +
-  // `encryption_key` in the URI fragment (CLI `--open` flow), fetch the connect
-  // request directly — same path the QR scanner feeds into, same consent UI
-  // afterwards. The ref guards against double-fetching under React strict
-  // mode's double-invoked effects (the relay request may be one-time-use).
+  // `encryption_key` in the URI fragment (QR scans / dapp hand-offs), fetch
+  // the connect request directly — same path the QR scanner feeds into,
+  // same consent UI afterwards. The module-level session guards against
+  // double-fetching under React strict mode's double-invoked effects (the
+  // relay pointer is one-time-use) AND lets a remounted instance adopt the
+  // ceremony after the fragment has been stripped — inline onboarding
+  // flips the auth store mid-flow, and any AuthGate re-branching must not
+  // strand the user on the scanner.
   useEffect(() => {
+    let cancelled = false;
+    const adopt = (outcome: DeepLinkOutcome): void => {
+      if (cancelled) return;
+      if ('request' in outcome) {
+        setConnectionRequest(outcome.request);
+        setPhase('request');
+      } else {
+        setErrorMessage(outcome.error);
+        setPhase('error');
+      }
+    };
+
+    // A session already exists (StrictMode re-run or a remount): adopt it.
+    if (deepLinkSession !== undefined) {
+      if (deepLinkSession.settled !== undefined) {
+        adopt(deepLinkSession.settled);
+      } else {
+        void deepLinkSession.promise.then(adopt);
+      }
+      return () => { cancelled = true; };
+    }
+
+    if (!hasSensitiveConnectFragment()) return;
+
     const deepLink = getDeepLinkParams();
-    if (!hasSensitiveConnectFragment() || deepLinkHandledRef.current) return;
-    deepLinkHandledRef.current = true;
+    // Strip the sensitive fragment from the URL (and history) immediately.
     window.history.replaceState(
       window.history.state,
       '',
       `${window.location.pathname}${window.location.search}`,
     );
-    if (!deepLink) {
-      setErrorMessage('Invalid connection URI: missing request_uri or encryption_key');
-      setPhase('error');
-      return;
-    }
-    void processConnectParamsRef.current(deepLink.requestUri, deepLink.encryptionKey);
+
+    const promise: Promise<DeepLinkOutcome> = (async () => {
+      if (!deepLink) {
+        return { error: 'Invalid connection URI: missing request_uri or encryption_key' };
+      }
+      try {
+        const request = await fetchConnectRequest(deepLink.requestUri, deepLink.encryptionKey);
+        const preflight = preflightConnectRequest(request);
+        await validateConnectPermissionSemantics(preflight);
+        return { request };
+      } catch (err) {
+        console.error('Connect flow error:', err);
+        return { error: (err as Error).message || 'Failed to process connection request.' };
+      }
+    })();
+
+    const session: DeepLinkSession = { promise };
+    deepLinkSession = session;
+    void promise.then((outcome) => {
+      session.settled = outcome;
+      adopt(outcome);
+    });
+
+    return () => { cancelled = true; };
   }, []);
 
   async function handleApprove(overrideDid?: string) {
@@ -471,6 +540,7 @@ export default function AppConnectPage() {
         // Best-effort — navigate home regardless.
       }
     }
+    clearDeepLinkSession();
     navigate('/');
   }
 
@@ -624,6 +694,7 @@ export default function AppConnectPage() {
             variant="secondary"
             className="w-full min-h-[44px]"
             onClick={() => {
+              clearDeepLinkSession();
               setPhase('scanning');
               setErrorMessage('');
             }}
@@ -823,7 +894,13 @@ export default function AppConnectPage() {
               {pinCopied ? 'Copied!' : 'Copy PIN'}
             </button>
 
-            <Button className="w-full min-h-[44px] mt-2" onClick={() => navigate('/')}>
+            <Button
+              className="w-full min-h-[44px] mt-2"
+              onClick={() => {
+                clearDeepLinkSession();
+                navigate('/');
+              }}
+            >
               Done
             </Button>
           </div>

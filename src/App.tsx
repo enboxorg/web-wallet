@@ -120,6 +120,15 @@ function FirstIdentityGate({ onDone }: { onDone: () => void }) {
   );
 }
 
+// Latched once a relay approval starts before onboarding. Creating the
+// wallet inside the approval flips `firstTime` (and adds the profile)
+// mid-ceremony, and if the gate re-branched on those store changes it
+// would unmount the approval — killing the in-flight approve and
+// orphaning the single-use request pointer (the exact "create wallet →
+// profile screen → scanner" dead end). Cleared whenever the route leaves
+// /connect/app (deny and Done both navigate home).
+let relayCeremonyActive = false;
+
 /**
  * AuthGate — decides what to render based on auth + identity state.
  *
@@ -266,11 +275,17 @@ function AuthGate() {
   // approval screen and can create its wallet inline. Only bypass the
   // shell when the URL actually carries the sealed request pointer —
   // plain visits to /connect/app keep the normal welcome/unlock flow.
+  // Once the ceremony starts it stays latched until the route changes:
+  // inline onboarding flips `firstTime` mid-flow and the approval must
+  // keep rendering in this exact tree position (no unmount).
+  if (location.pathname !== '/connect/app') {
+    relayCeremonyActive = false;
+  }
   if (
     location.pathname === '/connect/app'
-    && firstTime
-    && hasSensitiveConnectFragment()
+    && (relayCeremonyActive || (firstTime && hasSensitiveConnectFragment()))
   ) {
+    relayCeremonyActive = true;
     return (
       <div className="flex min-h-screen flex-col">
         <div className="flex justify-center pb-2 pt-6">
