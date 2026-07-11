@@ -103,8 +103,8 @@ export default function SearchPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <PageHeader
-        title="Search DIDs"
-        description="Look up a DID to view their public profile."
+        title="Find people"
+        description="Paste someone's ID to see their public profile."
       />
 
       {/* Search form */}
@@ -142,14 +142,14 @@ export default function SearchPage() {
       )}
 
       {/* Loading */}
-      {isLoading && <Loader message="Looking up DID..." />}
+      {isLoading && <Loader message="Looking them up..." />}
 
       {/* Error */}
       {isError && !isLoading && (
         <div className="flex flex-col items-center gap-3 rounded-lg border border-error/30 bg-error/5 p-8 text-center">
           <AlertCircle className="h-10 w-10 text-error" />
           <p className="text-sm text-error">
-            {(error as Error)?.message ?? 'Could not resolve DID. It may be invalid or unreachable.'}
+            {(error as Error)?.message ?? "We couldn't find that ID. It may be mistyped or unreachable."}
           </p>
         </div>
       )}
@@ -171,7 +171,7 @@ export default function SearchPage() {
             <div className="flex flex-col items-center gap-3 rounded-lg border border-border-default bg-surface-1 p-8 text-center">
               <UserCheck className="h-10 w-10 text-text-ghost" />
               <div>
-                <p className="text-sm font-medium text-text-primary">DID resolved</p>
+                <p className="text-sm font-medium text-text-primary">Found them</p>
                 <p className="mt-1 text-xs text-text-tertiary">
                   This DID exists but has no public profile.
                 </p>

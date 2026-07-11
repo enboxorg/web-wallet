@@ -222,7 +222,7 @@ describe('IdentityDetailsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: /protocols/i }));
 
-    // Should show protocol human-friendly names
+    // Should show protocol human-friendly names (catalog data, not UI copy)
     expect(screen.getByText('Profile')).toBeInTheDocument();
     expect(screen.getByText('Social Graph')).toBeInTheDocument();
   });

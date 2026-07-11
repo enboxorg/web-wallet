@@ -146,7 +146,7 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
                 Own your identity
               </h1>
               <p className="max-w-xs text-sm leading-relaxed text-text-secondary">
-                One secure identity for all your apps, kept on your device.
+                One profile for all your apps, kept on your device.
                 No email, no password — just you.
               </p>
             </div>

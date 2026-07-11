@@ -130,8 +130,8 @@ export default function ImportIdentityPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Import Identities"
-        description="Import identities from portable JSON files."
+        title="Import profiles"
+        description="Bring profiles over from exported backup files."
         backTo="/"
       />
 

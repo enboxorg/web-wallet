@@ -43,7 +43,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
     expect(screen.getByText('Backup & Recovery')).toBeInTheDocument();
     expect(
-      screen.getByText(/recovery phrase and identity export/i),
+      screen.getByText(/recovery phrase and profile export/i),
     ).toBeInTheDocument();
   });
 

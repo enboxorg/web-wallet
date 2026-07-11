@@ -76,7 +76,7 @@ describe('EditIdentityPage', () => {
       initialRoute: `/identity/${encodeURIComponent(testDid)}/edit`,
     });
 
-    expect(screen.getByRole('heading', { name: /edit identity/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /edit profile/i })).toBeInTheDocument();
     expect(screen.getByDisplayValue('Editable User')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
   });

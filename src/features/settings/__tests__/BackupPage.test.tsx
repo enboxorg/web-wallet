@@ -68,7 +68,7 @@ describe('BackupPage', () => {
   it('shows export section heading', () => {
     renderWithProviders(<BackupPage />);
     expect(
-      screen.getByRole('heading', { name: /export identities/i }),
+      screen.getByRole('heading', { name: /export profiles/i }),
     ).toBeInTheDocument();
   });
 

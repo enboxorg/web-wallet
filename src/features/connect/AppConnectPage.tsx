@@ -298,13 +298,13 @@ export default function AppConnectPage() {
     try {
       const preflight = preflightConnectRequest(connectionRequest);
       if (!isDidSupportedByRequest(selectedDid, connectionRequest.supportedDidMethods)) {
-        throw new Error('The selected identity uses a DID method the requester does not support.');
+        throw new Error('This profile uses an ID type the app does not support.');
       }
       await preflightDelegateEncryption(agent, connectionRequest, preflight);
 
       const dwnEndpoints = await agent.dwn.getRemoteDwnEndpointUrls(selectedDid);
       if (dwnEndpoints.length === 0) {
-        throw new Error('This identity does not have any remote DWN endpoints configured.');
+        throw new Error('This profile does not have any sync endpoints configured.');
       }
       await ensureRegistrationForDids(agent, dwnEndpoints, [selectedDid]);
 
@@ -543,7 +543,7 @@ export default function AppConnectPage() {
               </p>
               <Select
                 id="app-connect-identity"
-                aria-label="Approve as identity"
+                aria-label="Approve as profile"
                 options={identityOptions}
                 value={selectedDid}
                 onChange={(e) => setSelectedDid(e.target.value)}
@@ -552,7 +552,7 @@ export default function AppConnectPage() {
           ) : (
             <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center">
               <p className="text-xs text-warning">
-                No identity uses a DID method supported by this request.
+                None of your profiles are supported by this app's request.
               </p>
             </div>
           )}

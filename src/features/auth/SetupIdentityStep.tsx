@@ -107,7 +107,7 @@ export function SetupIdentityStep({
         <div className="flex items-center gap-2 text-accent">
           <Sparkles size={18} />
           <h1 className="text-2xl font-semibold text-text-primary">
-            Create your identity
+            Create your profile
           </h1>
         </div>
         <p className="text-sm text-text-secondary text-center">
@@ -228,7 +228,7 @@ export function SetupIdentityStep({
           disabled={!ready}
           className="w-full"
         >
-          Create Identity
+          Create profile
         </Button>
         <Button
           variant="ghost"

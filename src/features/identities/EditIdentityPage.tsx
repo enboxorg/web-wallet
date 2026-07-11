@@ -163,19 +163,19 @@ export default function EditIdentityPage() {
   }
 
   if (identitiesLoading || profileLoading || endpointsLoading) {
-    return <Loader message="Loading identity..." />;
+    return <Loader message="Loading profile..." />;
   }
 
   if (!identity && !identitiesLoading) {
     return (
       <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
         <UserX size={48} className="text-text-ghost" />
-        <h1 className="text-xl font-semibold text-text-primary">Identity not found</h1>
+        <h1 className="text-xl font-semibold text-text-primary">Profile not found</h1>
         <p className="text-sm text-text-secondary">
           This identity may have been deleted or the DID is invalid.
         </p>
         <Link to="/">
-          <Button>Go to Identities</Button>
+          <Button>Go to profiles</Button>
         </Link>
       </div>
     );
@@ -184,8 +184,8 @@ export default function EditIdentityPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Edit Identity"
-        description="Update your identity profile."
+        title="Edit profile"
+        description="Update how you appear to apps and people."
         backTo={detailsPath}
         onBack={confirmDiscardChanges}
       />
@@ -230,7 +230,7 @@ export default function EditIdentityPage() {
           label="Tagline"
           value={tagline}
           onChange={(e) => setTagline(e.target.value)}
-          placeholder="A short one-liner about this identity"
+          placeholder="A short one-liner about this profile"
         />
 
         <Textarea

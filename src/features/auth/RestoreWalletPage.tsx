@@ -188,7 +188,7 @@ export function RestoreWalletPage({
               </h1>
               <p className="text-sm text-text-secondary text-center">
                 Enter your recovery phrase to restore your wallet vault and recover
-                identities synced to your configured DWNs.
+                profiles synced to your network.
               </p>
             </div>
 

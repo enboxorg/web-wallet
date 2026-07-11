@@ -77,10 +77,10 @@ export function DragDropOverlay() {
       <div className="flex flex-col items-center gap-4 rounded-xl border-2 border-dashed border-accent bg-surface-1 px-12 py-10">
         <Download className="h-12 w-12 text-accent" />
         <p className="text-lg font-medium text-text-primary">
-          Drop identity files to import
+          Drop profile files to import
         </p>
         <p className="text-sm text-text-tertiary">
-          .json identity files only
+          .json profile backups only
         </p>
       </div>
     </div>

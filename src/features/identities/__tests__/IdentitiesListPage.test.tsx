@@ -80,7 +80,7 @@ describe('IdentitiesListPage', () => {
   it('renders the page heading', () => {
     renderWithProviders(<IdentitiesListPage />);
     expect(
-      screen.getByRole('heading', { name: /identities/i }),
+      screen.getByRole('heading', { name: /profiles/i }),
     ).toBeInTheDocument();
   });
 
@@ -133,13 +133,13 @@ describe('IdentitiesListPage', () => {
   it('renders a create identity link', () => {
     renderWithProviders(<IdentitiesListPage />);
     // The "Create Identity" text is inside a <Link> wrapping a <Button>
-    expect(screen.getByRole('link', { name: /create identity/i })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /new profile/i })).toBeInTheDocument();
   });
 
   it('shows a search input when identities exist', () => {
     renderWithProviders(<IdentitiesListPage />);
     expect(
-      screen.getByPlaceholderText(/search by name, persona, or did/i),
+      screen.getByPlaceholderText(/search your profiles/i),
     ).toBeInTheDocument();
   });
 
@@ -164,7 +164,7 @@ describe('IdentitiesListPage', () => {
     await user.type(searchInput, 'zzzznonexistent');
 
     expect(
-      screen.getByText(/no identities match/i),
+      screen.getByText(/no profiles match/i),
     ).toBeInTheDocument();
   });
 

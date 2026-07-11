@@ -35,8 +35,8 @@ export default function SocialGraphPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Social Graph" />
-        <ErrorBox message={`Failed to load identities: ${(error as Error).message}`} />
+        <PageHeader title="Connections" />
+        <ErrorBox message={`Failed to load profiles: ${(error as Error).message}`} />
       </div>
     );
   }
@@ -44,16 +44,16 @@ export default function SocialGraphPage() {
   if (identities.length === 0) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Social Graph" />
+        <PageHeader title="Connections" />
         <EmptyState
           icon={<Users />}
-          title="No identities yet"
-          description="Create an identity before managing social graph records."
+          title="No profiles yet"
+          description="Create a profile before adding connections."
           action={
             <Link to="/identities/create">
               <Button size="md">
                 <Plus size={16} />
-                Create Identity
+                New profile
               </Button>
             </Link>
           }
@@ -67,20 +67,20 @@ export default function SocialGraphPage() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Social Graph"
-        description="Friends, groups, and blocked DIDs across wallet identities."
+        title="Connections"
+        description="Friends, groups, and blocked people across your profiles."
         actions={
           <Link to="/identities/create">
             <Button variant="secondary" size="sm">
               <Plus size={16} />
-              Create Identity
+              New profile
             </Button>
           </Link>
         }
       />
 
       <div className="grid gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <aside className="min-w-0 space-y-3" aria-label="Social graph identity">
+        <aside className="min-w-0 space-y-3" aria-label="Social graph profile">
           <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
             <Network className="h-3.5 w-3.5" />
             Identity
