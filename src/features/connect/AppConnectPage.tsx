@@ -120,7 +120,7 @@ export function __resetDeepLinkSessionForTests(): void {
 /** Inline onboarding sub-state while there is no wallet yet. */
 type OnboardStep = 'idle' | 'pin-create' | 'pin-confirm';
 
-export default function AppConnectPage() {
+export default function AppConnectPage({ standalone = false }: { standalone?: boolean } = {}) {
   // Nullable on purpose: with a connect deep link this page renders
   // before onboarding too.
   const agent = useAuthStore((s) => s.agent);
@@ -222,6 +222,15 @@ export default function AppConnectPage() {
   // NOTE: useBlocker is not available with <BrowserRouter> — it requires
   // createBrowserRouter (data router). The beforeunload handler above is
   // the navigation guard we can use without a data router.
+
+  // Each phase is a new screen: reset the scroll so a user who tapped an
+  // action at the bottom of a long consent list isn't left staring at the
+  // empty bottom half of the next (much shorter) state.
+  useEffect(() => {
+    try {
+      window.scrollTo(0, 0);
+    } catch { /* non-browser test environments */ }
+  }, [phase]);
 
   // ── Camera setup ────────────────────────────────────────────────
 
@@ -576,7 +585,10 @@ export default function AppConnectPage() {
   // ── Render ───────────────────────────────────────────────────────
 
   return (
-    <div className="-mx-[var(--content-gutter)] -mt-6 lg:mx-0 lg:mt-0">
+    // In the shell, the negative margins cancel the content gutter so the
+    // camera can go full-bleed. Standalone (the bare ceremony layout) has
+    // no gutter to cancel — the page is a flex column filling the screen.
+    <div className={standalone ? 'flex flex-1 flex-col' : '-mx-[var(--content-gutter)] -mt-6 lg:mx-0 lg:mt-0'}>
       {/* ─── Scanning phase ─────────────────────────────────────── */}
       {phase === 'scanning' && (
         <div className="animate-[fadeIn_0.3s_ease-out]">
@@ -673,22 +685,24 @@ export default function AppConnectPage() {
       )}
 
       {/* ─── Loading phase (deep link) ──────────────────────────── */}
+      {/* Transient states center in the available viewport (with a small
+          upward bias for the header) instead of hugging the top. */}
       {phase === 'loading' && (
-        <div className="animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0">
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0 flex flex-col justify-center ${standalone ? 'flex-1 pb-24' : 'min-h-[55vh]'}`}>
           <Loader message="Fetching connection request..." />
         </div>
       )}
 
       {/* ─── Authorizing phase ──────────────────────────────────── */}
       {phase === 'authorizing' && (
-        <div className="animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0">
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0 flex flex-col justify-center ${standalone ? 'flex-1 pb-24' : 'min-h-[55vh]'}`}>
           <Loader message="Authorizing..." />
         </div>
       )}
 
       {/* ─── Error phase ────────────────────────────────────────── */}
       {phase === 'error' && (
-        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-8 lg:px-0 space-y-4 max-w-lg mx-auto">
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-8 lg:px-0 space-y-4 max-w-lg mx-auto w-full ${standalone ? 'flex-1 flex flex-col justify-center pb-24' : ''}`}>
           <ErrorAlert message={errorMessage} />
           <Button
             variant="secondary"
@@ -705,8 +719,11 @@ export default function AppConnectPage() {
       )}
 
       {/* ─── Request phase ──────────────────────────────────────── */}
+      {/* Standalone: the consent content scrolls; the decision stays in a
+          sticky bar at the bottom so it is always one thumb-reach away. */}
       {phase === 'request' && connectionRequest && (
-        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-6 lg:px-0 max-w-lg mx-auto space-y-6">
+        <div className={`animate-[fadeIn_0.3s_ease-out] ${standalone ? 'flex flex-1 flex-col' : ''}`}>
+        <div className={`px-6 pt-6 lg:px-0 max-w-lg mx-auto w-full space-y-6 ${standalone ? 'flex-1 pb-4' : ''}`}>
           {/* Requester identity */}
           <div className="space-y-3">
             <div className="flex items-start gap-3">
@@ -791,7 +808,18 @@ export default function AppConnectPage() {
               {onboardError}
             </p>
           )}
+        </div>
 
+        {/* Action area: sticky bar for the standalone decision buttons;
+            the PIN card stays in flow (its autofocus pulls it into view). */}
+        <div
+          className={
+            standalone && !(onboardingSupported && onboardStep !== 'idle')
+              ? 'sticky bottom-0 z-20 border-t border-border-subtle bg-surface-0/90 backdrop-blur-md px-6 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]'
+              : 'px-6 pt-6 pb-6 lg:px-0'
+          }
+        >
+          <div className="max-w-lg mx-auto w-full">
           {/* Action buttons — stacked on mobile */}
           {onboardingSupported && onboardStep !== 'idle' ? (
             <div className="flex flex-col items-center gap-4 rounded-xl border border-border-default bg-surface-1 p-5">
@@ -865,12 +893,14 @@ export default function AppConnectPage() {
               )}
             </div>
           )}
+          </div>
+        </div>
         </div>
       )}
 
       {/* ─── PIN phase ──────────────────────────────────────────── */}
       {phase === 'pin' && (
-        <div className="animate-[fadeIn_0.3s_ease-out] px-6 py-12 lg:px-0 max-w-lg mx-auto">
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-12 lg:px-0 max-w-lg mx-auto w-full ${standalone ? 'flex-1 flex flex-col justify-center pb-24' : ''}`}>
           <div className="flex flex-col items-center gap-6 text-center">
             {/* Glowing PIN display */}
             <div className="relative">

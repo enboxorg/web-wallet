@@ -24,9 +24,9 @@ describe('Loader', () => {
     expect(paragraphs).toHaveLength(0);
   });
 
-  it('fullScreen prop adds min-h-screen class', () => {
+  it('fullScreen prop adds min-h-dvh class', () => {
     const { container } = render(<Loader fullScreen />);
-    expect(container.firstChild).toHaveClass('min-h-screen');
+    expect(container.firstChild).toHaveClass('min-h-dvh');
   });
 
   it('fullScreen prop adds bg-surface-0 class', () => {
@@ -39,9 +39,9 @@ describe('Loader', () => {
     expect(container.firstChild).toHaveClass('min-h-48');
   });
 
-  it('non-fullScreen does not have min-h-screen class', () => {
+  it('non-fullScreen does not have min-h-dvh class', () => {
     const { container } = render(<Loader />);
-    expect(container.firstChild).not.toHaveClass('min-h-screen');
+    expect(container.firstChild).not.toHaveClass('min-h-dvh');
   });
 
   it('spinner has animate-spin class', () => {

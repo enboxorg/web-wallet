@@ -131,7 +131,7 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
 
   return (
     <div
-      className="flex min-h-screen items-center justify-center bg-surface-0 px-4 py-10 animate-[fadeIn_0.3s_ease-out]"
+      className="flex min-h-dvh items-center justify-center bg-surface-0 px-4 py-10 animate-[fadeIn_0.3s_ease-out]"
       style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 2.5rem)' }}
     >
       <div className="flex w-full max-w-sm flex-col items-center gap-8">

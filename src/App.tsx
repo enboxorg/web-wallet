@@ -107,7 +107,7 @@ function FirstIdentityGate({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-surface-0 px-4 animate-[fadeIn_0.3s_ease-out]">
+    <div className="flex min-h-dvh items-center justify-center bg-surface-0 px-4 animate-[fadeIn_0.3s_ease-out]">
       <div className="w-full max-w-md">
         <SetupIdentityStep
           seed={seed}
@@ -286,14 +286,20 @@ function AuthGate() {
     && (relayCeremonyActive || (firstTime && hasSensitiveConnectFragment()))
   ) {
     relayCeremonyActive = true;
+    // A proper phone screen: brand pinned on top (stays visible however
+    // far the permissions scroll), dynamic-viewport height so the mobile
+    // browser chrome never hides the actions, safe-area padding for
+    // notches and home indicators.
     return (
-      <div className="flex min-h-screen flex-col">
-        <div className="flex justify-center pb-2 pt-6">
+      <div className="flex min-h-dvh flex-col">
+        <header className="sticky top-0 z-30 flex justify-center border-b border-border-subtle bg-surface-0/85 pb-3 backdrop-blur-md pt-[max(1.25rem,env(safe-area-inset-top))]">
           <EnboxLogo size="sm" />
-        </div>
-        <Suspense fallback={<Loader message="Loading..." />}>
-          <AppConnectPage />
-        </Suspense>
+        </header>
+        <main className="flex flex-1 flex-col">
+          <Suspense fallback={<Loader message="Loading..." />}>
+            <AppConnectPage standalone />
+          </Suspense>
+        </main>
       </div>
     );
   }

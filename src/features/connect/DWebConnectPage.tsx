@@ -398,7 +398,7 @@ export default function DWebConnectPage() {
   // ── Render ────────────────────────────────────────────────────
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-md flex-col p-6">
+    <div className="mx-auto flex min-h-dvh max-w-md flex-col p-6">
       {/* Header */}
       <div className="mb-6 flex items-center gap-3 border-b border-border-default pb-4">
         <Globe className="h-6 w-6 text-accent" />
