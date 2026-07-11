@@ -42,8 +42,16 @@ export function PinInput({
     if (!autoFocus || disabled) return;
 
     const tryFocus = () => {
+      // Late retries must never steal focus once the user has engaged:
+      // if focus is already inside the PIN input, or any digit has been
+      // typed, refocusing box 0 would swallow the following keystrokes
+      // (box 0 is full, so its maxLength drops them).
+      const active = document.activeElement;
+      if (active && containerRef.current?.contains(active)) return;
+      if (inputRefs.current.some((el) => el?.value)) return;
+
       const first = inputRefs.current[0];
-      if (first && document.activeElement !== first) {
+      if (first && active !== first) {
         first.focus();
       }
     };
