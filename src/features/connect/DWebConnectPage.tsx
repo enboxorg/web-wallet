@@ -40,7 +40,6 @@ import {
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
-import { prepareProtocol } from './protocol-install';
 import {
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
@@ -201,17 +200,11 @@ export default function DWebConnectPage() {
       }
       await ensureRegistrationForDids(liveAgent, dwnEndpoints, [approveAsDid]);
 
-      // Install (or encryption-upgrade) each requested protocol on every
-      // reachable owner DWN endpoint BEFORE the approval ceremony — the
-      // ceremony only installs when nothing is installed locally; repair and
-      // fail-closed remote verification are the wallet's responsibility.
-      setStatusMessage('Preparing protocols...');
-      for (const protocolDefinition of preflight.definitions) {
-        await prepareProtocol(approveAsDid, liveAgent, protocolDefinition);
-      }
-
-      // The ceremony creates and delivers the grants, grant keys, and
-      // session revocation grants, and returns the sealed response for the
+      // The ceremony owns protocol preparation end to end (agent >=0.8.17):
+      // install, encryption upgrades of policy-identical definitions, and
+      // fail-closed remote verification across reachable owner endpoints.
+      // It then creates and delivers the grants, grant keys, and session
+      // revocation grants, and returns the sealed response for the
       // transport to post back.
       setStatusMessage('Creating grants...');
       const idToken = await approvePopupConnectRequest(

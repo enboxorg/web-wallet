@@ -24,7 +24,6 @@ const mocks = vi.hoisted(() => {
     approvePopupConnectRequest: vi.fn(),
     createTransport: vi.fn(),
     ensureRegistrationForDids: vi.fn(),
-    prepareProtocol: vi.fn(),
     queryProtocolSetupStatus: vi.fn(),
     publishWalletEvent: vi.fn(),
     transport,
@@ -95,7 +94,6 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
 
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
-  prepareProtocol: mocks.prepareProtocol,
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
 
@@ -159,7 +157,6 @@ describe('DWebConnectPage', () => {
     mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
-    mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.permissions = [];
@@ -210,14 +207,6 @@ describe('DWebConnectPage', () => {
       'https://app.example',
       mocks.agent,
     );
-    // Protocols are prepared by the wallet before the ceremony.
-    expect(mocks.prepareProtocol).toHaveBeenCalledWith(
-      'did:dht:alice',
-      mocks.agent,
-      expect.objectContaining({ protocol: 'https://example.com/protocols/tasks' }),
-    );
-    expect(mocks.prepareProtocol.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.approvePopupConnectRequest.mock.invocationCallOrder[0]);
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
     expect(mocks.publishWalletEvent).toHaveBeenCalledWith(expect.objectContaining({
       _tag         : 'connect.approved',

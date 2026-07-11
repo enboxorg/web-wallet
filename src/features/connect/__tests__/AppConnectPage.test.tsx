@@ -14,7 +14,6 @@ const mocks = vi.hoisted(() => ({
   ensureRegistrationForDids: vi.fn(),
   fetchConnectRequest: vi.fn(),
   generatePin: vi.fn(),
-  prepareProtocol: vi.fn(),
   queryProtocolSetupStatus: vi.fn(),
   scannerHasCamera: vi.fn(),
 }));
@@ -56,7 +55,6 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
 
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
-  prepareProtocol: mocks.prepareProtocol,
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
 }));
 
@@ -173,7 +171,6 @@ describe('AppConnectPage', () => {
   it('runs the approval ceremony after a deep-link fetch', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockResolvedValue(undefined);
 
@@ -191,15 +188,8 @@ describe('AppConnectPage', () => {
       ['https://dwn.example'],
       ['did:dht:alice'],
     );
-    // Protocols are prepared by the wallet (install/upgrade + remote
-    // verification) BEFORE the non-idempotent approval ceremony runs.
-    expect(mocks.prepareProtocol).toHaveBeenCalledWith(
-      'did:dht:alice',
-      mocks.agent,
-      connectRequest.permissionRequests[0].protocolDefinition,
-    );
-    expect(mocks.prepareProtocol.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.approveConnectRequest.mock.invocationCallOrder[0]);
+    // Protocol preparation is owned by the approval ceremony itself
+    // (agent >=0.8.17) — the wallet no longer runs a pre-approval step.
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       connectRequest,
@@ -237,7 +227,6 @@ describe('AppConnectPage', () => {
         'state-1',
       );
     });
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -263,7 +252,6 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     expect(await screen.findByText(/invalid session lifetime/i)).toBeInTheDocument();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -277,7 +265,6 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     expect(await screen.findByText(/invalid delegate DID/i)).toBeInTheDocument();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -292,7 +279,6 @@ describe('AppConnectPage', () => {
 
     expect(await screen.findByText(/No identity uses a DID method supported/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeDisabled();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -306,7 +292,6 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     expect(await screen.findByText('Protocol setup conflict')).toBeInTheDocument();
     expect(approve).toBeDisabled();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -326,7 +311,6 @@ describe('AppConnectPage', () => {
         },
       ],
     });
-    mocks.prepareProtocol.mockResolvedValue(undefined);
     mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockResolvedValue(undefined);
 
@@ -336,9 +320,6 @@ describe('AppConnectPage', () => {
     fireEvent.click(approve);
 
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
-    // The preflight dedupes identical definitions, so the shared protocol is
-    // prepared a single time despite appearing in two permission requests.
-    expect(mocks.prepareProtocol).toHaveBeenCalledTimes(1);
   });
 
   it('rejects mismatched permission scopes before protocol setup', async () => {
@@ -357,7 +338,6 @@ describe('AppConnectPage', () => {
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     expect(await screen.findByText(/permission scopes must match/i)).toBeInTheDocument();
-    expect(mocks.prepareProtocol).not.toHaveBeenCalled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 });
