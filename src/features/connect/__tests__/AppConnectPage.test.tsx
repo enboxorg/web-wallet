@@ -392,12 +392,12 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
 
-    const first = renderWithProviders(<AppConnectPage />, {
+    const view = renderWithProviders(<AppConnectPage />, {
       initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
     });
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(window.location.hash).toBe('');
-    first.unmount();
+    view.unmount();
 
     // Remount with the fragment long gone.
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -415,11 +415,11 @@ describe('AppConnectPage', () => {
       () => new Promise((resolve) => { resolveFetch = resolve; }),
     );
 
-    const first = renderWithProviders(<AppConnectPage />, {
+    const view = renderWithProviders(<AppConnectPage />, {
       initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
     });
     expect(await screen.findByText(/Fetching connection request/i)).toBeInTheDocument();
-    first.unmount();
+    view.unmount();
 
     // Remount while the fetch is still in flight — the new instance waits
     // on the same promise and lands on the consent UI when it settles.
@@ -436,12 +436,12 @@ describe('AppConnectPage', () => {
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.denyConnectRequest.mockResolvedValue(undefined);
 
-    const first = renderWithProviders(<AppConnectPage />, {
+    const view = renderWithProviders(<AppConnectPage />, {
       initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
     });
     fireEvent.click(await screen.findByRole('button', { name: 'Deny' }));
     await waitFor(() => expect(mocks.denyConnectRequest).toHaveBeenCalled());
-    first.unmount();
+    view.unmount();
 
     // A later plain visit is a fresh scan, not a stale ceremony.
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
