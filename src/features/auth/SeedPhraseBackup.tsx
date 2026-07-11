@@ -23,7 +23,7 @@ export function SeedPhraseBackup({ phrase, onDone }: SeedPhraseBackupProps) {
   return (
     <div
       className={cn(
-        'flex min-h-screen items-center justify-center bg-surface-0 px-4',
+        'flex min-h-dvh items-center justify-center bg-surface-0 px-4',
         'animate-[fadeIn_0.3s_ease-out]',
       )}
     >

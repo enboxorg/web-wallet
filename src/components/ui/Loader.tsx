@@ -12,7 +12,7 @@ export function Loader({ message, className, fullScreen }: LoaderProps) {
     <div
       className={cn(
         'flex flex-col items-center justify-center gap-4',
-        fullScreen ? 'flex-1 min-h-screen bg-surface-0 animate-[fadeIn_0.3s_ease-out]' : 'h-full min-h-48',
+        fullScreen ? 'flex-1 min-h-dvh bg-surface-0 animate-[fadeIn_0.3s_ease-out]' : 'h-full min-h-48',
         className,
       )}
     >
