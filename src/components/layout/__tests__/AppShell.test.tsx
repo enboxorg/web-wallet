@@ -142,7 +142,7 @@ describe('AppShell', () => {
     it('adds extra bottom padding to main content for bottom nav', () => {
       renderShell();
       const main = screen.getByTestId('main-content');
-      expect(main.className).toContain('pb-24');
+      expect(main.className).toContain('pb-[calc(6.5rem+env(safe-area-inset-bottom))]');
     });
   });
 
