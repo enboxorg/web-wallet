@@ -97,6 +97,15 @@ async function getBoundConnectRequest(requestUri: string, requestKey: Uint8Array
     redirect : 'error',
     signal   : AbortSignal.timeout(30_000),
   });
+  if (response.status === 404 || response.status === 410) {
+    // The relay pointer is single-use and expires server-side: a 404/410 is
+    // definitive (already claimed, expired, or the relay lost it) — retrying
+    // cannot succeed, so the message deliberately avoids the retryable-error
+    // keywords the network policy matches on.
+    throw new Error(
+      'This connection code was already used or has expired. Get a fresh code from the app and scan it again.',
+    );
+  }
   if (!response.ok) {
     throw new Error(`Connect request fetch failed (${response.status}).`);
   }

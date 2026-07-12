@@ -2,7 +2,8 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test-utils';
-import AppConnectPage, { __resetDeepLinkSessionForTests } from '../AppConnectPage';
+import AppConnectPage from '../AppConnectPage';
+import { __resetDeepLinkSessionForTests, primeConnectDeepLink } from '../connect-deep-link';
 import { useAuthStore } from '@/stores/auth-store';
 
 const mocks = vi.hoisted(() => ({
@@ -404,6 +405,25 @@ describe('AppConnectPage', () => {
 
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(screen.queryByText(/No camera found/i)).not.toBeInTheDocument();
+    expect(mocks.fetchConnectRequest).toHaveBeenCalledTimes(1);
+    expect(mocks.scannerHasCamera).not.toHaveBeenCalled();
+  });
+
+  it('adopts a session primed at boot, before the page ever mounts', async () => {
+    // Returning-but-locked wallets sit on the unlock screen between the QR
+    // scan and this page mounting. main.tsx primes the deep-link fetch at
+    // boot so the single-use relay pointer is dereferenced immediately; the
+    // page must adopt that session (fragment long gone) without refetching.
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+
+    primeConnectDeepLink();
+    expect(window.location.hash).toBe('');
+    expect(mocks.fetchConnectRequest).toHaveBeenCalledTimes(1);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
     expect(mocks.fetchConnectRequest).toHaveBeenCalledTimes(1);
     expect(mocks.scannerHasCamera).not.toHaveBeenCalled();
   });
