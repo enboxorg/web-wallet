@@ -3,9 +3,19 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router';
 
 import App from '@/App';
+import { primeConnectDeepLink } from '@/features/connect/connect-deep-link';
 import { runEnboxPromise, runEnboxSync } from '@/enbox/effect/runtime';
 import { localStorageGetEffect, registerServiceWorkerEffect } from '@/lib/browser-effects';
 import '@/app.css';
+
+// Claim a connect deep link (QR scan / dapp hand-off) before React renders.
+// The relay pointer in the fragment is single-use and its TTL started when
+// the dapp minted the QR — dereferencing it must not wait behind the unlock
+// ceremony, or it can expire while the user types their PIN. The consent UI
+// itself stays gated behind unlock; only the sealed fetch is front-loaded.
+if (window.location.pathname === '/connect/app') {
+  primeConnectDeepLink();
+}
 
 // Apply theme from localStorage before first paint to avoid flash
 const savedTheme = runEnboxSync(localStorageGetEffect('enbox:theme'));

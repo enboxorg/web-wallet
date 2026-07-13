@@ -20,6 +20,13 @@ import {
   type ConnectRequest,
 } from '@enbox/connect';
 
+import {
+  clearDeepLinkSession,
+  hasActiveConnectDeepLink,
+  primeConnectDeepLink,
+  type DeepLinkOutcome,
+} from './connect-deep-link';
+
 import { Button } from '@/components/ui/Button';
 
 import { Select } from '@/components/ui/Select';
@@ -68,55 +75,6 @@ type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'error
 
 const EMPTY_PERMISSION_REQUESTS: ConnectRequest['permissionRequests'] = [];
 
-/**
- * Extracts the connect deep-link parameters from the current URL.
- *
- * CLI clients (e.g. `meshd auth connect --open`) hand the user a wallet URL
- * of the form `/connect/app#request_uri=...&encryption_key=...` instead of a
- * QR code. The request pointer and single-use encryption key ride in the URI
- * fragment (never the query string), so the key never reaches the wallet's
- * web server. When both parameters are present the page skips the scanner and
- * feeds them straight into the same connect-request flow the scanner uses.
- */
-function getDeepLinkParams(): { requestUri: string; encryptionKey: Uint8Array } | null {
-  return parseWalletConnectUri(window.location.href) ?? null;
-}
-
-/**
- * True when the current URL carries connect deep-link parameters.
- * Exported for the AuthGate, which renders this page without the app
- * shell for uninitialised wallets so a fresh phone that scanned a
- * dapp's QR can create its wallet inside the approval flow.
- */
-export function hasSensitiveConnectFragment(): boolean {
-  const fragment = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-  return fragment.has('request_uri') || fragment.has('encryption_key');
-}
-
-/** Outcome of fetching the sealed deep-link request. */
-type DeepLinkOutcome = { request: ConnectRequest } | { error: string };
-
-/** One deep-link ceremony: the fetch promise plus its settled outcome. */
-type DeepLinkSession = { promise: Promise<DeepLinkOutcome>; settled?: DeepLinkOutcome };
-
-// Module-cached deep-link session. The sealed pointer is single-use and
-// the fragment is stripped from the URL after the first parse, so a
-// remount of this page mid-ceremony (StrictMode double-effects, AuthGate
-// re-branching while inline onboarding flips the auth store) must adopt
-// the in-flight or fetched request instead of falling back to the scanner
-// or refetching a consumed pointer.
-let deepLinkSession: DeepLinkSession | undefined;
-
-/** Ends the deep-link ceremony (deny, done, or explicit retry). */
-function clearDeepLinkSession(): void {
-  deepLinkSession = undefined;
-}
-
-/** Test-only: reset the module session between cases. */
-export function __resetDeepLinkSessionForTests(): void {
-  clearDeepLinkSession();
-}
-
 /** Inline onboarding sub-state while there is no wallet yet. */
 type OnboardStep = 'idle' | 'pin-create' | 'pin-confirm';
 
@@ -136,10 +94,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   processConnectUriRef.current = processConnectUri;
 
   // Start in 'loading' when the URL carries deep-link connect parameters —
-  // or when a deep-link session is already in flight (remount) — so the
-  // camera never starts for a link-initiated flow.
+  // or when a deep-link session is already in flight (boot priming or a
+  // remount) — so the camera never starts for a link-initiated flow.
   const [phase, setPhase] = useState<Phase>(() => (
-    deepLinkSession !== undefined || hasSensitiveConnectFragment() ? 'loading' : 'scanning'
+    hasActiveConnectDeepLink() ? 'loading' : 'scanning'
   ));
   const [cameraReady, setCameraReady] = useState(false);
   const [cameraError, setCameraError] = useState(false);
@@ -354,9 +312,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   }
 
   // Deep-link flow: when the page is opened with `request_uri` +
-  // `encryption_key` in the URI fragment (QR scans / dapp hand-offs), fetch
-  // the connect request directly — same path the QR scanner feeds into,
-  // same consent UI afterwards. The module-level session guards against
+  // `encryption_key` in the URI fragment (QR scans / dapp hand-offs), the
+  // sealed request is fetched by `primeConnectDeepLink()` — normally at app
+  // boot, before any unlock ceremony, so the single-use relay pointer is
+  // dereferenced within moments of the scan; priming here is the fallback
+  // for in-app navigations. The module-level session guards against
   // double-fetching under React strict mode's double-invoked effects (the
   // relay pointer is one-time-use) AND lets a remounted instance adopt the
   // ceremony after the fragment has been stripped — inline onboarding
@@ -375,47 +335,14 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       }
     };
 
-    // A session already exists (StrictMode re-run or a remount): adopt it.
-    if (deepLinkSession !== undefined) {
-      if (deepLinkSession.settled !== undefined) {
-        adopt(deepLinkSession.settled);
-      } else {
-        void deepLinkSession.promise.then(adopt);
-      }
-      return () => { cancelled = true; };
+    const session = primeConnectDeepLink();
+    if (session === undefined) return;
+
+    if (session.settled !== undefined) {
+      adopt(session.settled);
+    } else {
+      void session.promise.then(adopt);
     }
-
-    if (!hasSensitiveConnectFragment()) return;
-
-    const deepLink = getDeepLinkParams();
-    // Strip the sensitive fragment from the URL (and history) immediately.
-    window.history.replaceState(
-      window.history.state,
-      '',
-      `${window.location.pathname}${window.location.search}`,
-    );
-
-    const promise: Promise<DeepLinkOutcome> = (async () => {
-      if (!deepLink) {
-        return { error: 'Invalid connection URI: missing request_uri or encryption_key' };
-      }
-      try {
-        const request = await fetchConnectRequest(deepLink.requestUri, deepLink.encryptionKey);
-        const preflight = preflightConnectRequest(request);
-        await validateConnectPermissionSemantics(preflight);
-        return { request };
-      } catch (err) {
-        console.error('Connect flow error:', err);
-        return { error: (err as Error).message || 'Failed to process connection request.' };
-      }
-    })();
-
-    const session: DeepLinkSession = { promise };
-    deepLinkSession = session;
-    void promise.then((outcome) => {
-      session.settled = outcome;
-      adopt(outcome);
-    });
 
     return () => { cancelled = true; };
   }, []);

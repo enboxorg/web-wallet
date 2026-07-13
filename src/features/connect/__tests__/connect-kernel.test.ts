@@ -98,10 +98,24 @@ describe('connect-kernel', () => {
       expect(fetch).not.toHaveBeenCalled();
     });
 
-    it('rejects failed and oversized relay responses', async () => {
+    it('maps a consumed or expired single-use pointer to actionable copy', async () => {
+      // 404/410 on the relay pointer is definitive (single-use, TTL-bound):
+      // the message must be user-actionable and must NOT contain the
+      // retryable-error keywords (fetch/network/timeout/status codes) the
+      // network policy matches on, or the wallet would retry a dead pointer.
       vi.mocked(fetch).mockResolvedValue(new Response('missing', { status: 404 }));
       await expect(fetchConnectRequest('https://relay.example/missing', REQUEST_KEY))
-        .rejects.toThrow('Connect request fetch failed (404)');
+        .rejects.toThrow('This connection code was already used or has expired');
+
+      vi.mocked(fetch).mockResolvedValue(new Response('gone', { status: 410 }));
+      await expect(fetchConnectRequest('https://relay.example/gone', REQUEST_KEY))
+        .rejects.toThrow('This connection code was already used or has expired');
+    });
+
+    it('rejects failed and oversized relay responses', async () => {
+      vi.mocked(fetch).mockResolvedValue(new Response('oops', { status: 500 }));
+      await expect(fetchConnectRequest('https://relay.example/broken', REQUEST_KEY))
+        .rejects.toThrow('Connect request fetch failed (500)');
 
       vi.mocked(fetch).mockResolvedValue(new Response('', {
         headers: { 'content-length': '2000001' },

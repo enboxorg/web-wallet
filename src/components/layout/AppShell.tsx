@@ -64,7 +64,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
         <main
           className={
             'flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6'
-            + (!isDesktop ? ' pb-24' : '') /* extra bottom padding for bottom nav */
+            + (!isDesktop ? ' pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : '') /* reserve the tab bar + safe area */
           }
           data-testid="main-content"
         >

@@ -33,7 +33,8 @@ import { RestoreWalletPage } from '@/features/auth/RestoreWalletPage';
 import { sidebarItems, bottomTabItems } from '@/nav-items';
 import { routes } from '@/routes';
 import DWebConnectPage from '@/features/connect/DWebConnectPage';
-import AppConnectPage, { hasSensitiveConnectFragment } from '@/features/connect/AppConnectPage';
+import AppConnectPage from '@/features/connect/AppConnectPage';
+import { hasActiveConnectDeepLink } from '@/features/connect/connect-deep-link';
 import { EnboxLogo } from '@/features/auth/EnboxLogo';
 
 const queryClient = new QueryClient({
@@ -273,8 +274,10 @@ function AuthGate() {
   // Relay deep links (QR scans / dapp hand-offs) get the same treatment:
   // a fresh phone that scanned a dapp's code lands directly on the
   // approval screen and can create its wallet inline. Only bypass the
-  // shell when the URL actually carries the sealed request pointer —
-  // plain visits to /connect/app keep the normal welcome/unlock flow.
+  // shell when a sealed request pointer actually arrived — boot priming
+  // claims the URL fragment into a module session before React renders,
+  // so the gate checks the session, not the (already scrubbed) fragment.
+  // Plain visits to /connect/app keep the normal welcome/unlock flow.
   // Once the ceremony starts it stays latched until the route changes:
   // inline onboarding flips `firstTime` mid-flow and the approval must
   // keep rendering in this exact tree position (no unmount).
@@ -283,7 +286,7 @@ function AuthGate() {
   }
   if (
     location.pathname === '/connect/app'
-    && (relayCeremonyActive || (firstTime && hasSensitiveConnectFragment()))
+    && (relayCeremonyActive || (firstTime && hasActiveConnectDeepLink()))
   ) {
     relayCeremonyActive = true;
     // A proper phone screen: brand pinned on top (stays visible however
