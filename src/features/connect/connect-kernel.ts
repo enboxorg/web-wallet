@@ -3,6 +3,7 @@ import { executeConnectApproval } from '@enbox/agent';
 import {
   CONNECT_DENIED_TOKEN,
   ConnectProvider,
+  pollRelayComplete,
   postRelayResponse,
   type ConnectRequest,
 } from '@enbox/connect';
@@ -209,6 +210,19 @@ export function approveConnectRequest(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
+}
+
+/**
+ * Waits for the requesting app to confirm that it opened the relayed
+ * response. The completion marker is observational and best-effort:
+ * unsupported relays and an elapsed polling budget resolve `false` so the
+ * PIN screen can retain its manual Done fallback.
+ */
+export function waitForRelayCompletion(request: ConnectRequest): Promise<boolean> {
+  return pollRelayComplete({
+    callbackUrl : getRelayCallbackUrl(request),
+    state       : request.state,
+  });
 }
 
 /**

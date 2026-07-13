@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test-utils';
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   ensureRegistrationForDids: vi.fn(),
   fetchConnectRequest: vi.fn(),
   generatePin: vi.fn(),
+  waitForRelayCompletion: vi.fn(),
   queryProtocolSetupStatus: vi.fn(),
   scannerHasCamera: vi.fn(),
   authState: { firstTime: false as boolean },
@@ -87,6 +88,7 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
   denyConnectRequest: mocks.denyConnectRequest,
   fetchConnectRequest: mocks.fetchConnectRequest,
   generatePin: mocks.generatePin,
+  waitForRelayCompletion: mocks.waitForRelayCompletion,
 }));
 
 vi.mock('../protocol-install', async (importOriginal) => ({
@@ -162,6 +164,7 @@ describe('AppConnectPage', () => {
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
+    mocks.waitForRelayCompletion.mockResolvedValue(false);
     setPageUrl('');
   });
 
@@ -243,6 +246,55 @@ describe('AppConnectPage', () => {
 
     // PIN phase is shown after a successful submission.
     expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(mocks.waitForRelayCompletion).toHaveBeenCalledWith(connectRequest);
+    expect(screen.queryByText('Connected!')).not.toBeInTheDocument();
+  });
+
+  it('shows the PIN before completion and flips to confirmed when the app acknowledges', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    let resolveCompletion: (completed: boolean) => void = () => undefined;
+    mocks.waitForRelayCompletion.mockImplementation(
+      () => new Promise<boolean>((resolve) => { resolveCompletion = resolve; }),
+    );
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    // The dapp needs this PIN before it can open the response and emit the
+    // completion marker, so polling must never hold this screen back.
+    expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(screen.queryByText('Connected!')).not.toBeInTheDocument();
+
+    resolveCompletion(true);
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
+    expect(screen.queryByText('1234')).not.toBeInTheDocument();
+  });
+
+  it('does not start completion polling when approval settles after unmount', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    let resolveApproval: () => void = () => undefined;
+    mocks.approveConnectRequest.mockImplementation(
+      () => new Promise<void>((resolve) => { resolveApproval = resolve; }),
+    );
+
+    const view = renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+    await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    await act(async () => { resolveApproval(); });
+
+    expect(mocks.waitForRelayCompletion).not.toHaveBeenCalled();
   });
 
   it('shows an error when the deep-link connect request cannot be fetched', async () => {
@@ -515,6 +567,8 @@ describe('AppConnectPage', () => {
       expect(mocks.connectVault).toHaveBeenCalledWith('wrapped-vault-password', ['https://dwn.example']);
       expect(mocks.autoCreateIdentity).toHaveBeenCalledWith(mocks.agent, ['https://dwn.example']);
       expect(mocks.storePasskeyCredential).toHaveBeenCalledWith({ credentialId: 'cred-1' });
+      expect(mocks.storePasskeyCredential.mock.invocationCallOrder[0])
+        .toBeLessThan(mocks.approveConnectRequest.mock.invocationCallOrder[0]);
 
       // The pairing code screen closes the loop.
       expect(await screen.findByText('1234')).toBeInTheDocument();

@@ -8,12 +8,14 @@ import {
   generatePin,
   getRelayCallbackUrl,
   isTrustedDappOrigin,
+  waitForRelayCompletion,
 } from '../connect-kernel';
 
 const mocks = vi.hoisted(() => ({
   executeConnectApproval: vi.fn(),
   openRequest: vi.fn(),
   sealApprovedResponse: vi.fn(),
+  pollRelayComplete: vi.fn(),
   postRelayResponse: vi.fn(),
   randomPin: vi.fn(),
 }));
@@ -28,6 +30,7 @@ vi.mock('@enbox/connect', () => ({
     openRequest: mocks.openRequest,
     sealApprovedResponse: mocks.sealApprovedResponse,
   },
+  pollRelayComplete: mocks.pollRelayComplete,
   postRelayResponse: mocks.postRelayResponse,
 }));
 
@@ -69,6 +72,7 @@ describe('connect-kernel', () => {
       responseSigner: { uri: 'did:jwk:delegate' },
     });
     mocks.sealApprovedResponse.mockResolvedValue('sealed-response-jwe');
+    mocks.pollRelayComplete.mockResolvedValue(false);
     mocks.postRelayResponse.mockResolvedValue(undefined);
     mocks.randomPin.mockReturnValue('1234');
   });
@@ -221,6 +225,19 @@ describe('connect-kernel', () => {
         approveConnectRequest('did:dht:alice', request, '1234', { id: 'agent-1' } as any),
       ).rejects.toThrow('Connect callback URL must use HTTPS');
       expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('waitForRelayCompletion', () => {
+    it('polls the callback completion marker with the request state', async () => {
+      mocks.pollRelayComplete.mockResolvedValue(true);
+      const request = connectRequest();
+
+      await expect(waitForRelayCompletion(request)).resolves.toBe(true);
+      expect(mocks.pollRelayComplete).toHaveBeenCalledWith({
+        callbackUrl : 'https://relay.example/connect/callback',
+        state       : 'state-1',
+      });
     });
   });
 

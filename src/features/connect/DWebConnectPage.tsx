@@ -75,6 +75,7 @@ export default function DWebConnectPage() {
   const [origin, setOrigin] = useState('');
   const [selectedDid, setSelectedDid] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
+  const [connectionConfirmed, setConnectionConfirmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
 
@@ -215,27 +216,45 @@ export default function DWebConnectPage() {
       );
 
       setStatusMessage('Returning grants...');
-      transport.sendResponse(idToken);
-
-      setPhase('done');
+      // Sending the approved response is the point of no return: an absent
+      // acknowledgement is an unconfirmed delivery, never a denial. Keep the
+      // channel open briefly so updated dapps can confirm they opened it.
       approvalCompletedRef.current = true;
+      const acknowledgement = transport.sendResponseAwaitingAck(idToken);
 
-      void runEnboxPromise(publishWalletEvent({
-        _tag         : 'connect.approved',
-        origin,
-        connectedDid : approveAsDid,
-      })).catch((err: unknown) => console.warn('DWeb connect approval event failed:', err));
+      setStatusMessage('Waiting for the app to confirm...');
+      const confirmed = await acknowledgement;
+      setConnectionConfirmed(confirmed);
+      setPhase('done');
 
-      // Auto-close after a few seconds
-      setTimeout(() => window.close(), 3000);
+      // Event publication is secondary to delivery and must never replace a
+      // delivered success with an error screen.
+      try {
+        void runEnboxPromise(publishWalletEvent({
+          _tag         : 'connect.approved',
+          origin,
+          connectedDid : approveAsDid,
+        })).catch((err: unknown) => console.warn('DWeb connect approval event failed:', err));
+      } catch (err) {
+        console.warn('DWeb connect approval event failed:', err);
+      }
+
+      // Only an acknowledged response is safe to auto-close. Older dapps
+      // retain a manual close affordance after the response is delivered.
+      if (confirmed) {
+        setTimeout(() => window.close(), 3000);
+      }
     } catch (err) {
       console.error('DWeb connect error:', err);
       setErrorMessage(connectErrorMessage(err));
+      const shouldDeny = !approvalCompletedRef.current;
       approvalCompletedRef.current = true;
-      try {
-        transport.deny();
-      } catch {
-        // Best-effort — the dapp times out if the deny cannot be delivered.
+      if (shouldDeny) {
+        try {
+          transport.deny();
+        } catch {
+          // Best-effort — the dapp times out if the deny cannot be delivered.
+        }
       }
       setPhase('error');
     }
@@ -261,7 +280,11 @@ export default function DWebConnectPage() {
   // over the freshest request state, which arrives via the transport
   // after first render.
 
-  async function completeOnboardingAndConnect(vaultPassword: string, viaPasskey: boolean) {
+  async function completeOnboardingAndConnect(
+    vaultPassword: string,
+    viaPasskey: boolean,
+    afterVaultConnect?: () => void,
+  ) {
     setPhase('connecting');
     setStatusMessage('Creating your wallet...');
 
@@ -277,6 +300,7 @@ export default function DWebConnectPage() {
     if (!liveAgent) {
       throw new Error('Wallet was created but could not be unlocked.');
     }
+    afterVaultConnect?.();
 
     setStatusMessage('Setting up your profile...');
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
@@ -297,8 +321,11 @@ export default function DWebConnectPage() {
         return;
       }
       const prepared = await preparePasskeyVaultPassword();
-      await completeOnboardingAndConnect(prepared.password, true);
-      storePasskeyCredential(prepared.credential);
+      await completeOnboardingAndConnect(
+        prepared.password,
+        true,
+        () => storePasskeyCredential(prepared.credential),
+      );
     } catch (err) {
       setPhase('request');
       setStatusMessage('');
@@ -340,6 +367,10 @@ export default function DWebConnectPage() {
   }
 
   function handleDeny() {
+    if (approvalCompletedRef.current) {
+      window.close();
+      return;
+    }
     approvalCompletedRef.current = true;
     try {
       transportRef.current?.deny();
@@ -430,8 +461,19 @@ export default function DWebConnectPage() {
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
             <Check className="h-8 w-8 text-success" />
           </div>
-          <p className="text-sm font-medium text-text-primary">Connected!</p>
-          <p className="text-xs text-text-ghost">This window will close automatically.</p>
+          <p className="text-sm font-medium text-text-primary">
+            {connectionConfirmed ? 'Connected!' : 'Connection response sent'}
+          </p>
+          <p className="text-xs text-text-ghost">
+            {connectionConfirmed
+              ? 'This window will close automatically.'
+              : 'Return to the app to finish, then close this window.'}
+          </p>
+          {!connectionConfirmed && (
+            <Button variant="secondary" onClick={() => window.close()}>
+              Close
+            </Button>
+          )}
         </div>
       )}
 
