@@ -49,6 +49,8 @@ interface PermissionDisplayProps {
   sessionDurationSeconds?: number;
   /** Retry a failed protocol setup check. */
   onRetryProtocolSetup?: () => void;
+  /** Render session terms as a renewal rather than a first approval. */
+  renewal?: boolean;
 }
 
 type ProtocolDefinition = ConnectPermissionRequest['protocolDefinition'];
@@ -327,9 +329,11 @@ function AccessRows({
 function SessionTerms({
   existingSessionCount,
   sessionDurationSeconds,
+  renewal,
 }: {
   existingSessionCount: number;
   sessionDurationSeconds?: number;
+  renewal?: boolean;
 }) {
   const durationLabel = formatConnectSessionDuration(sessionDurationSeconds);
 
@@ -339,7 +343,7 @@ function SessionTerms({
         <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
         <div className="min-w-0">
           <p className="text-sm font-medium text-text-primary">
-            Access lasts {durationLabel}
+            {renewal ? `New access period: ${durationLabel}` : `Access lasts ${durationLabel}`}
           </p>
           <p className="mt-1 text-xs leading-relaxed text-text-secondary">
             It expires automatically. You can revoke it later from this profile&apos;s Permissions tab.
@@ -654,6 +658,7 @@ export function PermissionDisplay({
   requesterLabel,
   sessionDurationSeconds,
   onRetryProtocolSetup,
+  renewal,
 }: PermissionDisplayProps) {
   if (permissions.length === 0) return null;
 
@@ -667,6 +672,7 @@ export function PermissionDisplay({
       <SessionTerms
         existingSessionCount={existingSessionCount}
         sessionDurationSeconds={sessionDurationSeconds}
+        renewal={renewal}
       />
       <TechnicalDetails access={access} />
     </div>

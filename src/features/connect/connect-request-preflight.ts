@@ -23,6 +23,7 @@ import {
 } from '@enbox/dwn-sdk-js';
 
 import { resolveConnectSessionDurationSeconds } from './connect-session-duration';
+import { assertConnectRequestType } from './connect-request-type';
 import {
   getRequestedProtocolDefinitionsConflictMessage,
   protocolDefinitionsMatch,
@@ -238,11 +239,15 @@ function parseCanonicalDid(value: string): Did | undefined {
 export function preflightConnectRequest(request: ConnectRequest): ConnectPermissionPreflight {
   const result = preflightConnectPermissions(request.permissionRequests);
   resolveConnectSessionDurationSeconds(request.requestedSessionTtlSeconds);
+  const requestType = assertConnectRequestType(request);
 
   requireString(request.appName, 'Connect app name');
 
   if (request.delegateDid !== undefined && parseCanonicalDid(request.delegateDid) === undefined) {
     throw new Error('The connection request has an invalid delegate DID.');
+  }
+  if (requestType === 'refresh' && request.delegateDid === undefined) {
+    throw new Error('A connection refresh must include the existing delegate DID.');
   }
   if (
     !Array.isArray(request.supportedDidMethods)

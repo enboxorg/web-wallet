@@ -28,6 +28,11 @@ const mocks = vi.hoisted(() => {
     publishWalletEvent: vi.fn(),
     transport,
     permissions: [] as any[],
+    allPermissions: [] as any[],
+    allPermissionsPending: false,
+    allPermissionsError: false,
+    identitiesPending: false,
+    identitiesError: false,
     identities: [
       {
         did: { uri: 'did:dht:alice' },
@@ -60,7 +65,16 @@ vi.mock('@/enbox/hooks/use-auth', () => ({
 vi.mock('@/enbox/hooks/use-identities', () => ({
   useIdentities: () => ({
     data      : mocks.identities,
-    isLoading : false,
+    isPending : mocks.identitiesPending,
+    isError   : mocks.identitiesError,
+  }),
+}));
+
+vi.mock('@/enbox/hooks/use-all-permissions', () => ({
+  useAllPermissions: () => ({
+    data      : mocks.allPermissions,
+    isPending : mocks.allPermissionsPending,
+    isError   : mocks.allPermissionsError,
   }),
 }));
 
@@ -133,6 +147,30 @@ function connectRequest() {
   };
 }
 
+function existingSessionGrant(ownerDid: string, delegateDid: string) {
+  return {
+    id          : `grant-${ownerDid}`,
+    grantor     : ownerDid,
+    grantee     : delegateDid,
+    dateGranted : '2026-07-13T00:00:00.000Z',
+    dateExpires : '2999-07-14T00:00:00.000Z',
+    scope       : {
+      interface : 'Records',
+      method    : 'Read',
+      protocol  : 'https://example.com/protocols/tasks',
+    },
+    connectSession: {
+      id        : `session-${ownerDid}`,
+      createdAt : '2026-07-13T00:00:00.000Z',
+      expiresAt : '2999-07-14T00:00:00.000Z',
+      appName   : 'Example App',
+      origin    : 'https://app.example',
+      transport : 'postMessage',
+    },
+    revoke: vi.fn(),
+  };
+}
+
 describe('DWebConnectPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -161,6 +199,11 @@ describe('DWebConnectPage', () => {
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.permissions = [];
+    mocks.allPermissions = [];
+    mocks.allPermissionsPending = false;
+    mocks.allPermissionsError = false;
+    mocks.identitiesPending = false;
+    mocks.identitiesError = false;
     mocks.identities = [{
       did: { uri: 'did:dht:alice' },
       metadata: { name: 'Alice' },
@@ -351,6 +394,92 @@ describe('DWebConnectPage', () => {
 
     expect(await screen.findByText('Returning connection')).toBeInTheDocument();
     expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
+  });
+
+  it('renews through the popup with the exact delegate owner', async () => {
+    const delegateDid = 'did:jwk:existing-delegate';
+    const refreshRequest = {
+      ...connectRequest(),
+      requestType: 'refresh',
+      delegateDid,
+      permissionRequests: [{
+        ...permissionRequest,
+        protocolDefinition: {
+          ...permissionRequest.protocolDefinition,
+          types: { task: { schema: 'https://example.com/protocols/tasks/schema/task' } },
+        },
+      }],
+    };
+    mocks.identities = [
+      { did: { uri: 'did:dht:alice' }, metadata: { name: 'Alice' } },
+      { did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } },
+    ];
+    mocks.allPermissions = [
+      { ownerDid: 'did:dht:alice', permissions: [] },
+      {
+        ownerDid    : 'did:dht:bob',
+        permissions : [existingSessionGrant('did:dht:bob', delegateDid)],
+      },
+    ];
+    mocks.transport.awaitRequest.mockResolvedValue(refreshRequest);
+
+    render(<DWebConnectPage />);
+
+    const renew = await screen.findByRole('button', { name: 'Renew access' });
+    expect(screen.getByText('Renewing connection')).toBeInTheDocument();
+    expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Bob');
+    expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+    expect(screen.getByText('View a custom data type')).toBeVisible();
+    await waitFor(() => expect(renew).toBeEnabled());
+    fireEvent.click(renew);
+
+    await waitFor(() => {
+      expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
+        'did:dht:bob',
+        refreshRequest,
+        'https://app.example',
+        mocks.agent,
+      );
+    });
+  });
+
+  it('blocks popup renewal when the delegate has no local session match', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      requestType: 'refresh',
+      delegateDid: 'did:jwk:missing-delegate',
+    });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/No previous session for this delegate/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+    expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
+  });
+
+  it('fails closed instead of waiting forever when a refresh reaches a locked wallet', async () => {
+    useAuthStore.setState({
+      initialized : true,
+      unlocked    : false,
+      firstTime   : true,
+      agent       : null,
+    });
+    mocks.identities = [];
+    mocks.identitiesPending = true;
+    mocks.allPermissionsError = true;
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      requestType : 'refresh',
+      delegateDid : 'did:jwk:existing-delegate',
+    });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/could not verify the previous connection/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Checking the previous connection/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(screen.queryByText(/we'll make one/i)).not.toBeInTheDocument();
   });
 
   it('creates the transport once across strict-mode remounts', async () => {

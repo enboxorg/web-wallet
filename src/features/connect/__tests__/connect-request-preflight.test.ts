@@ -153,6 +153,29 @@ describe('connect request preflight', () => {
       .toHaveLength(1);
   });
 
+  it('requires refresh requests to carry the existing delegate DID', () => {
+    const refreshWithoutDelegate = {
+      ...relayRequest(),
+      requestType: 'refresh',
+    };
+    const refreshWithDelegate = {
+      ...refreshWithoutDelegate,
+      delegateDid: 'did:jwk:delegate',
+    };
+
+    expect(() => preflightConnectRequest(refreshWithoutDelegate as never))
+      .toThrow('must include the existing delegate DID');
+    expect(() => preflightConnectRequest(refreshWithDelegate as never))
+      .not.toThrow();
+  });
+
+  it('rejects an unsupported request type at the wallet boundary', () => {
+    expect(() => preflightConnectRequest({
+      ...relayRequest(),
+      requestType: 'renew',
+    } as never)).toThrow("must be 'connect' or 'refresh'");
+  });
+
   it('matches selected identities to the request DID-method set', () => {
     expect(isDidSupportedByRequest('did:dht:abc', ['did:dht'])).toBe(true);
     expect(isDidSupportedByRequest('did:jwk:abc', ['did:dht'])).toBe(false);
