@@ -37,3 +37,22 @@ export function formatConnectSessionDuration(requestedSeconds?: number): string 
 
   return parts.join(', ');
 }
+
+export function formatRelativeExpiry(dateExpires: string, now: Date = new Date()): string {
+  const expiryTime = new Date(dateExpires).getTime();
+  const nowTime = now.getTime();
+  if (!Number.isFinite(expiryTime) || !Number.isFinite(nowTime)) return 'at an unknown time';
+
+  const differenceSeconds = (expiryTime - nowTime) / 1000;
+  const absoluteSeconds = Math.abs(differenceSeconds);
+  const units: Array<{ unit: Intl.RelativeTimeFormatUnit; seconds: number }> = [
+    { unit: 'day', seconds: 24 * 60 * 60 },
+    { unit: 'hour', seconds: 60 * 60 },
+    { unit: 'minute', seconds: 60 },
+    { unit: 'second', seconds: 1 },
+  ];
+  const selected = units.find((unit) => absoluteSeconds >= unit.seconds) ?? units[3];
+  const value = Math.round(differenceSeconds / selected.seconds);
+
+  return new Intl.RelativeTimeFormat(undefined, { numeric: 'auto' }).format(value, selected.unit);
+}

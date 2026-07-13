@@ -24,6 +24,17 @@ const mocks = vi.hoisted(() => ({
   autoCreateIdentity: vi.fn(),
   preparePasskeyVaultPassword: vi.fn(),
   storePasskeyCredential: vi.fn(),
+  allPermissions: [] as any[],
+  allPermissionsPending: false,
+  allPermissionsError: false,
+  identitiesPending: false,
+  identitiesError: false,
+  identities: [
+    {
+      did: { uri: 'did:dht:alice' },
+      metadata: { name: 'Alice' },
+    },
+  ] as any[],
 }));
 
 vi.mock('@/enbox/hooks/use-agent', () => ({
@@ -61,12 +72,17 @@ vi.mock('@/lib/passkeys', async (importOriginal) => ({
 
 vi.mock('@/enbox/hooks/use-identities', () => ({
   useIdentities: () => ({
-    data: [
-      {
-        did: { uri: 'did:dht:alice' },
-        metadata: { name: 'Alice' },
-      },
-    ],
+    data      : mocks.identities,
+    isPending : mocks.identitiesPending,
+    isError   : mocks.identitiesError,
+  }),
+}));
+
+vi.mock('@/enbox/hooks/use-all-permissions', () => ({
+  useAllPermissions: () => ({
+    data      : mocks.allPermissions,
+    isPending : mocks.allPermissionsPending,
+    isError   : mocks.allPermissionsError,
   }),
 }));
 
@@ -145,6 +161,30 @@ const connectRequest = {
   ],
 };
 
+function existingSessionGrant(ownerDid: string, delegateDid: string) {
+  return {
+    id          : `grant-${ownerDid}`,
+    grantor     : ownerDid,
+    grantee     : delegateDid,
+    dateGranted : '2026-07-13T00:00:00.000Z',
+    dateExpires : '2999-07-14T00:00:00.000Z',
+    scope       : {
+      interface : 'Records',
+      method    : 'Read',
+      protocol  : 'https://example.com/protocols/wireguard-mesh',
+    },
+    connectSession: {
+      id        : `session-${ownerDid}`,
+      createdAt : '2026-07-13T00:00:00.000Z',
+      expiresAt : '2999-07-14T00:00:00.000Z',
+      appName   : 'meshd',
+      origin    : 'meshd-cli',
+      transport : 'relay',
+    },
+    revoke: vi.fn(),
+  };
+}
+
 function setPageUrl(search: string) {
   window.history.replaceState({}, '', `/connect/app${search}`);
 }
@@ -165,6 +205,15 @@ describe('AppConnectPage', () => {
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.waitForRelayCompletion.mockResolvedValue(false);
+    mocks.allPermissions = [];
+    mocks.allPermissionsPending = false;
+    mocks.allPermissionsError = false;
+    mocks.identitiesPending = false;
+    mocks.identitiesError = false;
+    mocks.identities = [{
+      did: { uri: 'did:dht:alice' },
+      metadata: { name: 'Alice' },
+    }];
     setPageUrl('');
   });
 
@@ -336,6 +385,92 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     expect(await screen.findByText('Access lasts 90 days')).toBeInTheDocument();
+  });
+
+  it('renews with the exact delegate owner while keeping scopes visible', async () => {
+    const refreshRequest = {
+      ...connectRequest,
+      requestType: 'refresh',
+    };
+    mocks.identities = [
+      { did: { uri: 'did:dht:alice' }, metadata: { name: 'Alice' } },
+      { did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } },
+    ];
+    mocks.allPermissions = [
+      { ownerDid: 'did:dht:alice', permissions: [] },
+      {
+        ownerDid    : 'did:dht:bob',
+        permissions : [existingSessionGrant('did:dht:bob', connectRequest.delegateDid)],
+      },
+    ];
+    mocks.fetchConnectRequest.mockResolvedValue(refreshRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    setPageUrl(DEEP_LINK_FRAGMENT);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const renew = await screen.findByRole('button', { name: 'Renew access' });
+    expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Bob');
+    expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+    expect(screen.getByText('View a custom data type')).toBeVisible();
+    await waitFor(() => expect(renew).toBeEnabled());
+    fireEvent.click(renew);
+
+    await waitFor(() => {
+      expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
+        'did:dht:bob',
+        refreshRequest,
+        '1234',
+        mocks.agent,
+      );
+    });
+  });
+
+  it.each([
+    ['pending', true, false, /Checking the previous connection/i],
+    ['error', false, true, /could not verify the previous connection/i],
+    ['not found', false, false, /No previous session for this delegate/i],
+  ])('fails closed when refresh session lookup is %s', async (_label, pending, error, message) => {
+    mocks.fetchConnectRequest.mockResolvedValue({
+      ...connectRequest,
+      requestType: 'refresh',
+    });
+    mocks.allPermissionsPending = pending;
+    mocks.allPermissionsError = error;
+    setPageUrl(DEEP_LINK_FRAGMENT);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+  });
+
+  it('fails closed instead of waiting forever when a refresh reaches a fresh wallet', async () => {
+    mocks.authState.firstTime = true;
+    useAuthStore.setState({
+      initialized : true,
+      unlocked    : false,
+      firstTime   : true,
+      agent       : null,
+    });
+    mocks.identities = [];
+    mocks.identitiesPending = true;
+    mocks.allPermissionsError = true;
+    mocks.fetchConnectRequest.mockResolvedValue({
+      ...connectRequest,
+      requestType: 'refresh',
+    });
+    setPageUrl(DEEP_LINK_FRAGMENT);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByText(/could not verify the previous connection/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Checking the previous connection/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(screen.queryByText(/we'll make one/i)).not.toBeInTheDocument();
   });
 
   it('rejects an invalid relay session lifetime before approval', async () => {

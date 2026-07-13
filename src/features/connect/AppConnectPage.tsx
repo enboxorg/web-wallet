@@ -36,6 +36,7 @@ import { PinInput } from '@/components/ui/PinInput';
 import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
+import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import {
   protocolSetupAllowsApproval,
@@ -53,6 +54,7 @@ import { useAuth } from '@/enbox/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
+import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { ensureRegistrationForDids } from '@/enbox/registration';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 import { PIN_LENGTH } from '@/lib/constants';
@@ -71,6 +73,8 @@ import {
   preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
+import { detectConnectRefresh } from './connect-refresh';
+import { getConnectRequestType } from './connect-request-type';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
 
@@ -86,7 +90,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const { firstTime, connect: connectVault, dwnEndpoints: defaultDwnEndpoints } = useAuth();
   const setBackupPhrase = useBackupSeedStore((s) => s.setPhrase);
   const navigate = useNavigate();
-  const { data: identities } = useIdentities();
+  const {
+    data: identities,
+    isPending: identitiesPending,
+    isError: identitiesError,
+  } = useIdentities();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const scannerRef = useRef<Scanner>();
@@ -136,13 +144,46 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const needsOnboarding = firstTime && !agent;
+  const isRefresh = getConnectRequestType(connectionRequest) === 'refresh';
+
+  // Build identity options for the selector and validate that a matched
+  // refresh owner still uses a DID method accepted by the requester.
+  const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
+    .filter((identity: any) =>
+      connectionRequest === undefined
+      || isDidSupportedByRequest(identity.did.uri, connectionRequest.supportedDidMethods)
+    )
+    .map((identity: any) => ({
+      value: identity.did.uri as string,
+      label: identity.metadata?.name ?? truncateDid(identity.did.uri),
+    }));
+  const ownerDids = (identities ?? []).map((identity: any) => identity.did.uri as string);
+  const allPermissions = useAllPermissions(ownerDids, isRefresh);
+  const refreshDetection = detectConnectRefresh(connectionRequest, allPermissions.data);
+  const refreshOwnerOption = identityOptions.find((option) =>
+    option.value === refreshDetection.pinnedOwnerDid
+  );
+  const refreshLookupError = isRefresh && (identitiesError || allPermissions.isError);
+  const refreshLookupPending = isRefresh
+    && !refreshLookupError
+    && (identitiesPending || allPermissions.isPending);
+  const refreshReady = isRefresh
+    && !refreshLookupPending
+    && !refreshLookupError
+    && refreshDetection.matchState === 'matched'
+    && refreshOwnerOption !== undefined;
+  const approvalDid = isRefresh
+    ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
+    : selectedDid;
+
   // Auto-created profiles use did:dht — only offer inline onboarding
   // when the requester accepts that method.
-  const onboardingSupported = needsOnboarding
+  const onboardingSupported = !isRefresh
+    && needsOnboarding
     && (connectionRequest === undefined
       || connectionRequest.supportedDidMethods.includes('did:dht'));
   const checkedProtocolSetupStatuses = useProtocolSetupStatuses(
-    selectedDid,
+    approvalDid,
     agent as NonNullable<typeof agent>,
     agent ? permissionRequests : EMPTY_PERMISSION_REQUESTS,
     protocolSetupRetryKey,
@@ -157,19 +198,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     : checkedProtocolSetupStatuses;
   const protocolSetupReady = protocolSetupAllowsApproval(permissionRequests, protocolSetupStatuses);
 
-  // Build identity options for the selector
-  const identityOptions = (identities ?? [])
-    .filter((identity: any) =>
-      connectionRequest === undefined
-      || isDidSupportedByRequest(identity.did.uri, connectionRequest.supportedDidMethods)
-    )
-    .map((identity: any) => ({
-      value: identity.did.uri as string,
-      label: identity.metadata?.name ?? truncateDid(identity.did.uri),
-    }));
-
   // Auto-select first identity
   useEffect(() => {
+    if (isRefresh) return;
     const selectedExists = identityOptions.some((option: { value: string }) => option.value === selectedDid);
     if (identityOptions.length === 0) {
       if (selectedDid !== '') setSelectedDid('');
@@ -178,7 +209,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     if (identityOptions.length > 0 && !selectedExists) {
       setSelectedDid(identityOptions[0].value);
     }
-  }, [identityOptions, selectedDid]);
+  }, [identityOptions, isRefresh, selectedDid]);
 
   // Navigation guard during connect flow
   useEffect(() => {
@@ -366,7 +397,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     // create-wallet-and-connect path calls this right after onboarding,
     // before this component re-renders with the fresh agent.
     const liveAgent = useAuthStore.getState().agent;
-    const approveAsDid = overrideDid ?? selectedDid;
+    const approveAsDid = overrideDid ?? approvalDid;
     if (!liveAgent || !connectionRequest || !approveAsDid) return;
 
     setPhase('authorizing');
@@ -738,49 +769,67 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             </p>
           </div>
 
-          {/* Identity section */}
-          {onboardingSupported ? (
-            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-              <div className="flex items-center gap-2 text-accent">
-                <Sparkles size={16} />
-                <p className="text-sm font-semibold text-text-primary">
-                  No wallet here yet — we'll make one
-                </p>
-              </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
-                We'll set up your wallet and a fresh profile on this phone, then
-                connect it to {connectionRequest.appName ?? 'the app'}. You can
-                customise your profile any time.
-              </p>
-            </section>
-          ) : identityOptions.length > 0 ? (
-            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
-                Approve as
-              </p>
-              <Select
-                id="app-connect-identity"
-                aria-label="Approve as profile"
-                options={identityOptions}
-                value={selectedDid}
-                onChange={(e) => setSelectedDid(e.target.value)}
-              />
-            </section>
+          {isRefresh ? (
+            <RenewSessionDisplay
+              appName={connectionRequest.appName}
+              permissions={connectionRequest.permissionRequests}
+              detection={refreshDetection}
+              lookupPending={refreshLookupPending}
+              lookupError={refreshLookupError}
+              ownerLabel={refreshOwnerOption?.label}
+              ownerSupported={refreshOwnerOption !== undefined}
+              protocolSetupStatuses={protocolSetupStatuses}
+              requesterLabel={requesterLabel}
+              sessionDurationSeconds={connectionRequest.requestedSessionTtlSeconds}
+              onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+            />
           ) : (
-            <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center">
-              <p className="text-xs text-warning">
-                None of your profiles are supported by this app's request.
-              </p>
-            </div>
-          )}
+            <>
+              {/* Identity section */}
+              {onboardingSupported ? (
+                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+                  <div className="flex items-center gap-2 text-accent">
+                    <Sparkles size={16} />
+                    <p className="text-sm font-semibold text-text-primary">
+                      No wallet here yet — we'll make one
+                    </p>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+                    We'll set up your wallet and a fresh profile on this phone, then
+                    connect it to {connectionRequest.appName ?? 'the app'}. You can
+                    customise your profile any time.
+                  </p>
+                </section>
+              ) : identityOptions.length > 0 ? (
+                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
+                    Approve as
+                  </p>
+                  <Select
+                    id="app-connect-identity"
+                    aria-label="Approve as profile"
+                    options={identityOptions}
+                    value={selectedDid}
+                    onChange={(e) => setSelectedDid(e.target.value)}
+                  />
+                </section>
+              ) : (
+                <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center">
+                  <p className="text-xs text-warning">
+                    None of your profiles are supported by this app's request.
+                  </p>
+                </div>
+              )}
 
-          <PermissionDisplay
-            permissions={connectionRequest.permissionRequests}
-            protocolSetupStatuses={protocolSetupStatuses}
-            requesterLabel={requesterLabel}
-            sessionDurationSeconds={connectionRequest.requestedSessionTtlSeconds}
-            onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
-          />
+              <PermissionDisplay
+                permissions={connectionRequest.permissionRequests}
+                protocolSetupStatuses={protocolSetupStatuses}
+                requesterLabel={requesterLabel}
+                sessionDurationSeconds={connectionRequest.requestedSessionTtlSeconds}
+                onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+              />
+            </>
+          )}
 
           {onboardError && (
             <p className="text-center text-sm text-error" role="alert">
@@ -857,10 +906,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   <Button
                     className="w-full min-h-[44px] sm:flex-1"
                     onClick={() => handleApprove()}
-                    disabled={!selectedDid || !protocolSetupReady}
+                    disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />
-                    Approve
+                    {isRefresh ? 'Renew access' : 'Approve'}
                   </Button>
                 )}
               </div>

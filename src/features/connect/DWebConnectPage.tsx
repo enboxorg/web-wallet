@@ -10,12 +10,14 @@ import { Loader } from '@/components/ui/Loader';
 import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
+import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { PinInput } from '@/components/ui/PinInput';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
+import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { truncateDid } from '@/lib/utils';
 import { PIN_LENGTH } from '@/lib/constants';
@@ -40,6 +42,8 @@ import {
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
+import { detectConnectRefresh } from './connect-refresh';
+import { getConnectRequestType } from './connect-request-type';
 import {
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
@@ -65,7 +69,11 @@ export default function DWebConnectPage() {
   const agent = useAuthStore((s) => s.agent);
   const { firstTime, connect: connectVault, dwnEndpoints: defaultDwnEndpoints } = useAuth();
   const setBackupPhrase = useBackupSeedStore((s) => s.setPhrase);
-  const { data: identities } = useIdentities();
+  const {
+    data: identities,
+    isPending: identitiesPending,
+    isError: identitiesError,
+  } = useIdentities();
 
   const [phase, setPhase] = useState<Phase>('waiting');
   const transportRef = useRef<WalletPostMessageTransport>();
@@ -89,6 +97,7 @@ export default function DWebConnectPage() {
   const isPopup = useMemo(() => !!window.opener, []);
   const permissions = connectRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const appName = connectRequest?.appName;
+  const isRefresh = getConnectRequestType(connectRequest) === 'refresh';
 
   // Build identity options, limited to DID methods the requester supports.
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
@@ -100,10 +109,29 @@ export default function DWebConnectPage() {
       value: id.did.uri as string,
       label: id.metadata?.name ?? truncateDid(id.did.uri),
     }));
-  const { data: selectedPermissions } = usePermissions(selectedDid);
+  const ownerDids = (identities ?? []).map((identity: any) => identity.did.uri as string);
+  const allPermissions = useAllPermissions(ownerDids, isRefresh);
+  const refreshDetection = detectConnectRefresh(connectRequest, allPermissions.data);
+  const refreshOwnerOption = identityOptions.find((option) =>
+    option.value === refreshDetection.pinnedOwnerDid
+  );
+  const refreshLookupError = isRefresh && (identitiesError || allPermissions.isError);
+  const refreshLookupPending = isRefresh
+    && !refreshLookupError
+    && (identitiesPending || allPermissions.isPending);
+  const refreshReady = isRefresh
+    && !refreshLookupPending
+    && !refreshLookupError
+    && refreshDetection.matchState === 'matched'
+    && refreshOwnerOption !== undefined;
+  const approvalDid = isRefresh
+    ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
+    : selectedDid;
+  const { data: selectedPermissions } = usePermissions(isRefresh ? '' : selectedDid);
 
   // Auto-select first identity
   useEffect(() => {
+    if (isRefresh) return;
     if (identityOptions.length === 0) {
       if (selectedDid !== '') setSelectedDid('');
       return;
@@ -113,7 +141,7 @@ export default function DWebConnectPage() {
     if (!selectedDid || !selectedExists) {
       setSelectedDid(identityOptions[0].value);
     }
-  }, [identityOptions, selectedDid]);
+  }, [identityOptions, isRefresh, selectedDid]);
 
   // Not opened as a popup
   useEffect(() => {
@@ -180,7 +208,7 @@ export default function DWebConnectPage() {
     // create-wallet-and-connect path calls this right after onboarding,
     // before this component re-renders with the fresh agent.
     const liveAgent = useAuthStore.getState().agent;
-    const approveAsDid = overrideDid ?? selectedDid;
+    const approveAsDid = overrideDid ?? approvalDid;
     const transport = transportRef.current;
     if (!liveAgent || !approveAsDid || !connectRequest || !transport) { return; }
     if (approvalCompletedRef.current) { return; }
@@ -400,11 +428,12 @@ export default function DWebConnectPage() {
   const needsOnboarding = firstTime && !agent;
   // Auto-created identities are did:dht — only offer inline onboarding
   // when the requester accepts that method.
-  const onboardingSupported = needsOnboarding
+  const onboardingSupported = !isRefresh
+    && needsOnboarding
     && (connectRequest === undefined
       || connectRequest.supportedDidMethods.includes('did:dht'));
   const checkedProtocolSetupStatuses = useProtocolSetupStatuses(
-    selectedDid,
+    approvalDid,
     agent as NonNullable<typeof agent>,
     agent ? permissions : EMPTY_PERMISSION_REQUESTS,
     protocolSetupRetryKey,
@@ -508,7 +537,9 @@ export default function DWebConnectPage() {
                 )}
                 <div className="mt-2 flex flex-wrap gap-1.5">
                   <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
-                    {existingSessions.length > 0 ? 'Returning connection' : 'First connection'}
+                    {isRefresh
+                      ? 'Renewing connection'
+                      : existingSessions.length > 0 ? 'Returning connection' : 'First connection'}
                   </span>
                 </div>
               </div>
@@ -518,50 +549,68 @@ export default function DWebConnectPage() {
             </p>
           </div>
 
-          {/* Identity section */}
-          {onboardingSupported ? (
-            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-              <div className="flex items-center gap-2 text-accent">
-                <Sparkles size={16} />
-                <p className="text-sm font-semibold text-text-primary">
-                  No wallet here yet — we'll make one
-                </p>
-              </div>
-              <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
-                We'll set up your Enbox wallet and a fresh profile on this device,
-                then connect it to {appName ?? requesterLabel}. You can customise
-                your profile any time.
-              </p>
-            </section>
-          ) : identityOptions.length > 0 ? (
-            <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-              <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
-                Approve as
-              </p>
-              <Select
-                id="dweb-connect-identity"
-                aria-label="Approve as profile"
-                options={identityOptions}
-                value={selectedDid}
-                onChange={(e) => setSelectedDid(e.target.value)}
-              />
-            </section>
+          {isRefresh ? (
+            <RenewSessionDisplay
+              appName={appName ?? 'this app'}
+              permissions={permissions}
+              detection={refreshDetection}
+              lookupPending={refreshLookupPending}
+              lookupError={refreshLookupError}
+              ownerLabel={refreshOwnerOption?.label}
+              ownerSupported={refreshOwnerOption !== undefined}
+              protocolSetupStatuses={protocolSetupStatuses}
+              requesterLabel={requesterLabel}
+              sessionDurationSeconds={connectRequest?.requestedSessionTtlSeconds}
+              onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+            />
           ) : (
-            <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center">
-              <p className="text-xs text-warning">
-                No profiles here yet. Close this window, create a profile first, then try again.
-              </p>
-            </div>
-          )}
+            <>
+              {/* Identity section */}
+              {onboardingSupported ? (
+                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+                  <div className="flex items-center gap-2 text-accent">
+                    <Sparkles size={16} />
+                    <p className="text-sm font-semibold text-text-primary">
+                      No wallet here yet — we'll make one
+                    </p>
+                  </div>
+                  <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
+                    We'll set up your Enbox wallet and a fresh profile on this device,
+                    then connect it to {appName ?? requesterLabel}. You can customise
+                    your profile any time.
+                  </p>
+                </section>
+              ) : identityOptions.length > 0 ? (
+                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+                  <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
+                    Approve as
+                  </p>
+                  <Select
+                    id="dweb-connect-identity"
+                    aria-label="Approve as profile"
+                    options={identityOptions}
+                    value={selectedDid}
+                    onChange={(e) => setSelectedDid(e.target.value)}
+                  />
+                </section>
+              ) : (
+                <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center">
+                  <p className="text-xs text-warning">
+                    No profiles here yet. Close this window, create a profile first, then try again.
+                  </p>
+                </div>
+              )}
 
-          <PermissionDisplay
-            permissions={permissions}
-            protocolSetupStatuses={protocolSetupStatuses}
-            existingSessionCount={existingSessions.length}
-            requesterLabel={requesterLabel}
-            sessionDurationSeconds={connectRequest?.requestedSessionTtlSeconds}
-            onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
-          />
+              <PermissionDisplay
+                permissions={permissions}
+                protocolSetupStatuses={protocolSetupStatuses}
+                existingSessionCount={existingSessions.length}
+                requesterLabel={requesterLabel}
+                sessionDurationSeconds={connectRequest?.requestedSessionTtlSeconds}
+                onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+              />
+            </>
+          )}
 
           {onboardError && (
             <p className="text-center text-sm text-error" role="alert">
@@ -619,9 +668,13 @@ export default function DWebConnectPage() {
                     Create wallet & connect
                   </Button>
                 ) : (
-                  <Button className="flex-1" onClick={() => handleApprove()} disabled={!selectedDid || !protocolSetupReady}>
+                  <Button
+                    className="flex-1"
+                    onClick={() => handleApprove()}
+                    disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
+                  >
                     <Check className="h-4 w-4" />
-                    Approve
+                    {isRefresh ? 'Renew access' : 'Approve'}
                   </Button>
                 )}
               </div>
