@@ -47,6 +47,7 @@ import {
   fetchConnectRequest,
   generatePin,
   getRelayCallbackUrl,
+  waitForRelayCompletion,
 } from './connect-kernel';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
@@ -71,7 +72,7 @@ import {
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 
-type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'error';
+type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
 
 const EMPTY_PERMISSION_REQUESTS: ConnectRequest['permissionRequests'] = [];
 
@@ -91,6 +92,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const scannerRef = useRef<Scanner>();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const processConnectUriRef = useRef(processConnectUri);
+  const mountedRef = useRef(true);
+  const relayCompletionIdRef = useRef(0);
   processConnectUriRef.current = processConnectUri;
 
   // Start in 'loading' when the URL carries deep-link connect parameters —
@@ -119,6 +122,17 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const [onboardPinError, setOnboardPinError] = useState<string | null>(null);
   const [onboardError, setOnboardError] = useState<string | null>(null);
   const [onboardBusy, setOnboardBusy] = useState(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      // Completion polling is best-effort and has its own timeout budget.
+      // The mounted + generation guards prevent late approval/poll results
+      // from changing an unmounted or manually dismissed ceremony.
+      mountedRef.current = false;
+      relayCompletionIdRef.current += 1;
+    };
+  }, []);
 
   const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const needsOnboarding = firstTime && !agent;
@@ -378,7 +392,29 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       const generatedPin = await generatePin(4);
       setPin(generatedPin);
       await approveConnectRequest(approveAsDid, connectionRequest, generatedPin, liveAgent);
+      if (!mountedRef.current) return;
       setPhase('pin');
+
+      // The app cannot open the response (and emit its completion marker)
+      // until the user sees and enters the PIN, so polling must start in the
+      // background after scheduling the PIN screen rather than delaying it.
+      const completionId = ++relayCompletionIdRef.current;
+      try {
+        void waitForRelayCompletion(connectionRequest).then((completed) => {
+          if (
+            !completed
+            || !mountedRef.current
+            || relayCompletionIdRef.current !== completionId
+          ) return;
+          clearDeepLinkSession();
+          setPhase('connected');
+        }).catch(() => {
+          // Unsupported/older relays and transient polling failures keep the
+          // PIN screen's manual Done fallback.
+        });
+      } catch {
+        // A synchronous helper failure also leaves the PIN fallback intact.
+      }
     } catch (err) {
       console.error('Authorization error:', err);
       setErrorMessage((err as Error).message || 'Failed to authorize connection.');
@@ -392,7 +428,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   // over the freshest request state, which arrives via the deep link
   // after first render.
 
-  async function completeOnboardingAndConnect(vaultPassword: string, viaPasskey: boolean) {
+  async function completeOnboardingAndConnect(
+    vaultPassword: string,
+    viaPasskey: boolean,
+    afterVaultConnect?: () => void,
+  ) {
     setPhase('authorizing');
 
     const recoveryPhrase = await connectVault(vaultPassword, defaultDwnEndpoints);
@@ -407,6 +447,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     if (!liveAgent) {
       throw new Error('Wallet was created but could not be unlocked.');
     }
+    afterVaultConnect?.();
 
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
     const approvalDid = identity.did.uri;
@@ -426,8 +467,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         return;
       }
       const prepared = await preparePasskeyVaultPassword();
-      await completeOnboardingAndConnect(prepared.password, true);
-      storePasskeyCredential(prepared.credential);
+      await completeOnboardingAndConnect(
+        prepared.password,
+        true,
+        () => storePasskeyCredential(prepared.credential),
+      );
     } catch (err) {
       setPhase('request');
       if (isPasskeyVaultUnsupportedError(err)) {
@@ -476,6 +520,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         // Best-effort — navigate home regardless.
       }
     }
+    relayCompletionIdRef.current += 1;
+    clearDeepLinkSession();
+    navigate('/');
+  }
+
+  function finishRelayCeremony() {
+    relayCompletionIdRef.current += 1;
     clearDeepLinkSession();
     navigate('/');
   }
@@ -635,6 +686,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             variant="secondary"
             className="w-full min-h-[44px]"
             onClick={() => {
+              relayCompletionIdRef.current += 1;
               clearDeepLinkSession();
               setPhase('scanning');
               setErrorMessage('');
@@ -853,11 +905,26 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
             <Button
               className="w-full min-h-[44px] mt-2"
-              onClick={() => {
-                clearDeepLinkSession();
-                navigate('/');
-              }}
+              onClick={finishRelayCeremony}
             >
+              Done
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Confirmed phase ──────────────────────────────────── */}
+      {phase === 'connected' && (
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-12 lg:px-0 max-w-lg mx-auto w-full ${standalone ? 'flex-1 flex flex-col justify-center pb-24' : ''}`}>
+          <div className="flex flex-col items-center gap-4 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
+              <Check className="h-8 w-8 text-success" />
+            </div>
+            <p className="text-base font-semibold text-text-primary">Connected!</p>
+            <p className="text-sm text-text-secondary">
+              The requesting application confirmed the connection.
+            </p>
+            <Button className="w-full min-h-[44px] mt-2" onClick={finishRelayCeremony}>
               Done
             </Button>
           </div>

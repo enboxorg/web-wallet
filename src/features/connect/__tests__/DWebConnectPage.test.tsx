@@ -10,7 +10,7 @@ const mocks = vi.hoisted(() => {
   const transport = {
     dappOrigin   : 'https://app.example',
     awaitRequest : vi.fn(),
-    sendResponse : vi.fn(),
+    sendResponseAwaitingAck: vi.fn(),
     deny         : vi.fn(),
     close        : vi.fn(),
   };
@@ -154,6 +154,7 @@ describe('DWebConnectPage', () => {
     mocks.transport.dappOrigin = 'https://app.example';
     mocks.createTransport.mockResolvedValue(mocks.transport);
     mocks.transport.awaitRequest.mockResolvedValue(connectRequest());
+    mocks.transport.sendResponseAwaitingAck.mockResolvedValue(true);
     mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
@@ -194,7 +195,7 @@ describe('DWebConnectPage', () => {
     fireEvent.click(approve);
 
     await waitFor(() => {
-      expect(mocks.transport.sendResponse).toHaveBeenCalledWith('sealed-response-jwe');
+      expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe');
     });
     expect(mocks.ensureRegistrationForDids).toHaveBeenCalledWith(
       mocks.agent,
@@ -213,6 +214,36 @@ describe('DWebConnectPage', () => {
       origin       : 'https://app.example',
       connectedDid : 'did:dht:alice',
     }));
+  });
+
+  it('keeps a manual close fallback when the app does not acknowledge', async () => {
+    mocks.transport.sendResponseAwaitingAck.mockResolvedValue(false);
+
+    render(<DWebConnectPage />);
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    expect(await screen.findByText('Connection response sent')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
+    expect(screen.queryByText('Connected!')).not.toBeInTheDocument();
+    expect(mocks.transport.deny).not.toHaveBeenCalled();
+  });
+
+  it('does not report or deny a response when acknowledgement delivery rejects', async () => {
+    mocks.transport.sendResponseAwaitingAck.mockRejectedValue(new Error('postMessage failed'));
+
+    render(<DWebConnectPage />);
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    expect(await screen.findByText('postMessage failed')).toBeInTheDocument();
+    expect(screen.queryByText('Connection response sent')).not.toBeInTheDocument();
+    expect(mocks.transport.deny).not.toHaveBeenCalled();
+    expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
   });
 
   it('locks out duplicate approvals: the consent actions unmount on first click', async () => {
@@ -238,7 +269,7 @@ describe('DWebConnectPage', () => {
     releaseApproval('sealed-response-jwe');
 
     await waitFor(() => {
-      expect(mocks.transport.sendResponse).toHaveBeenCalledTimes(1);
+      expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledTimes(1);
     });
     expect(mocks.approvePopupConnectRequest).toHaveBeenCalledTimes(1);
   });
@@ -271,7 +302,7 @@ describe('DWebConnectPage', () => {
 
     expect(await screen.findByText(/Could not write the approved permission grants/i)).toBeInTheDocument();
     expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
-    expect(mocks.transport.sendResponse).not.toHaveBeenCalled();
+    expect(mocks.transport.sendResponseAwaitingAck).not.toHaveBeenCalled();
   });
 
   it('denies and shows an error when the request fails wallet preflight', async () => {
@@ -379,7 +410,7 @@ describe('DWebConnectPage', () => {
     fireEvent.click(approve);
 
     await waitFor(() => {
-      expect(mocks.transport.sendResponse).toHaveBeenCalledWith('sealed-response-jwe');
+      expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe');
     });
     // The response was delivered; a failed analytics event must not replace
     // the success screen with an error.
