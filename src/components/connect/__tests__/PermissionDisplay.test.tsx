@@ -294,8 +294,42 @@ describe('PermissionDisplay', () => {
     );
 
     expect(screen.getByText('Protocol setup conflict')).toBeInTheDocument();
-    expect(screen.getByText(/will not replace it during a connection/i)).toBeInTheDocument();
+    expect(screen.getByText(/will not replace a core protocol during a connection/i)).toBeInTheDocument();
     expect(screen.getByText('Blocked')).toBeInTheDocument();
+  });
+
+  it('offers an override opt-in for a custom definition conflict', () => {
+    const onOverrideAcknowledgedChange = vi.fn();
+    const permissions = [{
+      protocolDefinition: {
+        protocol: notesProtocol,
+        types: {},
+        structure: {},
+      },
+      permissionScopes: [{
+        interface: 'Records',
+        method: 'Write',
+        protocol: notesProtocol,
+      }],
+    }] as unknown as ConnectPermissionRequest[];
+
+    render(
+      <PermissionDisplay
+        permissions={permissions}
+        protocolSetupStatuses={{ [notesProtocol]: 'override' }}
+        overrideAcknowledged={false}
+        onOverrideAcknowledgedChange={onOverrideAcknowledgedChange}
+      />,
+    );
+
+    // An override is NOT the hard-conflict notice.
+    expect(screen.queryByText('Protocol setup conflict')).not.toBeInTheDocument();
+    expect(screen.getByText(/replace my installed protocol/i)).toBeInTheDocument();
+
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    expect(onOverrideAcknowledgedChange).toHaveBeenCalledWith(true);
   });
 
   it('surfaces an unavailable setup check and retries it', () => {

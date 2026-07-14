@@ -49,6 +49,10 @@ interface PermissionDisplayProps {
   sessionDurationSeconds?: number;
   /** Retry a failed protocol setup check. */
   onRetryProtocolSetup?: () => void;
+  /** Whether the owner has opted into replacing conflicting custom definitions. */
+  overrideAcknowledged?: boolean;
+  /** Toggle the override opt-in for definition conflicts. */
+  onOverrideAcknowledgedChange?: (value: boolean) => void;
   /** Render session terms as a renewal rather than a first approval. */
   renewal?: boolean;
 }
@@ -81,6 +85,9 @@ const SETUP_STATUS_DISPLAY: Record<ProtocolSetupStatus, SetupStatusDisplay> = {
   },
   conflict: {
     label : 'Blocked',
+  },
+  override: {
+    label : 'Version conflict',
   },
   install: {
     label : 'Will add',
@@ -368,7 +375,9 @@ function SetupStatusBadge({ status }: { status: ProtocolSetupStatus }) {
   const display = SETUP_STATUS_DISPLAY[status];
   const classes = status === 'conflict'
     ? 'border-red-500/30 bg-red-500/10 text-red-300'
-    : 'border-border-subtle bg-surface-1 text-text-secondary';
+    : status === 'override'
+      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+      : 'border-border-subtle bg-surface-1 text-text-secondary';
 
   return (
     <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${classes}`}>
@@ -436,6 +445,7 @@ function SetupDetailGroup({
 function SetupDetails({ access }: { access: ProtocolAccess[] }) {
   const setupChanges = access.filter((item) => item.setupStatus === 'install');
   const encryptionUpgrades = access.filter((item) => item.setupStatus === 'upgrade');
+  const overrides = access.filter((item) => item.setupStatus === 'override');
   const conflicts = access.filter((item) => item.setupStatus === 'conflict');
   const setupChecks = access.filter((item) =>
     item.setupStatus === 'checking'
@@ -450,7 +460,7 @@ function SetupDetails({ access }: { access: ProtocolAccess[] }) {
           Wallet setup
         </p>
         <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-          Protocol setup controls record authorization. New policies are installed before the app grant; existing policies are never replaced.
+          Protocol setup controls record authorization. New policies are installed before the app grant; an existing policy is only replaced when you explicitly override it below.
         </p>
       </div>
 
@@ -465,6 +475,12 @@ function SetupDetails({ access }: { access: ProtocolAccess[] }) {
         title="Will upgrade encryption"
         summary="The authorization policy is unchanged; the wallet adds its current encryption keys."
         items={encryptionUpgrades}
+      />
+      <SetupDetailGroup
+        icon={RefreshCw}
+        title="Will replace on override"
+        summary="Already installed with a different definition. With your explicit consent below, the wallet replaces it with this app's version."
+        items={overrides}
       />
       <SetupDetailGroup
         icon={AlertTriangle}
@@ -498,8 +514,70 @@ function ProtocolConflictNotice({ access }: { access: ProtocolAccess[] }) {
         <div>
           <p className="text-sm font-medium text-red-200">Protocol setup conflict</p>
           <p className="mt-1 text-xs leading-relaxed text-red-200/80">
-            A requested protocol differs from this profile&apos;s installed setup. The wallet will not replace it during a connection.
+            A requested protocol conflicts with this profile&apos;s protected or invalid setup and can&apos;t be approved. The wallet will not replace a core protocol during a connection.
           </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Overridable definition conflict: a custom protocol installed with a different
+ * definition. Unlike a hard conflict, the owner may consent to replacing it. The
+ * opt-in checkbox is controlled by the parent, which gates approval on it and
+ * then runs the owner reconfigure before the connect ceremony.
+ */
+function ProtocolOverrideNotice({
+  access,
+  overrideAcknowledged,
+  onOverrideAcknowledgedChange,
+}: {
+  access: ProtocolAccess[];
+  overrideAcknowledged: boolean;
+  onOverrideAcknowledgedChange?: (value: boolean) => void;
+}) {
+  const overrides = access.filter((item) => item.setupStatus === 'override');
+  if (overrides.length === 0) return null;
+
+  const many = overrides.length > 1;
+
+  return (
+    <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
+      <div className="flex items-start gap-2">
+        <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-amber-200">
+            {pluralize(overrides.length, 'protocol')} installed with a different definition
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-200/80">
+            This app asks to use a changed version of {many ? 'protocols' : 'a protocol'} you already
+            have installed. Approving replaces your installed definition with the app&apos;s version on
+            this profile and its DWN endpoints. The change is kept even if the rest of the connection
+            fails.
+          </p>
+          <ul className="mt-2 space-y-1">
+            {overrides.map((item) => (
+              <li
+                key={item.protocolUri}
+                className="min-w-0 truncate font-mono text-[10px] text-amber-200/70"
+                title={item.protocolUri}
+              >
+                {protocolUriLabel(item.protocolUri)}
+              </li>
+            ))}
+          </ul>
+          <label className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-amber-100">
+            <input
+              type="checkbox"
+              className="mt-0.5 h-4 w-4 shrink-0 accent-amber-400"
+              checked={overrideAcknowledged}
+              onChange={(event) => onOverrideAcknowledgedChange?.(event.target.checked)}
+            />
+            <span>
+              Replace my installed protocol {many ? 'definitions' : 'definition'} with this app&apos;s version.
+            </span>
+          </label>
         </div>
       </div>
     </section>
@@ -658,6 +736,8 @@ export function PermissionDisplay({
   requesterLabel,
   sessionDurationSeconds,
   onRetryProtocolSetup,
+  overrideAcknowledged = false,
+  onOverrideAcknowledgedChange,
   renewal,
 }: PermissionDisplayProps) {
   if (permissions.length === 0) return null;
@@ -668,6 +748,11 @@ export function PermissionDisplay({
     <div className="space-y-4">
       <AccessRows access={access} requesterLabel={requesterLabel} />
       <ProtocolConflictNotice access={access} />
+      <ProtocolOverrideNotice
+        access={access}
+        overrideAcknowledged={overrideAcknowledged}
+        onOverrideAcknowledgedChange={onOverrideAcknowledgedChange}
+      />
       <ProtocolSetupUnavailableNotice access={access} onRetry={onRetryProtocolSetup} />
       <SessionTerms
         existingSessionCount={existingSessionCount}

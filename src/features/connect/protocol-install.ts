@@ -16,7 +16,7 @@ type ProtocolQueryReply = {
   entries?: ProtocolConfigureEntry[];
 };
 
-export type ResolvedProtocolSetupStatus = 'configured' | 'conflict' | 'install' | 'upgrade';
+export type ResolvedProtocolSetupStatus = 'configured' | 'conflict' | 'override' | 'install' | 'upgrade';
 export type ProtocolSetupStatus = ResolvedProtocolSetupStatus | 'checking' | 'unavailable';
 
 type ProtocolConfigureEntry = {
@@ -217,10 +217,14 @@ async function getVerifiedProtocolSetupStatus(
   const structuralStatus = getProtocolSetupStatus(installedDefinition, requestedDefinition);
   if (
     structuralStatus === 'conflict'
+    || structuralStatus === 'override'
     || structuralStatus === 'install'
     || !protocolHasEncryptedTypes(requestedDefinition)
     || installedDefinition === undefined
   ) {
+    // 'override' short-circuits alongside 'conflict': there is no point
+    // inspecting the encryption keys of a definition the owner is about to
+    // replace wholesale.
     return structuralStatus;
   }
 
@@ -254,7 +258,11 @@ export function getProtocolSetupStatus(
   }
 
   if (!protocolDefinitionsMatch(installedDefinition, requestedDefinition)) {
-    return 'conflict';
+    // A non-canonical (custom app) protocol installed with a different
+    // definition can be reconfigured by the owner on explicit override; a
+    // canonical wallet-owned protocol stays hard-blocked — a connection request
+    // must never replace it.
+    return canonicalDefinition ? 'conflict' : 'override';
   }
 
   const missingEncryption = protocolHasEncryptedTypes(requestedDefinition)

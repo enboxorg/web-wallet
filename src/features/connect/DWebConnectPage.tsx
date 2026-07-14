@@ -11,6 +11,7 @@ import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
+import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { PinInput } from '@/components/ui/PinInput';
 import { useAuth } from '@/enbox/hooks/use-auth';
@@ -45,9 +46,12 @@ import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
 import { detectConnectRefresh } from './connect-refresh';
 import { getConnectRequestType } from './connect-request-type';
 import {
+  getOverridableProtocols,
+  getProtocolDefinitionsToOverride,
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
 } from './use-protocol-setup-statuses';
+import { reconfigureProtocolsForOverride } from './protocol-override';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
@@ -86,6 +90,10 @@ export default function DWebConnectPage() {
   const [connectionConfirmed, setConnectionConfirmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
+  // Owner opt-in to replace a custom protocol installed with a different
+  // definition, plus the final confirmation gate before the reconfigure runs.
+  const [overrideAcknowledged, setOverrideAcknowledged] = useState(false);
+  const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
 
   // Inline onboarding state (no wallet yet)
   const [onboardStep, setOnboardStep] = useState<OnboardStep>('idle');
@@ -142,6 +150,14 @@ export default function DWebConnectPage() {
       setSelectedDid(identityOptions[0].value);
     }
   }, [identityOptions, isRefresh, selectedDid]);
+
+  // A definition-override opt-in is profile-specific: clear it whenever the
+  // approving profile changes so the choice is made against the profile whose
+  // installed protocols were actually checked.
+  useEffect(() => {
+    setOverrideAcknowledged(false);
+    setShowOverrideConfirm(false);
+  }, [approvalDid]);
 
   // Not opened as a popup
   useEffect(() => {
@@ -228,6 +244,27 @@ export default function DWebConnectPage() {
         throw new Error('This profile does not have any sync endpoints configured.');
       }
       await ensureRegistrationForDids(liveAgent, dwnEndpoints, [approveAsDid]);
+
+      // If the owner opted into replacing a custom protocol installed with a
+      // different definition, author the replacement (locally + across owner
+      // endpoints) BEFORE the ceremony — it fails closed on a definition
+      // mismatch and offers no override flag. Once local + remote state matches
+      // the requested definition, the ceremony proceeds normally.
+      if (overrideAcknowledged) {
+        const definitionsToOverride = getProtocolDefinitionsToOverride(
+          connectRequest.permissionRequests,
+          protocolSetupStatuses,
+        );
+        if (definitionsToOverride.length > 0) {
+          setStatusMessage('Replacing protocol setup...');
+          await reconfigureProtocolsForOverride(
+            approveAsDid,
+            liveAgent,
+            dwnEndpoints,
+            definitionsToOverride,
+          );
+        }
+      }
 
       // The ceremony owns protocol preparation end to end (agent >=0.8.17):
       // install, encryption upgrades of policy-identical definitions, and
@@ -448,7 +485,12 @@ export default function DWebConnectPage() {
       ]))
       : checkedProtocolSetupStatuses,
   [checkedProtocolSetupStatuses, needsOnboarding, permissions]);
-  const protocolSetupReady = protocolSetupAllowsApproval(permissions, protocolSetupStatuses);
+  const overridableProtocols = getOverridableProtocols(protocolSetupStatuses);
+  const protocolSetupReady = protocolSetupAllowsApproval(
+    permissions,
+    protocolSetupStatuses,
+    overrideAcknowledged ? new Set(overridableProtocols) : new Set(),
+  );
   const requestSummary = useMemo(
     () => getConnectPermissionAskSummary(permissions),
     [permissions],
@@ -608,6 +650,18 @@ export default function DWebConnectPage() {
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={connectRequest?.requestedSessionTtlSeconds}
                 onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+                overrideAcknowledged={overrideAcknowledged}
+                onOverrideAcknowledgedChange={setOverrideAcknowledged}
+              />
+
+              <ProtocolOverrideConfirmDialog
+                open={showOverrideConfirm}
+                protocols={overridableProtocols}
+                onConfirm={() => {
+                  setShowOverrideConfirm(false);
+                  void handleApprove();
+                }}
+                onCancel={() => setShowOverrideConfirm(false)}
               />
             </>
           )}
@@ -670,7 +724,11 @@ export default function DWebConnectPage() {
                 ) : (
                   <Button
                     className="flex-1"
-                    onClick={() => handleApprove()}
+                    onClick={() =>
+                      overridableProtocols.length > 0 && !isRefresh
+                        ? setShowOverrideConfirm(true)
+                        : handleApprove()
+                    }
                     disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />

@@ -38,13 +38,48 @@ function collectProtocolDefinitions(permissions: ConnectPermissionRequest[]) {
 export function protocolSetupAllowsApproval(
   permissions: ConnectPermissionRequest[],
   statuses: ProtocolSetupStatusMap,
+  overriddenProtocols: ReadonlySet<string> = new Set(),
 ): boolean {
   return [...new Set(permissions.map((permission) => permission.protocolDefinition.protocol))]
     .every((protocol) =>
       statuses[protocol] === 'configured'
       || statuses[protocol] === 'install'
       || statuses[protocol] === 'upgrade'
+      // An 'override' conflict only clears approval once the owner has explicitly
+      // opted into replacing the installed definition for that protocol.
+      || (statuses[protocol] === 'override' && overriddenProtocols.has(protocol))
     );
+}
+
+/**
+ * Protocol URIs whose setup resolved to an overridable definition conflict —
+ * a non-canonical protocol installed with a different definition. These are the
+ * protocols the owner may choose to reconfigure (replace) during approval.
+ */
+export function getOverridableProtocols(statuses: ProtocolSetupStatusMap): string[] {
+  return Object.entries(statuses)
+    .filter(([, status]) => status === 'override')
+    .map(([protocol]) => protocol);
+}
+
+/**
+ * The requested definitions to hand to the owner reconfigure: one per overridable
+ * protocol (deduplicated — preflight guarantees a request carries a single
+ * definition per protocol). Empty when nothing is overridable.
+ */
+export function getProtocolDefinitionsToOverride(
+  permissions: ConnectPermissionRequest[],
+  statuses: ProtocolSetupStatusMap,
+): ConnectPermissionRequest['protocolDefinition'][] {
+  const overridable = new Set(getOverridableProtocols(statuses));
+  const byProtocol = new Map<string, ConnectPermissionRequest['protocolDefinition']>();
+  for (const permission of permissions) {
+    const definition = permission.protocolDefinition;
+    if (overridable.has(definition.protocol) && !byProtocol.has(definition.protocol)) {
+      byProtocol.set(definition.protocol, definition);
+    }
+  }
+  return [...byProtocol.values()];
 }
 
 export function useProtocolSetupStatuses(
