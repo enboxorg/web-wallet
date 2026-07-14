@@ -37,11 +37,15 @@ import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
+import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import {
+  getOverridableProtocols,
+  getProtocolDefinitionsToOverride,
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
 } from './use-protocol-setup-statuses';
+import { reconfigureProtocolsForOverride } from './protocol-override';
 import {
   approveConnectRequest,
   denyConnectRequest,
@@ -123,6 +127,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const [errorMessage, setErrorMessage] = useState('');
   const [pinCopied, setPinCopied] = useState(false);
   const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
+  // Owner opt-in to replace a custom protocol installed with a different
+  // definition, plus the final confirmation gate before the reconfigure runs.
+  const [overrideAcknowledged, setOverrideAcknowledged] = useState(false);
+  const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
 
   // Inline onboarding state (no wallet yet — deep-link arrivals only)
   const [onboardStep, setOnboardStep] = useState<OnboardStep>('idle');
@@ -196,7 +204,12 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       'install' as const,
     ]))
     : checkedProtocolSetupStatuses;
-  const protocolSetupReady = protocolSetupAllowsApproval(permissionRequests, protocolSetupStatuses);
+  const overridableProtocols = getOverridableProtocols(protocolSetupStatuses);
+  const protocolSetupReady = protocolSetupAllowsApproval(
+    permissionRequests,
+    protocolSetupStatuses,
+    overrideAcknowledged ? new Set(overridableProtocols) : new Set(),
+  );
 
   // Auto-select first identity
   useEffect(() => {
@@ -210,6 +223,14 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       setSelectedDid(identityOptions[0].value);
     }
   }, [identityOptions, isRefresh, selectedDid]);
+
+  // A definition-override opt-in is profile-specific: clear it whenever the
+  // approving profile changes so the choice must be made against the profile
+  // whose installed protocols were actually checked.
+  useEffect(() => {
+    setOverrideAcknowledged(false);
+    setShowOverrideConfirm(false);
+  }, [approvalDid]);
 
   // Navigation guard during connect flow
   useEffect(() => {
@@ -413,6 +434,26 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         throw new Error('This profile does not have any sync endpoints configured.');
       }
       await ensureRegistrationForDids(liveAgent, dwnEndpoints, [approveAsDid]);
+
+      // If the owner opted into replacing a custom protocol installed with a
+      // different definition, author the replacement (locally + across owner
+      // endpoints) BEFORE the ceremony. The connect ceremony fails closed on a
+      // definition mismatch and offers no override flag; once local + remote
+      // state matches the requested definition, it proceeds normally.
+      if (overrideAcknowledged) {
+        const definitionsToOverride = getProtocolDefinitionsToOverride(
+          connectionRequest.permissionRequests,
+          protocolSetupStatuses,
+        );
+        if (definitionsToOverride.length > 0) {
+          await reconfigureProtocolsForOverride(
+            approveAsDid,
+            liveAgent,
+            dwnEndpoints,
+            definitionsToOverride,
+          );
+        }
+      }
 
       // The ceremony owns protocol preparation end to end (agent >=0.8.17):
       // install, encryption upgrades, and fail-closed remote verification
@@ -827,6 +868,18 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={connectionRequest.requestedSessionTtlSeconds}
                 onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+                overrideAcknowledged={overrideAcknowledged}
+                onOverrideAcknowledgedChange={setOverrideAcknowledged}
+              />
+
+              <ProtocolOverrideConfirmDialog
+                open={showOverrideConfirm}
+                protocols={overridableProtocols}
+                onConfirm={() => {
+                  setShowOverrideConfirm(false);
+                  void handleApprove();
+                }}
+                onCancel={() => setShowOverrideConfirm(false)}
               />
             </>
           )}
@@ -905,7 +958,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 ) : (
                   <Button
                     className="w-full min-h-[44px] sm:flex-1"
-                    onClick={() => handleApprove()}
+                    onClick={() =>
+                      overridableProtocols.length > 0 && !isRefresh
+                        ? setShowOverrideConfirm(true)
+                        : handleApprove()
+                    }
                     disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />

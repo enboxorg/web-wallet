@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     createTransport: vi.fn(),
     ensureRegistrationForDids: vi.fn(),
     queryProtocolSetupStatus: vi.fn(),
+    reconfigureProtocolsForOverride: vi.fn(),
     publishWalletEvent: vi.fn(),
     transport,
     permissions: [] as any[],
@@ -109,6 +110,10 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
+}));
+
+vi.mock('../protocol-override', () => ({
+  reconfigureProtocolsForOverride: mocks.reconfigureProtocolsForOverride,
 }));
 
 const permissionRequest = {
@@ -257,6 +262,40 @@ describe('DWebConnectPage', () => {
       origin       : 'https://app.example',
       connectedDid : 'did:dht:alice',
     }));
+  });
+
+  it('replaces an overridable protocol only after opt-in and confirmation', async () => {
+    mocks.queryProtocolSetupStatus.mockResolvedValue('override');
+    mocks.reconfigureProtocolsForOverride.mockResolvedValue(undefined);
+
+    render(<DWebConnectPage />);
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    // The override opt-in appears and approval stays blocked until it is ticked.
+    const checkbox = await screen.findByRole('checkbox');
+    expect(approve).toBeDisabled();
+
+    fireEvent.click(checkbox);
+    await waitFor(() => expect(approve).toBeEnabled());
+
+    // Approving opens the confirmation dialog rather than connecting immediately.
+    fireEvent.click(approve);
+    const confirm = await screen.findByRole('button', { name: /replace & connect/i });
+    expect(mocks.reconfigureProtocolsForOverride).not.toHaveBeenCalled();
+
+    fireEvent.click(confirm);
+
+    // The owner reconfigure runs (with the requested definition) before the ceremony.
+    await waitFor(() => expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledTimes(1));
+    expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledWith(
+      'did:dht:alice',
+      mocks.agent,
+      ['https://dwn.example'],
+      [permissionRequest.protocolDefinition],
+    );
+
+    await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe'));
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 
   it('keeps a manual close fallback when the app does not acknowledge', async () => {

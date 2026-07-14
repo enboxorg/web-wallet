@@ -183,7 +183,7 @@ describe('protocol-install', () => {
     ]);
   });
 
-  it('detects older or different installed protocol definitions', () => {
+  it('marks a custom protocol installed with a different definition as overridable', () => {
     const olderInstalledDefinition: DwnProtocolDefinition = {
       ...notesProtocol,
       types: {
@@ -192,7 +192,23 @@ describe('protocol-install', () => {
     };
 
     expect(protocolDefinitionsMatch(olderInstalledDefinition, notesProtocol)).toBe(false);
-    expect(getProtocolSetupStatus(olderInstalledDefinition, notesProtocol)).toBe('conflict');
+    // A non-canonical protocol may be replaced by the owner on explicit override.
+    expect(getProtocolSetupStatus(olderInstalledDefinition, notesProtocol)).toBe('override');
+  });
+
+  it('keeps a canonical protocol installed with a different definition hard-blocked', () => {
+    const legacyInstalledProfile = {
+      ...ProfileDefinition,
+      types: {
+        ...ProfileDefinition.types,
+        profile: { schema: 'https://legacy.example/profile' },
+      },
+    } as DwnProtocolDefinition;
+
+    // The requested definition IS the canonical pin; only the installed one
+    // differs. Canonical wallet protocols are never overridable via a connection.
+    expect(protocolDefinitionsMatch(legacyInstalledProfile, ProfileDefinition as DwnProtocolDefinition)).toBe(false);
+    expect(getProtocolSetupStatus(legacyInstalledProfile, ProfileDefinition as DwnProtocolDefinition)).toBe('conflict');
   });
 
   it('treats legacy $encryption metadata as a policy-identical upgrade', () => {
