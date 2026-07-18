@@ -31,6 +31,7 @@ import {
 } from '../effect/errors';
 import { CurrentAgent, enboxLiveLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
+import { runIdentitySetupSingleFlight } from '../effect/keyed-single-flight';
 import { normalizeProfileImageBlob } from '@/lib/profile-images';
 import {
   ensurePortableOwnerPublished,
@@ -46,10 +47,14 @@ function registerIdentityForSyncEffect(did: string) {
     const agent = yield* CurrentAgent;
     yield* Effect.tryPromise({
       try: () =>
-        agent.sync.registerIdentity({
+        runIdentitySetupSingleFlight(
+          agent,
           did,
-          options: { protocols: IDENTITY_SYNC_PROTOCOLS },
-        }),
+          () => agent.sync.registerIdentity({
+            did,
+            options: { protocols: IDENTITY_SYNC_PROTOCOLS },
+          }),
+        ),
       catch: sdkError('sync.registerIdentity'),
     }).pipe(Effect.catchAll(() => Effect.void));
   });
