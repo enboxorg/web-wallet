@@ -169,7 +169,7 @@ function AuthGate() {
 
   // Only query identities when unlocked
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
-  useSyncQueryInvalidation();
+  useSyncQueryInvalidation(identities);
   useIdentitySyncReconciliation(identities);
 
   // Compute backup-needed badge for nav items (must be before early returns)
