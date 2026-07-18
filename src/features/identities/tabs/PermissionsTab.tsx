@@ -31,6 +31,7 @@ import {
   type PermissionSessionGroup,
 } from './permission-sessions';
 import { describeConnectSession, sessionTitle } from './permission-session-display';
+import { AudienceKeyDeliveryPanel } from './AudienceKeyDeliveryPanel';
 
 interface PermissionsTabProps {
   did: string;
@@ -391,16 +392,6 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     && inactiveSessions.length === 0
     && standaloneGroups.length === 0;
 
-  if (isEmpty) {
-    return (
-      <EmptyState
-        icon={<Shield />}
-        title="No permissions granted"
-        description="Permission grants from apps and services will appear here."
-      />
-    );
-  }
-
   const handleRevoke = async () => {
     if (!revokeTarget) return;
     const grants = revokeTargetGrants(revokeTarget);
@@ -441,6 +432,16 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
 
   return (
     <div className="space-y-6">
+      <AudienceKeyDeliveryPanel did={did} />
+
+      {isEmpty && (
+        <EmptyState
+          icon={<Shield />}
+          title="No permissions granted"
+          description="Permission grants from apps and services will appear here."
+        />
+      )}
+
       {activeSessions.length > 0 && (
         <section className="space-y-3" aria-label="Active connect sessions">
           <SectionHeader title="Active Sessions" count={activeGrantCount} />

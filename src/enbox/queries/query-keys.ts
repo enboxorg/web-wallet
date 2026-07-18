@@ -17,6 +17,8 @@ export const queryKeys = {
     wallets: (did: string) => ['identities', did, 'wallets'] as const,
     activity: (did: string) => ['identities', did, 'activity'] as const,
     dwnEndpoints: (did: string) => ['identities', did, 'dwnEndpoints'] as const,
+    syncRemotes: (did: string) => ['identities', did, 'syncRemotes'] as const,
+    audienceDeliveries: (did: string) => ['identities', did, 'audienceDeliveries'] as const,
   },
 
   /** Resolve a DID document for an arbitrary DID (not necessarily ours). */

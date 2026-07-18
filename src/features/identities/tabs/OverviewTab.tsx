@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
+import { RemoteSyncStatusPanel } from './RemoteSyncStatusPanel';
 
 interface OverviewTabProps {
   did: string;
@@ -33,19 +34,22 @@ export default function OverviewTab({ did }: OverviewTabProps) {
 
   if (!profile || !profile.displayName) {
     return (
-      <EmptyState
-        icon={<ExternalLink />}
-        title="Set up your profile"
-        description="Add a display name, avatar, and bio to personalize this profile."
-        action={
-          <Link
-            to={`/identity/${encodeURIComponent(did)}/edit`}
-            className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-text hover:bg-accent-hover transition-colors"
-          >
-            Edit Profile
-          </Link>
-        }
-      />
+      <div className="space-y-6">
+        <EmptyState
+          icon={<ExternalLink />}
+          title="Set up your profile"
+          description="Add a display name, avatar, and bio to personalize this profile."
+          action={
+            <Link
+              to={`/identity/${encodeURIComponent(did)}/edit`}
+              className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-text hover:bg-accent-hover transition-colors"
+            >
+              Edit Profile
+            </Link>
+          }
+        />
+        <RemoteSyncStatusPanel did={did} />
+      </div>
     );
   }
 
@@ -87,6 +91,8 @@ export default function OverviewTab({ did }: OverviewTabProps) {
           </p>
         </Card>
       )}
+
+      <RemoteSyncStatusPanel did={did} />
 
       {/* Quick stats */}
       {profile?.displayName && (

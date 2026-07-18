@@ -8,30 +8,46 @@ import {
 } from '../social-graph';
 
 const mocks = vi.hoisted(() => {
+  const queryAllResults = new Map<string, unknown[]>();
+  const socialTyped = {
+    records: {
+      queryAll: vi.fn((path: string, request?: { filter?: { parentContextId?: string } }) => {
+        const parentContextId = request?.filter?.parentContextId;
+        const scopedKey = parentContextId === undefined
+          ? path
+          : `${path}:${parentContextId}`;
+        const records = queryAllResults.get(scopedKey) ?? queryAllResults.get(path) ?? [];
+
+        return (async function* () {
+          for (const item of records) {
+            yield item;
+          }
+        })();
+      }),
+    },
+  };
   const socialRepo = {
     friend: {
-      query: vi.fn(),
       create: vi.fn(),
     },
     block: {
-      query: vi.fn(),
       create: vi.fn(),
     },
     group: {
-      query: vi.fn(),
       create: vi.fn(),
       member: {
-        query: vi.fn(),
         create: vi.fn(),
       },
     },
   };
 
   return {
+    queryAllResults,
+    socialTyped,
     socialRepo,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
-        using: vi.fn((protocol) => protocol),
+        using: vi.fn(() => socialTyped),
       };
     }),
     repository: vi.fn(() => socialRepo),
@@ -72,18 +88,15 @@ function record<T>(
 describe('social graph data layer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.socialRepo.friend.query.mockResolvedValue({ records: [] });
+    mocks.queryAllResults.clear();
     mocks.socialRepo.friend.create.mockResolvedValue({
       status: { code: 202 },
       record: record('friend-new', { did: 'did:dht:bob' }),
     });
-    mocks.socialRepo.block.query.mockResolvedValue({ records: [] });
     mocks.socialRepo.block.create.mockResolvedValue({
       status: { code: 202 },
       record: record('block-new', { did: 'did:dht:eve' }),
     });
-    mocks.socialRepo.group.query.mockResolvedValue({ records: [] });
-    mocks.socialRepo.group.member.query.mockResolvedValue({ records: [] });
   });
 
   it('validates DID input before social graph mutations', () => {
@@ -94,39 +107,31 @@ describe('social graph data layer', () => {
   });
 
   it('normalizes friends, blocks, groups, and members from protocol records', async () => {
-    mocks.socialRepo.friend.query.mockResolvedValue({
-      records: [
-        record('friend-1', {
-          did: 'did:dht:bob',
-          alias: 'Bob',
-          note: 'Trusted contact',
-        }, { recipient: 'did:dht:bob' }),
-      ],
-    });
-    mocks.socialRepo.block.query.mockResolvedValue({
-      records: [
-        record('block-1', {
-          did: 'did:dht:eve',
-          reason: 'Spam',
-        }),
-      ],
-    });
-    mocks.socialRepo.group.query.mockResolvedValue({
-      records: [
-        record('group-1', {
-          name: 'Builders',
-          description: 'Project contacts',
-        }),
-      ],
-    });
-    mocks.socialRepo.group.member.query.mockResolvedValue({
-      records: [
-        record('member-1', {
-          did: 'did:dht:carol',
-          alias: 'Carol',
-        }),
-      ],
-    });
+    mocks.queryAllResults.set('friend', [
+      record('friend-1', {
+        did: 'did:dht:bob',
+        alias: 'Bob',
+        note: 'Trusted contact',
+      }, { recipient: 'did:dht:bob' }),
+    ]);
+    mocks.queryAllResults.set('block', [
+      record('block-1', {
+        did: 'did:dht:eve',
+        reason: 'Spam',
+      }),
+    ]);
+    mocks.queryAllResults.set('group', [
+      record('group-1', {
+        name: 'Builders',
+        description: 'Project contacts',
+      }),
+    ]);
+    mocks.queryAllResults.set('group/member:group-1-context', [
+      record('member-1', {
+        did: 'did:dht:carol',
+        alias: 'Carol',
+      }),
+    ]);
 
     const graph = await fetchSocialGraph({}, 'did:dht:alice');
 
@@ -181,9 +186,7 @@ describe('social graph data layer', () => {
   });
 
   it('does not add a friend while that DID is blocked', async () => {
-    mocks.socialRepo.block.query.mockResolvedValue({
-      records: [record('block-1', { did: 'did:dht:bob' })],
-    });
+    mocks.queryAllResults.set('block', [record('block-1', { did: 'did:dht:bob' })]);
 
     await expect(addSocialFriend({}, {
       ownerDid: 'did:dht:alice',
@@ -195,7 +198,7 @@ describe('social graph data layer', () => {
 
   it('removes existing friend records before blocking a DID', async () => {
     const friendRecord = record('friend-1', { did: 'did:dht:bob' });
-    mocks.socialRepo.friend.query.mockResolvedValue({ records: [friendRecord] });
+    mocks.queryAllResults.set('friend', [friendRecord]);
 
     await blockSocialDid({}, {
       ownerDid: 'did:dht:alice',
@@ -210,6 +213,20 @@ describe('social graph data layer', () => {
         reason: 'Abuse',
       },
       tags: { did: 'did:dht:bob' },
+    });
+  });
+
+  it('drains every page instead of truncating large social graphs', async () => {
+    mocks.queryAllResults.set('friend', Array.from({ length: 250 }, (_, index) =>
+      record(`friend-${index}`, { did: `did:dht:friend${index}` })
+    ));
+
+    const graph = await fetchSocialGraph({}, 'did:dht:alice');
+
+    expect(graph.friends).toHaveLength(250);
+    expect(mocks.socialTyped.records.queryAll).toHaveBeenCalledWith('friend', {
+      dateSort: 'createdDescending',
+      pageSize: 100,
     });
   });
 });

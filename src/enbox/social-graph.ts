@@ -13,7 +13,7 @@ import { sdkError } from './effect/errors';
 import { CurrentAgent, currentAgentLayer } from './effect/services';
 import { runEnboxPromise } from './effect/runtime';
 
-const SOCIAL_QUERY_LIMIT = 200;
+const SOCIAL_QUERY_PAGE_SIZE = 100;
 
 export const SOCIAL_FIELD_LIMITS = {
   alias: 80,
@@ -243,25 +243,49 @@ function createEnboxEffect(did: string) {
   });
 }
 
-function createSocialRepoEffect(did: string) {
+function createSocialAccessEffect(did: string) {
   return Effect.gen(function* () {
     const enbox = yield* createEnboxEffect(did);
-    return repository(enbox.using(SocialGraphProtocol)) as any;
+    const typed = enbox.using(SocialGraphProtocol);
+    return {
+      repo: repository(typed) as any,
+      typed: typed as any,
+    };
   });
 }
 
-function queryByDidEffect(repo: any, path: 'friend' | 'block', did: string) {
+function queryAllSocialRecordsEffect<T>(
+  typed: any,
+  path: 'friend' | 'block' | 'group' | 'group/member',
+  request: Record<string, unknown>,
+  operation: string,
+) {
   return Effect.tryPromise({
     try: async () => {
-      const node = repo[path];
-      const { records } = await node.query({
-        filter: { tags: { did } },
-        pagination: { limit: SOCIAL_QUERY_LIMIT },
-      });
-      return records as SocialRecord<FriendData | BlockData>[];
+      const records: SocialRecord<T>[] = [];
+      for await (const record of typed.records.queryAll(path, {
+        ...request,
+        pageSize: SOCIAL_QUERY_PAGE_SIZE,
+      })) {
+        records.push(record as SocialRecord<T>);
+      }
+      return records;
     },
-    catch: sdkError(`social.${path}.queryByDid`),
+    catch: sdkError(operation),
   });
+}
+
+function queryByDidEffect<T>(
+  typed: any,
+  path: 'friend' | 'block',
+  did: string,
+) {
+  return queryAllSocialRecordsEffect<T>(
+    typed,
+    path,
+    { filter: { tags: { did } } },
+    `social.${path}.queryByDid`,
+  );
 }
 
 function readDidFromRecord<T extends { did?: string }>(record: SocialRecord<T>, data: T): string {
@@ -329,7 +353,7 @@ function normalizeMemberRecordEffect(record: SocialRecord<MemberData>) {
   }).pipe(Effect.catchAll(() => Effect.succeed(null)));
 }
 
-function normalizeGroupRecordEffect(repo: any, record: SocialRecord<GroupData>) {
+function normalizeGroupRecordEffect(typed: any, record: SocialRecord<GroupData>) {
   return Effect.gen(function* () {
     const data = yield* Effect.tryPromise({
       try: async () => record.data.json(),
@@ -339,17 +363,18 @@ function normalizeGroupRecordEffect(repo: any, record: SocialRecord<GroupData>) 
     if (!data?.name) return null;
 
     const contextId = record.contextId ?? record.id;
-    const { records: memberRecords } = yield* Effect.tryPromise({
-      try: async () =>
-        repo.group.member.query(contextId, {
-          dateSort: 'createdDescending' as any,
-          pagination: { limit: SOCIAL_QUERY_LIMIT },
-        }),
-      catch: sdkError('social.group.member.query'),
-    });
+    const memberRecords = yield* queryAllSocialRecordsEffect<MemberData>(
+      typed,
+      'group/member',
+      {
+        dateSort: 'createdDescending',
+        filter  : { parentContextId: contextId },
+      },
+      'social.group.member.query',
+    );
 
     const maybeMembers = yield* Effect.forEach(
-      memberRecords as SocialRecord<MemberData>[],
+      memberRecords,
       normalizeMemberRecordEffect,
     );
 
@@ -382,46 +407,40 @@ export async function fetchSocialGraph(
 
 export function fetchSocialGraphEffect(did: string) {
   return Effect.gen(function* () {
-    const repo = yield* createSocialRepoEffect(did);
+    const { typed } = yield* createSocialAccessEffect(did);
 
-    const [friendResult, blockResult, groupResult] = yield* Effect.all([
-      Effect.tryPromise({
-        try: async () =>
-          repo.friend.query({
-            dateSort: 'createdDescending' as any,
-            pagination: { limit: SOCIAL_QUERY_LIMIT },
-          }),
-        catch: sdkError('social.friend.query'),
-      }),
-      Effect.tryPromise({
-        try: async () =>
-          repo.block.query({
-            dateSort: 'createdDescending' as any,
-            pagination: { limit: SOCIAL_QUERY_LIMIT },
-          }),
-        catch: sdkError('social.block.query'),
-      }),
-      Effect.tryPromise({
-        try: async () =>
-          repo.group.query({
-            dateSort: 'createdDescending' as any,
-            pagination: { limit: SOCIAL_QUERY_LIMIT },
-          }),
-        catch: sdkError('social.group.query'),
-      }),
+    const [friendRecords, blockRecords, groupRecords] = yield* Effect.all([
+      queryAllSocialRecordsEffect<FriendData>(
+        typed,
+        'friend',
+        { dateSort: 'createdDescending' },
+        'social.friend.query',
+      ),
+      queryAllSocialRecordsEffect<BlockData>(
+        typed,
+        'block',
+        { dateSort: 'createdDescending' },
+        'social.block.query',
+      ),
+      queryAllSocialRecordsEffect<GroupData>(
+        typed,
+        'group',
+        { dateSort: 'createdDescending' },
+        'social.group.query',
+      ),
     ]);
 
     const maybeFriends = yield* Effect.forEach(
-      friendResult.records as SocialRecord<FriendData>[],
+      friendRecords,
       normalizeFriendRecordEffect,
     );
     const maybeBlocks = yield* Effect.forEach(
-      blockResult.records as SocialRecord<BlockData>[],
+      blockRecords,
       normalizeBlockRecordEffect,
     );
     const maybeGroups = yield* Effect.forEach(
-      groupResult.records as SocialRecord<GroupData>[],
-      (record) => normalizeGroupRecordEffect(repo, record),
+      groupRecords,
+      (record) => normalizeGroupRecordEffect(typed, record),
     );
 
     return {
@@ -446,8 +465,8 @@ export async function addSocialFriend(
 
 function addSocialFriendEffect(params: ReturnType<typeof sanitizeAddFriend>) {
   return Effect.gen(function* () {
-    const repo = yield* createSocialRepoEffect(params.ownerDid);
-    const existingBlocks = yield* queryByDidEffect(repo, 'block', params.friendDid);
+    const { repo, typed } = yield* createSocialAccessEffect(params.ownerDid);
+    const existingBlocks = yield* queryByDidEffect<BlockData>(typed, 'block', params.friendDid);
     if (existingBlocks.length > 0) {
       return yield* Effect.fail(
         new Error('Remove this DID from blocked before adding it as a friend'),
@@ -460,8 +479,8 @@ function addSocialFriendEffect(params: ReturnType<typeof sanitizeAddFriend>) {
       ...(params.note && { note: params.note }),
     } satisfies FriendData;
 
-    const existingFriends = yield* queryByDidEffect(repo, 'friend', params.friendDid);
-    const existing = existingFriends[0] as SocialRecord<FriendData> | undefined;
+    const existingFriends = yield* queryByDidEffect<FriendData>(typed, 'friend', params.friendDid);
+    const existing = existingFriends[0];
 
     if (existing?.recipient === params.friendDid) {
       const { status } = yield* Effect.tryPromise({
@@ -524,7 +543,7 @@ export async function createSocialGroup(
 
 function createSocialGroupEffect(params: ReturnType<typeof sanitizeCreateGroup>) {
   return Effect.gen(function* () {
-    const repo = yield* createSocialRepoEffect(params.ownerDid);
+    const { repo } = yield* createSocialAccessEffect(params.ownerDid);
     const data = {
       name: params.name,
       ...(params.description && { description: params.description }),
@@ -559,17 +578,16 @@ export async function deleteSocialGroup(
 
 function deleteSocialGroupEffect(params: DeleteSocialGroupParams) {
   return Effect.gen(function* () {
-    const repo = yield* createSocialRepoEffect(params.ownerDid);
-    const { records: memberRecords } = yield* Effect.tryPromise({
-      try: async () =>
-        repo.group.member.query(params.contextId, {
-          pagination: { limit: SOCIAL_QUERY_LIMIT },
-        }),
-      catch: sdkError('social.group.member.queryForDelete'),
-    });
+    const { typed } = yield* createSocialAccessEffect(params.ownerDid);
+    const memberRecords = yield* queryAllSocialRecordsEffect<MemberData>(
+      typed,
+      'group/member',
+      { filter: { parentContextId: params.contextId } },
+      'social.group.member.queryForDelete',
+    );
 
     yield* Effect.forEach(
-      memberRecords as SocialRecord<MemberData>[],
+      memberRecords,
       (member) => Effect.gen(function* () {
         const { status } = yield* Effect.tryPromise({
           try: async () => member.delete(),
@@ -598,29 +616,32 @@ export async function addSocialGroupMember(
 
 function addSocialGroupMemberEffect(params: ReturnType<typeof sanitizeAddMember>) {
   return Effect.gen(function* () {
-    const repo = yield* createSocialRepoEffect(params.ownerDid);
-    const existingBlocks = yield* queryByDidEffect(repo, 'block', params.memberDid);
+    const { repo, typed } = yield* createSocialAccessEffect(params.ownerDid);
+    const existingBlocks = yield* queryByDidEffect<BlockData>(typed, 'block', params.memberDid);
     if (existingBlocks.length > 0) {
       return yield* Effect.fail(
         new Error('Remove this DID from blocked before adding it to a group'),
       );
     }
 
-    const { records: existingMembers } = yield* Effect.tryPromise({
-      try: async () =>
-        repo.group.member.query(params.groupContextId, {
-          filter: { tags: { did: params.memberDid } },
-          pagination: { limit: SOCIAL_QUERY_LIMIT },
-        }),
-      catch: sdkError('social.group.member.queryByDid'),
-    });
+    const existingMembers = yield* queryAllSocialRecordsEffect<MemberData>(
+      typed,
+      'group/member',
+      {
+        filter: {
+          parentContextId: params.groupContextId,
+          tags           : { did: params.memberDid },
+        },
+      },
+      'social.group.member.queryByDid',
+    );
 
     const data = {
       did: params.memberDid,
       ...(params.alias && { alias: params.alias }),
     } satisfies MemberData;
 
-    const existing = (existingMembers as SocialRecord<MemberData>[])[0];
+    const existing = existingMembers[0];
     if (existing) {
       const { status } = yield* Effect.tryPromise({
         try: async () => existing.update({ data, tags: { did: params.memberDid } }),
@@ -673,8 +694,8 @@ export async function blockSocialDid(
 
 function blockSocialDidEffect(params: ReturnType<typeof sanitizeBlock>) {
   return Effect.gen(function* () {
-    const repo = yield* createSocialRepoEffect(params.ownerDid);
-    const friendRecords = yield* queryByDidEffect(repo, 'friend', params.blockedDid);
+    const { repo, typed } = yield* createSocialAccessEffect(params.ownerDid);
+    const friendRecords = yield* queryByDidEffect<FriendData>(typed, 'friend', params.blockedDid);
 
     yield* Effect.forEach(
       friendRecords,
@@ -693,8 +714,8 @@ function blockSocialDidEffect(params: ReturnType<typeof sanitizeBlock>) {
       ...(params.reason && { reason: params.reason }),
     } satisfies BlockData;
 
-    const existingBlocks = yield* queryByDidEffect(repo, 'block', params.blockedDid);
-    const existing = existingBlocks[0] as SocialRecord<BlockData> | undefined;
+    const existingBlocks = yield* queryByDidEffect<BlockData>(typed, 'block', params.blockedDid);
+    const existing = existingBlocks[0];
     if (existing) {
       const { status } = yield* Effect.tryPromise({
         try: async () => existing.update({ data, tags: { did: params.blockedDid } }),
@@ -740,7 +761,7 @@ function deleteRecordEffect(
   operation: string,
 ) {
   return Effect.gen(function* () {
-    const repo = yield* createSocialRepoEffect(ownerDid);
+    const { repo } = yield* createSocialAccessEffect(ownerDid);
     const node = path === 'group.member' ? repo.group.member : repo[path];
     const { status } = yield* Effect.tryPromise({
       try: async () => node.delete(recordId),
