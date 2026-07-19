@@ -131,6 +131,15 @@ function SafeConnectButton() {
   );
 }
 
+function UnlockButton() {
+  const { unlock } = useEnboxAuth();
+  return (
+    <button type="button" onClick={() => void unlock('1234').catch(() => {})}>
+      Unlock
+    </button>
+  );
+}
+
 function RestoreButton() {
   const { restore } = useEnboxAuth();
 
@@ -194,11 +203,12 @@ describe('EnboxAuthProvider restore flow', () => {
       version: 1,
       endpoints: TEST_ENDPOINTS,
     });
+    expect(registrationMocks.ensureRegistrationForDids).not.toHaveBeenCalled();
   });
 
   it('registers each DID only with the endpoints advertised for that DID', async () => {
     const user = userEvent.setup();
-    const auth = createAuth();
+    const auth = createAuth('locked');
     const ownerDid = 'did:dht:owner';
     const connectedDid = 'did:dht:connected-owner';
     const endpointsByDid: Record<string, string[]> = {
@@ -211,16 +221,17 @@ describe('EnboxAuthProvider restore flow', () => {
       { did: { uri: 'did:jwk:delegate' }, metadata: { connectedDid } },
     ]);
     auth.agent.dwn.getRemoteDwnEndpointUrls.mockImplementation(async (did: string) => endpointsByDid[did]);
+    auth.restoreSession.mockResolvedValue({ agent: auth.agent });
     authMocks.create.mockResolvedValue(auth);
 
     render(
       <EnboxAuthProvider>
-        <SafeConnectButton />
+        <UnlockButton />
       </EnboxAuthProvider>,
     );
 
     await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
-    await user.click(screen.getByRole('button', { name: 'Connect safely' }));
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
     await waitFor(() => expect(registrationMocks.ensureRegistrationForDids).toHaveBeenCalledTimes(3));
     for (const [did, endpoints] of Object.entries(endpointsByDid)) {

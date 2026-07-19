@@ -8,6 +8,7 @@ import {
   updateDwnEndpoints,
   updateIdentityProfile,
 } from '../identity-mutations';
+import { reconcileIdentitySync } from '../../identity-sync';
 
 const mocks = vi.hoisted(() => {
   const calls: string[] = [];
@@ -196,6 +197,39 @@ describe('identity mutations', () => {
       'profile:set',
       'wallet:create',
     ]);
+  });
+
+  it('joins sync setup when creation and reconciliation overlap for the same DID', async () => {
+    const did = 'did:dht:new';
+    const agent = createAgent(did);
+    let releaseSyncSetup!: () => void;
+    const syncSetupGate = new Promise<void>((resolve) => {
+      releaseSyncSetup = resolve;
+    });
+    agent.sync.registerIdentity.mockImplementation(async () => {
+      mocks.calls.push('sync:register');
+      await syncSetupGate;
+    });
+
+    const creation = createIdentity(agent, {
+      persona: 'Personal',
+      displayName: 'Alice',
+      dwnEndpoints: ['https://fly.example/dwn'],
+    });
+    await vi.waitFor(() => {
+      expect(agent.sync.registerIdentity).toHaveBeenCalledTimes(1);
+    });
+
+    const reconciliation = reconcileIdentitySync(agent, [{ did: { uri: did } }]);
+    await vi.waitFor(() => {
+      expect(agent.sync.getIdentityOptions).toHaveBeenCalledWith(did);
+    });
+    releaseSyncSetup();
+
+    const [, result] = await Promise.all([creation, reconciliation]);
+    expect(agent.sync.registerIdentity).toHaveBeenCalledTimes(1);
+    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
+    expect(result.changedDids).toEqual([did]);
   });
 
   it('aborts and cleans up the local identity if the DHT publish failed', async () => {

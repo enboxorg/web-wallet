@@ -6,6 +6,7 @@ import { ensureRegistrationEffect } from './registration';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
 import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
+import { runIdentitySetupSingleFlight } from './effect/keyed-single-flight';
 import { CurrentAgent, enboxLiveLayer } from './effect/services';
 import { runEnboxPromise } from './effect/runtime';
 
@@ -77,14 +78,22 @@ function applySyncOptionsEffect(
 
     if (existing && typeof agent.sync.updateIdentityOptions === 'function') {
       yield* Effect.tryPromise({
-        try: async () => agent.sync.updateIdentityOptions({ did, options }),
+        try: () => runIdentitySetupSingleFlight(
+          agent,
+          did,
+          async () => agent.sync.updateIdentityOptions({ did, options }),
+        ),
         catch: sdkError('sync.updateIdentityOptions'),
       });
       return true;
     }
 
     const registered = yield* Effect.tryPromise({
-      try: async () => agent.sync.registerIdentity({ did, options }),
+      try: () => runIdentitySetupSingleFlight(
+        agent,
+        did,
+        async () => agent.sync.registerIdentity({ did, options }),
+      ),
       catch: sdkError('sync.registerIdentity'),
     }).pipe(
       Effect.as(true),
@@ -94,7 +103,11 @@ function applySyncOptionsEffect(
           typeof agent.sync.updateIdentityOptions === 'function'
         ) {
           return Effect.tryPromise({
-            try: async () => agent.sync.updateIdentityOptions({ did, options }),
+            try: () => runIdentitySetupSingleFlight(
+              agent,
+              did,
+              async () => agent.sync.updateIdentityOptions({ did, options }),
+            ),
             catch: sdkError('sync.updateIdentityOptions'),
           }).pipe(Effect.as(true));
         }
