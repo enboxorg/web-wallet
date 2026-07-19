@@ -26,6 +26,7 @@ import {
 } from './effect/errors';
 import { withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
+import { runRegistrationSingleFlight } from './effect/keyed-single-flight';
 
 function isTokenExpired(token: RegistrationTokenData): boolean {
   if (!token.expiresAt) return false;
@@ -155,6 +156,7 @@ function registerDidWithEndpointEffect(
   tokens: Record<string, RegistrationTokenData>,
 ) {
   return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
     let updated = { ...tokens };
     if (serverInfo.registrationRequirements.length === 0) {
       return updated;
@@ -170,10 +172,15 @@ function registerDidWithEndpointEffect(
         'tenant.registerWithToken',
         Effect.tryPromise({
           try: () =>
-            DwnRegistrar.registerTenantWithToken(
-              dwnEndpoint,
+            runRegistrationSingleFlight(
+              agent,
               did,
-              updated[dwnEndpoint].registrationToken,
+              dwnEndpoint,
+              () => DwnRegistrar.registerTenantWithToken(
+                dwnEndpoint,
+                did,
+                updated[dwnEndpoint].registrationToken,
+              ),
             ),
           catch: registrationError('tenant.registerWithToken', dwnEndpoint, did),
         }),
@@ -183,7 +190,12 @@ function registerDidWithEndpointEffect(
       yield* withNetworkPolicy(
         'tenant.register',
         Effect.tryPromise({
-          try: () => DwnRegistrar.registerTenant(dwnEndpoint, did),
+          try: () => runRegistrationSingleFlight(
+            agent,
+            did,
+            dwnEndpoint,
+            () => DwnRegistrar.registerTenant(dwnEndpoint, did),
+          ),
           catch: registrationError('tenant.register', dwnEndpoint, did),
         }),
         () => registrationTimeout('tenant.register', dwnEndpoint, did),

@@ -130,6 +130,29 @@ describe('ensureRegistrationEffect', () => {
     );
   });
 
+  it('joins concurrent registration for the same agent, DID, and endpoint', async () => {
+    const agent = createAgent();
+    const tokenStore = createTokenStore();
+    let releaseRegistration!: () => void;
+    const registrationGate = new Promise<void>((resolve) => {
+      releaseRegistration = resolve;
+    });
+    vi.mocked(DwnRegistrar.registerTenant).mockImplementation(() => registrationGate);
+
+    const first = runWithAgentAndStore(agent, tokenStore, ['https://dwn.example']);
+    const second = runWithAgentAndStore(agent, tokenStore, ['https://dwn.example']);
+
+    await vi.waitFor(() => {
+      expect(DwnRegistrar.registerTenant).toHaveBeenCalledTimes(1);
+    });
+    releaseRegistration();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { failed: 0, succeeded: 1 },
+      { failed: 0, succeeded: 1 },
+    ]);
+  });
+
   it('treats an endpoint with no registration requirements as ready', async () => {
     const agent = createAgent();
     agent.rpc.getServerInfo.mockResolvedValue({ registrationRequirements: [] });

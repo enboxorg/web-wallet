@@ -314,7 +314,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         did  : agent.agentDid.uri,
       }));
       cacheSessionPassword(password);
-      void ensurePostSession(agent);
 
       return session.recoveryPhrase;
     } catch (err) {
@@ -327,7 +326,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       setIsLoading(false);
     }
-  }, [setUnlocked, applyAuthoritativeDwnEndpoints, ensurePostSession, runLockedAuthOperation]);
+  }, [setUnlocked, applyAuthoritativeDwnEndpoints, runLockedAuthOperation]);
 
   // ── Unlock (returning user) ──────────────────────────────────────
 
