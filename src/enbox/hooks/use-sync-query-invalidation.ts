@@ -1,4 +1,5 @@
-import type { MessageChange, MessagesLiveQuery } from '@enbox/api';
+import type { MessagesLiveQuery } from '@enbox/api';
+import type { SyncEvent, SyncMessageDescriptor } from '@enbox/agent';
 
 import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -55,7 +56,7 @@ function invalidateWalletEventQueries(
 
     case 'identity.profile.updated':
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.profile(event.did) });
-      queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.identities.all, exact: true });
       break;
 
     case 'identity.dwnEndpoints.updated':
@@ -71,12 +72,11 @@ function invalidateWalletEventQueries(
   }
 }
 
-function queueIdentityMessage(
-  change: MessageChange,
+function queueIdentityDescriptor(
+  descriptor: Pick<SyncMessageDescriptor, 'interface' | 'protocol'>,
   did: string,
   pending: PendingInvalidations,
 ): void {
-  const { descriptor } = change;
   pending.activity.add(did);
 
   if (descriptor.interface === 'Protocols') {
@@ -107,6 +107,17 @@ function queueIdentityMessage(
       pending.permissions.add(did);
       break;
   }
+}
+
+function queueAllIdentityQueries(did: string, pending: PendingInvalidations): void {
+  pending.identities = true;
+  pending.activity.add(did);
+  pending.audienceDeliveries.add(did);
+  pending.permissions.add(did);
+  pending.profiles.add(did);
+  pending.protocols.add(did);
+  pending.socialGraphs.add(did);
+  pending.wallets.add(did);
 }
 
 /**
@@ -162,7 +173,7 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
       flushTimer = undefined;
 
       if (pending.identities) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
+        queryClient.invalidateQueries({ queryKey: queryKeys.identities.all, exact: true });
         pending.identities = false;
       }
 
@@ -217,7 +228,7 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
           if (did === undefined) {
             pending.identities = true;
           } else {
-            queueIdentityMessage(change, did, pending);
+            queueIdentityDescriptor(change.descriptor, did, pending);
           }
           scheduleFlush();
         }));
@@ -258,8 +269,32 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
 
     const identityDids = (JSON.parse(identityTargetKey) as Array<[string, string | undefined]>)
       .map(([connectedDid]) => connectedDid);
-    const subscriptions = identityDids.map(subscribeIdentity);
+    const identityDidSet = new Set(identityDids);
     const agentDid = agent.agentDid?.uri;
+    removeListeners.push(agent.sync.on((event: SyncEvent): void => {
+      if (event.tenantDid === agentDid) {
+        if (event.type === 'delivery:applied' || event.type === 'reconcile:applied') {
+          pending.identities = true;
+          scheduleFlush();
+        }
+        return;
+      }
+      if (!identityDidSet.has(event.tenantDid)) {
+        return;
+      }
+      if (event.type === 'delivery:applied') {
+        queueIdentityDescriptor(event.descriptor, event.tenantDid, pending);
+        scheduleFlush();
+      } else if (event.type === 'reconcile:applied') {
+        // Reconciliation events are CID-only, so conservatively refresh every
+        // identity view. Local subscriptions still provide precise routing
+        // when they observe the same applied messages.
+        queueAllIdentityQueries(event.tenantDid, pending);
+        scheduleFlush();
+      }
+    }));
+
+    const subscriptions = identityDids.map(subscribeIdentity);
     if (typeof agentDid === 'string' && agentDid.length > 0) {
       subscriptions.push(openSubscription(new Enbox({ agent, connectedDid: agentDid }), undefined));
     }

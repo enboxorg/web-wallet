@@ -48,6 +48,23 @@ describe('RemoteSyncStatusPanel', () => {
               lastError               : 'Tenant storage quota exceeded',
             },
           ]),
+          getReplicationLinks: vi.fn(async () => [
+            {
+              tenantDid      : 'did:dht:alice',
+              remoteEndpoint : 'https://healthy.example/dwn',
+              scope          : { kind: 'protocolSet', protocols: ['profile', 'social', 'connect'] },
+              status         : 'live',
+              connectivity   : 'online',
+            },
+            {
+              tenantDid      : 'did:dht:alice',
+              remoteEndpoint : 'https://full.example/dwn',
+              scope          : { kind: 'full' },
+              status         : 'repairing',
+              connectivity   : 'online',
+            },
+          ]),
+          on: vi.fn(() => () => {}),
           retryRemoteNow: vi.fn(),
         },
       },
@@ -60,6 +77,11 @@ describe('RemoteSyncStatusPanel', () => {
     expect(screen.getByText('Quota blocked')).toBeInTheDocument();
     expect(screen.getByText(/2 messages are waiting for remote quota/i)).toBeInTheDocument();
     expect(screen.getByText(/tenant storage quota exceeded/i)).toBeInTheDocument();
+    expect(screen.getByText('All live subscriptions caught up')).toBeInTheDocument();
+    expect(screen.getByText('3 protocols')).toBeInTheDocument();
+    expect(screen.getByText('Live')).toBeInTheDocument();
+    expect(screen.getByText('0 of 1 live subscriptions caught up')).toBeInTheDocument();
+    expect(screen.getByText('Repairing')).toBeInTheDocument();
   });
 
   it('retries only the selected quota-blocked remote', async () => {
@@ -75,6 +97,8 @@ describe('RemoteSyncStatusPanel', () => {
             quotaBlockedMessageCount: 1,
             failedMessageCount      : 0,
           }]),
+          getReplicationLinks: vi.fn(async () => []),
+          on: vi.fn(() => () => {}),
           retryRemoteNow,
         },
       },

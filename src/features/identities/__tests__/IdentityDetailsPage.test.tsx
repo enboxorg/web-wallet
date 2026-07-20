@@ -138,9 +138,19 @@ vi.mock('@/enbox/hooks/use-social-graph', () => ({
   useUnblockSocialDid: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-vi.mock('@/enbox/hooks/use-agent', () => ({
-  useAgent: () => ({ agentDid: { uri: 'did:dht:agent' } }),
-}));
+vi.mock('@/enbox/hooks/use-agent', () => {
+  const agent = {
+    agentDid: { uri: 'did:dht:agent' },
+    sync    : {
+      getRemoteSyncStatus: vi.fn(async () => []),
+      getReplicationLinks: vi.fn(async () => []),
+      on                 : vi.fn(() => () => {}),
+      retryRemoteNow     : vi.fn(async () => undefined),
+    },
+  };
+
+  return { useAgent: () => agent };
+});
 
 // QRCodeCanvas from qrcode.react uses canvas APIs not available in happy-dom
 vi.mock('qrcode.react', () => ({

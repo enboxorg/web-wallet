@@ -18,6 +18,7 @@ export const queryKeys = {
     activity: (did: string) => ['identities', did, 'activity'] as const,
     dwnEndpoints: (did: string) => ['identities', did, 'dwnEndpoints'] as const,
     syncRemotes: (did: string) => ['identities', did, 'syncRemotes'] as const,
+    syncLinks: (did: string) => ['identities', did, 'syncLinks'] as const,
     audienceDeliveries: (did: string) => ['identities', did, 'audienceDeliveries'] as const,
   },
 

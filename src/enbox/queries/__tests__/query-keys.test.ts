@@ -65,6 +65,7 @@ const subKeyFactories = [
   'activity',
   'dwnEndpoints',
   'syncRemotes',
+  'syncLinks',
   'audienceDeliveries',
 ] as const;
 

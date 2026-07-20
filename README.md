@@ -238,7 +238,7 @@ App.tsx
 
 ### Sync Management
 
-The wallet configures the SDK's live WebSocket sync and otherwise leaves sync lifecycle management to `AuthManager`. It does not set a custom interval: Enbox's default five-minute durable-feed settle check is a degraded-network safety net, not a polling loop. Identity registration hot-adds live subscriptions, and the wallet does not run its own periodic or one-shot sync passes.
+The wallet configures the SDK's live WebSocket sync and otherwise leaves sync lifecycle management to `AuthManager`. It does not set a custom interval: Enbox's default five-minute durable-feed settle check is a degraded-network safety net, not a polling loop. Identity registration hot-adds live subscriptions, `delivery:applied` events route remote changes into the affected query caches, and `getReplicationLinks()` drives the caught-up/repair state shown per remote. Status refreshes are event-driven with an infrequent safety refresh; the wallet does not run its own one-shot sync passes.
 
 ## Theme Variants
 
