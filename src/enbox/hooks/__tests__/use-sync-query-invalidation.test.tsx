@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { SyncEvent } from '@enbox/agent';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
@@ -20,7 +21,8 @@ type TestSubscription = {
 };
 
 const sdkMocks = vi.hoisted(() => ({
-  subscriptions: [] as TestSubscription[],
+  subscriptions : [] as TestSubscription[],
+  syncListeners : new Set<(event: SyncEvent) => void>(),
 }));
 
 vi.mock('@enbox/api', () => ({
@@ -90,8 +92,12 @@ function setAgent(optionsByDid: Record<string, { delegateDid?: string }> = {}): 
     firstTime  : false,
     agent      : {
       agentDid: { uri: 'did:dht:agent' },
-      sync: {
+      sync    : {
         getIdentityOptions: vi.fn(async (did: string) => optionsByDid[did]),
+        on: vi.fn((listener: (event: SyncEvent) => void) => {
+          sdkMocks.syncListeners.add(listener);
+          return () => sdkMocks.syncListeners.delete(listener);
+        }),
       },
     },
   });
@@ -112,10 +118,17 @@ function emitMessage(
   subscription.emit('event', { descriptor });
 }
 
+function emitSyncEvent(event: SyncEvent): void {
+  for (const listener of sdkMocks.syncListeners) {
+    listener(event);
+  }
+}
+
 describe('useSyncQueryInvalidation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sdkMocks.subscriptions.length = 0;
+    sdkMocks.syncListeners.clear();
     vi.useFakeTimers();
   });
 
@@ -148,10 +161,12 @@ describe('useSyncQueryInvalidation', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.all,
+      exact: true,
     });
 
     unmount();
     expect(subscription?.close).toHaveBeenCalledOnce();
+    expect(sdkMocks.syncListeners.size).toBe(0);
   });
 
   it('uses single-protocol subscriptions for a delegated identity', async () => {
@@ -229,6 +244,7 @@ describe('useSyncQueryInvalidation', () => {
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.all,
+      exact: true,
     });
   });
 
@@ -297,6 +313,99 @@ describe('useSyncQueryInvalidation', () => {
 
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.protocols('did:dht:identity'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.permissions('did:dht:identity'),
+    });
+  });
+
+  it('coalesces a live delivery with the matching local subscription event', async () => {
+    setAgent();
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    renderHook(
+      () => useSyncQueryInvalidation([{ did: { uri: 'did:dht:identity' } }]),
+      { wrapper: createWrapper(queryClient) },
+    );
+    await settleSubscriptions();
+    const subscription = sdkMocks.subscriptions.find(
+      ({ connectedDid }) => connectedDid === 'did:dht:identity',
+    );
+
+    act(() => {
+      emitSyncEvent({
+        type           : 'delivery:applied',
+        tenantDid      : 'did:dht:identity',
+        remoteEndpoint : 'https://dwn.example',
+        messageCid     : 'cid-1',
+        descriptor     : {
+          interface : 'Records',
+          method    : 'Write',
+          protocol  : ProfileDefinition.protocol,
+        },
+      });
+      emitMessage(subscription!, {
+        interface : 'Records',
+        method    : 'Write',
+        protocol  : ProfileDefinition.protocol,
+      });
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.profile('did:dht:identity'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.activity('did:dht:identity'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.audienceDeliveries('did:dht:identity'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.all,
+      exact: true,
+    });
+    expect(invalidateSpy).toHaveBeenCalledTimes(4);
+  });
+
+  it('falls back to broad identity invalidation for CID-only reconciliation events', () => {
+    setAgent();
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    renderHook(
+      () => useSyncQueryInvalidation([{ did: { uri: 'did:dht:identity' } }]),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    act(() => {
+      emitSyncEvent({
+        type           : 'reconcile:applied',
+        tenantDid      : 'did:dht:other',
+        remoteEndpoint : 'https://dwn.example',
+        messageCids    : ['cid-other'],
+      });
+      vi.advanceTimersByTime(250);
+    });
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      emitSyncEvent({
+        type           : 'reconcile:applied',
+        tenantDid      : 'did:dht:identity',
+        remoteEndpoint : 'https://dwn.example',
+        messageCids    : ['cid-1'],
+      });
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.profile('did:dht:identity'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.protocols('did:dht:identity'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.socialGraph('did:dht:identity'),
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.permissions('did:dht:identity'),

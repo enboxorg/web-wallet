@@ -1,4 +1,4 @@
-import type { RemoteSyncState, RemoteSyncStatus } from '@enbox/agent';
+import type { LinkStatus, RemoteSyncState, RemoteSyncStatus, ReplicationLinkSnapshot } from '@enbox/agent';
 
 import { AlertTriangle, CheckCircle2, CloudOff, RefreshCw, Server } from 'lucide-react';
 import { toast } from 'sonner';
@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/Button';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { Loader } from '@/components/ui/Loader';
 import {
-  useRemoteSyncStatus,
+  useLiveSyncStatus,
   useRetryRemoteSync,
-} from '@/enbox/hooks/use-remote-sync-status';
+} from '@/enbox/hooks/use-live-sync-status';
 
 interface RemoteSyncStatusPanelProps {
   did: string;
@@ -27,6 +27,20 @@ const STATE_CLASSES: Record<RemoteSyncState, string> = {
   'quota-blocked' : 'bg-warning/10 text-warning',
   degraded        : 'bg-error/10 text-error',
   offline         : 'bg-surface-3 text-text-secondary',
+};
+
+const LINK_STATUS_LABELS: Record<LinkStatus, string> = {
+  initializing : 'Catching up',
+  live         : 'Live',
+  repairing    : 'Repairing',
+  paused       : 'Paused',
+};
+
+const LINK_STATUS_CLASSES: Record<LinkStatus, string> = {
+  initializing : 'text-accent',
+  live         : 'text-success',
+  repairing    : 'text-warning',
+  paused       : 'text-error',
 };
 
 function StatusIcon({ state }: { state: RemoteSyncState }) {
@@ -64,9 +78,34 @@ function remoteDetail(status: RemoteSyncStatus): string {
   return 'Replication is operating normally.';
 }
 
+function linkScopeLabel(link: ReplicationLinkSnapshot): string {
+  if (link.scope.kind === 'full') {
+    return 'All protocols';
+  }
+  const count = link.scope.protocols.length;
+  return `${count} ${count === 1 ? 'protocol' : 'protocols'}`;
+}
+
+function linkKey(link: ReplicationLinkSnapshot): string {
+  const scope = link.scope.kind === 'full' ? 'all' : link.scope.protocols.join('|');
+  return `${link.remoteEndpoint}:${link.delegateDid ?? 'owner'}:${scope}`;
+}
+
+function caughtUpLabel(links: ReplicationLinkSnapshot[]): string {
+  if (links.length === 0) {
+    return 'Preparing live subscriptions';
+  }
+  const liveCount = links.filter(({ status }) => status === 'live').length;
+  return liveCount === links.length
+    ? 'All live subscriptions caught up'
+    : `${liveCount} of ${links.length} live subscriptions caught up`;
+}
+
 export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
-  const { data: remotes, isLoading, isError, error } = useRemoteSyncStatus(did);
+  const { links, remotes } = useLiveSyncStatus(did);
   const retryRemote = useRetryRemoteSync(did);
+  const isLoading = links.isLoading || remotes.isLoading;
+  const error = links.error ?? remotes.error;
 
   async function handleRetry(remoteEndpoint: string): Promise<void> {
     try {
@@ -85,19 +124,22 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
       </div>
 
       {isLoading && <Loader message="Loading remote sync status..." />}
-      {isError && (
+      {error && (
         <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load remote sync status'} />
       )}
-      {!isLoading && !isError && remotes?.length === 0 && (
+      {!isLoading && !error && remotes.data?.length === 0 && (
         <div className="rounded-lg border border-border-default bg-surface-1 px-4 py-3 text-sm text-text-tertiary">
           No active remote sync links yet.
         </div>
       )}
 
-      {remotes?.map((remote) => {
+      {!error && remotes.data?.map((remote) => {
         const nextProbe = formatTimestamp(remote.nextProbeAt);
         const lastActivity = formatTimestamp(remote.lastActivityAt);
         const retrying = retryRemote.isPending && retryRemote.variables === remote.remoteEndpoint;
+        const remoteLinks = links.data?.filter(
+          ({ remoteEndpoint }) => remoteEndpoint === remote.remoteEndpoint,
+        ) ?? [];
 
         return (
           <div
@@ -116,6 +158,30 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
                 {remote.lastError && (
                   <p className="mt-1 break-words text-xs text-error">{remote.lastError}</p>
                 )}
+                <div className="mt-3 rounded-md border border-border-subtle bg-surface-2 px-3 py-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] font-medium text-text-secondary">Live sync</span>
+                    <span className="text-[11px] text-text-ghost" aria-live="polite">
+                      {caughtUpLabel(remoteLinks)}
+                    </span>
+                  </div>
+                  {remoteLinks.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-2" aria-label={`Live sync links for ${remote.remoteEndpoint}`}>
+                      {remoteLinks.map((link) => (
+                        <span
+                          key={linkKey(link)}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border-default bg-surface-1 px-2 py-1 text-[11px]"
+                          title={link.scope.kind === 'full' ? undefined : link.scope.protocols.join('\n')}
+                        >
+                          <span className="text-text-tertiary">{linkScopeLabel(link)}</span>
+                          <span className={`font-medium ${LINK_STATUS_CLASSES[link.status]}`}>
+                            {LINK_STATUS_LABELS[link.status]}
+                          </span>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-text-ghost">
                   {nextProbe && <span>Next automatic retry: {nextProbe}</span>}
                   {lastActivity && <span>Last activity: {lastActivity}</span>}
