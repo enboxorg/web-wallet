@@ -6,7 +6,6 @@ import {
   AUTO_LOCK_STORAGE_KEY,
   getAutoLockTimeout,
   PIN_LENGTH,
-  SYNC_INTERVAL,
   STORAGE_KEYS,
   SESSION_PIN_KEY,
   INACTIVITY_TIMEOUT_MS,
@@ -137,13 +136,6 @@ describe('DEFAULT_AUTO_LOCK_MS', () => {
 describe('INACTIVITY_TIMEOUT_MS (deprecated)', () => {
   it('equals DEFAULT_AUTO_LOCK_MS', () => {
     expect(INACTIVITY_TIMEOUT_MS).toBe(DEFAULT_AUTO_LOCK_MS);
-  });
-});
-
-describe('SYNC_INTERVAL', () => {
-  it('is a non-empty string', () => {
-    expect(typeof SYNC_INTERVAL).toBe('string');
-    expect(SYNC_INTERVAL.length).toBeGreaterThan(0);
   });
 });
 

@@ -37,9 +37,6 @@ export function getAutoLockTimeoutEffect() {
 /** @deprecated Use `getAutoLockTimeout()` instead. */
 export const INACTIVITY_TIMEOUT_MS = DEFAULT_AUTO_LOCK_MS;
 
-/** Sync interval for DWN background sync. */
-export const SYNC_INTERVAL = '5m';
-
 /** PIN length for wallet lock/unlock. */
 export const PIN_LENGTH = 4;
 

@@ -238,7 +238,7 @@ App.tsx
 
 ### Sync Management
 
-The wallet lets the SDK manage sync automatically. Manual sync intervention only happens during seed phrase restore (controlled two-pull pattern to recover identity metadata then profile data).
+The wallet configures the SDK's live WebSocket sync and otherwise leaves sync lifecycle management to `AuthManager`. It does not set a custom interval: Enbox's default five-minute durable-feed settle check is a degraded-network safety net, not a polling loop. Identity registration hot-adds live subscriptions, and the wallet does not run its own periodic or one-shot sync passes.
 
 ## Theme Variants
 

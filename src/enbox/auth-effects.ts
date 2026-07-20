@@ -71,6 +71,9 @@ export function createWalletAuthManagerEffect() {
       AuthManager.create({
         dwnEndpoints: getConfiguredDwnEndpoints(),
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
+        // Live subscriptions are the primary transport. Leave the interval
+        // unset so the SDK's default settle check remains the recovery net.
+        sync: 'live',
         registration: {
           onSuccess: () => {},
           onFailure: (err: unknown) =>
