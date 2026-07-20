@@ -262,7 +262,7 @@ describe('EnboxAuthProvider restore flow', () => {
     });
   });
 
-  it('configures wallet identity protocol sync for auth-managed recovery', async () => {
+  it('configures scoped live sync at the SDK settle-check cadence', async () => {
     const auth = createAuth();
     authMocks.create.mockResolvedValue(auth);
 
@@ -276,6 +276,7 @@ describe('EnboxAuthProvider restore flow', () => {
       expect(authMocks.create).toHaveBeenCalledWith(expect.objectContaining({
         identitySyncProtocols: TEST_IDENTITY_SYNC_PROTOCOLS,
         registration: expect.objectContaining({ persistTokens: true }),
+        sync: 'live',
       }));
     });
   });
