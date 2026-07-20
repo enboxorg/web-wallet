@@ -206,7 +206,7 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(registrationMocks.ensureRegistrationForDids).not.toHaveBeenCalled();
   });
 
-  it('registers each DID only with the endpoints advertised for that DID', async () => {
+  it('does not re-register the agent or identities when unlocking', async () => {
     const user = userEvent.setup();
     const auth = createAuth('locked');
     const ownerDid = 'did:dht:owner';
@@ -233,14 +233,10 @@ describe('EnboxAuthProvider restore flow', () => {
     await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
-    await waitFor(() => expect(registrationMocks.ensureRegistrationForDids).toHaveBeenCalledTimes(3));
-    for (const [did, endpoints] of Object.entries(endpointsByDid)) {
-      expect(registrationMocks.ensureRegistrationForDids).toHaveBeenCalledWith(
-        auth.agent,
-        endpoints,
-        [did],
-      );
-    }
+    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalledOnce());
+    expect(registrationMocks.ensureRegistrationForDids).not.toHaveBeenCalled();
+    expect(auth.agent.identity.list).not.toHaveBeenCalled();
+    expect(auth.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
   });
 
   it('coalesces duplicate first-time setup calls into one vault operation', async () => {

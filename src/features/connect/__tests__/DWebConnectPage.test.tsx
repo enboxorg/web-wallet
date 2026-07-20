@@ -245,11 +245,7 @@ describe('DWebConnectPage', () => {
     await waitFor(() => {
       expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe');
     });
-    expect(mocks.ensureRegistrationForDids).toHaveBeenCalledWith(
-      mocks.agent,
-      ['https://dwn.example'],
-      ['did:dht:alice'],
-    );
+    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
     expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       expect.objectContaining({ clientDid: 'did:jwk:dapp-client', state: 'state-1' }),

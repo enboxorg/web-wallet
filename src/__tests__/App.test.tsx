@@ -46,6 +46,10 @@ vi.mock('@/enbox/hooks/use-identity-sync-reconciliation', () => ({
   useIdentitySyncReconciliation: vi.fn(),
 }));
 
+vi.mock('@/enbox/hooks/use-registration-repair', () => ({
+  useRegistrationRepair: vi.fn(),
+}));
+
 vi.mock('@/enbox/hooks/use-sync-query-invalidation', () => ({
   useSyncQueryInvalidation: vi.fn(),
 }));

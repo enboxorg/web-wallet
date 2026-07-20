@@ -267,7 +267,7 @@ describe('identity mutations', () => {
     expect(agent.did.delete).toHaveBeenCalledWith({ didUri: did, tenant: 'did:dht:agent' });
   });
 
-  it('uses the same local protocol-before-sync setup when importing an identity', async () => {
+  it('prepares local protocols and sync without re-registering an imported identity', async () => {
     const did = 'did:dht:imported';
     const agent = createAgent(did);
 
@@ -275,10 +275,7 @@ describe('identity mutations', () => {
 
     expect(mocks.installProtocols).toHaveBeenCalledWith(did);
     expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
-    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
-      ['https://imported.example/dwn'],
-      [did],
-    );
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
       options: {
@@ -291,7 +288,6 @@ describe('identity mutations', () => {
     });
     expect(mocks.calls).toEqual([
       'identity:import',
-      'registration:ensure',
       'protocols:install',
       'sync:register',
       'wallet:create',
@@ -330,10 +326,7 @@ describe('identity mutations', () => {
     expect(result).toBe(existingIdentity);
     expect(mocks.ensurePortableOwnerPublished).toHaveBeenCalledOnce();
     expect(agent.identity.import).not.toHaveBeenCalled();
-    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
-      ['https://imported.example/dwn'],
-      [did],
-    );
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(mocks.installProtocols).toHaveBeenCalledWith(did);
     expect(agent.sync.registerIdentity).toHaveBeenCalledOnce();
   });
@@ -379,7 +372,7 @@ describe('identity mutations', () => {
     expect(avatarWrite.data.type).toBe('image/jpeg');
   });
 
-  it('registers only the edited identity before applying its endpoint list', async () => {
+  it('registers only a newly added endpoint before applying the endpoint list', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
 
@@ -405,6 +398,72 @@ describe('identity mutations', () => {
       'identity:setDwnEndpoints',
       'sync:update',
     ]);
+  });
+
+  it('does not register when an endpoint edit only normalizes the existing URL', async () => {
+    const did = 'did:dht:existing';
+    const agent = createAgent(did);
+    agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example/path']);
+
+    await updateDwnEndpoints(agent, {
+      did,
+      endpoints: ['https://DWN.example/path/'],
+    });
+
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
+    expect(agent.identity.setDwnEndpoints).toHaveBeenCalledWith({
+      didUri: did,
+      endpoints: ['https://dwn.example/path'],
+    });
+  });
+
+  it('does not register when an endpoint is removed or the remaining endpoints are reordered', async () => {
+    const did = 'did:dht:existing';
+    const agent = createAgent(did);
+    agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue([
+      'https://dwn-a.example',
+      'https://dwn-b.example',
+      'https://dwn-c.example',
+    ]);
+
+    await updateDwnEndpoints(agent, {
+      did,
+      endpoints: ['https://dwn-c.example', 'https://dwn-a.example'],
+    });
+
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
+    expect(agent.identity.setDwnEndpoints).toHaveBeenCalledWith({
+      didUri: did,
+      endpoints: ['https://dwn-c.example', 'https://dwn-a.example'],
+    });
+  });
+
+  it('registers every addition and excludes existing endpoints from the request', async () => {
+    const did = 'did:dht:existing';
+    const agent = createAgent(did);
+    agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn-a.example']);
+
+    await updateDwnEndpoints(agent, {
+      did,
+      endpoints: [
+        'https://DWN-A.example/',
+        'https://dwn-b.example/',
+        'https://dwn-c.example',
+      ],
+    });
+
+    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
+      ['https://dwn-b.example', 'https://dwn-c.example'],
+      [did],
+    );
+    expect(agent.identity.setDwnEndpoints).toHaveBeenCalledWith({
+      didUri: did,
+      endpoints: [
+        'https://dwn-a.example',
+        'https://dwn-b.example',
+        'https://dwn-c.example',
+      ],
+    });
   });
 
   it('does not publish endpoint changes when tenant registration fails', async () => {

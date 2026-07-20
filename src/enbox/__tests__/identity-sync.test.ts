@@ -57,10 +57,8 @@ describe('reconcileIdentitySync', () => {
 
     const result = await reconcileIdentitySync(agent, [identity]);
 
-    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
-      ['https://dwn.example'],
-      ['did:dht:new'],
-    );
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
+    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did: 'did:dht:new',
       options: { protocols: desiredProtocols },
@@ -110,11 +108,8 @@ describe('reconcileIdentitySync', () => {
 
     await reconcileIdentitySync(agent, [identity]);
 
-    expect(agent.dwn.getRemoteDwnEndpointUrls).toHaveBeenCalledWith('did:dht:owner');
-    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
-      ['https://dwn.example'],
-      ['did:dht:owner'],
-    );
+    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
 
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did: 'did:dht:owner',
@@ -122,14 +117,13 @@ describe('reconcileIdentitySync', () => {
     });
   });
 
-  it('continues reconciling later identities when one DID endpoint cannot be resolved', async () => {
+  it('continues reconciling later identities when one sync registration fails', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const agent = createAgent();
-    agent.dwn.getRemoteDwnEndpointUrls.mockImplementation(async (did: string) => {
+    agent.sync.registerIdentity.mockImplementation(async ({ did }: { did: string }) => {
       if (did === 'did:dht:bad') {
-        throw new Error('resolution failed');
+        throw new Error('sync registration failed');
       }
-      return ['https://dwn.example'];
     });
 
     const result = await reconcileIdentitySync(agent, [
@@ -145,6 +139,8 @@ describe('reconcileIdentitySync', () => {
       did: 'did:dht:good',
       options: { protocols: desiredProtocols },
     });
+    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
+    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 });

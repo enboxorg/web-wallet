@@ -1,8 +1,5 @@
 import { Effect } from 'effect';
 
-import { normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
-
-import { ensureRegistrationEffect } from './registration';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
 import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
@@ -125,7 +122,8 @@ function applySyncOptionsEffect(
  * learns only the identity metadata through the agent DID, then must opt into
  * profile/social/connect replication for that new DID. Registering the scope is
  * enough: the SDK's sync engine hot-adds the link and pulls the identity's
- * existing records on its own, so the wallet does not drive a manual pull.
+ * existing records on its own, so the wallet neither drives a manual pull nor
+ * re-registers the existing DID as a DWN tenant.
  */
 export async function reconcileIdentitySync(
   agent: EnboxAgent,
@@ -142,7 +140,6 @@ export function reconcileIdentitySyncEffect(
   identities: unknown[],
 ) {
   return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
     const dids = [...new Set(identities.map(getIdentityDid).filter(Boolean) as string[])];
     if (dids.length === 0) {
       return { changedDids: [], failedDids: [] };
@@ -156,13 +153,6 @@ export function reconcileIdentitySyncEffect(
         if (sameProtocolScope(existing)) {
           return false;
         }
-        const dwnEndpoints = yield* Effect.tryPromise({
-          try: async () => normalizeDwnEndpoints(
-            await agent.dwn.getRemoteDwnEndpointUrls(did),
-          ),
-          catch: sdkError('identitySync.resolveDwnEndpoints'),
-        });
-        yield* ensureRegistrationEffect(dwnEndpoints, [did]);
         return yield* applySyncOptionsEffect(did, existing);
       }).pipe(
         Effect.catchAll((error) =>

@@ -8,6 +8,7 @@ import { useAuth } from '@/enbox/hooks/use-auth';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useIdentitySyncReconciliation } from '@/enbox/hooks/use-identity-sync-reconciliation';
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
+import { useRegistrationRepair } from '@/enbox/hooks/use-registration-repair';
 import { useSyncQueryInvalidation } from '@/enbox/hooks/use-sync-query-invalidation';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { queryKeys } from '@/enbox/queries/query-keys';
@@ -171,6 +172,7 @@ function AuthGate() {
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
   useSyncQueryInvalidation(identities);
   useIdentitySyncReconciliation(identities);
+  useRegistrationRepair();
 
   // Compute backup-needed badge for nav items (must be before early returns)
   const sidebarWithBadges = useMemo(() =>
