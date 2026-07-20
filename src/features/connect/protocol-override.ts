@@ -22,7 +22,7 @@
  */
 import { DwnInterface, type DwnProtocolDefinition } from '@enbox/agent';
 
-import { protocolDefinitionsMatch, protocolHasEncryptedTypes } from './protocol-install';
+import { protocolDefinitionsMatch } from './protocol-install';
 
 /** Per-request abort budget so one unhealthy endpoint can't stall approval. */
 const RECONFIGURE_REQUEST_TIMEOUT_MS = 10_000;
@@ -39,7 +39,6 @@ export type ReconfigureAgent = {
     target: string;
     messageType: string;
     messageParams: Record<string, unknown>;
-    encryption?: true;
   }) => Promise<{ reply: { status: { code: number; detail: string } }; message?: unknown }>;
   rpc: {
     sendDwnRequest: (params: {
@@ -83,13 +82,14 @@ async function reconfigureProtocolForOverride(
 ): Promise<void> {
   // Author the replacement locally. A ProtocolsConfigure is latest-wins by
   // timestamp, so the owner's fresh configure supersedes the installed one.
-  const needsEncryption = protocolHasEncryptedTypes(definition);
+  // The protocol definition is the sole source of encryption policy: the agent
+  // derives and injects $keyAgreement keys itself whenever the definition's
+  // types demand encryption, so no caller-side switch exists anymore.
   const { reply: configureReply, message: configureMessage } = await agent.processDwnRequest({
     author        : selectedDid,
     target        : selectedDid,
     messageType   : DwnInterface.ProtocolsConfigure,
     messageParams : { definition },
-    encryption    : needsEncryption || undefined,
   });
   if (configureReply.status.code !== 202 && configureReply.status.code !== 409) {
     throw new Error(
