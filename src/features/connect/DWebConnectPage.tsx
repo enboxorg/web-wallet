@@ -34,7 +34,6 @@ import {
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
-import { ensureRegistrationForDids } from '@/enbox/registration';
 import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kernel';
 import {
   isDidSupportedByRequest,
@@ -243,8 +242,6 @@ export default function DWebConnectPage() {
       if (dwnEndpoints.length === 0) {
         throw new Error('This profile does not have any sync endpoints configured.');
       }
-      await ensureRegistrationForDids(liveAgent, dwnEndpoints, [approveAsDid]);
-
       // If the owner opted into replacing a custom protocol installed with a
       // different definition, author the replacement (locally + across owner
       // endpoints) BEFORE the ceremony — it fails closed on a definition

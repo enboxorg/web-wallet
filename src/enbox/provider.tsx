@@ -5,10 +5,9 @@
  * sync start/stop, WebSocket push/pull, agent DID sync (for seed phrase
  * recovery), and identity recovery from remote DWNs automatically. We only
  * intervene for:
- * - Post-session DWN tenant registration (restoreSession does not
- *   re-register tenants, so we do it on every unlock)
  * - Wallet-scoped identity DID sync registration when identities are
  *   created/imported
+ * - DWN tenant registration when a DID is created or gains a new endpoint
  * - Inactivity auto-lock timer
  * - Session vault password caching for same-tab refresh persistence
  */
@@ -34,7 +33,6 @@ import {
   sessionStorageRemoveEffect,
   sessionStorageSetEffect,
 } from '@/lib/browser-effects';
-import { ensureRegistrationForDids } from './registration';
 import type { EnboxAgent } from './types';
 import {
   connectVaultEffect,
@@ -166,39 +164,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setConfiguredDwnEndpoints(endpoints);
   }, []);
 
-  // ── Post-session: ensure DWN tenant registration ─────────────────
-
-  const ensurePostSession = useCallback(async (agent: EnboxAgent) => {
-    const registerDid = async (did: string): Promise<void> => {
-      const endpoints = normalizeDwnEndpoints(
-        await agent.dwn.getRemoteDwnEndpointUrls(did),
-      );
-      await ensureRegistrationForDids(agent, endpoints, [did]);
-    };
-
-    try {
-      await registerDid(agent.agentDid.uri);
-    } catch (err) {
-      console.warn('EnboxAuthProvider: Agent DID registration failed:', err);
-    }
-
-    let identities: any[];
-    try {
-      identities = await agent.identity.list();
-    } catch (err) {
-      console.warn('EnboxAuthProvider: Failed to list identities for registration:', err);
-      return;
-    }
-    for (const identity of identities) {
-      const did = identity.metadata.connectedDid ?? identity.did.uri;
-      try {
-        await registerDid(did);
-      } catch (err) {
-        console.warn(`EnboxAuthProvider: Identity registration failed for ${did}:`, err);
-      }
-    }
-  }, []);
-
   // ── Auto-restore from cached session vault password ──────────────
 
   const tryAutoRestore = useCallback(async (auth: WalletAuthManager): Promise<boolean> => {
@@ -226,7 +191,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       })).catch((err: unknown) => {
         console.warn('EnboxAuthProvider: Failed to publish auto-restore event:', err);
       });
-      void ensurePostSession(agent);
       return true;
     } catch {
       if (sessionRestored) {
@@ -235,7 +199,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       clearSessionPassword();
       return false;
     }
-  }, [setUnlocked, applyAuthoritativeDwnEndpoints, ensurePostSession, runLockedAuthOperation]);
+  }, [setUnlocked, applyAuthoritativeDwnEndpoints, runLockedAuthOperation]);
 
   // ── Phase 1: Create AuthManager on mount ─────────────────────────
 
@@ -354,7 +318,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         did  : agent.agentDid.uri,
       }));
       cacheSessionPassword(password);
-      void ensurePostSession(agent);
     } catch (err) {
       if (sessionStarted) {
         await runEnboxPromise(lockAuthManagerEffect(auth)).catch(() => {});
@@ -365,7 +328,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       setIsLoading(false);
     }
-  }, [setUnlocked, applyAuthoritativeDwnEndpoints, ensurePostSession, runLockedAuthOperation]);
+  }, [setUnlocked, applyAuthoritativeDwnEndpoints, runLockedAuthOperation]);
 
   // ── Restore (from recovery phrase) ───────────────────────────────
 
@@ -397,7 +360,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         did  : agent.agentDid.uri,
       }));
       cacheSessionPassword(password);
-      void ensurePostSession(agent);
     } catch (err) {
       if (sessionStarted) {
         await runEnboxPromise(lockAuthManagerEffect(auth)).catch(() => {});
@@ -408,7 +370,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       setIsLoading(false);
     }
-  }, [setUnlocked, applyAuthoritativeDwnEndpoints, ensurePostSession, runLockedAuthOperation]);
+  }, [setUnlocked, applyAuthoritativeDwnEndpoints, runLockedAuthOperation]);
 
   // ── Lock ─────────────────────────────────────────────────────────
 

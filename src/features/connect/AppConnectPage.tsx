@@ -59,7 +59,6 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
-import { ensureRegistrationForDids } from '@/enbox/registration';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 import { PIN_LENGTH } from '@/lib/constants';
 import { autoCreateIdentity } from '@/lib/auto-identity';
@@ -433,8 +432,6 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       if (dwnEndpoints.length === 0) {
         throw new Error('This profile does not have any sync endpoints configured.');
       }
-      await ensureRegistrationForDids(liveAgent, dwnEndpoints, [approveAsDid]);
-
       // If the owner opted into replacing a custom protocol installed with a
       // different definition, author the replacement (locally + across owner
       // endpoints) BEFORE the ceremony. The connect ceremony fails closed on a

@@ -284,11 +284,7 @@ describe('AppConnectPage', () => {
     await waitFor(() => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
     });
-    expect(mocks.ensureRegistrationForDids).toHaveBeenCalledWith(
-      mocks.agent,
-      ['https://dwn.example'],
-      ['did:dht:alice'],
-    );
+    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
     // Protocol preparation is owned by the approval ceremony itself
     // (agent >=0.8.17) — the wallet no longer runs a pre-approval step.
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(

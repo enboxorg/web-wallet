@@ -168,7 +168,7 @@ describe('ensureRegistrationEffect', () => {
     expect(DwnRegistrar.registerTenantWithToken).not.toHaveBeenCalled();
   });
 
-  it('retries transient server info failures before skipping an endpoint', async () => {
+  it('retries transient server info failures before registering an endpoint', async () => {
     const agent = createAgent();
     agent.rpc.getServerInfo
       .mockRejectedValueOnce(new Error('temporary network failure'))
@@ -184,6 +184,23 @@ describe('ensureRegistrationEffect', () => {
     );
   });
 
+  it('fails closed when server info remains unavailable for an endpoint', async () => {
+    const agent = createAgent();
+    agent.rpc.getServerInfo.mockRejectedValue(new Error('network unavailable'));
+    const tokenStore = createTokenStore();
+
+    await expect(runWithAgentAndStore(
+      agent,
+      tokenStore,
+      ['https://offline.example'],
+      ['did:dht:alice', 'did:dht:bob'],
+    )).rejects.toThrow(
+      'did:dht:alice with https://offline.example, did:dht:bob with https://offline.example',
+    );
+
+    expect(DwnRegistrar.registerTenant).not.toHaveBeenCalled();
+  });
+
   it('fails when no configured endpoint accepts the DID registration', async () => {
     const agent = createAgent();
     const tokenStore = createTokenStore();
@@ -193,10 +210,12 @@ describe('ensureRegistrationEffect', () => {
       agent,
       tokenStore,
       ['https://dwn.example'],
-    )).rejects.toThrow('Unable to register did:dht:agent with any configured DWN endpoint');
+    )).rejects.toThrow(
+      'Unable to register every requested tenant; failed: did:dht:agent with https://dwn.example.',
+    );
   });
 
-  it('succeeds when at least one configured endpoint accepts the DID', async () => {
+  it('fails when any configured endpoint rejects the DID', async () => {
     const agent = createAgent();
     const tokenStore = createTokenStore();
     vi.mocked(DwnRegistrar.registerTenant)
@@ -207,7 +226,13 @@ describe('ensureRegistrationEffect', () => {
       agent,
       tokenStore,
       ['https://dwn-a.example', 'https://dwn-b.example'],
-    )).resolves.toEqual({ failed: 1, succeeded: 1 });
+    )).rejects.toThrow(
+      'Unable to register every requested tenant; failed: did:dht:agent with https://dwn-a.example.',
+    );
+    expect(DwnRegistrar.registerTenant).toHaveBeenCalledWith(
+      'https://dwn-b.example',
+      'did:dht:agent',
+    );
   });
 
   it('fails a bulk request when any supplied DID has no successful endpoint', async () => {
@@ -224,7 +249,9 @@ describe('ensureRegistrationEffect', () => {
       tokenStore,
       ['https://dwn.example'],
       ['did:dht:alice', 'did:dht:bob'],
-    )).rejects.toThrow('Unable to register did:dht:bob with any configured DWN endpoint');
+    )).rejects.toThrow(
+      'Unable to register every requested tenant; failed: did:dht:bob with https://dwn.example.',
+    );
   });
 
   it('refreshes expired provider-auth tokens through the injected token store', async () => {

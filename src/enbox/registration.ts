@@ -1,10 +1,10 @@
 /**
  * DWN tenant registration logic.
  *
- * After a session is restored, each DID must be registered only with the
- * remote endpoints advertised in that DID's document.
- * AuthManager.connectVault() handles this for first-time setup, but
- * restoreSession() does NOT — so we run it manually after every unlock.
+ * Registration is a topology lifecycle operation: it runs when a DID is first
+ * created, when a new endpoint is added, or when sync confirms that a remote
+ * lost the tenant registration. Session restore and identity import preserve
+ * existing remote ownership and must not register implicitly.
  *
  * Supports the provider-auth-v0 flow (authorize → token exchange) and
  * falls back to proof-of-work registration.
@@ -206,7 +206,7 @@ function registerDidWithEndpointEffect(
   });
 }
 
-/** Register only the specified owner DIDs at request-supplied endpoints. */
+/** Register every specified owner DID at every request-supplied endpoint. */
 export async function ensureRegistrationForDids(
   agent: EnboxAgent,
   dwnEndpoints: string[],
@@ -225,14 +225,24 @@ export function ensureRegistrationEffect(dwnEndpoints: string[], dids: string[])
     const tokenStore = yield* RegistrationTokenStore;
 
     const didsToRegister = new Set(dids);
+    const endpointsToRegister = new Set(dwnEndpoints);
     const failures: unknown[] = [];
-    const successesByDid = new Map(
-      [...didsToRegister].map((did) => [did, 0]),
-    );
+    const failedRegistrations: Array<{ did: string; endpoint: string }> = [];
+    let successfulRegistrations = 0;
+
+    if (didsToRegister.size > 0 && endpointsToRegister.size === 0) {
+      return yield* Effect.fail(
+        new DwnRegistrationError({
+          operation: 'tenant.register',
+          cause: { dids: [...didsToRegister] },
+          message: 'Unable to register DIDs without a configured DWN endpoint.',
+        }),
+      );
+    }
 
     let tokens = yield* tokenStore.get;
 
-    for (const endpoint of dwnEndpoints) {
+    for (const endpoint of endpointsToRegister) {
       const serverInfo = yield* withNetworkPolicy(
         'serverInfo.get',
         Effect.tryPromise({
@@ -245,6 +255,9 @@ export function ensureRegistrationEffect(dwnEndpoints: string[], dids: string[])
           Effect.sync(() => {
             console.warn(`Could not reach DWN endpoint ${endpoint} for registration:`, err);
             failures.push(err);
+            for (const did of didsToRegister) {
+              failedRegistrations.push({ did, endpoint });
+            }
             return undefined;
           })
         ),
@@ -259,35 +272,34 @@ export function ensureRegistrationEffect(dwnEndpoints: string[], dids: string[])
             Effect.sync(() => {
               console.warn(`DWN registration of ${did} with ${endpoint} failed:`, err);
               failures.push(err);
+              failedRegistrations.push({ did, endpoint });
               return { updatedTokens: tokens, succeeded: false as const };
             })
           ),
         );
         tokens = registration.updatedTokens;
         if (registration.succeeded) {
-          successesByDid.set(did, (successesByDid.get(did) ?? 0) + 1);
+          successfulRegistrations += 1;
         }
       }
     }
 
     yield* tokenStore.set(tokens);
-    const failedDids = [...successesByDid]
-      .filter(([, successes]) => successes === 0)
-      .map(([did]) => did);
-    if (failedDids.length > 0) {
+    if (failedRegistrations.length > 0) {
+      const failedPairs = failedRegistrations
+        .map(({ did, endpoint }) => `${did} with ${endpoint}`)
+        .join(', ');
       return yield* Effect.fail(
         new DwnRegistrationError({
           operation: 'tenant.register',
-          cause: { failedDids, failures },
-          message: `Unable to register ${failedDids.join(', ')} with any configured DWN endpoint.`,
+          cause: { failedRegistrations, failures },
+          message: `Unable to register every requested tenant; failed: ${failedPairs}.`,
         }),
       );
     }
 
-    const successfulRegistrations = [...successesByDid.values()]
-      .reduce((total, successes) => total + successes, 0);
     return {
-      failed: dwnEndpoints.length * didsToRegister.size - successfulRegistrations,
+      failed: 0,
       succeeded: successfulRegistrations,
     };
   });

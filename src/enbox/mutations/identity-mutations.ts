@@ -625,10 +625,8 @@ function importValidatedIdentityEffect(
     }
 
     const prepareImportedIdentity = Effect.gen(function* () {
-      // Register imported identity as DWN tenant before sync (same reason as createIdentity)
-      yield* ensureRegistrationEffect(validatedIdentity.dwnEndpoints, [did]);
-
-      // Install protocols locally before registering sync and writing records.
+      // Import preserves the DID's existing remote tenant ownership. Re-registering
+      // here could silently rebind a provider-auth account, so only prepare local state.
       yield* installProtocolsEffect(did);
     });
     yield* importedNewIdentity
@@ -677,7 +675,17 @@ export function updateDwnEndpointsEffect(params: UpdateDwnEndpointsParams) {
       try   : () => normalizeDwnEndpoints(params.endpoints),
       catch : sdkError('identity.validateDwnEndpoints'),
     });
-    yield* ensureRegistrationEffect(endpoints, [params.did]);
+    const currentEndpoints = yield* Effect.tryPromise({
+      try: async () => normalizeDwnEndpoints(
+        await agent.dwn.getRemoteDwnEndpointUrls(params.did),
+      ),
+      catch: sdkError('identity.resolveDwnEndpoints'),
+    });
+    const currentEndpointSet = new Set(currentEndpoints);
+    const addedEndpoints = endpoints.filter((endpoint) => !currentEndpointSet.has(endpoint));
+    if (addedEndpoints.length > 0) {
+      yield* ensureRegistrationEffect(addedEndpoints, [params.did]);
+    }
     yield* Effect.tryPromise({
       try: () =>
         agent.identity.setDwnEndpoints({
