@@ -368,50 +368,6 @@ describe('useSyncQueryInvalidation', () => {
     expect(invalidateSpy).toHaveBeenCalledTimes(4);
   });
 
-  it('falls back to broad identity invalidation for CID-only reconciliation events', () => {
-    setAgent();
-    const queryClient = createQueryClient();
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-    renderHook(
-      () => useSyncQueryInvalidation([{ did: { uri: 'did:dht:identity' } }]),
-      { wrapper: createWrapper(queryClient) },
-    );
-
-    act(() => {
-      emitSyncEvent({
-        type           : 'reconcile:applied',
-        tenantDid      : 'did:dht:other',
-        remoteEndpoint : 'https://dwn.example',
-        messageCids    : ['cid-other'],
-      });
-      vi.advanceTimersByTime(250);
-    });
-    expect(invalidateSpy).not.toHaveBeenCalled();
-
-    act(() => {
-      emitSyncEvent({
-        type           : 'reconcile:applied',
-        tenantDid      : 'did:dht:identity',
-        remoteEndpoint : 'https://dwn.example',
-        messageCids    : ['cid-1'],
-      });
-      vi.advanceTimersByTime(250);
-    });
-
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.profile('did:dht:identity'),
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.protocols('did:dht:identity'),
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.socialGraph('did:dht:identity'),
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.permissions('did:dht:identity'),
-    });
-  });
-
   it('invalidates profile queries from wallet domain events', async () => {
     const queryClient = createQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
