@@ -109,17 +109,6 @@ function queueIdentityDescriptor(
   }
 }
 
-function queueAllIdentityQueries(did: string, pending: PendingInvalidations): void {
-  pending.identities = true;
-  pending.activity.add(did);
-  pending.audienceDeliveries.add(did);
-  pending.permissions.add(did);
-  pending.profiles.add(did);
-  pending.protocols.add(did);
-  pending.socialGraphs.add(did);
-  pending.wallets.add(did);
-}
-
 /**
  * Keep React Query caches aligned with local DWN writes, sync-applied messages,
  * and cross-tab changes. Message subscriptions are protocol-scoped for
@@ -273,7 +262,7 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
     const agentDid = agent.agentDid?.uri;
     removeListeners.push(agent.sync.on((event: SyncEvent): void => {
       if (event.tenantDid === agentDid) {
-        if (event.type === 'delivery:applied' || event.type === 'reconcile:applied') {
+        if (event.type === 'delivery:applied') {
           pending.identities = true;
           scheduleFlush();
         }
@@ -284,12 +273,6 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
       }
       if (event.type === 'delivery:applied') {
         queueIdentityDescriptor(event.descriptor, event.tenantDid, pending);
-        scheduleFlush();
-      } else if (event.type === 'reconcile:applied') {
-        // Reconciliation events are CID-only, so conservatively refresh every
-        // identity view. Local subscriptions still provide precise routing
-        // when they observe the same applied messages.
-        queueAllIdentityQueries(event.tenantDid, pending);
         scheduleFlush();
       }
     }));
