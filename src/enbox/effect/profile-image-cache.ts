@@ -1,16 +1,10 @@
+import type { MaterializedRecord } from '@enbox/api';
+
 import { Context, Effect, Layer } from 'effect';
 
 import { sdkError } from './errors';
 
 export type ProfileImageSlot = 'avatar' | 'hero';
-
-export type ProfileImageRecord = {
-  id?: unknown;
-  dataCid?: unknown;
-  dataSize?: unknown;
-  timestamp?: unknown;
-  data: { blob(): Promise<Blob> };
-};
 
 type CachedProfileImageUrl = {
   key: string;
@@ -21,7 +15,7 @@ export interface ProfileImageCacheService {
   readonly getOrCreate: (
     did: string,
     slot: ProfileImageSlot,
-    record: ProfileImageRecord,
+    image: MaterializedRecord<Blob>,
   ) => Effect.Effect<string, unknown>;
   readonly clear: (did: string, slot: ProfileImageSlot) => Effect.Effect<void>;
   readonly clearDid: (did: string) => Effect.Effect<void>;
@@ -35,7 +29,7 @@ export class ProfileImageCache extends Context.Tag('enbox/ProfileImageCache')<
 
 const BLOB_URL_REVOKE_DELAY_MS = 60_000;
 
-function imageRecordCacheKey(record: ProfileImageRecord): string {
+function imageRecordCacheKey(record: MaterializedRecord<Blob>['record']): string {
   return [record.id, record.dataCid, record.dataSize, record.timestamp]
     .filter((part): part is string | number =>
       typeof part === 'string' || typeof part === 'number'
@@ -113,8 +107,8 @@ function makeProfileImageCacheService(): ProfileImageCacheService {
   });
 
   return {
-    getOrCreate: (did, slot, record) => {
-      const key = imageRecordCacheKey(record);
+    getOrCreate: (did, slot, image) => {
+      const key = imageRecordCacheKey(image.record);
       const cached = urls.get(did)?.[slot];
 
       if (key && cached?.key === key) {
@@ -123,8 +117,7 @@ function makeProfileImageCacheService(): ProfileImageCacheService {
 
       return Effect.tryPromise({
         try: async () => {
-          const blob = await record.data.blob();
-          const url = URL.createObjectURL(blob);
+          const url = URL.createObjectURL(image.value);
           setCachedImageUrl(did, slot, { key: key || url, url });
           return url;
         },
@@ -149,10 +142,10 @@ export const ProfileImageCacheLive = Layer.scoped(
 export function getCachedProfileImageUrlEffect(
   did: string,
   slot: ProfileImageSlot,
-  record: ProfileImageRecord,
+  image: MaterializedRecord<Blob>,
 ) {
   return Effect.flatMap(ProfileImageCache, (cache) =>
-    cache.getOrCreate(did, slot, record)
+    cache.getOrCreate(did, slot, image)
   );
 }
 

@@ -4,7 +4,7 @@
  * Installs the required DWN protocols for an identity so that profile
  * records, social graph entries, and DWeb Connect grants can be created.
  *
- * Uses the high-level Enbox.using(defineProtocol(...)).configure() API
+ * Uses the published typed protocols through Enbox.using(...).configure()
  * which is idempotent: protocols already installed locally return 200.
  * Remote replication is owned by the SDK sync engine. Sync push routes local
  * records through remote replicated admission, which fetches any required
@@ -16,8 +16,10 @@
  */
 
 import { Effect } from 'effect';
-import { Enbox, defineProtocol } from '@enbox/api';
-import { ProfileDefinition, SocialGraphDefinition, ConnectDefinition } from '@enbox/protocols';
+import type { TypedProtocol } from '@enbox/api';
+
+import { Enbox } from '@enbox/api';
+import { ConnectProtocol, ProfileProtocol, SocialGraphProtocol } from '@enbox/protocols';
 import type { EnboxAgent } from './types';
 import { ProtocolInstallationError, sdkError } from './effect/errors';
 import { CurrentAgent, currentAgentLayer } from './effect/services';
@@ -29,14 +31,14 @@ import { runEnboxPromise } from './effect/runtime';
  * ORDER MATTERS: SocialGraph must be installed before Profile because
  * Profile is a composed protocol that references SocialGraph.
  */
-const REQUIRED_PROTOCOLS = [
-  SocialGraphDefinition,
-  ProfileDefinition,
-  ConnectDefinition,
-] as const;
+const REQUIRED_PROTOCOLS: readonly TypedProtocol[] = [
+  SocialGraphProtocol,
+  ProfileProtocol,
+  ConnectProtocol,
+];
 
 export const IDENTITY_SYNC_PROTOCOLS = REQUIRED_PROTOCOLS.map(
-  (definition) => definition.protocol,
+  (protocol) => protocol.definition.protocol,
 ) as [string, ...string[]];
 
 function statusMessage(status: { code?: number; detail?: string } | undefined): string {
@@ -45,12 +47,13 @@ function statusMessage(status: { code?: number; detail?: string } | undefined): 
 
 function configureLocalProtocolEffect(
   enbox: Enbox,
-  definition: typeof REQUIRED_PROTOCOLS[number],
+  typedProtocol: typeof REQUIRED_PROTOCOLS[number],
 ) {
   return Effect.gen(function* () {
+    const { definition } = typedProtocol;
     const result = yield* Effect.tryPromise({
       try: async () => {
-        const typed = enbox.using(defineProtocol(definition));
+        const typed = enbox.using(typedProtocol);
         return typed.configure();
       },
       catch: sdkError(`protocol.configure:${definition.protocol}`),
