@@ -3,7 +3,7 @@ import type { SyncEvent } from '@enbox/agent';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
-import { ConnectDefinition, ProfileDefinition, SocialGraphDefinition } from '@enbox/protocols';
+import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAuthStore } from '@/stores/auth-store';
@@ -15,7 +15,7 @@ import { publishWalletEvent } from '../../effect/wallet-events';
 type TestSubscription = {
   connectedDid: string;
   delegateDid?: string;
-  request: { filters?: Array<{ protocol?: string }> };
+  request: { filters?: Array<{ protocol?: string }>; subscriptionHandler?: (message: unknown) => void };
   close: ReturnType<typeof vi.fn>;
   emit: (event: string, detail: unknown) => void;
 };
@@ -31,17 +31,7 @@ vi.mock('@enbox/api', () => ({
       dwn: {
         messages: {
           subscribe: vi.fn(async (request: TestSubscription['request'] = {}) => {
-            const handlers = new Map<string, Set<(detail: unknown) => void>>();
             const close = vi.fn(async () => {});
-            const liveQuery = {
-              close,
-              on: vi.fn((event: string, handler: (detail: unknown) => void) => {
-                const eventHandlers = handlers.get(event) ?? new Set();
-                eventHandlers.add(handler);
-                handlers.set(event, eventHandlers);
-                return () => eventHandlers.delete(handler);
-              }),
-            };
 
             sdkMocks.subscriptions.push({
               connectedDid: options.connectedDid,
@@ -49,15 +39,17 @@ vi.mock('@enbox/api', () => ({
               request,
               close,
               emit: (event, detail) => {
-                for (const handler of handlers.get(event) ?? []) {
-                  handler(detail);
+                if (event === 'event') {
+                  request.subscriptionHandler?.({ type: 'event', event: { message: detail } });
+                  return;
                 }
+                request.subscriptionHandler?.({ type: 'error', error: detail });
               },
             });
 
             return {
               status: { code: 200, detail: 'OK' },
-              liveQuery,
+              subscription: { id: 'test-subscription', close },
             };
           }),
         },
@@ -152,7 +144,7 @@ describe('useSyncQueryInvalidation', () => {
     const subscription = sdkMocks.subscriptions.find(
       ({ connectedDid }) => connectedDid === 'did:dht:agent',
     );
-    expect(subscription?.request).toEqual({});
+    expect(subscription?.request.filters).toBeUndefined();
 
     act(() => {
       emitMessage(subscription!, { interface: 'Records', method: 'Write' });
@@ -185,7 +177,6 @@ describe('useSyncQueryInvalidation', () => {
     expect(identitySubscriptions).toHaveLength(3);
     expect(identitySubscriptions.map(({ request }) => request.filters?.[0]?.protocol)).toEqual(
       expect.arrayContaining([
-        SocialGraphDefinition.protocol,
         ProfileDefinition.protocol,
         ConnectDefinition.protocol,
       ]),
@@ -248,7 +239,7 @@ describe('useSyncQueryInvalidation', () => {
     });
   });
 
-  it('routes social and connect messages to their dependent queries', async () => {
+  it('routes connect messages to permission queries', async () => {
     setAgent({ 'did:dht:identity': { delegateDid: 'did:dht:delegate' } });
     const queryClient = createQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -258,19 +249,11 @@ describe('useSyncQueryInvalidation', () => {
     );
 
     await settleSubscriptions();
-    const socialSubscription = sdkMocks.subscriptions.find(
-      ({ request }) => request.filters?.[0]?.protocol === SocialGraphDefinition.protocol,
-    );
     const connectSubscription = sdkMocks.subscriptions.find(
       ({ request }) => request.filters?.[0]?.protocol === ConnectDefinition.protocol,
     );
 
     act(() => {
-      emitMessage(socialSubscription!, {
-        interface: 'Records',
-        method   : 'Delete',
-        protocol : SocialGraphDefinition.protocol,
-      });
       emitMessage(connectSubscription!, {
         interface: 'Records',
         method   : 'Write',
@@ -279,12 +262,8 @@ describe('useSyncQueryInvalidation', () => {
       vi.advanceTimersByTime(250);
     });
 
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.socialGraph('did:dht:identity'),
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.wallets('did:dht:identity'),
-    });
+    // Wallet records are no longer invalidated here — `WalletsTab` observes
+    // them directly via `records.observe()`.
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.permissions('did:dht:identity'),
     });
@@ -303,7 +282,7 @@ describe('useSyncQueryInvalidation', () => {
     const subscription = sdkMocks.subscriptions.find(
       ({ connectedDid }) => connectedDid === 'did:dht:identity',
     );
-    expect(subscription?.request).toEqual({});
+    expect(subscription?.request.filters).toBeUndefined();
 
     act(() => {
       emitMessage(subscription!, { interface: 'Protocols', method: 'Configure' });

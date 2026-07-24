@@ -7,7 +7,6 @@ const IdentityDetailsPage = lazy(() => import('@/features/identities/IdentityDet
 const CreateIdentityPage = lazy(() => import('@/features/identities/CreateIdentityPage'));
 const EditIdentityPage = lazy(() => import('@/features/identities/EditIdentityPage'));
 const ImportIdentityPage = lazy(() => import('@/features/identities/ImportIdentityPage'));
-const SocialGraphPage = lazy(() => import('@/features/social/SocialGraphPage'));
 const SearchPage = lazy(() => import('@/features/search/SearchPage'));
 const AppConnectPage = lazy(() => import('@/features/connect/AppConnectPage'));
 const DWebConnectPage = lazy(() => import('@/features/connect/DWebConnectPage'));
@@ -20,7 +19,6 @@ export const routes: RouteObject[] = [
   { index: true, element: <IdentitiesListPage /> },
   { path: 'identities/create', element: <CreateIdentityPage /> },
   { path: 'identities/import', element: <ImportIdentityPage /> },
-  { path: 'social', element: <SocialGraphPage /> },
   { path: 'identity/:did', element: <IdentityDetailsPage /> },
   { path: 'identity/:did/edit', element: <EditIdentityPage /> },
   { path: 'search', element: <SearchPage /> },

@@ -1,10 +1,10 @@
-import type { MessagesLiveQuery } from '@enbox/api';
+import type { DwnSubscriptionMessage } from '@enbox/dwn-clients';
 import type { SyncEvent, SyncMessageDescriptor } from '@enbox/agent';
 
 import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Enbox } from '@enbox/api';
-import { ConnectDefinition, ProfileDefinition, SocialGraphDefinition } from '@enbox/protocols';
+import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
 import { Effect, Stream } from 'effect';
 
 import { useAuthStore } from '@/stores/auth-store';
@@ -24,8 +24,6 @@ type PendingInvalidations = {
   permissions: Set<string>;
   profiles: Set<string>;
   protocols: Set<string>;
-  socialGraphs: Set<string>;
-  wallets: Set<string>;
 };
 
 function createPendingInvalidations(): PendingInvalidations {
@@ -36,8 +34,6 @@ function createPendingInvalidations(): PendingInvalidations {
     permissions : new Set(),
     profiles    : new Set(),
     protocols   : new Set(),
-    socialGraphs: new Set(),
-    wallets     : new Set(),
   };
 }
 
@@ -98,12 +94,7 @@ function queueIdentityDescriptor(
       pending.identities = true;
       break;
 
-    case SocialGraphDefinition.protocol:
-      pending.socialGraphs.add(did);
-      break;
-
     case ConnectDefinition.protocol:
-      pending.wallets.add(did);
       pending.permissions.add(did);
       break;
   }
@@ -153,7 +144,7 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
     }
 
     const pending = createPendingInvalidations();
-    const liveQueries: MessagesLiveQuery[] = [];
+    const messageSubscriptions: Array<{ close: () => Promise<void> }> = [];
     const removeListeners: Array<() => void> = [];
     let cancelled = false;
     let flushTimer: ReturnType<typeof setTimeout> | undefined;
@@ -172,8 +163,6 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
         [pending.permissions, queryKeys.identities.permissions],
         [pending.profiles, queryKeys.identities.profile],
         [pending.protocols, queryKeys.identities.protocols],
-        [pending.socialGraphs, queryKeys.identities.socialGraph],
-        [pending.wallets, queryKeys.identities.wallets],
       ] as const;
 
       for (const [dids, queryKey] of invalidations) {
@@ -196,36 +185,50 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
       protocol?: string,
     ): Promise<void> {
       try {
-        const { status, liveQuery } = await enbox.dwn.messages.subscribe(
-          protocol === undefined ? {} : { filters: [{ protocol }] },
-        );
+        // The subscription handler must be supplied at dispatch time — the old
+        // MessagesLiveQuery buffered dispatches until a listener attached, and
+        // that buffering is gone, so a late handler would drop catch-up events.
+        const { status, subscription } = await enbox.dwn.messages.subscribe({
+          ...(protocol === undefined ? {} : { filters: [{ protocol }] }),
+          subscriptionHandler: (message: DwnSubscriptionMessage): void => {
+            if (cancelled) {
+              return;
+            }
+            if (message.type === 'event') {
+              if (did === undefined) {
+                pending.identities = true;
+              } else {
+                queueIdentityDescriptor(
+                  message.event.message.descriptor as SyncMessageDescriptor,
+                  did,
+                  pending,
+                );
+              }
+              scheduleFlush();
+              return;
+            }
+            if (message.type === 'error') {
+              console.warn(
+                `Message subscription ended for ${did ?? 'the agent DID'}${protocol ? ` (${protocol})` : ''}:`,
+                message.error,
+              );
+            }
+          },
+        });
 
         if (cancelled) {
-          await liveQuery?.close();
+          await subscription?.close();
           return;
         }
 
-        if (!liveQuery || status.code >= 300) {
+        if (!subscription || status.code >= 300) {
           console.warn(
             `Message subscription failed for ${did ?? 'the agent DID'}${protocol ? ` (${protocol})` : ''}: ${status.code} ${status.detail}`,
           );
           return;
         }
 
-        liveQueries.push(liveQuery);
-        removeListeners.push(liveQuery.on('event', (change) => {
-          if (did === undefined) {
-            pending.identities = true;
-          } else {
-            queueIdentityDescriptor(change.descriptor, did, pending);
-          }
-          scheduleFlush();
-        }));
-        removeListeners.push(liveQuery.on('error', (error) => {
-          console.warn(
-            `Message subscription ended for ${did ?? 'the agent DID'}${protocol ? ` (${protocol})` : ''}: ${error.code} ${error.detail}`,
-          );
-        }));
+        messageSubscriptions.push(subscription);
       } catch (error) {
         if (!cancelled) {
           console.warn(
@@ -292,8 +295,8 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
       for (const removeListener of removeListeners) {
         removeListener();
       }
-      for (const liveQuery of liveQueries) {
-        void liveQuery.close().catch((error) => {
+      for (const subscription of messageSubscriptions) {
+        void subscription.close().catch((error) => {
           console.warn('Unable to close message subscription:', error);
         });
       }

@@ -3,6 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchProfile } from '../identity-queries';
 
 const mocks = vi.hoisted(() => {
+  // The `repository` facade was removed; reads now go through the typed
+  // `records.query(path, request)` surface. Keep one stub per protocol path so
+  // existing `mockResolvedValue(Once)` chains still describe the same records.
   const repo = {
     profile: {
       get: vi.fn(),
@@ -10,21 +13,29 @@ const mocks = vi.hoisted(() => {
       hero: { get: vi.fn() },
     },
   };
+  const byPath: Record<string, () => unknown> = {
+    'profile'        : repo.profile.get,
+    'profile/avatar' : repo.profile.avatar.get,
+    'profile/hero'   : repo.profile.hero.get,
+  };
+  const query = vi.fn(async (path: string) => {
+    const record = await byPath[path]?.();
+    return { records: record ? [record] : [] };
+  });
 
   return {
     repo,
+    query,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
-      using: vi.fn((protocol) => protocol),
+        using: vi.fn(() => ({ records: { query } })),
       };
     }),
-    repository: vi.fn(() => repo),
   };
 });
 
 vi.mock('@enbox/api', () => ({
   Enbox: mocks.Enbox,
-  repository: mocks.repository,
 }));
 
 vi.mock('@enbox/api/advanced', () => ({

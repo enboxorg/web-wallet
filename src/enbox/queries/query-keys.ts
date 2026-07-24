@@ -12,7 +12,6 @@ export const queryKeys = {
     detail: (did: string) => ['identities', did] as const,
     profile: (did: string) => ['identities', did, 'profile'] as const,
     protocols: (did: string) => ['identities', did, 'protocols'] as const,
-    socialGraph: (did: string) => ['identities', did, 'socialGraph'] as const,
     permissions: (did: string) => ['identities', did, 'permissions'] as const,
     wallets: (did: string) => ['identities', did, 'wallets'] as const,
     activity: (did: string) => ['identities', did, 'activity'] as const,

@@ -59,7 +59,6 @@ describe('queryKeys.identities.detail', () => {
 const subKeyFactories = [
   'profile',
   'protocols',
-  'socialGraph',
   'permissions',
   'wallets',
   'activity',

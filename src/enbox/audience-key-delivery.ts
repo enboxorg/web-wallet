@@ -79,35 +79,42 @@ async function collectAudienceTuples(
 
   for (const definition of definitions) {
     for (const rolePath of deliverableRolePaths(definition)) {
-      const records = enbox.dwn.records.queryAll({
-        filter: {
-          protocol    : definition.protocol,
-          protocolPath: rolePath,
-        },
-        pageSize: ROLE_QUERY_PAGE_SIZE,
-      });
+      // `queryAll` was removed in the one-typed-records-surface release; drain
+      // pages explicitly until the cursor is exhausted.
+      let cursor: unknown;
+      do {
+        const page = await enbox.dwn.records.query({
+          filter: {
+            protocol    : definition.protocol,
+            protocolPath: rolePath,
+          },
+          pagination: { limit: ROLE_QUERY_PAGE_SIZE, cursor: cursor as never },
+        });
 
-      for await (const record of records as AsyncIterable<RoleRecordLike>) {
-        if (!record.recipient) {
-          continue;
+        for (const record of page.records as unknown as RoleRecordLike[]) {
+          if (!record.recipient) {
+            continue;
+          }
+
+          const audienceContextId = getRoleAudienceContextId(rolePath, record.contextId);
+          if (audienceContextId === undefined) {
+            continue;
+          }
+
+          const tuple: AudienceTuple = {
+            ownerDid,
+            protocol: definition.protocol,
+            rolePath,
+            recipientDid: record.recipient,
+            audienceContextId,
+            ...(rolePath.includes('/') && record.contextId ? { contextId: record.contextId } : {}),
+            ...(granteeDid && { granteeDid }),
+          };
+          tuples.set(tupleKey(tuple), tuple);
         }
 
-        const audienceContextId = getRoleAudienceContextId(rolePath, record.contextId);
-        if (audienceContextId === undefined) {
-          continue;
-        }
-
-        const tuple: AudienceTuple = {
-          ownerDid,
-          protocol: definition.protocol,
-          rolePath,
-          recipientDid: record.recipient,
-          audienceContextId,
-          ...(rolePath.includes('/') && record.contextId ? { contextId: record.contextId } : {}),
-          ...(granteeDid && { granteeDid }),
-        };
-        tuples.set(tupleKey(tuple), tuple);
-      }
+        cursor = page.cursor;
+      } while (cursor !== undefined);
     }
   }
 
