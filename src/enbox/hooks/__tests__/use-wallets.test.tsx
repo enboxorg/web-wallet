@@ -62,7 +62,7 @@ describe('useWallets', () => {
     expect(result.current.loading).toBe(false);
     expect(mocks.observe).toHaveBeenCalledWith('wallet', {
       materialize : true,
-      pagination  : { limit: 100 },
+      pagination  : { limit: 1 },
     });
 
     unmount();

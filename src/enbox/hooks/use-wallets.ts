@@ -20,7 +20,7 @@ import type { EnboxAgent } from '../types';
 import { useAuthStore } from '../../stores/auth-store';
 import { useRecordsView } from './use-records-view';
 
-const WALLET_PAGE_LIMIT = 100;
+const WALLET_PAGE_LIMIT = 1;
 
 export interface UseWalletsResult {
   /** Decoded wallet-record payloads. */
