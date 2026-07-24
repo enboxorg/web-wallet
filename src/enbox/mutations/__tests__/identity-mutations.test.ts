@@ -32,6 +32,34 @@ const mocks = vi.hoisted(() => {
       },
     },
   };
+  // The `repository` facade was removed; writes now go through the typed
+  // `records.query/create` surface. Map it onto the existing per-path stubs so
+  // the facade-era spies keep describing the same operations.
+  const nodeFor = (path: string): any =>
+    path === 'profile' ? profileRepo.profile
+      : path === 'profile/avatar' ? profileRepo.profile.avatar
+        : path === 'profile/hero' ? profileRepo.profile.hero
+          : undefined;
+
+  const profileApi = {
+    records: {
+      query: vi.fn(async (path: string, request?: any) => {
+        if (path === 'profile') {
+          return { records: [] };
+        }
+        const record = await nodeFor(path)?.get(request?.filter?.contextId);
+        return { records: record ? [record] : [] };
+      }),
+      create: vi.fn(async (path: string, request: any) => {
+        if (path === 'profile') {
+          return nodeFor(path).set(request);
+        }
+        await nodeFor(path).set(request.parentContextId, request);
+        return { record: {} };
+      }),
+    },
+  };
+
   const connectApi = {
     records: {
       query: vi.fn(async () => ({ records: [] })),
@@ -47,14 +75,14 @@ const mocks = vi.hoisted(() => {
     connectProtocol,
     connectApi,
     profileRepo,
+    profileApi,
     profileRecord,
     walletRecord,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
-      using: vi.fn((protocol) => protocol === connectProtocol ? connectApi : protocol),
+      using: vi.fn((protocol) => protocol === connectProtocol ? connectApi : profileApi),
       };
     }),
-    repository: vi.fn(() => profileRepo),
     ensureRegistration: vi.fn(),
     ensurePortableOwnerPublished: vi.fn(),
     installProtocols: vi.fn(),
@@ -64,7 +92,6 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@enbox/api', () => ({
   Enbox: mocks.Enbox,
-  repository: mocks.repository,
 }));
 
 vi.mock('@enbox/protocols', () => ({

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { Clock, Globe, FileText, User, Users, Link2 } from 'lucide-react';
+import { Clock, Globe, FileText, User, Link2 } from 'lucide-react';
 import { useAgent } from '@/enbox/hooks/use-agent';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { fetchActivity, type ActivityRecord } from '@/enbox/queries/identity-queries';
@@ -11,7 +11,6 @@ import { truncateDid, formatRelativeTime } from '@/lib/utils';
 function getProtocolIcon(protocol?: string) {
   if (!protocol) return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
   if (protocol.includes('profile')) return <User className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
-  if (protocol.includes('social-graph')) return <Users className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
   if (protocol.includes('connect')) return <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
   return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
 }

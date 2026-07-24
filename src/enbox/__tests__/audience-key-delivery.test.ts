@@ -13,28 +13,25 @@ const mocks = vi.hoisted(() => {
     protocols: protocolDefinitions.map((definition) => ({ definition })),
     status: { code: 200, detail: 'OK' },
   }));
-  const queryAll = vi.fn((request: {
+  // `queryAll` was removed; the drain is now an explicit cursor loop over
+  // `records.query`. One page is enough — a cursor of `undefined` ends it.
+  const query = vi.fn(async (request: {
     filter: { protocol: string; protocolPath: string };
   }) => {
     const key = `${request.filter.protocol}|${request.filter.protocolPath}`;
-    const records = recordsByRole.get(key) ?? [];
-    return (async function* () {
-      for (const record of records) {
-        yield record;
-      }
-    })();
+    return { records: recordsByRole.get(key) ?? [], cursor: undefined };
   });
 
   return {
     recordsByRole,
     protocolDefinitions,
     protocolsQuery,
-    queryAll,
+    query,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
         dwn: {
           protocols: { query: protocolsQuery },
-          records: { queryAll },
+          records: { query },
         },
       };
     }),
@@ -107,19 +104,19 @@ describe('audience key delivery data layer', () => {
       connectedDid: 'did:dht:alice',
       delegateDid : 'did:dht:delegate',
     });
-    expect(mocks.queryAll).toHaveBeenCalledWith({
+    expect(mocks.query).toHaveBeenCalledWith({
       filter: {
         protocol    : encryptedProtocol.protocol,
         protocolPath: 'member',
       },
-      pageSize: 100,
+      pagination: { limit: 100, cursor: undefined },
     });
-    expect(mocks.queryAll).toHaveBeenCalledWith({
+    expect(mocks.query).toHaveBeenCalledWith({
       filter: {
         protocol    : encryptedProtocol.protocol,
         protocolPath: 'thread/member',
       },
-      pageSize: 100,
+      pagination: { limit: 100, cursor: undefined },
     });
     expect(agent.dwn.getAudienceKeyDeliveryStatus).toHaveBeenCalledWith({
       target      : 'did:dht:alice',

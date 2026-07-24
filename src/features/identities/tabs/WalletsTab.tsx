@@ -1,8 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
 import { ExternalLink, Database } from 'lucide-react';
-import { useAgent } from '@/enbox/hooks/use-agent';
-import { queryKeys } from '@/enbox/queries/query-keys';
-import { fetchWallets } from '@/enbox/queries/identity-queries';
+import { useWallets } from '@/enbox/hooks/use-wallets';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
@@ -12,23 +9,17 @@ interface WalletsTabProps {
 }
 
 export default function WalletsTab({ did }: WalletsTabProps) {
-  const agent = useAgent();
+  const { wallets, loading, empty, error } = useWallets(did);
 
-  const { data: wallets, isLoading, isError, error } = useQuery({
-    queryKey: queryKeys.identities.wallets(did),
-    queryFn: () => fetchWallets(agent, did),
-    enabled: !!did,
-  });
-
-  if (isLoading) {
+  if (loading) {
     return <Loader message="Loading wallets..." />;
   }
 
-  if (isError) {
-    return <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load data'} />;
+  if (error) {
+    return <ErrorAlert message={error.message} />;
   }
 
-  if (!wallets || wallets.length === 0) {
+  if (empty) {
     return (
       <EmptyState
         icon={<Database />}

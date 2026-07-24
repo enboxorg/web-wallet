@@ -7,8 +7,8 @@
 
 import { Effect } from 'effect';
 import { DwnApi } from '@enbox/api/advanced';
-import { Enbox, repository } from '@enbox/api';
-import { ConnectProtocol, ProfileProtocol } from '@enbox/protocols';
+import { Enbox } from '@enbox/api';
+import { ProfileProtocol } from '@enbox/protocols';
 import { getDwnServiceEndpointUrls } from '@enbox/agent';
 
 import type { EnboxAgent, IdentityProfile } from '../types';
@@ -84,10 +84,12 @@ export async function fetchProfile(
 export function fetchProfileEffect(did: string) {
   return Effect.gen(function* () {
     const enbox = yield* createEnboxEffect(did);
-    const repo = repository(enbox.using(ProfileProtocol));
+    const profileApi = enbox.using(ProfileProtocol);
 
+    // `$recordLimit: { max: 1 }` makes `profile` a singleton by read-time
+    // projection, so the first queried record is the canonical one.
     const profileRecord = yield* Effect.tryPromise({
-      try: async () => repo.profile.get(),
+      try: async () => (await profileApi.records.query('profile')).records[0],
       catch: sdkError('profile.get'),
     });
     const hasProfileRecord = profileRecord !== undefined;
@@ -107,7 +109,7 @@ export function fetchProfileEffect(did: string) {
       // Avatar
       const contextId = profileRecord.contextId as string;
       const avatarRecord = yield* Effect.tryPromise({
-        try: async () => repo.profile.avatar.get(contextId),
+        try: async () => (await profileApi.records.query('profile/avatar', { filter: { contextId } })).records[0],
         catch: sdkError('profile.avatar.get'),
       });
       if (avatarRecord) {
@@ -118,7 +120,7 @@ export function fetchProfileEffect(did: string) {
 
       // Hero image
       const heroRecord = yield* Effect.tryPromise({
-        try: async () => repo.profile.hero.get(contextId),
+        try: async () => (await profileApi.records.query('profile/hero', { filter: { contextId } })).records[0],
         catch: sdkError('profile.hero.get'),
       });
       if (heroRecord) {
@@ -187,34 +189,6 @@ export function fetchPermissionsEffect(did: string) {
       try: async () => dwn.permissions.queryGrants(),
       catch: sdkError('permissions.queryGrants'),
     });
-  });
-}
-
-// ── Wallets ────────────────────────────────────────────────────────
-
-/** Wallet records stored via the Connect protocol. */
-export async function fetchWallets(agent: EnboxAgent, did: string) {
-  return runEnboxPromise(
-    fetchWalletsEffect(did).pipe(
-      Effect.provide(currentAgentLayer(agent)),
-    ),
-  );
-}
-
-export function fetchWalletsEffect(did: string) {
-  return Effect.gen(function* () {
-    const enbox = yield* createEnboxEffect(did);
-    const connect = enbox.using(ConnectProtocol);
-    const { records } = yield* Effect.tryPromise({
-      try: async () => connect.records.query('wallet'),
-      catch: sdkError('wallet.records.query'),
-    });
-    return yield* Effect.forEach(records, (r: any) =>
-      Effect.tryPromise({
-        try: async () => r.data.json(),
-        catch: sdkError('wallet.record.json'),
-      })
-    );
   });
 }
 
