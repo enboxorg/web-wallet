@@ -31,9 +31,9 @@ export default function WalletsTab({ did }: WalletsTabProps) {
 
   return (
     <div className="space-y-2">
-      {wallets.map((wallet: any, i: number) => {
-        const urls = wallet.webWallets ?? wallet.urls ?? [];
-        const displayUrl = wallet.url || wallet.host || (urls.length > 0 ? urls[0] : null);
+      {wallets.map((wallet, i) => {
+        const urls = wallet.webWallets;
+        const displayUrl = urls[0];
 
         return (
           <div

@@ -20,6 +20,10 @@ import {
   getCachedProfileImageUrlEffect,
 } from '../effect/profile-image-cache';
 
+const PROFILE_MATERIALIZATION = {
+  children: ['profile/avatar', 'profile/hero'],
+} as const;
+
 function createEnboxEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
@@ -86,45 +90,27 @@ export function fetchProfileEffect(did: string) {
     const enbox = yield* createEnboxEffect(did);
     const profileApi = enbox.using(ProfileProtocol);
 
-    // `$recordLimit: { max: 1 }` makes `profile` a singleton by read-time
-    // projection, so the first queried record is the canonical one.
-    const profileRecord = yield* Effect.tryPromise({
-      try: async () => (await profileApi.records.query('profile')).records[0],
+    const profile = yield* Effect.tryPromise({
+      try: async () => (await profileApi.records.query('profile', {
+        materialize : PROFILE_MATERIALIZATION,
+        pagination  : { limit: 1 },
+      })).records[0],
       catch: sdkError('profile.get'),
     });
-    const hasProfileRecord = profileRecord !== undefined;
-
-    let socialData: { displayName: string; tagline?: string; bio?: string } = {
-      displayName: '',
-    };
+    const hasProfileRecord = profile !== undefined;
+    const socialData = profile?.value ?? { displayName: '' };
     let avatarUrl: string | undefined;
     let heroUrl: string | undefined;
 
-    if (profileRecord) {
-      socialData = yield* Effect.tryPromise({
-        try: async () => profileRecord.data.json(),
-        catch: sdkError('profile.data.json'),
-      });
-
-      // Avatar
-      const contextId = profileRecord.contextId as string;
-      const avatarRecord = yield* Effect.tryPromise({
-        try: async () => (await profileApi.records.query('profile/avatar', { filter: { contextId } })).records[0],
-        catch: sdkError('profile.avatar.get'),
-      });
-      if (avatarRecord) {
-        avatarUrl = yield* getCachedProfileImageUrlEffect(did, 'avatar', avatarRecord);
+    if (profile) {
+      if (profile.children.avatar) {
+        avatarUrl = yield* getCachedProfileImageUrlEffect(did, 'avatar', profile.children.avatar);
       } else {
         yield* clearCachedProfileImageUrlEffect(did, 'avatar');
       }
 
-      // Hero image
-      const heroRecord = yield* Effect.tryPromise({
-        try: async () => (await profileApi.records.query('profile/hero', { filter: { contextId } })).records[0],
-        catch: sdkError('profile.hero.get'),
-      });
-      if (heroRecord) {
-        heroUrl = yield* getCachedProfileImageUrlEffect(did, 'hero', heroRecord);
+      if (profile.children.hero) {
+        heroUrl = yield* getCachedProfileImageUrlEffect(did, 'hero', profile.children.hero);
       } else {
         yield* clearCachedProfileImageUrlEffect(did, 'hero');
       }

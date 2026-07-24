@@ -20,7 +20,7 @@ const mocks = vi.hoisted(() => {
     profile: {
       set: vi.fn(async () => {
         calls.push('profile:set');
-        return { record: profileRecord };
+        return profileRecord;
       }),
       avatar: {
         set: vi.fn(async () => ({})),
@@ -32,9 +32,8 @@ const mocks = vi.hoisted(() => {
       },
     },
   };
-  // The `repository` facade was removed; writes now go through the typed
-  // `records.query/create` surface. Map it onto the existing per-path stubs so
-  // the facade-era spies keep describing the same operations.
+  // Map the typed records surface onto one spy per protocol path so tests can
+  // assert the root and nested singleton operations independently.
   const nodeFor = (path: string): any =>
     path === 'profile' ? profileRepo.profile
       : path === 'profile/avatar' ? profileRepo.profile.avatar
@@ -47,15 +46,14 @@ const mocks = vi.hoisted(() => {
         if (path === 'profile') {
           return { records: [] };
         }
-        const record = await nodeFor(path)?.get(request?.filter?.contextId);
+        const record = await nodeFor(path)?.get(request?.within);
         return { records: record ? [record] : [] };
       }),
-      create: vi.fn(async (path: string, request: any) => {
+      set: vi.fn(async (path: string, request: any) => {
         if (path === 'profile') {
           return nodeFor(path).set(request);
         }
-        await nodeFor(path).set(request.parentContextId, request);
-        return { record: {} };
+        return nodeFor(path).set(request.within, request);
       }),
     },
   };
@@ -65,7 +63,7 @@ const mocks = vi.hoisted(() => {
       query: vi.fn(async () => ({ records: [] })),
       create: vi.fn(async () => {
         calls.push('wallet:create');
-        return { record: walletRecord };
+        return walletRecord;
       }),
     },
   };
@@ -389,7 +387,7 @@ describe('identity mutations', () => {
     expect(mocks.profileRepo.profile.avatar.set).toHaveBeenCalledWith(
       'profile-context',
       expect.objectContaining({
-        dataFormat: 'image/jpeg',
+        within: 'profile-context',
       }),
     );
 
@@ -508,12 +506,10 @@ describe('identity mutations', () => {
     expect(agent.identity.setDwnEndpoints).not.toHaveBeenCalled();
   });
 
-  it('replaces profile image records so the MIME type can change', async () => {
+  it('updates profile images through the typed singleton API when the MIME type changes', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
-    const existingAvatar = { delete: vi.fn(async () => undefined) };
     const avatar = new File(['avatar'], 'avatar.webp', { type: 'image/webp' });
-    mocks.profileRepo.profile.avatar.get.mockResolvedValueOnce(existingAvatar);
 
     await updateIdentityProfile(agent, {
       did,
@@ -521,14 +517,32 @@ describe('identity mutations', () => {
       avatar,
     });
 
-    expect(mocks.profileRepo.profile.avatar.get).toHaveBeenCalledWith('profile-context');
-    expect(existingAvatar.delete).toHaveBeenCalled();
+    expect(mocks.profileRepo.profile.avatar.get).not.toHaveBeenCalled();
     expect(mocks.profileRepo.profile.avatar.set).toHaveBeenCalledWith(
       'profile-context',
       expect.objectContaining({
-        dataFormat: 'image/webp',
+        within: 'profile-context',
       }),
     );
+    const avatarWrite = mocks.profileRepo.profile.avatar.set.mock.calls[0][1];
+    expect(avatarWrite.data.type).toBe('image/webp');
+  });
+
+  it('explicitly deletes a profile image when it is removed', async () => {
+    const did = 'did:dht:existing';
+    const agent = createAgent(did);
+    const existingAvatar = { delete: vi.fn(async () => undefined) };
+    mocks.profileRepo.profile.avatar.get.mockResolvedValueOnce(existingAvatar);
+
+    await updateIdentityProfile(agent, {
+      did,
+      displayName: 'Alice',
+      avatar: null,
+    });
+
+    expect(mocks.profileRepo.profile.avatar.get).toHaveBeenCalledWith('profile-context');
+    expect(existingAvatar.delete).toHaveBeenCalledOnce();
+    expect(mocks.profileRepo.profile.avatar.set).not.toHaveBeenCalled();
   });
 
   it('rejects unsupported profile image types with a supported-format message', async () => {

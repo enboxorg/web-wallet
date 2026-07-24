@@ -36,16 +36,21 @@ const mocks = vi.hoisted(() => {
       protocol: protocolObjects.connect,
     })),
   };
+  const typedProtocols = {
+    social: { definition: definitions.social, codecs: {} },
+    profile: { definition: definitions.profile, codecs: {} },
+    connect: { definition: definitions.connect, codecs: {} },
+  };
 
   return {
     definitions,
     protocolObjects,
     configureResults,
-    defineProtocol: vi.fn((definition) => definition),
+    typedProtocols,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
-        using: vi.fn((definition) => {
-          switch (definition.protocol) {
+        using: vi.fn((typedProtocol) => {
+          switch (typedProtocol.definition.protocol) {
             case definitions.social.protocol:
               return { configure: configureResults.social };
             case definitions.profile.protocol:
@@ -53,7 +58,7 @@ const mocks = vi.hoisted(() => {
             case definitions.connect.protocol:
               return { configure: configureResults.connect };
             default:
-              throw new Error(`Unexpected protocol ${definition.protocol}`);
+              throw new Error(`Unexpected protocol ${typedProtocol.definition.protocol}`);
           }
         }),
       };
@@ -63,13 +68,12 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@enbox/api', () => ({
   Enbox: mocks.Enbox,
-  defineProtocol: mocks.defineProtocol,
 }));
 
 vi.mock('@enbox/protocols', () => ({
-  SocialGraphDefinition: mocks.definitions.social,
-  ProfileDefinition: mocks.definitions.profile,
-  ConnectDefinition: mocks.definitions.connect,
+  SocialGraphProtocol: mocks.typedProtocols.social,
+  ProfileProtocol: mocks.typedProtocols.profile,
+  ConnectProtocol: mocks.typedProtocols.connect,
 }));
 
 describe('installProtocols', () => {
