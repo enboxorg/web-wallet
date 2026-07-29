@@ -1,6 +1,6 @@
 import { Effect } from 'effect';
 
-import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
+import { IDENTITY_SYNC_PROTOCOLS, installProtocolsEffect } from './protocols';
 import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
 import { runIdentitySetupSingleFlight } from './effect/keyed-single-flight';
@@ -17,6 +17,11 @@ type IdentityLike = {
   metadata?: { connectedDid?: unknown };
 };
 
+type IdentityTarget = {
+  connectedDid: string;
+  delegateDid?: string;
+};
+
 export type IdentitySyncReconcileResult = {
   changedDids: string[];
   failedDids: string[];
@@ -26,14 +31,36 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-export function getIdentityDid(identity: unknown): string | undefined {
+function getIdentityTarget(identity: unknown): IdentityTarget | undefined {
   const candidate = identity as IdentityLike | undefined;
-  const did = candidate?.metadata?.connectedDid ?? candidate?.did?.uri;
-  return typeof did === 'string' && did.length > 0 ? did : undefined;
+  const identityDid = candidate?.did?.uri;
+  const connectedDid = candidate?.metadata?.connectedDid ?? identityDid;
+  if (typeof connectedDid !== 'string' || connectedDid.length === 0) {
+    return undefined;
+  }
+
+  return {
+    connectedDid,
+    ...(typeof identityDid === 'string'
+      && identityDid.length > 0
+      && identityDid !== connectedDid
+      && { delegateDid: identityDid }),
+  };
 }
 
-function sameProtocolScope(existing: SyncIdentityOptions | undefined): boolean {
+export function getIdentityDid(identity: unknown): string | undefined {
+  return getIdentityTarget(identity)?.connectedDid;
+}
+
+function sameProtocolScope(
+  existing: SyncIdentityOptions | undefined,
+  delegateDid: string | undefined,
+): boolean {
   if (!existing || existing.protocols === 'all') {
+    return false;
+  }
+
+  if (existing.delegateDid !== delegateDid) {
     return false;
   }
 
@@ -65,11 +92,12 @@ function getSyncOptionsEffect(did: string) {
 function applySyncOptionsEffect(
   did: string,
   existing: SyncIdentityOptions | undefined,
+  delegateDid: string | undefined,
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     const options = {
-      ...(existing?.delegateDid && { delegateDid: existing.delegateDid }),
+      ...(delegateDid && { delegateDid }),
       protocols: IDENTITY_SYNC_PROTOCOLS,
     };
 
@@ -117,13 +145,9 @@ function applySyncOptionsEffect(
 }
 
 /**
- * Ensure every locally known identity is registered for the wallet's scoped
- * sync protocols. When another wallet creates an identity, this wallet first
- * learns only the identity metadata through the agent DID, then must opt into
- * profile/social/connect replication for that new DID. Registering the scope is
- * enough: the SDK's sync engine hot-adds the link and pulls the identity's
- * existing records on its own, so the wallet neither drives a manual pull nor
- * re-registers the existing DID as a DWN tenant.
+ * Keep owner protocol definitions current and register every known identity
+ * for profile/connect sync. Local protocol updates propagate through sync; the
+ * wallet neither drives a manual pull nor re-registers an existing DID tenant.
  */
 export async function reconcileIdentitySync(
   agent: EnboxAgent,
@@ -140,24 +164,33 @@ export function reconcileIdentitySyncEffect(
   identities: unknown[],
 ) {
   return Effect.gen(function* () {
-    const dids = [...new Set(identities.map(getIdentityDid).filter(Boolean) as string[])];
-    if (dids.length === 0) {
+    const targets = new Map<string, IdentityTarget>();
+    for (const identity of identities) {
+      const target = getIdentityTarget(identity);
+      if (target !== undefined) {
+        targets.set(target.connectedDid, target);
+      }
+    }
+    if (targets.size === 0) {
       return { changedDids: [], failedDids: [] };
     }
 
     const changedDids: string[] = [];
     const failedDids: string[] = [];
-    for (const did of dids) {
+    for (const { connectedDid: did, delegateDid } of targets.values()) {
       const changed = yield* Effect.gen(function* () {
         const existing = yield* getSyncOptionsEffect(did);
-        if (sameProtocolScope(existing)) {
+        if (delegateDid === undefined) {
+          yield* installProtocolsEffect(did);
+        }
+        if (sameProtocolScope(existing, delegateDid)) {
           return false;
         }
-        return yield* applySyncOptionsEffect(did, existing);
+        return yield* applySyncOptionsEffect(did, existing, delegateDid);
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
-            console.warn(`Identity sync reconciliation failed for ${did}:`, error);
+            console.warn(`Identity reconciliation failed for ${did}:`, error);
             failedDids.push(did);
             return false;
           })

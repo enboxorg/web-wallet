@@ -25,7 +25,7 @@ const mockProfile = createMockProfile({
 
 const mockProtocols = [
   createMockProtocol({ uri: 'https://identity.foundation/protocols/profile' }),
-  createMockProtocol({ uri: 'https://identity.foundation/protocols/social-graph' }),
+  createMockProtocol({ uri: 'https://identity.foundation/protocols/connect' }),
 ];
 
 const mockPermissions = [
@@ -192,7 +192,7 @@ describe('IdentityDetailsPage', () => {
 
     // Should show protocol human-friendly names (catalog data, not UI copy)
     expect(screen.getByText('Profile')).toBeInTheDocument();
-    expect(screen.getByText('Social Graph')).toBeInTheDocument();
+    expect(screen.getByText('Connect')).toBeInTheDocument();
   });
 
   it('switches to permissions tab and shows grantee', async () => {

@@ -95,7 +95,6 @@ vi.mock('@enbox/api', () => ({
 vi.mock('@enbox/protocols', () => ({
   ProfileProtocol: Symbol('ProfileProtocol'),
   ConnectProtocol: mocks.connectProtocol,
-  SocialGraphDefinition: { protocol: 'https://identity.foundation/protocols/social-graph' },
   ProfileDefinition: { protocol: 'https://identity.foundation/protocols/profile' },
   ConnectDefinition: { protocol: 'https://identity.foundation/protocols/connect' },
 }));
@@ -111,7 +110,6 @@ vi.mock('../../protocols', async () => {
 
   return {
     IDENTITY_SYNC_PROTOCOLS : [
-      'https://identity.foundation/protocols/social-graph',
       'https://identity.foundation/protocols/profile',
       'https://identity.foundation/protocols/connect',
     ],
@@ -208,7 +206,6 @@ describe('identity mutations', () => {
       did,
       options: {
         protocols: [
-          'https://identity.foundation/protocols/social-graph',
           'https://identity.foundation/protocols/profile',
           'https://identity.foundation/protocols/connect',
         ],
@@ -305,7 +302,6 @@ describe('identity mutations', () => {
       did,
       options: {
         protocols: [
-          'https://identity.foundation/protocols/social-graph',
           'https://identity.foundation/protocols/profile',
           'https://identity.foundation/protocols/connect',
         ],

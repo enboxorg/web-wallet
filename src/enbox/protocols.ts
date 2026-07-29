@@ -2,7 +2,7 @@
  * Protocol installation helper.
  *
  * Installs the required DWN protocols for an identity so that profile
- * records, social graph entries, and DWeb Connect grants can be created.
+ * records and DWeb Connect grants can be created.
  *
  * Uses the published typed protocols through Enbox.using(...).configure()
  * which is idempotent: protocols already installed locally return 200.
@@ -19,20 +19,14 @@ import { Effect } from 'effect';
 import type { TypedProtocol } from '@enbox/api';
 
 import { Enbox } from '@enbox/api';
-import { ConnectProtocol, ProfileProtocol, SocialGraphProtocol } from '@enbox/protocols';
+import { ConnectProtocol, ProfileProtocol } from '@enbox/protocols';
 import type { EnboxAgent } from './types';
 import { ProtocolInstallationError, sdkError } from './effect/errors';
 import { CurrentAgent, currentAgentLayer } from './effect/services';
 import { runEnboxPromise } from './effect/runtime';
 
-/**
- * All protocols the wallet requires for every identity.
- *
- * ORDER MATTERS: SocialGraph must be installed before Profile because
- * Profile is a composed protocol that references SocialGraph.
- */
+/** All protocols the wallet requires for every identity. */
 const REQUIRED_PROTOCOLS: readonly TypedProtocol[] = [
-  SocialGraphProtocol,
   ProfileProtocol,
   ConnectProtocol,
 ];
