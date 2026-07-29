@@ -7,7 +7,7 @@ import { PermissionDisplay } from '../PermissionDisplay';
 const tasksProtocol = 'https://example.com/protocols/tasks';
 const notesProtocol = 'https://example.com/protocols/notes';
 const profileProtocol = 'https://identity.foundation/protocols/profile';
-const socialGraphProtocol = 'https://identity.foundation/protocols/social-graph';
+const connectProtocol = 'https://identity.foundation/protocols/connect';
 
 describe('PermissionDisplay', () => {
   it('keeps support scopes out of the summary while disclosing every granted scope', () => {
@@ -378,7 +378,7 @@ describe('PermissionDisplay', () => {
       },
       {
         protocolDefinition: {
-          protocol: socialGraphProtocol,
+          protocol: connectProtocol,
           types: {},
           structure: {},
         },
@@ -386,7 +386,7 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: socialGraphProtocol,
+            protocol: connectProtocol,
           },
         ],
       },
@@ -425,7 +425,7 @@ describe('PermissionDisplay', () => {
         permissions={permissions}
         protocolSetupStatuses={{
           [profileProtocol]     : 'configured',
-          [socialGraphProtocol] : 'configured',
+          [connectProtocol]     : 'configured',
           [tasksProtocol]       : 'install',
           [notesProtocol]       : 'upgrade',
         }}
@@ -439,7 +439,7 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText('Will add')).toBeInTheDocument();
     expect(screen.getByText('Encryption upgrade')).toBeInTheDocument();
     expect(screen.getAllByText(/identity\.foundation\/protocols\/profile/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/identity\.foundation\/protocols\/social-graph/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/identity\.foundation\/protocols\/connect/i).length).toBeGreaterThan(0);
   });
 
   it('summarizes existing app access without repeating a separate notice', () => {

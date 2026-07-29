@@ -174,7 +174,7 @@ describe('useSyncQueryInvalidation', () => {
       ({ connectedDid }) => connectedDid === 'did:dht:identity',
     );
 
-    expect(identitySubscriptions).toHaveLength(3);
+    expect(identitySubscriptions).toHaveLength(2);
     expect(identitySubscriptions.map(({ request }) => request.filters?.[0]?.protocol)).toEqual(
       expect.arrayContaining([
         ProfileDefinition.protocol,

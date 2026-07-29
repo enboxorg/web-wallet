@@ -2,11 +2,8 @@ import type { DwnProtocolDefinition } from '@enbox/agent';
 
 import {
   ConnectDefinition,
-  ListsDefinition,
   PreferencesDefinition,
   ProfileDefinition,
-  SocialGraphDefinition,
-  StatusDefinition,
 } from '@enbox/protocols';
 
 /** Metadata for a known protocol. */
@@ -24,25 +21,13 @@ const PROTOCOL_REGISTRY: Record<string, ProtocolInfo> = {
     name        : 'Profile',
     description : 'Public profile data such as display name, bio, and avatar',
   },
-  'https://identity.foundation/protocols/social-graph': {
-    name        : 'Social Graph',
-    description : 'Social connections and follow relationships between identities',
-  },
   'https://identity.foundation/protocols/connect': {
     name        : 'Connect',
     description : 'Wallet discovery and connection records',
   },
-  'https://identity.foundation/protocols/lists': {
-    name        : 'Lists',
-    description : 'Lists, folders, collaborators, and comments',
-  },
   'https://identity.foundation/protocols/preferences': {
     name        : 'Preferences',
     description : 'Theme, locale, privacy, and notification preferences',
-  },
-  'https://identity.foundation/protocols/status': {
-    name        : 'Status',
-    description : 'Published social status updates and replies',
   },
 
   // ─── Enbox protocols ───────────────────────────────────────────
@@ -58,11 +43,8 @@ const PROTOCOL_REGISTRY: Record<string, ProtocolInfo> = {
 
 const CANONICAL_PROTOCOL_DEFINITIONS = new Map<string, DwnProtocolDefinition>([
   [ProfileDefinition.protocol, ProfileDefinition as DwnProtocolDefinition],
-  [SocialGraphDefinition.protocol, SocialGraphDefinition as DwnProtocolDefinition],
   [ConnectDefinition.protocol, ConnectDefinition as DwnProtocolDefinition],
-  [ListsDefinition.protocol, ListsDefinition as DwnProtocolDefinition],
   [PreferencesDefinition.protocol, PreferencesDefinition as DwnProtocolDefinition],
-  [StatusDefinition.protocol, StatusDefinition as DwnProtocolDefinition],
 ]);
 
 export function getCanonicalProtocolDefinition(uri: string): DwnProtocolDefinition | undefined {

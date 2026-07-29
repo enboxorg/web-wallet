@@ -52,7 +52,7 @@ describe('RemoteSyncStatusPanel', () => {
             {
               tenantDid      : 'did:dht:alice',
               remoteEndpoint : 'https://healthy.example/dwn',
-              scope          : { kind: 'protocolSet', protocols: ['profile', 'social', 'connect'] },
+              scope          : { kind: 'protocolSet', protocols: ['profile', 'connect'] },
               status         : 'live',
               connectivity   : 'online',
             },
@@ -78,7 +78,7 @@ describe('RemoteSyncStatusPanel', () => {
     expect(screen.getByText(/2 messages are waiting for remote quota/i)).toBeInTheDocument();
     expect(screen.getByText(/tenant storage quota exceeded/i)).toBeInTheDocument();
     expect(screen.getByText('All live subscriptions caught up')).toBeInTheDocument();
-    expect(screen.getByText('3 protocols')).toBeInTheDocument();
+    expect(screen.getByText('2 protocols')).toBeInTheDocument();
     expect(screen.getByText('Live')).toBeInTheDocument();
     expect(screen.getByText('0 of 1 live subscriptions caught up')).toBeInTheDocument();
     expect(screen.getByText('Repairing')).toBeInTheDocument();

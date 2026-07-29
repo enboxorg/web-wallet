@@ -11,7 +11,6 @@ const TEST_PHRASE =
 const TEST_ENDPOINTS = ['https://dwn.example'];
 
 const TEST_IDENTITY_SYNC_PROTOCOLS = vi.hoisted(() => [
-  'https://identity.foundation/protocols/social-graph',
   'https://identity.foundation/protocols/profile',
   'https://identity.foundation/protocols/connect',
 ]);

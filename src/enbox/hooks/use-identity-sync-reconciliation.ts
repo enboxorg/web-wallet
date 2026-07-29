@@ -66,14 +66,14 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
               retriesRemaining -= 1;
               rerunRef.current = true;
             } else {
-              toast.error('Failed to set up sync for one or more identities. Reload the wallet to retry.');
+              toast.error('Failed to set up one or more identities. Reload the wallet to retry.');
             }
           }
         } while (rerunRef.current);
       } catch (error) {
-        console.error('Identity sync reconciliation failed:', error);
+        console.error('Identity reconciliation failed:', error);
         toast.error(
-          'Failed to set up sync for a new identity. It may not appear until the next sync.',
+          'Failed to set up a new identity. Reload the wallet to retry.',
         );
       } finally {
         runningRef.current = false;

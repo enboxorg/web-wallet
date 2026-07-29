@@ -16,12 +16,6 @@ describe('getProtocolName', () => {
     ).toBe('Profile');
   });
 
-  it('returns "Social Graph" for the social-graph protocol URI', () => {
-    expect(
-      getProtocolName('https://identity.foundation/protocols/social-graph'),
-    ).toBe('Social Graph');
-  });
-
   it('returns "Connect" for the connect protocol URI', () => {
     expect(
       getProtocolName('https://identity.foundation/protocols/connect'),
@@ -103,8 +97,8 @@ describe('getProtocolInfo', () => {
 });
 
 describe('getCanonicalProtocolDefinition', () => {
-  it('pins every protocol definition exported by the shared protocol package', () => {
-    for (const name of ['profile', 'social-graph', 'connect', 'lists', 'preferences', 'status']) {
+  it('pins the wallet-supported protocol definitions', () => {
+    for (const name of ['profile', 'connect', 'preferences']) {
       const uri = `https://identity.foundation/protocols/${name}`;
       expect(getCanonicalProtocolDefinition(uri)?.protocol).toBe(uri);
     }

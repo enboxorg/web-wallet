@@ -4,15 +4,10 @@ import { installProtocols } from '../protocols';
 
 const mocks = vi.hoisted(() => {
   const definitions = {
-    social: { protocol: 'https://identity.foundation/protocols/social-graph' },
     profile: { protocol: 'https://identity.foundation/protocols/profile' },
     connect: { protocol: 'https://identity.foundation/protocols/connect' },
   };
   const protocolObjects = {
-    social: {
-      toJSON: vi.fn(() => ({ descriptor: { definition: definitions.social } })),
-      send: vi.fn(),
-    },
     profile: {
       toJSON: vi.fn(() => ({ descriptor: { definition: definitions.profile } })),
       send: vi.fn(),
@@ -23,10 +18,6 @@ const mocks = vi.hoisted(() => {
     },
   };
   const configureResults = {
-    social: vi.fn(async () => ({
-      status: { code: 202, detail: 'Accepted' },
-      protocol: protocolObjects.social,
-    })),
     profile: vi.fn(async () => ({
       status: { code: 202, detail: 'Accepted' },
       protocol: protocolObjects.profile,
@@ -37,7 +28,6 @@ const mocks = vi.hoisted(() => {
     })),
   };
   const typedProtocols = {
-    social: { definition: definitions.social, codecs: {} },
     profile: { definition: definitions.profile, codecs: {} },
     connect: { definition: definitions.connect, codecs: {} },
   };
@@ -51,8 +41,6 @@ const mocks = vi.hoisted(() => {
       return {
         using: vi.fn((typedProtocol) => {
           switch (typedProtocol.definition.protocol) {
-            case definitions.social.protocol:
-              return { configure: configureResults.social };
             case definitions.profile.protocol:
               return { configure: configureResults.profile };
             case definitions.connect.protocol:
@@ -71,7 +59,6 @@ vi.mock('@enbox/api', () => ({
 }));
 
 vi.mock('@enbox/protocols', () => ({
-  SocialGraphProtocol: mocks.typedProtocols.social,
   ProfileProtocol: mocks.typedProtocols.profile,
   ConnectProtocol: mocks.typedProtocols.connect,
 }));
@@ -79,10 +66,6 @@ vi.mock('@enbox/protocols', () => ({
 describe('installProtocols', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.configureResults.social.mockResolvedValue({
-      status: { code: 202, detail: 'Accepted' },
-      protocol: mocks.protocolObjects.social,
-    });
     mocks.configureResults.profile.mockResolvedValue({
       status: { code: 202, detail: 'Accepted' },
       protocol: mocks.protocolObjects.profile,
@@ -93,23 +76,16 @@ describe('installProtocols', () => {
     });
   });
 
-  it('configures required protocols locally in dependency order', async () => {
+  it('configures required protocols locally without publishing directly', async () => {
     await installProtocols({}, 'did:dht:alice');
 
-    expect(mocks.configureResults.social.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.configureResults.profile.mock.invocationCallOrder[0]);
-    expect(mocks.configureResults.profile.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.configureResults.connect.mock.invocationCallOrder[0]);
-    expect(mocks.protocolObjects.social.send).not.toHaveBeenCalled();
+    expect(mocks.configureResults.profile).toHaveBeenCalledOnce();
+    expect(mocks.configureResults.connect).toHaveBeenCalledOnce();
     expect(mocks.protocolObjects.profile.send).not.toHaveBeenCalled();
     expect(mocks.protocolObjects.connect.send).not.toHaveBeenCalled();
   });
 
   it('accepts existing local protocols as installed', async () => {
-    mocks.configureResults.social.mockResolvedValue({
-      status: { code: 200, detail: 'OK' },
-      protocol: mocks.protocolObjects.social,
-    });
     mocks.configureResults.profile.mockResolvedValue({
       status: { code: 200, detail: 'OK' },
       protocol: mocks.protocolObjects.profile,
@@ -121,20 +97,19 @@ describe('installProtocols', () => {
 
     await installProtocols({}, 'did:dht:alice');
 
-    expect(mocks.configureResults.social).toHaveBeenCalledOnce();
     expect(mocks.configureResults.profile).toHaveBeenCalledOnce();
     expect(mocks.configureResults.connect).toHaveBeenCalledOnce();
   });
 
   it('throws on local protocol configuration failures before downstream protocols', async () => {
-    mocks.configureResults.social.mockResolvedValue({
+    mocks.configureResults.profile.mockResolvedValue({
       status: { code: 400, detail: 'ProtocolsConfigureInvalidDefinition' },
       protocol: undefined,
     });
 
     await expect(installProtocols({}, 'did:dht:alice')).rejects.toThrow(
-      'Failed to install protocol https://identity.foundation/protocols/social-graph',
+      'Failed to install protocol https://identity.foundation/protocols/profile',
     );
-    expect(mocks.configureResults.profile).not.toHaveBeenCalled();
+    expect(mocks.configureResults.connect).not.toHaveBeenCalled();
   });
 });
