@@ -378,12 +378,13 @@ export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams)
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
 
-    if (params.persona) {
+    const persona = params.persona;
+    if (persona) {
       yield* Effect.tryPromise({
         try: () =>
           agent.identity.setMetadataName({
             didUri: params.did,
-            name: params.persona,
+            name: persona,
           }),
         catch: sdkError('identity.setMetadataName'),
       });

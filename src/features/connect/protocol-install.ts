@@ -1,20 +1,23 @@
 import { Effect } from 'effect';
-import type { EncryptionKeyDeriver } from '@enbox/dwn-sdk-js';
+import {
+  authoredProtocolDefinitionsEqual,
+  type EncryptionKeyDeriver,
+  KeyDerivationScheme,
+} from '@enbox/dwn-sdk-js';
 
-import { DwnInterface, type DwnProtocolDefinition, getDwnServiceEndpointUrls } from '@enbox/agent';
+import {
+  DwnInterface,
+  type DwnProtocolDefinition,
+  type EnboxPlatformAgent,
+  getDwnServiceEndpointUrls,
+} from '@enbox/agent';
 import { computeJwkThumbprint } from '@enbox/crypto';
-import { KeyDerivationScheme } from '@enbox/dwn-sdk-js';
 
 import { sdkError } from '@/enbox/effect/errors';
 import { withNetworkPolicy } from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import { getCanonicalProtocolDefinition } from '@/lib/protocol-names';
-
-type ProtocolQueryReply = {
-  status: { code: number; detail: string };
-  entries?: ProtocolConfigureEntry[];
-};
 
 export type ResolvedProtocolSetupStatus = 'configured' | 'conflict' | 'override' | 'install' | 'upgrade';
 export type ProtocolSetupStatus = ResolvedProtocolSetupStatus | 'checking' | 'unavailable';
@@ -25,46 +28,13 @@ type ProtocolConfigureEntry = {
   };
 };
 
-type PrepareProtocolAgent = {
-  did: unknown;
-  dwn: {
-    getEncryptionKeyDeriver: (didUri: string) => Promise<EncryptionKeyDeriver>;
-  };
-  rpc: {
-    sendDwnRequest: (params: {
-      dwnUrl: string;
-      targetDid: string;
-      message: unknown;
-    }) => Promise<ProtocolQueryReply>;
-  };
-  processDwnRequest: (params: {
-    author: string;
-    target: string;
-    messageType: string;
-    messageParams: Record<string, unknown>;
-    encryption?: true;
-  }) => Promise<{ reply: ProtocolQueryReply; message?: unknown }>;
-};
+type PrepareProtocolAgent = Pick<
+  EnboxPlatformAgent,
+  'did' | 'dwn' | 'rpc' | 'processDwnRequest'
+>;
 
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
-}
-
-function normalizeProtocolDefinition(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(normalizeProtocolDefinition);
-  }
-
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-
-  return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>)
-      .filter(([key, entry]) => key !== '$keyAgreement' && key !== '$encryption' && entry !== undefined)
-      .sort(([left], [right]) => left.localeCompare(right))
-      .map(([key, entry]) => [key, normalizeProtocolDefinition(entry)]),
-  );
 }
 
 function containsWalletManagedKeyAgreement(value: unknown): boolean {
@@ -95,13 +65,7 @@ function isNormalizedProtocolUri(protocol: string): boolean {
   }
 }
 
-export function protocolDefinitionsMatch(
-  installedDefinition: DwnProtocolDefinition,
-  requestedDefinition: DwnProtocolDefinition,
-): boolean {
-  return JSON.stringify(normalizeProtocolDefinition(installedDefinition))
-    === JSON.stringify(normalizeProtocolDefinition(requestedDefinition));
-}
+export const protocolDefinitionsMatch = authoredProtocolDefinitionsEqual;
 
 export function protocolHasEncryptedTypes(protocolDefinition: DwnProtocolDefinition): boolean {
   return Object.values(protocolDefinition.types ?? {}).some((type: any) => type?.encryptionRequired === true);

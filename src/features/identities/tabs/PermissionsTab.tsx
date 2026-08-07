@@ -17,6 +17,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { queryKeys } from '@/enbox/queries/query-keys';
+import { useAuthStore } from '@/stores/auth-store';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
@@ -24,21 +25,20 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { truncateDid, copyToClipboard } from '@/lib/utils';
 import { getProtocolName, getScopeLabel } from '@/lib/protocol-names';
-import type { PermissionGrant } from '@enbox/api';
+import type { DwnPermissionGrant } from '@enbox/agent';
 import {
   buildPermissionSections,
   type PermissionGranteeGroup,
   type PermissionSessionGroup,
 } from './permission-sessions';
 import { describeConnectSession, sessionTitle } from './permission-session-display';
-import { AudienceKeyDeliveryPanel } from './AudienceKeyDeliveryPanel';
 
 interface PermissionsTabProps {
   did: string;
 }
 
 type RevokeTarget =
-  | { kind: 'grant'; grant: PermissionGrant }
+  | { kind: 'grant'; grant: DwnPermissionGrant }
   | { kind: 'session'; session: PermissionSessionGroup };
 
 function formatDateTime(value: string | undefined): string {
@@ -56,7 +56,7 @@ function grantCountLabel(count: number): string {
   return count === 1 ? '1 permission' : `${count} permissions`;
 }
 
-function grantScopeLabel(grant: PermissionGrant): string | undefined {
+function grantScopeLabel(grant: DwnPermissionGrant): string | undefined {
   const scopeInterface = grant.scope?.interface;
   const method = grant.scope?.method;
   if (!scopeInterface) return undefined;
@@ -64,7 +64,7 @@ function grantScopeLabel(grant: PermissionGrant): string | undefined {
   return getScopeLabel({ interface: scopeInterface, method });
 }
 
-function revokeTargetGrants(target: RevokeTarget): PermissionGrant[] {
+function revokeTargetGrants(target: RevokeTarget): DwnPermissionGrant[] {
   return target.kind === 'session' ? target.session.grants : [target.grant];
 }
 
@@ -92,8 +92,8 @@ function PermissionGrantRow({
   grant,
   onRevoke,
 }: {
-  grant: PermissionGrant;
-  onRevoke: (grant: PermissionGrant) => void;
+  grant: DwnPermissionGrant;
+  onRevoke: (grant: DwnPermissionGrant) => void;
 }) {
   const protocol = grant.scope?.protocol;
   const scopeLabel = grantScopeLabel(grant);
@@ -182,7 +182,7 @@ function SessionCard({
   sessionGroup: PermissionSessionGroup;
   copiedDid: string | null;
   onCopy: (did: string) => void;
-  onRevokeGrant: (grant: PermissionGrant) => void;
+  onRevokeGrant: (grant: DwnPermissionGrant) => void;
   onRevokeSession: (session: PermissionSessionGroup) => void;
 }) {
   const summary = describeConnectSession(sessionGroup.session);
@@ -322,7 +322,7 @@ function StandaloneGroupCard({
   group: PermissionGranteeGroup;
   copiedDid: string | null;
   onCopy: (did: string) => void;
-  onRevokeGrant: (grant: PermissionGrant) => void;
+  onRevokeGrant: (grant: DwnPermissionGrant) => void;
 }) {
   return (
     <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-4">
@@ -368,6 +368,7 @@ function SectionHeader({
 }
 
 export default function PermissionsTab({ did }: PermissionsTabProps) {
+  const agent = useAuthStore((state) => state.agent);
   const queryClient = useQueryClient();
   const { data: permissions, isLoading, isError, error } = usePermissions(did);
   const [copiedDid, setCopiedDid] = useState<string | null>(null);
@@ -397,7 +398,14 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     const grants = revokeTargetGrants(revokeTarget);
     setRevoking(true);
     try {
-      await Promise.all(grants.map((grant) => grant.revoke()));
+      if (agent === null) {
+        throw new Error('Unlock the wallet before revoking permissions.');
+      }
+      await Promise.all(grants.map((grant) => agent.permissions.createRevocation({
+        author : did,
+        grant,
+        store  : true,
+      })));
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(did) });
       toast.success(revokeTarget.kind === 'session' ? 'Session revoked' : 'Permission revoked');
       setRevokeTarget(null);
@@ -432,8 +440,6 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
 
   return (
     <div className="space-y-6">
-      <AudienceKeyDeliveryPanel did={did} />
-
       {isEmpty && (
         <EmptyState
           icon={<Shield />}

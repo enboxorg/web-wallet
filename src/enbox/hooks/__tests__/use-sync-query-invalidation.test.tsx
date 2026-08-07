@@ -338,13 +338,10 @@ describe('useSyncQueryInvalidation', () => {
       queryKey: queryKeys.identities.activity('did:dht:identity'),
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.audienceDeliveries('did:dht:identity'),
-    });
-    expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.all,
       exact: true,
     });
-    expect(invalidateSpy).toHaveBeenCalledTimes(4);
+    expect(invalidateSpy).toHaveBeenCalledTimes(3);
   });
 
   it('invalidates profile queries from wallet domain events', async () => {

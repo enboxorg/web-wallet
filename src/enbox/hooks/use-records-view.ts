@@ -14,22 +14,22 @@
 
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 
-import type { RecordView, RecordViewSnapshot } from '@enbox/api';
+import type { RecordView, RecordViewState } from '@enbox/api';
 
 /** Opens one local observed view. Return `null` to keep the hook idle. */
 export type RecordViewOpener<T> = () => Promise<RecordView<T>>;
 
-function loadingSnapshot<T>(): RecordViewSnapshot<T> {
-  return { records: [], hasMore: false, state: 'loading' } as RecordViewSnapshot<T>;
+function loadingSnapshot<T>(): RecordViewState<T> {
+  return { records: [], hasMore: false, status: 'loading', current: false };
 }
 
 /** Stable snapshot returned while the hook is idle (no opener). */
-const IDLE_SNAPSHOT = loadingSnapshot<unknown>();
+const IDLE_SNAPSHOT = loadingSnapshot<never>();
 
 class RecordViewStore<T> {
   private view: RecordView<T> | null = null;
   private detachView: (() => void) | null = null;
-  private snapshot: RecordViewSnapshot<T> = loadingSnapshot<T>();
+  private snapshot: RecordViewState<T> = loadingSnapshot<T>();
   private readonly listeners = new Set<() => void>();
   private closed = false;
 
@@ -49,7 +49,7 @@ class RecordViewStore<T> {
         this.snapshot = snapshot;
         this.emit();
       });
-      this.snapshot = view.getSnapshot();
+      this.snapshot = view.getState();
       this.emit();
     } catch (error) {
       if (this.closed) {
@@ -58,9 +58,10 @@ class RecordViewStore<T> {
       this.snapshot = {
         records : [],
         hasMore : false,
-        state   : 'error',
+        status  : 'error',
+        current : false,
         error   : error instanceof Error ? error : new Error(String(error)),
-      } as RecordViewSnapshot<T>;
+      };
       this.emit();
     }
   }
@@ -72,7 +73,7 @@ class RecordViewStore<T> {
     };
   };
 
-  public readonly getSnapshot = (): RecordViewSnapshot<T> => this.snapshot;
+  public readonly getSnapshot = (): RecordViewState<T> => this.snapshot;
 
   public close(): void {
     this.closed = true;
@@ -92,18 +93,17 @@ function idleSubscribe(): () => void {
   return (): void => {};
 }
 
-function idleSnapshot<T>(): RecordViewSnapshot<T> {
-  return IDLE_SNAPSHOT as RecordViewSnapshot<T>;
+function idleSnapshot<T>(): RecordViewState<T> {
+  return IDLE_SNAPSHOT;
 }
 
 /**
  * Subscribes to a local observed records view. `opener` MUST be memoized by the
  * caller (e.g. `useMemo`/`useCallback` keyed on agent + connected DID + path);
  * a new opener identity reopens the view. Returns the current immutable
- * snapshot: `{ records, hasMore, state }`, where `state` is
- * `'loading' | 'ready' | 'stale' | 'error'`.
+ * state, including whether the local projection is current.
  */
-export function useRecordsView<T>(opener: RecordViewOpener<T> | null): RecordViewSnapshot<T> {
+export function useRecordsView<T>(opener: RecordViewOpener<T> | null): RecordViewState<T> {
   const store = useMemo(() => (opener === null ? null : new RecordViewStore<T>(opener)), [opener]);
 
   useEffect(() => {

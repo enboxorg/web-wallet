@@ -55,6 +55,7 @@ describe('RemoteSyncStatusPanel', () => {
               scope          : { kind: 'protocolSet', protocols: ['profile', 'connect'] },
               status         : 'live',
               connectivity   : 'online',
+              isPullCurrent  : true,
             },
             {
               tenantDid      : 'did:dht:alice',
@@ -62,6 +63,7 @@ describe('RemoteSyncStatusPanel', () => {
               scope          : { kind: 'full' },
               status         : 'repairing',
               connectivity   : 'online',
+              isPullCurrent  : false,
             },
           ]),
           on: vi.fn(() => () => {}),
@@ -77,10 +79,10 @@ describe('RemoteSyncStatusPanel', () => {
     expect(screen.getByText('Quota blocked')).toBeInTheDocument();
     expect(screen.getByText(/2 messages are waiting for remote quota/i)).toBeInTheDocument();
     expect(screen.getByText(/tenant storage quota exceeded/i)).toBeInTheDocument();
-    expect(screen.getByText('All live subscriptions caught up')).toBeInTheDocument();
+    expect(screen.getByText('Replication link caught up')).toBeInTheDocument();
     expect(screen.getByText('2 protocols')).toBeInTheDocument();
     expect(screen.getByText('Live')).toBeInTheDocument();
-    expect(screen.getByText('0 of 1 live subscriptions caught up')).toBeInTheDocument();
+    expect(screen.getByText('0 of 1 replication link caught up')).toBeInTheDocument();
     expect(screen.getByText('Repairing')).toBeInTheDocument();
   });
 
@@ -114,5 +116,42 @@ describe('RemoteSyncStatusPanel', () => {
         'https://full.example/dwn',
       );
     });
+  });
+
+  it('renders followed-context replication links', async () => {
+    useAuthStore.setState({
+      agent: {
+        sync: {
+          getRemoteSyncStatus: vi.fn(async () => [{
+            tenantDid               : 'did:dht:owner',
+            remoteEndpoint          : 'https://shared.example/dwn',
+            state                   : 'healthy',
+            connectivity            : 'online',
+            quotaBlockedMessageCount: 0,
+            failedMessageCount      : 0,
+          }]),
+          getReplicationLinks: vi.fn(async () => [{
+            tenantDid      : 'did:dht:owner',
+            remoteEndpoint : 'https://shared.example/dwn',
+            scope          : {
+              kind          : 'context',
+              protocol      : 'https://example.com/notebook',
+              contextId     : 'notebook-1',
+              protocolPaths : ['notebook/page'],
+            },
+            status       : 'live',
+            connectivity : 'online',
+            isPullCurrent: false,
+          }]),
+          on: vi.fn(() => () => {}),
+          retryRemoteNow: vi.fn(),
+        },
+      },
+    });
+
+    render(<RemoteSyncStatusPanel did="did:dht:owner" />, { wrapper: createWrapper() });
+
+    expect(await screen.findByText('Shared context')).toBeInTheDocument();
+    expect(screen.getByText('0 of 1 replication link caught up')).toBeInTheDocument();
   });
 });

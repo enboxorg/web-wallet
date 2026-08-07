@@ -20,7 +20,6 @@ const INVALIDATION_DEBOUNCE_MS = 250;
 type PendingInvalidations = {
   identities: boolean;
   activity: Set<string>;
-  audienceDeliveries: Set<string>;
   permissions: Set<string>;
   profiles: Set<string>;
   protocols: Set<string>;
@@ -30,7 +29,6 @@ function createPendingInvalidations(): PendingInvalidations {
   return {
     identities  : false,
     activity    : new Set(),
-    audienceDeliveries: new Set(),
     permissions : new Set(),
     profiles    : new Set(),
     protocols   : new Set(),
@@ -77,15 +75,10 @@ function queueIdentityDescriptor(
 
   if (descriptor.interface === 'Protocols') {
     pending.protocols.add(did);
-    pending.audienceDeliveries.add(did);
   }
 
   if (descriptor.interface === 'Permissions') {
     pending.permissions.add(did);
-  }
-
-  if (descriptor.protocol !== undefined) {
-    pending.audienceDeliveries.add(did);
   }
 
   switch (descriptor.protocol) {
@@ -142,6 +135,7 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
     if (!agent) {
       return;
     }
+    const currentAgent = agent;
 
     const pending = createPendingInvalidations();
     const messageSubscriptions: Array<{ close: () => Promise<void> }> = [];
@@ -159,7 +153,6 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
 
       const invalidations = [
         [pending.activity, queryKeys.identities.activity],
-        [pending.audienceDeliveries, queryKeys.identities.audienceDeliveries],
         [pending.permissions, queryKeys.identities.permissions],
         [pending.profiles, queryKeys.identities.profile],
         [pending.protocols, queryKeys.identities.protocols],
@@ -240,11 +233,11 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
     }
 
     async function subscribeIdentity(did: string): Promise<void> {
-      const syncOptions = typeof agent.sync?.getIdentityOptions === 'function'
-        ? await agent.sync.getIdentityOptions(did)
+      const syncOptions = typeof currentAgent.sync?.getIdentityOptions === 'function'
+        ? await currentAgent.sync.getIdentityOptions(did)
         : undefined;
       const enbox = new Enbox({
-        agent,
+        agent: currentAgent,
         connectedDid: did,
         ...(syncOptions?.delegateDid && { delegateDid: syncOptions.delegateDid }),
       });

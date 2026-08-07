@@ -1,12 +1,7 @@
 import { create } from 'zustand';
+import type { EnboxPlatformAgent } from '@enbox/agent';
 
-/**
- * We use `any` for SDK types to avoid importing heavy @enbox packages
- * into the store layer. The actual typing comes from the auth provider.
- */
-
- 
-type EnboxUserAgent = any;
+type EnboxUserAgent = EnboxPlatformAgent;
 
 export interface AuthState {
   /** Whether AuthManager has been created. */

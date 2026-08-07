@@ -66,7 +66,7 @@ function getAgentDwnEndpoints(agent: EnboxAgent): string[] {
     throw new Error('Agent DID does not contain a DWN service.');
   }
 
-  const dwnServices = services.filter((service: any) =>
+  const dwnServices = services.filter((service) =>
     service?.id === `${agentDid.uri}#dwn` && service?.type === 'DecentralizedWebNode'
   );
   if (dwnServices.length !== 1) {
@@ -74,11 +74,11 @@ function getAgentDwnEndpoints(agent: EnboxAgent): string[] {
   }
 
   const serviceEndpoint = dwnServices[0].serviceEndpoint;
-  const endpoints = typeof serviceEndpoint === 'string' ? [serviceEndpoint] : serviceEndpoint;
-  if (!Array.isArray(endpoints) || !endpoints.every((endpoint) => typeof endpoint === 'string')) {
+  const endpoints: unknown = typeof serviceEndpoint === 'string' ? [serviceEndpoint] : serviceEndpoint;
+  if (!Array.isArray(endpoints) || !endpoints.every((endpoint): endpoint is string => typeof endpoint === 'string')) {
     throw new Error('Agent DID contains malformed DWN endpoints.');
   }
-  return normalizeDwnEndpoints(endpoints);
+  return normalizeDwnEndpoints(endpoints as string[]);
 }
 
 // ── Session vault password helpers ─────────────────────────────────
@@ -181,7 +181,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         return false;
       }
       sessionRestored = true;
-      const agent = session.agent as EnboxAgent;
+      const agent = session.agent;
       const resolvedEndpoints = getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(resolvedEndpoints);
       setUnlocked(agent);
@@ -267,7 +267,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         runEnboxPromise(connectVaultEffect(auth, password, requestedEndpoints)),
       );
 
-      const agent = session.agent as EnboxAgent;
+      const agent = session.agent;
       sessionStarted = true;
       const authoritativeEndpoints = getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(authoritativeEndpoints);
@@ -307,7 +307,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       );
       if (!session) throw new Error('Failed to restore session');
 
-      const agent = session.agent as EnboxAgent;
+      const agent = session.agent;
       sessionStarted = true;
       const resolvedEndpoints = getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(resolvedEndpoints);
@@ -349,7 +349,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         runEnboxPromise(restoreFromPhraseEffect(auth, recoveryPhrase, password, requestedEndpoints)),
       );
 
-      const agent = session.agent as EnboxAgent;
+      const agent = session.agent;
       sessionStarted = true;
       const authoritativeEndpoints = getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(authoritativeEndpoints);

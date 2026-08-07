@@ -1,5 +1,5 @@
-import type { PermissionGrant } from '@enbox/api';
-import { describe, expect, it, vi } from 'vitest';
+import type { DwnPermissionGrant } from '@enbox/agent';
+import { describe, expect, it } from 'vitest';
 
 import {
   detectConnectRefresh,
@@ -29,7 +29,7 @@ function grant({
   expiresAt?: string;
   origin?: string;
   appName?: string;
-} = {}): PermissionGrant {
+} = {}): DwnPermissionGrant {
   return {
     id,
     grantor     : ownerDid,
@@ -49,13 +49,12 @@ function grant({
       appName,
       transport: 'postMessage',
     },
-    revoke: vi.fn(),
-  } as PermissionGrant;
+  } as DwnPermissionGrant;
 }
 
 function ownerPermissions(
   ownerDid = 'did:dht:alice',
-  permissions: PermissionGrant[] = [grant({ ownerDid })],
+  permissions: DwnPermissionGrant[] = [grant({ ownerDid })],
 ): OwnerPermissionGrants[] {
   return [{ ownerDid, permissions }];
 }

@@ -65,7 +65,6 @@ const subKeyFactories = [
   'dwnEndpoints',
   'syncRemotes',
   'syncLinks',
-  'audienceDeliveries',
 ] as const;
 
 describe.each(subKeyFactories)('queryKeys.identities.%s', (subKey) => {

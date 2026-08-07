@@ -1,13 +1,12 @@
 /**
  * TypeScript types used across the Enbox integration layer.
  *
- * We use `any` for heavy SDK types to avoid deep imports that would couple
- * consumers to the exact SDK version and slow down type-checking.
+ * Shared types for the wallet's Enbox integration.
  */
 
-// Re-export SDK types as opaque aliases for convenience.
- 
-export type EnboxAgent = any; // Actually EnboxUserAgent from @enbox/agent
+import type { EnboxPlatformAgent } from '@enbox/agent';
+
+export type EnboxAgent = EnboxPlatformAgent;
 
 /** A resolved identity profile (read model). */
 export interface IdentityProfile {
