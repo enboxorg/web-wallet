@@ -20,38 +20,27 @@
  * soon as it runs — the change persists even if a later ceremony step fails.
  * Callers must gate it behind explicit owner consent.
  */
-import { DwnInterface, type DwnProtocolDefinition } from '@enbox/agent';
+import {
+  DwnInterface,
+  type DwnProtocolDefinition,
+  type EnboxPlatformAgent,
+} from '@enbox/agent';
+import type { DwnRpcResponse } from '@enbox/dwn-clients';
 
 import { protocolDefinitionsMatch } from './protocol-install';
 
 /** Per-request abort budget so one unhealthy endpoint can't stall approval. */
 const RECONFIGURE_REQUEST_TIMEOUT_MS = 10_000;
 
-type ProtocolQueryReply = {
-  status: { code: number; detail: string };
-  entries?: Array<{ descriptor?: { definition?: DwnProtocolDefinition } }>;
-};
-
 /** The minimal agent surface the override reconfigure depends on. */
-export type ReconfigureAgent = {
-  processDwnRequest: (params: {
-    author: string;
-    target: string;
-    messageType: string;
-    messageParams: Record<string, unknown>;
-  }) => Promise<{ reply: { status: { code: number; detail: string } }; message?: unknown }>;
-  rpc: {
-    sendDwnRequest: (params: {
-      dwnUrl: string;
-      targetDid: string;
-      message: unknown;
-      signal?: AbortSignal;
-    }) => Promise<ProtocolQueryReply>;
-  };
-};
+export type ReconfigureAgent = Pick<EnboxPlatformAgent, 'processDwnRequest' | 'rpc'>;
 
-function definitionFromReply(reply: ProtocolQueryReply): DwnProtocolDefinition | undefined {
-  return reply.entries?.[0]?.descriptor?.definition;
+function definitionFromReply(reply: DwnRpcResponse): DwnProtocolDefinition | undefined {
+  const entry = reply.entries?.[0];
+  if (typeof entry !== 'object' || entry === null || !('descriptor' in entry)) {
+    return undefined;
+  }
+  return (entry as { descriptor?: { definition?: DwnProtocolDefinition } }).descriptor?.definition;
 }
 
 /**

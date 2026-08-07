@@ -18,7 +18,6 @@ export const queryKeys = {
     dwnEndpoints: (did: string) => ['identities', did, 'dwnEndpoints'] as const,
     syncRemotes: (did: string) => ['identities', did, 'syncRemotes'] as const,
     syncLinks: (did: string) => ['identities', did, 'syncLinks'] as const,
-    audienceDeliveries: (did: string) => ['identities', did, 'audienceDeliveries'] as const,
   },
 
   /** Resolve a DID document for an arbitrary DID (not necessarily ours). */

@@ -1,15 +1,10 @@
-import type { PermissionGrant } from '@enbox/api';
-import type { ConnectSessionMetadata } from '@enbox/agent';
-
-export type PermissionGrantWithSession = PermissionGrant & {
-  connectSession?: ConnectSessionMetadata;
-};
+import type { ConnectSessionMetadata, DwnPermissionGrant } from '@enbox/agent';
 
 export interface PermissionSessionGroup {
   id: string;
   session: ConnectSessionMetadata;
   grantee: string;
-  grants: PermissionGrant[];
+  grants: DwnPermissionGrant[];
   dateGranted?: string;
   dateExpires: string;
   active: boolean;
@@ -17,7 +12,7 @@ export interface PermissionSessionGroup {
 
 export interface PermissionGranteeGroup {
   grantee: string;
-  grants: PermissionGrant[];
+  grants: DwnPermissionGrant[];
 }
 
 export interface PermissionSections {
@@ -26,8 +21,8 @@ export interface PermissionSections {
   standaloneGroups: PermissionGranteeGroup[];
 }
 
-function getConnectSession(grant: PermissionGrant): ConnectSessionMetadata | undefined {
-  const session = (grant as PermissionGrantWithSession).connectSession;
+function getConnectSession(grant: DwnPermissionGrant): ConnectSessionMetadata | undefined {
+  const session = grant.connectSession;
   if (!session?.id || !session.createdAt || !session.expiresAt) {
     return undefined;
   }
@@ -59,7 +54,7 @@ function latestDate(values: Array<string | undefined>): string | undefined {
 function toSessionGroup(
   id: string,
   session: ConnectSessionMetadata,
-  grants: PermissionGrant[],
+  grants: DwnPermissionGrant[],
   nowMs: number,
 ): PermissionSessionGroup {
   const dateExpires = earliestDate(grants.map((grant) => grant.dateExpires))
@@ -78,8 +73,8 @@ function toSessionGroup(
 }
 
 function appendStandaloneGrant(
-  groups: Map<string, PermissionGrant[]>,
-  grant: PermissionGrant,
+  groups: Map<string, DwnPermissionGrant[]>,
+  grant: DwnPermissionGrant,
 ): void {
   const grantee = grant.grantee || 'unknown';
   const grants = groups.get(grantee) ?? [];
@@ -96,14 +91,14 @@ function sortSessions(groups: PermissionSessionGroup[]): PermissionSessionGroup[
 }
 
 export function buildPermissionSections(
-  permissions: PermissionGrant[] | undefined,
+  permissions: DwnPermissionGrant[] | undefined,
   now: Date = new Date(),
 ): PermissionSections {
   const sessionGroups = new Map<string, {
     session: ConnectSessionMetadata;
-    grants: PermissionGrant[];
+    grants: DwnPermissionGrant[];
   }>();
-  const standaloneGroups = new Map<string, PermissionGrant[]>();
+  const standaloneGroups = new Map<string, DwnPermissionGrant[]>();
 
   for (const grant of permissions ?? []) {
     const session = getConnectSession(grant);

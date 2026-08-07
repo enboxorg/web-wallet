@@ -1,4 +1,4 @@
-import type { PermissionGrant } from '@enbox/api';
+import type { DwnPermissionGrant } from '@enbox/agent';
 import {
   buildPermissionSections,
   type PermissionSessionGroup,
@@ -23,7 +23,7 @@ function matchesRequestIdentity(
 }
 
 export function findMatchingActiveConnectSessions(
-  permissions: PermissionGrant[] | undefined,
+  permissions: DwnPermissionGrant[] | undefined,
   request: ConnectSessionRequestIdentity,
   now = new Date(),
 ): PermissionSessionGroup[] {

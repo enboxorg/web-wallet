@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { ConnectPermissionRequest, EnboxConnectRequest } from '@enbox/agent';
+import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
 
 const mocks = vi.hoisted(() => ({
   getEncryptionKeyInfo: vi.fn(),
@@ -37,7 +37,7 @@ function permissions(scope: Record<string, unknown>): ConnectPermissionRequest[]
   }] as ConnectPermissionRequest[];
 }
 
-function relayRequest(overrides: Partial<EnboxConnectRequest> = {}): EnboxConnectRequest {
+function relayRequest(overrides: Partial<ConnectRequest> = {}): ConnectRequest {
   return {
     clientDid      : 'did:jwk:client',
     appName        : 'Tasks',
@@ -195,7 +195,7 @@ describe('connect request preflight', () => {
       permissionRequests: encryptedPermissions,
     });
     const preflight = preflightConnectRequest(request);
-    const agent = { id: 'agent' } as any;
+    const agent = { id: 'agent' } as Parameters<typeof preflightDelegateEncryption>[0];
 
     await preflightDelegateEncryption(agent, request, preflight);
 

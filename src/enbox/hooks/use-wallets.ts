@@ -16,7 +16,6 @@ import { useMemo } from 'react';
 import { Enbox } from '@enbox/api';
 import { ConnectProtocol } from '@enbox/protocols';
 
-import type { EnboxAgent } from '../types';
 import { useAuthStore } from '../../stores/auth-store';
 import { useRecordsView } from './use-records-view';
 
@@ -31,7 +30,7 @@ export interface UseWalletsResult {
 }
 
 export function useWallets(did: string | undefined): UseWalletsResult {
-  const agent = useAuthStore((state) => state.agent) as EnboxAgent | null;
+  const agent = useAuthStore((state) => state.agent);
 
   const opener = useMemo(() => {
     if (agent === null || did === undefined) {
@@ -50,8 +49,8 @@ export function useWallets(did: string | undefined): UseWalletsResult {
 
   const snapshot = useRecordsView(opener);
   const wallets = snapshot.records.map(({ value }) => value);
-  const error = snapshot.state === 'error' ? snapshot.error : undefined;
-  const loading = snapshot.state === 'loading';
+  const error = snapshot.status === 'error' ? snapshot.error : undefined;
+  const loading = snapshot.status === 'loading';
 
   return {
     wallets,

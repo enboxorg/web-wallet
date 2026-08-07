@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { PermissionGrant } from '@enbox/api';
+import { describe, expect, it } from 'vitest';
+import type { DwnPermissionGrant } from '@enbox/agent';
 import { findMatchingActiveConnectSessions } from '../existing-connect-sessions';
 
 const baseSession = {
@@ -11,7 +11,7 @@ const baseSession = {
   transport : 'postMessage' as const,
 };
 
-function grant(overrides: Partial<PermissionGrant> = {}): PermissionGrant {
+function grant(overrides: Partial<DwnPermissionGrant> = {}): DwnPermissionGrant {
   return {
     id          : overrides.id ?? 'grant-1',
     grantee     : overrides.grantee ?? 'did:dht:delegate',
@@ -22,15 +22,14 @@ function grant(overrides: Partial<PermissionGrant> = {}): PermissionGrant {
       method    : 'Read',
       protocol  : 'https://example.com/protocols/demo',
     },
-    revoke: vi.fn(),
     ...overrides,
-  } as PermissionGrant;
+  } as DwnPermissionGrant;
 }
 
 describe('findMatchingActiveConnectSessions', () => {
   it('matches active sessions by origin', () => {
     const sessions = findMatchingActiveConnectSessions([
-      grant({ connectSession: baseSession } as Partial<PermissionGrant>),
+      grant({ connectSession: baseSession } as Partial<DwnPermissionGrant>),
     ], {
       origin: 'https://app.example',
     }, new Date('2026-06-23T12:00:00.000Z'));
@@ -46,7 +45,7 @@ describe('findMatchingActiveConnectSessions', () => {
           ...baseSession,
           origin: undefined,
         },
-      } as Partial<PermissionGrant>),
+      } as Partial<DwnPermissionGrant>),
     ], {
       appName: 'Example App',
     }, new Date('2026-06-23T12:00:00.000Z'));
@@ -64,7 +63,7 @@ describe('findMatchingActiveConnectSessions', () => {
           id        : 'expired-session',
           expiresAt : '2026-06-22T00:00:00.000Z',
         },
-      } as Partial<PermissionGrant>),
+      } as Partial<DwnPermissionGrant>),
       grant({
         id             : 'unrelated',
         connectSession : {
@@ -72,7 +71,7 @@ describe('findMatchingActiveConnectSessions', () => {
           id     : 'unrelated-session',
           origin : 'https://other.example',
         },
-      } as Partial<PermissionGrant>),
+      } as Partial<DwnPermissionGrant>),
     ], {
       origin  : 'https://app.example',
       appName : 'Example App',

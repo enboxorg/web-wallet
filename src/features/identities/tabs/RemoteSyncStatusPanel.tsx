@@ -1,4 +1,10 @@
-import type { LinkStatus, RemoteSyncState, RemoteSyncStatus, ReplicationLinkSnapshot } from '@enbox/agent';
+import {
+  areReplicationLinksCurrent,
+  type LinkStatus,
+  type RemoteSyncState,
+  type RemoteSyncStatus,
+  type ReplicationLinkSnapshot,
+} from '@enbox/agent';
 
 import { AlertTriangle, CheckCircle2, CloudOff, RefreshCw, Server } from 'lucide-react';
 import { toast } from 'sonner';
@@ -82,23 +88,41 @@ function linkScopeLabel(link: ReplicationLinkSnapshot): string {
   if (link.scope.kind === 'full') {
     return 'All protocols';
   }
+  if (link.scope.kind === 'context') {
+    return 'Shared context';
+  }
   const count = link.scope.protocols.length;
   return `${count} ${count === 1 ? 'protocol' : 'protocols'}`;
 }
 
+function linkScopeDetail(link: ReplicationLinkSnapshot): string | undefined {
+  if (link.scope.kind === 'full') {
+    return undefined;
+  }
+  return link.scope.kind === 'context'
+    ? `${link.scope.protocol}\n${link.scope.contextId}`
+    : link.scope.protocols.join('\n');
+}
+
 function linkKey(link: ReplicationLinkSnapshot): string {
-  const scope = link.scope.kind === 'full' ? 'all' : link.scope.protocols.join('|');
+  const scope = link.scope.kind === 'full'
+    ? 'all'
+    : link.scope.kind === 'context'
+      ? `${link.scope.protocol}:${link.scope.contextId}`
+      : link.scope.protocols.join('|');
   return `${link.remoteEndpoint}:${link.delegateDid ?? 'owner'}:${scope}`;
 }
 
 function caughtUpLabel(links: ReplicationLinkSnapshot[]): string {
   if (links.length === 0) {
-    return 'Preparing live subscriptions';
+    return 'Preparing replication links';
   }
-  const liveCount = links.filter(({ status }) => status === 'live').length;
-  return liveCount === links.length
-    ? 'All live subscriptions caught up'
-    : `${liveCount} of ${links.length} live subscriptions caught up`;
+  const currentCount = links.filter((link) => areReplicationLinksCurrent([link])).length;
+  const linkLabel = links.length === 1 ? 'replication link' : 'replication links';
+  if (currentCount === links.length) {
+    return links.length === 1 ? 'Replication link caught up' : 'All replication links caught up';
+  }
+  return `${currentCount} of ${links.length} ${linkLabel} caught up`;
 }
 
 export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
@@ -171,7 +195,7 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
                         <span
                           key={linkKey(link)}
                           className="inline-flex items-center gap-1.5 rounded-full border border-border-default bg-surface-1 px-2 py-1 text-[11px]"
-                          title={link.scope.kind === 'full' ? undefined : link.scope.protocols.join('\n')}
+                          title={linkScopeDetail(link)}
                         >
                           <span className="text-text-tertiary">{linkScopeLabel(link)}</span>
                           <span className={`font-medium ${LINK_STATUS_CLASSES[link.status]}`}>

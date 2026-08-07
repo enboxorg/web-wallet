@@ -1,5 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
-import type { PermissionGrant } from '@enbox/api';
+import type { DwnPermissionGrant } from '@enbox/agent';
 
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -8,7 +8,7 @@ import { queryKeys } from '../queries/query-keys';
 
 export interface OwnerPermissionsResult {
   ownerDid: string;
-  permissions: PermissionGrant[];
+  permissions: DwnPermissionGrant[];
 }
 
 export interface AllPermissionsResult {

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchProfile } from '../identity-queries';
+import { fetchPermissions, fetchProfile } from '../identity-queries';
 
 const mocks = vi.hoisted(() => {
   const query = vi.fn();
@@ -134,5 +134,23 @@ describe('fetchProfile', () => {
     vi.runOnlyPendingTimers();
 
     expect(revokeObjectUrl).toHaveBeenCalledWith(first.avatarUrl);
+  });
+});
+
+describe('fetchPermissions', () => {
+  it('returns active grants from the agent permission catalog', async () => {
+    const grant = { id: 'grant-1' };
+    const fetchGrants = vi.fn(async () => [{ grant, message: {} }]);
+
+    const permissions = await fetchPermissions({
+      permissions: { fetchGrants },
+    } as never, 'did:dht:alice');
+
+    expect(fetchGrants).toHaveBeenCalledWith({
+      author       : 'did:dht:alice',
+      target       : 'did:dht:alice',
+      checkRevoked : true,
+    });
+    expect(permissions).toEqual([grant]);
   });
 });

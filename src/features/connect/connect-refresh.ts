@@ -1,4 +1,4 @@
-import type { PermissionGrant } from '@enbox/api';
+import type { DwnPermissionGrant } from '@enbox/agent';
 
 import {
   buildPermissionSections,
@@ -14,7 +14,7 @@ export type ConnectRefreshMatchState = 'not-applicable' | 'matched' | 'not-found
 
 export interface OwnerPermissionGrants {
   ownerDid: string;
-  permissions: PermissionGrant[];
+  permissions: DwnPermissionGrant[];
 }
 
 export interface ConnectRefreshDetection {

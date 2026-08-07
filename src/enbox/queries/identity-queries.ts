@@ -9,7 +9,7 @@ import { Effect } from 'effect';
 import { DwnApi } from '@enbox/api/advanced';
 import { Enbox } from '@enbox/api';
 import { ProfileProtocol } from '@enbox/protocols';
-import { getDwnServiceEndpointUrls } from '@enbox/agent';
+import { DwnDateSort, getDwnServiceEndpointUrls } from '@enbox/agent';
 
 import type { EnboxAgent, IdentityProfile } from '../types';
 import { sdkError } from '../effect/errors';
@@ -149,7 +149,7 @@ export function fetchProtocolsEffect(did: string) {
       try: async () => dwn.protocols.query({}),
       catch: sdkError('protocols.query'),
     });
-    return protocols.map((p: any) => ({
+    return protocols.map((p) => ({
       uri: p.definition.protocol as string,
       published: (p.definition.published ?? false) as boolean,
       definition: p.definition,
@@ -170,10 +170,17 @@ export async function fetchPermissions(agent: EnboxAgent, did: string) {
 
 export function fetchPermissionsEffect(did: string) {
   return Effect.gen(function* () {
-    const dwn = yield* createDwnApiEffect(did);
+    const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
-      try: async () => dwn.permissions.queryGrants(),
-      catch: sdkError('permissions.queryGrants'),
+      try: async () => {
+        const entries = await agent.permissions.fetchGrants({
+          author       : did,
+          target       : did,
+          checkRevoked : true,
+        });
+        return entries.map(({ grant }) => grant);
+      },
+      catch: sdkError('permissions.fetchGrants'),
     });
   });
 }
@@ -233,13 +240,13 @@ export function fetchActivityEffect(did: string, limit = 50) {
       try: async () =>
         dwn.records.query({
           filter: {},
-          dateSort: 'createdDescending' as any,
+          dateSort: DwnDateSort.CreatedDescending,
           pagination: { limit },
         }),
       catch: sdkError('records.query.activity'),
     });
 
-    return records.map((r: any) => ({
+    return records.map((r) => ({
       id: r.id,
       protocol: r.protocol,
       protocolPath: r.protocolPath,

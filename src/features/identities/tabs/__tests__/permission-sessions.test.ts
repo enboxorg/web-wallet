@@ -1,8 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
-import type { PermissionGrant } from '@enbox/api';
+import { describe, expect, it } from 'vitest';
+import type { DwnPermissionGrant } from '@enbox/agent';
 import { buildPermissionSections } from '../permission-sessions';
 
-function grant(overrides: Partial<PermissionGrant> = {}): PermissionGrant {
+function grant(overrides: Partial<DwnPermissionGrant> = {}): DwnPermissionGrant {
   return {
     id          : overrides.id ?? 'grant-1',
     grantee     : overrides.grantee ?? 'did:dht:delegate',
@@ -13,9 +13,8 @@ function grant(overrides: Partial<PermissionGrant> = {}): PermissionGrant {
       method    : 'Read',
       protocol  : 'https://example.com/protocols/demo',
     },
-    revoke: vi.fn(),
     ...overrides,
-  } as PermissionGrant;
+  } as DwnPermissionGrant;
 }
 
 const session = {
@@ -30,8 +29,8 @@ const session = {
 describe('permission session grouping', () => {
   it('groups active connect grants by session id', () => {
     const sections = buildPermissionSections([
-      grant({ id: 'grant-1', connectSession: session } as Partial<PermissionGrant>),
-      grant({ id: 'grant-2', connectSession: session } as Partial<PermissionGrant>),
+      grant({ id: 'grant-1', connectSession: session } as Partial<DwnPermissionGrant>),
+      grant({ id: 'grant-2', connectSession: session } as Partial<DwnPermissionGrant>),
     ], new Date('2026-06-23T12:00:00.000Z'));
 
     expect(sections.activeSessions).toHaveLength(1);
@@ -57,7 +56,7 @@ describe('permission session grouping', () => {
           ...session,
           expiresAt: '2026-06-22T00:00:00.000Z',
         },
-      } as Partial<PermissionGrant>),
+      } as Partial<DwnPermissionGrant>),
     ], new Date('2026-06-23T12:00:00.000Z'));
 
     expect(sections.activeSessions).toHaveLength(0);

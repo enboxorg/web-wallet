@@ -10,11 +10,9 @@ const mocks = vi.hoisted(() => {
   const protocolObjects = {
     profile: {
       toJSON: vi.fn(() => ({ descriptor: { definition: definitions.profile } })),
-      send: vi.fn(),
     },
     connect: {
       toJSON: vi.fn(() => ({ descriptor: { definition: definitions.connect } })),
-      send: vi.fn(),
     },
   };
   const configureResults = {
@@ -76,13 +74,11 @@ describe('installProtocols', () => {
     });
   });
 
-  it('configures required protocols locally without publishing directly', async () => {
+  it('configures required protocols locally', async () => {
     await installProtocols({}, 'did:dht:alice');
 
     expect(mocks.configureResults.profile).toHaveBeenCalledOnce();
     expect(mocks.configureResults.connect).toHaveBeenCalledOnce();
-    expect(mocks.protocolObjects.profile.send).not.toHaveBeenCalled();
-    expect(mocks.protocolObjects.connect.send).not.toHaveBeenCalled();
   });
 
   it('accepts existing local protocols as installed', async () => {

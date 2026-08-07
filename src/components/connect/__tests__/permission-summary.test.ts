@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { ConnectPermissionRequest } from '@enbox/agent';
+import type { ConnectPermissionRequest } from '@enbox/connect';
 
 import { getConnectPermissionAskSummary } from '../permission-summary';
 
