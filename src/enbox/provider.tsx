@@ -344,9 +344,8 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setError(null);
     let sessionStarted = false;
     try {
-      const requestedEndpoints = dwnEndpoints ?? getConfiguredDwnEndpoints();
       const session = await runLockedAuthOperation(() =>
-        runEnboxPromise(restoreFromPhraseEffect(auth, recoveryPhrase, password, requestedEndpoints)),
+        runEnboxPromise(restoreFromPhraseEffect(auth, recoveryPhrase, password, dwnEndpoints)),
       );
 
       const agent = session.agent;

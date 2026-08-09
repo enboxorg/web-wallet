@@ -156,6 +156,16 @@ function RestoreButton() {
   );
 }
 
+function DefaultRestoreButton() {
+  const { restore } = useEnboxAuth();
+
+  return (
+    <button type="button" onClick={() => restore(TEST_PHRASE, '1234')}>
+      Restore defaults
+    </button>
+  );
+}
+
 function EndpointProbe() {
   const { dwnEndpoints } = useEnboxAuth();
   return <span>{dwnEndpoints.join(',')}</span>;
@@ -348,6 +358,29 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.WALLET_DWN_ENDPOINTS)!)).toEqual({
       version: 1,
       endpoints: signedEndpoints,
+    });
+  });
+
+  it('omits recovery endpoints when the user does not request replacement', async () => {
+    const user = userEvent.setup();
+    const auth = createAuth('locked');
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <DefaultRestoreButton />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Restore defaults' }));
+
+    await waitFor(() => {
+      expect(auth.restoreFromPhrase).toHaveBeenCalledWith({
+        password              : '1234',
+        recoveryPhrase        : TEST_PHRASE,
+        identitySyncProtocols : TEST_IDENTITY_SYNC_PROTOCOLS,
+      });
     });
   });
 

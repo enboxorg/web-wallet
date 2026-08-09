@@ -97,7 +97,7 @@ vi.mock('@/features/auth/RestoreWalletPage', () => ({
   RestoreWalletPage: ({
     onRestore,
   }: {
-    onRestore: (phrase: string, pin: string, dwnEndpoints: string[]) => Promise<void>;
+    onRestore: (phrase: string, pin: string, dwnEndpoints?: string[]) => Promise<void>;
   }) => (
     <section>
       <h1>Restore Mock</h1>

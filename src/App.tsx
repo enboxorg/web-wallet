@@ -218,7 +218,7 @@ function AuthGate() {
   }, [unlock]);
 
   const handleRestore = useCallback(
-    async (phrase: string, pin: string, dwnEndpoints: string[]) => {
+    async (phrase: string, pin: string, dwnEndpoints?: string[]) => {
       setAuthUiError(null);
       await restore(phrase, pin, dwnEndpoints);
       setForgotPin(false);

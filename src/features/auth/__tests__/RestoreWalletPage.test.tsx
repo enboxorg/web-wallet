@@ -51,6 +51,23 @@ describe('RestoreWalletPage', () => {
     });
   }
 
+  it('uses endpoints from the DID document by default', async () => {
+    const onRestore = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<RestoreWalletPage onRestore={onRestore} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    enterPin('2468');
+    await screen.findByText('Confirm PIN');
+    enterPin('2468');
+
+    await waitFor(() => {
+      expect(onRestore).toHaveBeenCalledWith(RECOVERY_PHRASE, '2468', undefined);
+    });
+  });
+
   it('restores through one custom recovery endpoint', async () => {
     const onRestore = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
@@ -59,6 +76,7 @@ describe('RestoreWalletPage', () => {
     await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
     expect(screen.getByText('Recovery DWN Endpoints')).toBeInTheDocument();
 
+    await user.click(screen.getByRole('button', { name: 'Enter replacement endpoints' }));
     await user.click(screen.getByRole('button', { name: 'Remove DWN endpoint 2' }));
     const endpoint = screen.getByRole('textbox', { name: 'DWN endpoint 1' });
     await user.clear(endpoint);
@@ -84,6 +102,7 @@ describe('RestoreWalletPage', () => {
     render(<RestoreWalletPage onRestore={vi.fn()} isLoading={false} error={null} />);
 
     await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
+    await user.click(screen.getByRole('button', { name: 'Enter replacement endpoints' }));
     await user.click(screen.getByRole('button', { name: 'Remove DWN endpoint 2' }));
     await user.click(screen.getByRole('button', { name: 'Remove DWN endpoint 1' }));
 

@@ -167,13 +167,18 @@ export function restoreFromPhraseEffect(
   dwnEndpoints?: string[],
 ) {
   return Effect.tryPromise({
-    try: () =>
-      auth.restoreFromPhrase({
+    try: () => {
+      const options = {
         password,
         recoveryPhrase,
-        dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints ?? getConfiguredDwnEndpoints()),
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-      } as Parameters<WalletAuthManager['restoreFromPhrase']>[0]),
+        ...(dwnEndpoints === undefined
+          ? {}
+          : { dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints) }),
+      } as Parameters<WalletAuthManager['restoreFromPhrase']>[0];
+
+      return auth.restoreFromPhrase(options);
+    },
     catch: sdkError('authManager.restoreFromPhrase'),
   });
 }
