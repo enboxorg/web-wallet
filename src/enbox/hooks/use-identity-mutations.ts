@@ -55,6 +55,19 @@ export function useCreateIdentity() {
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
     },
+    onError: (error) => {
+      const publishedIdentity = error instanceof Error
+        && 'publishedIdentity' in error
+        ? error.publishedIdentity
+        : undefined;
+      if (publishedIdentity !== undefined) {
+        queryClient.setQueryData(
+          queryKeys.identities.all,
+          (existing) => upsertIdentity(existing, publishedIdentity),
+        );
+        queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
+      }
+    },
   });
 }
 

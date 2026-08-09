@@ -97,7 +97,7 @@ vi.mock('@/features/auth/RestoreWalletPage', () => ({
   RestoreWalletPage: ({
     onRestore,
   }: {
-    onRestore: (phrase: string, pin: string, dwnEndpoints: string[]) => Promise<void>;
+    onRestore: (phrase: string, pin: string, dwnEndpoints?: string[]) => Promise<void>;
   }) => (
     <section>
       <h1>Restore Mock</h1>
@@ -106,7 +106,6 @@ vi.mock('@/features/auth/RestoreWalletPage', () => ({
         onClick={() => onRestore(
           'abandon ability able about above absent absorb abstract absurd abuse access accident',
           '1234',
-          ['https://dwn.example'],
         )}
       >
         Complete restore
@@ -163,7 +162,7 @@ describe('App auth restore flow', () => {
       expect(mocks.restore).toHaveBeenCalledWith(
         'abandon ability able about above absent absorb abstract absurd abuse access accident',
         '1234',
-        ['https://dwn.example'],
+        undefined,
       );
     });
     expect(screen.getByRole('heading', { name: 'Unlock Mock' })).toBeInTheDocument();

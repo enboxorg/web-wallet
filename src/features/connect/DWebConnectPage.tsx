@@ -34,6 +34,7 @@ import {
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
+import { getFreshDwnEndpoints } from '@/enbox/fresh-dwn-endpoints';
 import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kernel';
 import {
   isDidSupportedByRequest,
@@ -238,10 +239,6 @@ export default function DWebConnectPage() {
       await preflightDelegateEncryption(liveAgent, connectRequest, preflight);
 
       setStatusMessage('Getting your profile ready...');
-      const dwnEndpoints = await liveAgent.dwn.getRemoteDwnEndpointUrls(approveAsDid);
-      if (dwnEndpoints.length === 0) {
-        throw new Error('This profile does not have any sync endpoints configured.');
-      }
       // If the owner opted into replacing a custom protocol installed with a
       // different definition, author the replacement (locally + across owner
       // endpoints) BEFORE the ceremony — it fails closed on a definition
@@ -254,6 +251,7 @@ export default function DWebConnectPage() {
         );
         if (definitionsToOverride.length > 0) {
           setStatusMessage('Replacing protocol setup...');
+          const dwnEndpoints = await getFreshDwnEndpoints(liveAgent, approveAsDid);
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,

@@ -167,13 +167,26 @@ export function restoreFromPhraseEffect(
   dwnEndpoints?: string[],
 ) {
   return Effect.tryPromise({
-    try: () =>
-      auth.restoreFromPhrase({
+    try: () => {
+      if (
+        (auth as WalletAuthManager & { supportsAuthoritativeVaultRecovery?: boolean })
+          .supportsAuthoritativeVaultRecovery !== true
+      ) {
+        throw new Error(
+          'This wallet requires an Enbox SDK with authoritative vault-recovery support.',
+        );
+      }
+      const options = {
         password,
         recoveryPhrase,
-        dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints ?? getConfiguredDwnEndpoints()),
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-      } as Parameters<WalletAuthManager['restoreFromPhrase']>[0]),
+        ...(dwnEndpoints === undefined
+          ? {}
+          : { dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints) }),
+      } as Parameters<WalletAuthManager['restoreFromPhrase']>[0];
+
+      return auth.restoreFromPhrase(options);
+    },
     catch: sdkError('authManager.restoreFromPhrase'),
   });
 }

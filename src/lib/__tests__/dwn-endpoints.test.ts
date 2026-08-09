@@ -48,6 +48,12 @@ describe('DWN endpoint configuration', () => {
     expect(() => normalizeDwnEndpoints(['https://dwn.example', 'https://DWN.example/'])).toThrow('unique');
   });
 
+  it('strips query strings and fragments from routing base URLs', () => {
+    expect(normalizeDwnEndpoints([
+      'https://dwn.example/rpc/?tenant=alice#route',
+    ])).toEqual(['https://dwn.example/rpc']);
+  });
+
   it('accepts endpoint lists without an arbitrary count limit while rejecting remote HTTP', () => {
     const endpoints = [
       'https://legacy.example/dwn',

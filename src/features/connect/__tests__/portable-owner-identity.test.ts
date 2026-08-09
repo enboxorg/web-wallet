@@ -71,18 +71,18 @@ describe('portable owner identity validation', () => {
     await expect(validatePortableOwnerIdentity(forged)).rejects.toThrow('does not match identity key #0');
   });
 
-  it('rejects DID document and controller substitution', async () => {
+  it('rejects DID document and owner-controller substitution', async () => {
     const fixture = await dhtFixture();
     const wrongDocument = structuredClone(fixture);
     wrongDocument.portableDid.document.id = 'did:dht:wrong';
     await expect(validatePortableOwnerIdentity(wrongDocument)).rejects.toThrow('document ID does not match');
 
     const externalController = structuredClone(fixture);
-    externalController.portableDid.document.verificationMethod![0].controller = 'did:dht:attacker';
+    externalController.portableDid.document.controller = 'did:dht:attacker';
     await expect(validatePortableOwnerIdentity(externalController)).rejects.toThrow('external controller');
   });
 
-  it('proves private keys mathematically and requires exact verification-method coverage', async () => {
+  it('proves private keys mathematically and requires operational verification-method coverage', async () => {
     const fixture = await dhtFixture();
     const otherPrivateKey = (await Ed25519.generateKey()).d;
     fixture.portableDid.privateKeys![0].d = otherPrivateKey;
@@ -135,14 +135,68 @@ describe('portable owner identity validation', () => {
     });
   });
 
-  it('rejects unsafe requester-supplied DWN endpoints', async () => {
+  it('treats backup DWN endpoints as untrusted restore data and validates before new publication', async () => {
     const insecure = await dhtFixture();
     insecure.portableDid.document.service![0].serviceEndpoint = ['http://evil.example/dwn'];
-    await expect(validatePortableOwnerIdentity(insecure)).rejects.toThrow('must use HTTPS');
+    const validatedInsecure = await validatePortableOwnerIdentity(insecure);
+    vi.spyOn(DidDht, 'resolve').mockResolvedValueOnce({
+      didDocument           : undefined,
+      didDocumentMetadata   : {},
+      didResolutionMetadata : { error: 'notFound' },
+    } as any);
+    await expect(ensurePortableOwnerPublished(validatedInsecure)).rejects.toThrow('must use HTTPS');
 
     const credentials = await dhtFixture();
     credentials.portableDid.document.service![0].serviceEndpoint = ['https://user@dwn.example'];
-    await expect(validatePortableOwnerIdentity(credentials)).rejects.toThrow('cannot contain credentials');
+    const validatedCredentials = await validatePortableOwnerIdentity(credentials);
+    vi.spyOn(DidDht, 'resolve').mockResolvedValueOnce({
+      didDocument           : undefined,
+      didDocumentMetadata   : {},
+      didResolutionMetadata : { error: 'notFound' },
+    } as any);
+    await expect(ensurePortableOwnerPublished(validatedCredentials)).rejects.toThrow('cannot contain credentials');
+  });
+
+  it('accepts a stale backup with no DWN service and adopts the resolved document', async () => {
+    const fixture = await dhtFixture();
+    const authoritativeDocument = structuredClone(fixture.portableDid.document);
+    delete fixture.portableDid.document.service;
+    const validated = await validatePortableOwnerIdentity(fixture);
+    vi.spyOn(DidDht, 'resolve').mockResolvedValue({
+      didDocument           : authoritativeDocument,
+      didDocumentMetadata   : { published: true, versionId: '12' },
+      didResolutionMetadata : {},
+    } as any);
+
+    await ensurePortableOwnerPublished(validated);
+
+    expect(validated.portableIdentity.portableDid.document.service)
+      .toEqual(authoritativeDocument.service);
+    expect(validated.portableIdentity.portableDid.metadata.versionId).toBe('12');
+  });
+
+  it('preserves a resolved public-only verification method without requiring its private key', async () => {
+    const fixture = await dhtFixture();
+    const validated = await validatePortableOwnerIdentity(fixture);
+    const authoritativeDocument = structuredClone(fixture.portableDid.document);
+    const externalKey = await Ed25519.computePublicKey({ key: await Ed25519.generateKey() });
+    authoritativeDocument.verificationMethod!.push({
+      id           : `${fixture.portableDid.uri}#external`,
+      type         : 'JsonWebKey',
+      controller   : 'did:dht:external-controller',
+      publicKeyJwk : externalKey,
+    });
+    vi.spyOn(DidDht, 'resolve').mockResolvedValue({
+      didDocument           : authoritativeDocument,
+      didDocumentMetadata   : { published: true },
+      didResolutionMetadata : {},
+    } as any);
+
+    await ensurePortableOwnerPublished(validated);
+
+    expect(validated.portableIdentity.portableDid.document.verificationMethod)
+      .toContainEqual(expect.objectContaining({ id: `${fixture.portableDid.uri}#external` }));
+    expect(validated.portableIdentity.portableDid.privateKeys).toHaveLength(3);
   });
 
   it('rejects document fields that cannot survive DID-DHT publication', async () => {
@@ -216,9 +270,8 @@ describe('portable owner identity validation', () => {
 
     const existing = await validatePortableOwnerIdentity(fixture);
     expect(existing.portableIdentity.portableDid.document.controller).toBe(existing.did);
-    expect(existing.portableIdentity.portableDid.document.service![0].serviceEndpoint).toEqual([
-      'https://dwn.example',
-    ]);
+    expect(existing.portableIdentity.portableDid.document.service![0].serviceEndpoint)
+      .toBe('https://dwn.example');
     const packet = await DidDhtDocument.toDnsPacket({
       didDocument : existing.portableIdentity.portableDid.document,
       didMetadata : existing.portableIdentity.portableDid.metadata,

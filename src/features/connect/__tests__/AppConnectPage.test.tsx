@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth-store';
 const mocks = vi.hoisted(() => ({
   agent: {
     id: 'agent-1',
+    identity: { refreshDwnEndpoints: vi.fn() },
     dwn: { getRemoteDwnEndpointUrls: vi.fn() },
   },
   approveConnectRequest: vi.fn(),
@@ -206,6 +207,7 @@ describe('AppConnectPage', () => {
       agent: mocks.agent as never,
     });
     mocks.scannerHasCamera.mockResolvedValue(false);
+    mocks.agent.identity.refreshDwnEndpoints.mockResolvedValue(['https://dwn.example']);
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
@@ -285,6 +287,8 @@ describe('AppConnectPage', () => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
     });
     expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
+    expect(mocks.agent.identity.refreshDwnEndpoints).not.toHaveBeenCalled();
+    expect(mocks.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     // Protocol preparation is owned by the approval ceremony itself
     // (agent >=0.8.17) — the wallet no longer runs a pre-approval step.
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(

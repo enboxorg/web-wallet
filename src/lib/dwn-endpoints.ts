@@ -57,6 +57,11 @@ export function normalizeDwnEndpoint(
   if (url.username !== '' || url.password !== '') {
     throw new Error('DWN endpoints cannot contain credentials.');
   }
+  // RPC and DRL paths are appended to this base URL. Query strings and
+  // fragments would reorder or hide those paths, so strip them consistently
+  // with the shared DID endpoint extractor.
+  url.search = '';
+  url.hash = '';
   const normalized = url.toString();
   return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
 }

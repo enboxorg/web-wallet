@@ -86,4 +86,27 @@ describe('useCreateIdentity', () => {
       expect(queryClient.getQueryData(queryKeys.identities.all)).toEqual([newIdentity]);
     });
   });
+
+  it('keeps a published identity discoverable when later setup fails', async () => {
+    const queryClient = createQueryClient();
+    const identity = { did: { uri: 'did:dht:published' }, metadata: { name: 'New' } };
+    const error = Object.assign(new Error('registration failed'), {
+      publishedIdentity: identity,
+    });
+    mocks.createIdentity.mockRejectedValue(error);
+
+    const { result } = renderHook(() => useCreateIdentity(), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await expect(result.current.mutateAsync({
+      persona      : 'Personal',
+      displayName  : 'Alice',
+      dwnEndpoints : ['https://dwn.example'],
+    })).rejects.toBe(error);
+
+    await waitFor(() => {
+      expect(queryClient.getQueryData(queryKeys.identities.all)).toEqual([identity]);
+    });
+  });
 });

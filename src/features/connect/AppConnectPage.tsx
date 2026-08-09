@@ -28,6 +28,7 @@ import {
 } from './connect-deep-link';
 
 import { Button } from '@/components/ui/Button';
+import { getFreshDwnEndpoints } from '@/enbox/fresh-dwn-endpoints';
 
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
@@ -428,10 +429,6 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       }
       await preflightDelegateEncryption(liveAgent, connectionRequest, preflight);
 
-      const dwnEndpoints = await liveAgent.dwn.getRemoteDwnEndpointUrls(approveAsDid);
-      if (dwnEndpoints.length === 0) {
-        throw new Error('This profile does not have any sync endpoints configured.');
-      }
       // If the owner opted into replacing a custom protocol installed with a
       // different definition, author the replacement (locally + across owner
       // endpoints) BEFORE the ceremony. The connect ceremony fails closed on a
@@ -443,6 +440,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
           protocolSetupStatuses,
         );
         if (definitionsToOverride.length > 0) {
+          const dwnEndpoints = await getFreshDwnEndpoints(liveAgent, approveAsDid);
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,

@@ -59,26 +59,15 @@ const LOCAL_DWN_DISCOVERY_ENABLED = false;
 const DWN_DISCOVERY_TIMEOUT_MS = 3_000;
 const AUTH_OPERATION_LOCK_KEY = 'auth:vault';
 
-function getAgentDwnEndpoints(agent: EnboxAgent): string[] {
-  const agentDid = agent.agentDid;
-  const services = agentDid.document?.service;
-  if (!Array.isArray(services)) {
-    throw new Error('Agent DID does not contain a DWN service.');
-  }
-
-  const dwnServices = services.filter((service) =>
-    service?.id === `${agentDid.uri}#dwn` && service?.type === 'DecentralizedWebNode'
+async function getAgentDwnEndpoints(agent: EnboxAgent): Promise<string[]> {
+  // Auth refreshes the agent DID before returning a restored session. Read the
+  // advertised endpoints through the agent resolver so that a portable vault's
+  // older BearerDid snapshot cannot replace that authoritative result in the
+  // wallet's endpoint cache. This is an ordinary cache hit, not another forced
+  // network resolution.
+  return normalizeDwnEndpoints(
+    await agent.dwn.getRemoteDwnEndpointUrls(agent.agentDid.uri),
   );
-  if (dwnServices.length !== 1) {
-    throw new Error('Agent DID must contain exactly one anchored DWN service.');
-  }
-
-  const serviceEndpoint = dwnServices[0].serviceEndpoint;
-  const endpoints: unknown = typeof serviceEndpoint === 'string' ? [serviceEndpoint] : serviceEndpoint;
-  if (!Array.isArray(endpoints) || !endpoints.every((endpoint): endpoint is string => typeof endpoint === 'string')) {
-    throw new Error('Agent DID contains malformed DWN endpoints.');
-  }
-  return normalizeDwnEndpoints(endpoints as string[]);
 }
 
 // ── Session vault password helpers ─────────────────────────────────
@@ -182,7 +171,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       }
       sessionRestored = true;
       const agent = session.agent;
-      const resolvedEndpoints = getAgentDwnEndpoints(agent);
+      const resolvedEndpoints = await getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(resolvedEndpoints);
       setUnlocked(agent);
       runEnboxPromise(publishWalletEvent({
@@ -269,7 +258,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const agent = session.agent;
       sessionStarted = true;
-      const authoritativeEndpoints = getAgentDwnEndpoints(agent);
+      const authoritativeEndpoints = await getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(authoritativeEndpoints);
       setUnlocked(agent);
       sessionStarted = false;
@@ -309,7 +298,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
       const agent = session.agent;
       sessionStarted = true;
-      const resolvedEndpoints = getAgentDwnEndpoints(agent);
+      const resolvedEndpoints = await getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(resolvedEndpoints);
       setUnlocked(agent);
       sessionStarted = false;
@@ -344,14 +333,13 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setError(null);
     let sessionStarted = false;
     try {
-      const requestedEndpoints = dwnEndpoints ?? getConfiguredDwnEndpoints();
       const session = await runLockedAuthOperation(() =>
-        runEnboxPromise(restoreFromPhraseEffect(auth, recoveryPhrase, password, requestedEndpoints)),
+        runEnboxPromise(restoreFromPhraseEffect(auth, recoveryPhrase, password, dwnEndpoints)),
       );
 
       const agent = session.agent;
       sessionStarted = true;
-      const authoritativeEndpoints = getAgentDwnEndpoints(agent);
+      const authoritativeEndpoints = await getAgentDwnEndpoints(agent);
       applyAuthoritativeDwnEndpoints(authoritativeEndpoints);
       setUnlocked(agent);
       sessionStarted = false;

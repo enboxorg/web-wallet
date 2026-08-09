@@ -84,6 +84,7 @@ function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
   return {
     state,
     agent,
+    supportsAuthoritativeVaultRecovery: true,
     connect: vi.fn(),
     connectVault: vi.fn().mockResolvedValue({ agent, recoveryPhrase: TEST_PHRASE }),
     restoreFromPhrase: vi.fn().mockResolvedValue({ agent }),
@@ -139,7 +140,7 @@ function UnlockButton() {
   );
 }
 
-function RestoreButton() {
+function RestoreButton({ dwnEndpoints }: { dwnEndpoints?: string[] }) {
   const { restore } = useEnboxAuth();
 
   return (
@@ -148,7 +149,7 @@ function RestoreButton() {
       onClick={() => restore(
         TEST_PHRASE,
         '1234',
-        TEST_ENDPOINTS,
+        dwnEndpoints,
       )}
     >
       Restore
@@ -235,7 +236,10 @@ describe('EnboxAuthProvider restore flow', () => {
     await waitFor(() => expect(auth.restoreSession).toHaveBeenCalledOnce());
     expect(registrationMocks.ensureRegistrationForDids).not.toHaveBeenCalled();
     expect(auth.agent.identity.list).not.toHaveBeenCalled();
-    expect(auth.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
+    expect(auth.agent.dwn.getRemoteDwnEndpointUrls).toHaveBeenCalledOnce();
+    expect(auth.agent.dwn.getRemoteDwnEndpointUrls).toHaveBeenCalledWith(
+      auth.agent.agentDid.uri,
+    );
   });
 
   it('coalesces duplicate first-time setup calls into one vault operation', async () => {
@@ -302,7 +306,8 @@ describe('EnboxAuthProvider restore flow', () => {
   it('replaces the cache with signed agent DID endpoints after session restore', async () => {
     const signedEndpoints = ['https://signed-agent.example/dwn'];
     const auth = createAuth('locked');
-    auth.agent.agentDid.document.service[0].serviceEndpoint = signedEndpoints;
+    auth.agent.agentDid.document.service[0].serviceEndpoint = ['https://portable-snapshot.example/dwn'];
+    auth.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(signedEndpoints);
     auth.restoreSession.mockResolvedValue({ agent: auth.agent });
     authMocks.create.mockResolvedValue(auth);
     sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, '1234');
@@ -328,12 +333,13 @@ describe('EnboxAuthProvider restore flow', () => {
     const signedEndpoints = ['https://signed-agent.example/dwn'];
     const user = userEvent.setup();
     const auth = createAuth('locked');
-    auth.agent.agentDid.document.service[0].serviceEndpoint = signedEndpoints;
+    auth.agent.agentDid.document.service[0].serviceEndpoint = ['https://portable-snapshot.example/dwn'];
+    auth.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(signedEndpoints);
     authMocks.create.mockResolvedValue(auth);
 
     render(
       <EnboxAuthProvider>
-        <RestoreButton />
+        <RestoreButton dwnEndpoints={TEST_ENDPOINTS} />
         <EndpointProbe />
       </EnboxAuthProvider>,
     );
@@ -354,7 +360,9 @@ describe('EnboxAuthProvider restore flow', () => {
   it('rolls back an SDK session when the stored agent DID service is malformed', async () => {
     const user = userEvent.setup();
     const auth = createAuth();
-    auth.agent.agentDid.document.service = [];
+    auth.agent.dwn.getRemoteDwnEndpointUrls.mockRejectedValue(
+      new Error('Agent DID does not contain a DWN service.'),
+    );
     authMocks.create.mockResolvedValue(auth);
 
     render(
@@ -388,7 +396,6 @@ describe('EnboxAuthProvider restore flow', () => {
       expect(auth.restoreFromPhrase).toHaveBeenCalledWith({
         password              : '1234',
         recoveryPhrase        : TEST_PHRASE,
-        dwnEndpoints          : TEST_ENDPOINTS,
         identitySyncProtocols : TEST_IDENTITY_SYNC_PROTOCOLS,
       });
     });
