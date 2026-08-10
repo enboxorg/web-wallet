@@ -12,6 +12,7 @@ import {
   deleteIdentity,
   exportIdentity,
   importIdentity,
+  PublishedIdentitySetupError,
   type CreateIdentityParams,
   type UpdateIdentityProfileParams,
   type UpdateDwnEndpointsParams,
@@ -54,6 +55,18 @@ export function useCreateIdentity() {
         (existing) => upsertIdentity(existing, identity),
       );
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
+    },
+    onError: (error) => {
+      const publishedIdentity = error instanceof PublishedIdentitySetupError
+        ? error.publishedIdentity
+        : undefined;
+      if (publishedIdentity !== undefined) {
+        queryClient.setQueryData(
+          queryKeys.identities.all,
+          (existing) => upsertIdentity(existing, publishedIdentity),
+        );
+        queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
+      }
     },
   });
 }

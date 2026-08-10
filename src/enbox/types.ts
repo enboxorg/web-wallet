@@ -6,6 +6,8 @@
 
 import type { EnboxPlatformAgent } from '@enbox/agent';
 
+export type { RegistrationTokenData } from '@enbox/auth';
+
 export type EnboxAgent = EnboxPlatformAgent;
 
 /** A resolved identity profile (read model). */
@@ -17,14 +19,4 @@ export interface IdentityProfile {
   avatarUrl?: string;
   heroUrl?: string;
   hasProfileRecord?: boolean;
-}
-
-/** Shape of a persisted registration token for a single DWN endpoint. */
-export interface RegistrationTokenData {
-  registrationToken: string;
-  refreshToken?: string;
-  /** Unix timestamp (ms); undefined = never expires. */
-  expiresAt?: number;
-  tokenUrl: string;
-  refreshUrl?: string;
 }

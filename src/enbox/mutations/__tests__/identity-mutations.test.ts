@@ -4,7 +4,6 @@ import { Effect } from 'effect';
 import {
   createIdentity,
   importIdentity,
-  importValidatedIdentity,
   updateDwnEndpoints,
   updateIdentityProfile,
 } from '../identity-mutations';
@@ -82,7 +81,6 @@ const mocks = vi.hoisted(() => {
       };
     }),
     ensureRegistration: vi.fn(),
-    ensurePortableOwnerPublished: vi.fn(),
     installProtocols: vi.fn(),
     validatePortableOwnerIdentity: vi.fn(),
   };
@@ -137,9 +135,6 @@ vi.mock('@/lib/dwn-endpoints', async (importOriginal) => ({
 }));
 
 vi.mock('@/features/connect/portable-owner-identity', () => ({
-  ensurePortableOwnerPublished: mocks.ensurePortableOwnerPublished,
-  portableOwnerDocumentsMatch: (left: unknown, right: unknown) =>
-    JSON.stringify(left) === JSON.stringify(right),
   validatePortableOwnerIdentity: mocks.validatePortableOwnerIdentity,
 }));
 
@@ -181,10 +176,8 @@ describe('identity mutations', () => {
   beforeEach(() => {
     mocks.calls.length = 0;
     vi.clearAllMocks();
-    mocks.ensurePortableOwnerPublished.mockResolvedValue(undefined);
     mocks.validatePortableOwnerIdentity.mockImplementation(async (portableIdentity: any) => ({
       did: portableIdentity.portableDid.uri,
-      dwnEndpoints: ['https://imported.example/dwn'],
       portableIdentity,
     }));
   });
@@ -270,7 +263,23 @@ describe('identity mutations', () => {
     expect(agent.did.delete).toHaveBeenCalledWith({ didUri: did, tenant: 'did:dht:agent' });
   });
 
-  it('cleans up the local identity when required protocol bootstrap fails', async () => {
+  it('never deletes DID keys when unpublished-identity metadata cleanup fails', async () => {
+    const did = 'did:dht:unpublished-retained';
+    const agent = createAgent(did, { published: false });
+    agent.identity.delete.mockRejectedValueOnce(new Error('identity store unavailable'));
+
+    const creation = createIdentity(agent, {
+      persona      : 'Personal',
+      displayName  : 'Alice',
+      dwnEndpoints : ['https://fly.example/dwn'],
+    });
+
+    await expect(creation).rejects.toBeInstanceOf(AggregateError);
+    expect(agent.identity.delete).toHaveBeenCalledWith({ didUri: did });
+    expect(agent.did.delete).not.toHaveBeenCalled();
+  });
+
+  it('retains a published identity and its keys when required protocol bootstrap fails', async () => {
     const did = 'did:dht:failed-bootstrap';
     const agent = createAgent(did);
     mocks.installProtocols.mockImplementationOnce(() =>
@@ -285,8 +294,56 @@ describe('identity mutations', () => {
 
     expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
     expect(mocks.profileRepo.profile.set).not.toHaveBeenCalled();
-    expect(agent.identity.delete).toHaveBeenCalledWith({ didUri: did });
-    expect(agent.did.delete).toHaveBeenCalledWith({ didUri: did, tenant: 'did:dht:agent' });
+    expect(agent.identity.delete).not.toHaveBeenCalled();
+    expect(agent.did.delete).not.toHaveBeenCalled();
+  });
+
+  it('retains a published identity and its keys when tenant registration fails', async () => {
+    const did = 'did:dht:registration-pending';
+    const agent = createAgent(did);
+    mocks.ensureRegistration.mockImplementationOnce(() =>
+      Effect.fail(new Error('registration failed'))
+    );
+
+    await expect(createIdentity(agent, {
+      persona: 'Personal',
+      displayName: 'Alice',
+      dwnEndpoints: ['https://fly.example/dwn'],
+    })).rejects.toThrow('registration failed');
+
+    expect(agent.identity.delete).not.toHaveBeenCalled();
+    expect(agent.did.delete).not.toHaveBeenCalled();
+    expect(mocks.installProtocols).not.toHaveBeenCalled();
+    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
+
+    await updateDwnEndpoints(agent, {
+      did,
+      endpoints: ['https://fly.example/dwn'],
+    });
+    expect(mocks.ensureRegistration).toHaveBeenLastCalledWith(
+      ['https://fly.example/dwn'],
+      [did],
+    );
+  });
+
+  it('retains and exposes a published identity when profile setup fails', async () => {
+    const did = 'did:dht:profile-pending';
+    const agent = createAgent(did);
+    mocks.profileRepo.profile.set.mockRejectedValueOnce(new Error('profile write failed'));
+
+    const creation = createIdentity(agent, {
+      persona      : 'Personal',
+      displayName  : 'Alice',
+      dwnEndpoints : ['https://fly.example/dwn'],
+    });
+
+    await expect(creation).rejects.toMatchObject({
+      name: 'PublishedIdentitySetupError',
+      publishedIdentity: { did: { uri: did } },
+    });
+    expect(agent.identity.delete).not.toHaveBeenCalled();
+    expect(agent.did.delete).not.toHaveBeenCalled();
+    expect(agent.sync.registerIdentity).toHaveBeenCalled();
   });
 
   it('prepares local protocols and sync without re-registering an imported identity', async () => {
@@ -296,7 +353,6 @@ describe('identity mutations', () => {
     await importIdentity(agent, { portableDid: { uri: did } });
 
     expect(mocks.installProtocols).toHaveBeenCalledWith(did);
-    expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
@@ -315,6 +371,23 @@ describe('identity mutations', () => {
     ]);
   });
 
+  it('retains imported DID keys when identity metadata rollback fails', async () => {
+    const did = 'did:dht:import-rollback-pending';
+    const agent = createAgent(did);
+    mocks.installProtocols.mockImplementationOnce(() =>
+      Effect.fail(new Error('protocol setup failed'))
+    );
+    agent.identity.delete.mockRejectedValueOnce(new Error('identity store unavailable'));
+
+    const importing = importIdentity(agent, {
+      portableDid: { uri: did, document: { id: did } },
+    });
+
+    await expect(importing).rejects.toBeInstanceOf(AggregateError);
+    expect(agent.identity.delete).toHaveBeenCalledWith({ didUri: did });
+    expect(agent.did.delete).not.toHaveBeenCalled();
+  });
+
   it('keeps ordinary duplicate file imports rejected', async () => {
     const did = 'did:dht:imported';
     const agent = createAgent(did);
@@ -324,47 +397,6 @@ describe('identity mutations', () => {
       portableDid: { uri: did, document: { id: did } },
     })).rejects.toThrow('Identity already exists');
 
-    expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
-    expect(agent.identity.import).not.toHaveBeenCalled();
-  });
-
-  it('resumes an explicitly idempotent portable-owner import without importing keys twice', async () => {
-    const did = 'did:dht:imported';
-    const agent = createAgent(did);
-    const existingIdentity = {
-      did: { uri: did },
-      export: vi.fn(async () => ({ portableDid: { uri: did, document: { id: did } } })),
-    };
-    agent.identity.get.mockResolvedValue(existingIdentity);
-
-    const portableIdentity = { portableDid: { uri: did, document: { id: did } } } as any;
-    const result = await importValidatedIdentity(agent, {
-      did,
-      dwnEndpoints: ['https://imported.example/dwn'],
-      portableIdentity,
-    }, { allowExistingExact: true, ensurePublished: true });
-
-    expect(result).toBe(existingIdentity);
-    expect(mocks.ensurePortableOwnerPublished).toHaveBeenCalledOnce();
-    expect(agent.identity.import).not.toHaveBeenCalled();
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
-    expect(mocks.installProtocols).toHaveBeenCalledWith(did);
-    expect(agent.sync.registerIdentity).toHaveBeenCalledOnce();
-  });
-
-  it('rejects a portable-owner import when the existing DID document differs', async () => {
-    const did = 'did:dht:imported';
-    const agent = createAgent(did);
-    agent.identity.get.mockResolvedValue({
-      did: { uri: did },
-      export: vi.fn(async () => ({ portableDid: { uri: did, document: { id: did, version: 1 } } })),
-    });
-
-    await expect(importIdentity(agent, {
-      portableDid: { uri: did, document: { id: did, version: 2 } },
-    })).rejects.toThrow('Identity already exists');
-
-    expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
     expect(agent.identity.import).not.toHaveBeenCalled();
   });
 
@@ -393,7 +425,7 @@ describe('identity mutations', () => {
     expect(avatarWrite.data.type).toBe('image/jpeg');
   });
 
-  it('registers only a newly added endpoint before applying the endpoint list', async () => {
+  it('registers the requested endpoint list before applying it', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
 
@@ -410,56 +442,51 @@ describe('identity mutations', () => {
       ['https://dwn.example/path'],
       [did],
     );
-    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
-      did,
-      options: { protocols: ['https://identity.foundation/protocols/profile'] },
-    });
     expect(mocks.calls).toEqual([
       'registration:ensure',
       'identity:setDwnEndpoints',
-      'sync:update',
     ]);
   });
 
-  it('does not register when an endpoint edit only normalizes the existing URL', async () => {
+  it('re-registers an existing endpoint idempotently before applying it', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
-    agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example/path']);
 
     await updateDwnEndpoints(agent, {
       did,
       endpoints: ['https://DWN.example/path/'],
     });
 
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
+    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
+      ['https://dwn.example/path'],
+      [did],
+    );
     expect(agent.identity.setDwnEndpoints).toHaveBeenCalledWith({
       didUri: did,
       endpoints: ['https://dwn.example/path'],
     });
   });
 
-  it('does not register when an endpoint is removed or the remaining endpoints are reordered', async () => {
+  it('registers every retained endpoint when endpoints are removed or reordered', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
-    agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue([
-      'https://dwn-a.example',
-      'https://dwn-b.example',
-      'https://dwn-c.example',
-    ]);
 
     await updateDwnEndpoints(agent, {
       did,
       endpoints: ['https://dwn-c.example', 'https://dwn-a.example'],
     });
 
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
+    expect(mocks.ensureRegistration).toHaveBeenCalledWith(
+      ['https://dwn-c.example', 'https://dwn-a.example'],
+      [did],
+    );
     expect(agent.identity.setDwnEndpoints).toHaveBeenCalledWith({
       didUri: did,
       endpoints: ['https://dwn-c.example', 'https://dwn-a.example'],
     });
   });
 
-  it('registers every addition and excludes existing endpoints from the request', async () => {
+  it('registers every requested endpoint without consulting the resolver cache', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
     agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn-a.example']);
@@ -474,9 +501,10 @@ describe('identity mutations', () => {
     });
 
     expect(mocks.ensureRegistration).toHaveBeenCalledWith(
-      ['https://dwn-b.example', 'https://dwn-c.example'],
+      ['https://dwn-a.example', 'https://dwn-b.example', 'https://dwn-c.example'],
       [did],
     );
+    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(agent.identity.setDwnEndpoints).toHaveBeenCalledWith({
       didUri: did,
       endpoints: [

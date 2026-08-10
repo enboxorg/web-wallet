@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { DwnInterface, type DwnProtocolDefinition, getDwnServiceEndpointUrls } from '@enbox/agent';
+import type { DwnProtocolDefinition } from '@enbox/agent';
 import { KeyDerivationScheme } from '@enbox/dwn-sdk-js';
 import { ProfileDefinition } from '@enbox/protocols';
 
@@ -10,18 +10,6 @@ import {
   protocolHasEncryptedTypes,
   queryProtocolSetupStatus,
 } from '../protocol-install';
-
-vi.mock('@enbox/agent', async () => {
-  const actual = await vi.importActual<typeof import('@enbox/agent')>('@enbox/agent');
-  return {
-    ...actual,
-    getDwnServiceEndpointUrls: vi.fn(),
-  };
-});
-
-const mockedGetDwnServiceEndpointUrls = vi.mocked(getDwnServiceEndpointUrls);
-const queryMessage = { descriptor: { method: 'Query' } };
-const configureMessage = { descriptor: { method: 'Configure' } };
 
 function createDwn() {
   const keysByPath = new Map([
@@ -40,29 +28,6 @@ function createDwn() {
       derivePublicKey,
     }),
   };
-}
-
-function protocolQueryReply(definition?: DwnProtocolDefinition) {
-  return {
-    status  : { code: 200, detail: 'OK' },
-    entries : definition === undefined ? [] : [{ descriptor: { definition } }],
-  };
-}
-
-function createRemoteRpc(
-  before: DwnProtocolDefinition | undefined,
-  after: DwnProtocolDefinition | undefined,
-  configureStatus = { code: 202, detail: 'Accepted' },
-) {
-  let queryCount = 0;
-  return vi.fn(async ({ message }: { message: unknown }) => {
-    if (message === queryMessage) {
-      const definition = queryCount === 0 ? before : after;
-      queryCount += 1;
-      return protocolQueryReply(definition);
-    }
-    return { status: configureStatus };
-  });
 }
 
 const encryptedProtocol: DwnProtocolDefinition = {
@@ -113,7 +78,6 @@ const notesProtocol: DwnProtocolDefinition = {
 describe('protocol-install', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockedGetDwnServiceEndpointUrls.mockResolvedValue(['https://owner.example']);
   });
 
   it('detects encrypted protocols', () => {

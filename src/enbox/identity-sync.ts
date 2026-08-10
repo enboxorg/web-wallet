@@ -1,16 +1,15 @@
 import { Effect } from 'effect';
+import type { SyncIdentityOptions } from '@enbox/agent';
 
-import { IDENTITY_SYNC_PROTOCOLS, installProtocolsEffect } from './protocols';
+import {
+  IDENTITY_SYNC_PROTOCOLS,
+  installProtocolsEffect,
+} from './protocols';
 import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
 import { runIdentitySetupSingleFlight } from './effect/keyed-single-flight';
 import { CurrentAgent, enboxLiveLayer } from './effect/services';
 import { runEnboxPromise } from './effect/runtime';
-
-type SyncIdentityOptions = {
-  delegateDid?: string;
-  protocols: 'all' | string[];
-};
 
 type IdentityLike = {
   did?: { uri?: unknown };
@@ -54,21 +53,21 @@ export function getIdentityDid(identity: unknown): string | undefined {
 
 function sameProtocolScope(
   existing: SyncIdentityOptions | undefined,
-  delegateDid: string | undefined,
+  protocols: readonly [string, ...string[]],
 ): boolean {
   if (!existing || existing.protocols === 'all') {
     return false;
   }
 
-  if (existing.delegateDid !== delegateDid) {
+  if (existing.delegateDid !== undefined) {
     return false;
   }
 
-  if (existing.protocols.length !== IDENTITY_SYNC_PROTOCOLS.length) {
+  if (existing.protocols.length !== protocols.length) {
     return false;
   }
 
-  return IDENTITY_SYNC_PROTOCOLS.every((protocol) =>
+  return protocols.every((protocol) =>
     existing.protocols.includes(protocol)
   );
 }
@@ -76,10 +75,6 @@ function sameProtocolScope(
 function getSyncOptionsEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-
-    if (typeof agent.sync.getIdentityOptions !== 'function') {
-      return undefined;
-    }
 
     return yield* Effect.tryPromise({
       try: async (): Promise<SyncIdentityOptions | undefined> =>
@@ -92,16 +87,15 @@ function getSyncOptionsEffect(did: string) {
 function applySyncOptionsEffect(
   did: string,
   existing: SyncIdentityOptions | undefined,
-  delegateDid: string | undefined,
+  protocols: readonly [string, ...string[]],
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-    const options = {
-      ...(delegateDid && { delegateDid }),
-      protocols: IDENTITY_SYNC_PROTOCOLS,
+    const options: SyncIdentityOptions = {
+      protocols: [...protocols],
     };
 
-    if (existing && typeof agent.sync.updateIdentityOptions === 'function') {
+    if (existing) {
       yield* Effect.tryPromise({
         try: () => runIdentitySetupSingleFlight(
           agent,
@@ -123,10 +117,7 @@ function applySyncOptionsEffect(
     }).pipe(
       Effect.as(true),
       Effect.catchAll((error) => {
-        if (
-          getErrorMessage(error).includes('already registered') &&
-          typeof agent.sync.updateIdentityOptions === 'function'
-        ) {
+        if (getErrorMessage(error).includes('already registered')) {
           return Effect.tryPromise({
             try: () => runIdentitySetupSingleFlight(
               agent,
@@ -145,9 +136,8 @@ function applySyncOptionsEffect(
 }
 
 /**
- * Keep owner protocol definitions current and register every known identity
- * for profile/connect sync. Local protocol updates propagate through sync; the
- * wallet neither drives a manual pull nor re-registers an existing DID tenant.
+ * Keep owner protocol definitions and sync registrations current. AuthManager
+ * owns delegated registration scope because it derives that scope from grants.
  */
 export async function reconcileIdentitySync(
   agent: EnboxAgent,
@@ -178,15 +168,16 @@ export function reconcileIdentitySyncEffect(
     const changedDids: string[] = [];
     const failedDids: string[] = [];
     for (const { connectedDid: did, delegateDid } of targets.values()) {
+      if (delegateDid !== undefined) {
+        continue;
+      }
       const changed = yield* Effect.gen(function* () {
         const existing = yield* getSyncOptionsEffect(did);
-        if (delegateDid === undefined) {
-          yield* installProtocolsEffect(did);
-        }
-        if (sameProtocolScope(existing, delegateDid)) {
+        yield* installProtocolsEffect(did);
+        if (sameProtocolScope(existing, IDENTITY_SYNC_PROTOCOLS)) {
           return false;
         }
-        return yield* applySyncOptionsEffect(did, existing, delegateDid);
+        return yield* applySyncOptionsEffect(did, existing, IDENTITY_SYNC_PROTOCOLS);
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {

@@ -24,7 +24,7 @@ import { EnboxLogo } from './EnboxLogo';
 import { cn } from '@/lib/utils';
 
 export interface RestoreWalletPageProps {
-  onRestore: (phrase: string, pin: string, dwnEndpoints: string[]) => Promise<void>;
+  onRestore: (phrase: string, pin: string, dwnEndpoints?: string[]) => Promise<void>;
   isLoading: boolean;
   error: string | null;
   onBack?: () => void;
@@ -51,6 +51,7 @@ export function RestoreWalletPage({
   );
   const [phrase, setPhrase] = useState('');
   const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(getConfiguredDwnEndpoints);
+  const [isEndpointOverrideEnabled, setIsEndpointOverrideEnabled] = useState(false);
   const [pin, setPin] = useState('');
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -99,13 +100,17 @@ export function RestoreWalletPage({
       setConfirmError(null);
       setLocalError(null);
       try {
-        await onRestore(phrase, pin, dwnEndpoints);
+        await onRestore(
+          phrase,
+          pin,
+          isEndpointOverrideEnabled ? dwnEndpoints : undefined,
+        );
         markPinAuthMethod();
       } catch (err) {
         setLocalError(err instanceof Error ? err.message : 'Failed to restore wallet');
       }
     },
-    [dwnEndpoints, pin, phrase, onRestore],
+    [dwnEndpoints, isEndpointOverrideEnabled, pin, phrase, onRestore],
   );
 
   const handleUsePasskey = useCallback(async () => {
@@ -116,7 +121,11 @@ export function RestoreWalletPage({
     setLocalLoading(true);
     try {
       const prepared = await preparePasskeyVaultPassword();
-      await onRestore(phrase, prepared.password, dwnEndpoints);
+      await onRestore(
+        phrase,
+        prepared.password,
+        isEndpointOverrideEnabled ? dwnEndpoints : undefined,
+      );
       storePasskeyCredential(prepared.credential);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to restore wallet';
@@ -130,7 +139,7 @@ export function RestoreWalletPage({
     } finally {
       setLocalLoading(false);
     }
-  }, [dwnEndpoints, onRestore, phrase]);
+  }, [dwnEndpoints, isEndpointOverrideEnabled, onRestore, phrase]);
 
   const handleUsePin = useCallback(() => {
     setAuthMethod('pin');
@@ -209,11 +218,35 @@ export function RestoreWalletPage({
                 Recovery DWN Endpoints
               </h1>
               <p className="text-sm text-text-secondary">
-                Use the endpoints configured when this wallet was created
+                By default, recovery uses the endpoints in your signed vault DID document.
               </p>
             </div>
 
-            <DwnEndpointEditor endpoints={dwnEndpoints} onChange={setDwnEndpoints} />
+            {isEndpointOverrideEnabled ? (
+              <div className="flex w-full flex-col gap-3">
+                <p className="text-sm text-text-secondary">
+                  These endpoints will deliberately replace the endpoints discovered during recovery.
+                </p>
+                <DwnEndpointEditor endpoints={dwnEndpoints} onChange={setDwnEndpoints} />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEndpointOverrideEnabled(false)}
+                  className="self-start"
+                >
+                  Use endpoints from DID document
+                </Button>
+              </div>
+            ) : (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsEndpointOverrideEnabled(true)}
+              >
+                Enter replacement endpoints
+              </Button>
+            )}
 
             <div className="flex gap-3">
               <Button variant="ghost" onClick={handleBack}>
@@ -221,7 +254,8 @@ export function RestoreWalletPage({
               </Button>
               <Button
                 onClick={handleEndpointsContinue}
-                disabled={getDwnEndpointValidationError(dwnEndpoints) !== null}
+                disabled={isEndpointOverrideEnabled
+                  && getDwnEndpointValidationError(dwnEndpoints) !== null}
               >
                 Continue
               </Button>

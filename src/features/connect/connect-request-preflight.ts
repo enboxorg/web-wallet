@@ -12,7 +12,6 @@ import type {
   PublicKeyJwk,
 } from '@enbox/dwn-sdk-js';
 
-import { getEncryptionKeyInfo } from '@enbox/agent';
 import { X25519 } from '@enbox/crypto';
 import { Did } from '@enbox/dids';
 import {
@@ -34,7 +33,6 @@ export type ConnectPermissionPreflight = {
   permissions: ConnectPermissionRequest[];
   definitions: DwnProtocolDefinition[];
   scopes: DwnPermissionScope[];
-  hasEncryptedReadScopes: boolean;
 };
 
 const VALIDATION_SIGNER: MessageSigner = {
@@ -181,7 +179,6 @@ export function preflightConnectPermissions(value: unknown): ConnectPermissionPr
   const permissions: ConnectPermissionRequest[] = [];
   const scopes: DwnPermissionScope[] = [];
   const byProtocol = new Map<string, DwnProtocolDefinition>();
-  let hasEncryptedReadScopes = false;
 
   for (const permission of value) {
     if (!isPlainRecord(permission)) throw new Error('Each permission request must be an object.');
@@ -191,14 +188,10 @@ export function preflightConnectPermissions(value: unknown): ConnectPermissionPr
     }
 
     const definition = permission.protocolDefinition;
-    const definitionHasEncryption = protocolHasEncryptedTypes(definition);
     const validatedScopes: DwnPermissionScope[] = [];
     for (const scope of permission.permissionScopes) {
       assertPermissionScope(scope, definition.protocol);
       validatedScopes.push(scope);
-      if (definitionHasEncryption && scope.interface === 'Records' && scope.method === 'Read') {
-        hasEncryptedReadScopes = true;
-      }
     }
 
     const existing = byProtocol.get(definition.protocol);
@@ -218,7 +211,6 @@ export function preflightConnectPermissions(value: unknown): ConnectPermissionPr
     permissions,
     definitions,
     scopes,
-    hasEncryptedReadScopes,
   };
 }
 
@@ -263,14 +255,4 @@ export function preflightConnectRequest(request: ConnectRequest): ConnectPermiss
 export function isDidSupportedByRequest(didUri: string, supportedDidMethods: string[]): boolean {
   const parsed = parseCanonicalDid(didUri);
   return parsed !== undefined && supportedDidMethods.includes(`did:${parsed.method}`);
-}
-
-export async function preflightDelegateEncryption(
-  agent: Parameters<typeof getEncryptionKeyInfo>[0],
-  request: ConnectRequest,
-  preflight: ConnectPermissionPreflight,
-): Promise<void> {
-  if (request.delegateDid !== undefined && preflight.hasEncryptedReadScopes) {
-    await getEncryptionKeyInfo(agent, request.delegateDid);
-  }
 }

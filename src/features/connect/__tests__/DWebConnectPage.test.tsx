@@ -17,13 +17,12 @@ const mocks = vi.hoisted(() => {
   return {
     agent: {
       id: 'agent-1',
-      dwn: {
-        getRemoteDwnEndpointUrls: vi.fn(),
+      identity: {
+        getDwnEndpoints: vi.fn(),
       },
     },
     approvePopupConnectRequest: vi.fn(),
     createTransport: vi.fn(),
-    ensureRegistrationForDids: vi.fn(),
     queryProtocolSetupStatus: vi.fn(),
     reconfigureProtocolsForOverride: vi.fn(),
     publishWalletEvent: vi.fn(),
@@ -85,10 +84,6 @@ vi.mock('@/enbox/hooks/use-permissions', () => ({
     isLoading : false,
     isError   : false,
   }),
-}));
-
-vi.mock('@/enbox/registration', () => ({
-  ensureRegistrationForDids: mocks.ensureRegistrationForDids,
 }));
 
 vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
@@ -199,8 +194,7 @@ describe('DWebConnectPage', () => {
     mocks.transport.awaitRequest.mockResolvedValue(connectRequest());
     mocks.transport.sendResponseAwaitingAck.mockResolvedValue(true);
     mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
-    mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
-    mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
+    mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.permissions = [];
@@ -245,7 +239,7 @@ describe('DWebConnectPage', () => {
     await waitFor(() => {
       expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe');
     });
-    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
+    expect(mocks.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
     expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       expect.objectContaining({ clientDid: 'did:jwk:dapp-client', state: 'state-1' }),
@@ -289,6 +283,10 @@ describe('DWebConnectPage', () => {
       ['https://dwn.example'],
       [permissionRequest.protocolDefinition],
     );
+    expect(mocks.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
+      didUri  : 'did:dht:alice',
+      refresh : true,
+    });
 
     await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe'));
     expect(await screen.findByText('Connected!')).toBeInTheDocument();

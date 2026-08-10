@@ -28,7 +28,6 @@ import {
 } from './connect-deep-link';
 
 import { Button } from '@/components/ui/Button';
-
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
@@ -73,7 +72,6 @@ import {
 import {
   isDidSupportedByRequest,
   preflightConnectRequest,
-  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { detectConnectRefresh } from './connect-refresh';
@@ -422,16 +420,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
     setPhase('authorizing');
     try {
-      const preflight = preflightConnectRequest(connectionRequest);
       if (!isDidSupportedByRequest(approveAsDid, connectionRequest.supportedDidMethods)) {
         throw new Error('This profile uses an ID type the app does not support.');
       }
-      await preflightDelegateEncryption(liveAgent, connectionRequest, preflight);
 
-      const dwnEndpoints = await liveAgent.dwn.getRemoteDwnEndpointUrls(approveAsDid);
-      if (dwnEndpoints.length === 0) {
-        throw new Error('This profile does not have any sync endpoints configured.');
-      }
       // If the owner opted into replacing a custom protocol installed with a
       // different definition, author the replacement (locally + across owner
       // endpoints) BEFORE the ceremony. The connect ceremony fails closed on a
@@ -443,6 +435,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
           protocolSetupStatuses,
         );
         if (definitionsToOverride.length > 0) {
+          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
+            didUri  : approveAsDid,
+            refresh : true,
+          });
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,

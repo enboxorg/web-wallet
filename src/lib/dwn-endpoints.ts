@@ -57,6 +57,9 @@ export function normalizeDwnEndpoint(
   if (url.username !== '' || url.password !== '') {
     throw new Error('DWN endpoints cannot contain credentials.');
   }
+  if (url.search !== '' || url.hash !== '') {
+    throw new Error('DWN endpoints cannot contain query strings or fragments.');
+  }
   const normalized = url.toString();
   return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
 }

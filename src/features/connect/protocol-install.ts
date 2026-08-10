@@ -1,4 +1,3 @@
-import { Effect } from 'effect';
 import {
   authoredProtocolDefinitionsEqual,
   type EncryptionKeyDeriver,
@@ -9,14 +8,9 @@ import {
   DwnInterface,
   type DwnProtocolDefinition,
   type EnboxPlatformAgent,
-  getDwnServiceEndpointUrls,
 } from '@enbox/agent';
 import { computeJwkThumbprint } from '@enbox/crypto';
 
-import { sdkError } from '@/enbox/effect/errors';
-import { withNetworkPolicy } from '@/enbox/effect/network-policy';
-import { runEnboxPromise } from '@/enbox/effect/runtime';
-import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import { getCanonicalProtocolDefinition } from '@/lib/protocol-names';
 
 export type ResolvedProtocolSetupStatus = 'configured' | 'conflict' | 'override' | 'install' | 'upgrade';
@@ -30,12 +24,8 @@ type ProtocolConfigureEntry = {
 
 type PrepareProtocolAgent = Pick<
   EnboxPlatformAgent,
-  'did' | 'dwn' | 'rpc' | 'processDwnRequest'
+  'dwn' | 'processDwnRequest'
 >;
-
-function sdkTimeout(operation: string) {
-  return sdkError(operation)(new Error(`${operation} timed out`));
-}
 
 function containsWalletManagedKeyAgreement(value: unknown): boolean {
   if (Array.isArray(value)) {

@@ -38,7 +38,6 @@ import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kerne
 import {
   isDidSupportedByRequest,
   preflightConnectRequest,
-  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
@@ -231,17 +230,11 @@ export default function DWebConnectPage() {
     setPhase('connecting');
 
     try {
-      const preflight = preflightConnectRequest(connectRequest);
       if (!isDidSupportedByRequest(approveAsDid, connectRequest.supportedDidMethods)) {
         throw new Error('This profile uses an ID type the app does not support.');
       }
-      await preflightDelegateEncryption(liveAgent, connectRequest, preflight);
 
       setStatusMessage('Getting your profile ready...');
-      const dwnEndpoints = await liveAgent.dwn.getRemoteDwnEndpointUrls(approveAsDid);
-      if (dwnEndpoints.length === 0) {
-        throw new Error('This profile does not have any sync endpoints configured.');
-      }
       // If the owner opted into replacing a custom protocol installed with a
       // different definition, author the replacement (locally + across owner
       // endpoints) BEFORE the ceremony — it fails closed on a definition
@@ -254,6 +247,10 @@ export default function DWebConnectPage() {
         );
         if (definitionsToOverride.length > 0) {
           setStatusMessage('Replacing protocol setup...');
+          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
+            didUri  : approveAsDid,
+            refresh : true,
+          });
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,

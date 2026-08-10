@@ -9,11 +9,10 @@ import { useAuthStore } from '@/stores/auth-store';
 const mocks = vi.hoisted(() => ({
   agent: {
     id: 'agent-1',
-    dwn: { getRemoteDwnEndpointUrls: vi.fn() },
+    identity: { getDwnEndpoints: vi.fn() },
   },
   approveConnectRequest: vi.fn(),
   denyConnectRequest: vi.fn(),
-  ensureRegistrationForDids: vi.fn(),
   fetchConnectRequest: vi.fn(),
   generatePin: vi.fn(),
   waitForRelayCompletion: vi.fn(),
@@ -85,10 +84,6 @@ vi.mock('@/enbox/hooks/use-all-permissions', () => ({
     isPending : mocks.allPermissionsPending,
     isError   : mocks.allPermissionsError,
   }),
-}));
-
-vi.mock('@/enbox/registration', () => ({
-  ensureRegistrationForDids: mocks.ensureRegistrationForDids,
 }));
 
 vi.mock('@/enbox/hooks/use-permissions', () => ({
@@ -206,8 +201,7 @@ describe('AppConnectPage', () => {
       agent: mocks.agent as never,
     });
     mocks.scannerHasCamera.mockResolvedValue(false);
-    mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
-    mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
+    mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.waitForRelayCompletion.mockResolvedValue(false);
     mocks.allPermissions = [];
@@ -284,7 +278,7 @@ describe('AppConnectPage', () => {
     await waitFor(() => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
     });
-    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
+    expect(mocks.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
     // Protocol preparation is owned by the approval ceremony itself
     // (agent >=0.8.17) — the wallet no longer runs a pre-approval step.
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
@@ -560,6 +554,10 @@ describe('AppConnectPage', () => {
       ['https://dwn.example'],
       [connectRequest.permissionRequests[0].protocolDefinition],
     );
+    expect(mocks.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
+      didUri  : 'did:dht:alice',
+      refresh : true,
+    });
 
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('1234')).toBeInTheDocument();

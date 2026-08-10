@@ -17,25 +17,16 @@ const TEST_IDENTITY_SYNC_PROTOCOLS = vi.hoisted(() => [
 
 const authMocks = vi.hoisted(() => ({
   create: vi.fn(),
-  requestLocalDwnDiscovery: vi.fn(),
-}));
-const registrationMocks = vi.hoisted(() => ({
-  ensureRegistrationForDids: vi.fn(),
 }));
 
 vi.mock('@enbox/auth', () => ({
   AuthManager: {
     create: authMocks.create,
   },
-  requestLocalDwnDiscovery: authMocks.requestLocalDwnDiscovery,
 }));
 
 vi.mock('../protocols', () => ({
   IDENTITY_SYNC_PROTOCOLS: TEST_IDENTITY_SYNC_PROTOCOLS,
-}));
-
-vi.mock('../registration', () => ({
-  ensureRegistrationForDids: registrationMocks.ensureRegistrationForDids,
 }));
 
 function createAgent() {
@@ -53,6 +44,7 @@ function createAgent() {
     },
     identity: {
       list: vi.fn().mockResolvedValue([]),
+      getDwnEndpoints: vi.fn().mockResolvedValue(TEST_ENDPOINTS),
     },
     rpc: {
       getServerInfo: vi.fn().mockRejectedValue(new Error('offline')),
@@ -63,7 +55,6 @@ function createAgent() {
     },
     dwn: {
       clearDelegateDecryptionKeys: vi.fn(),
-      getRemoteDwnEndpointUrls: vi.fn().mockResolvedValue(TEST_ENDPOINTS),
     },
     vault: {
       lock: vi.fn().mockResolvedValue(undefined),
@@ -81,15 +72,29 @@ function createAgent() {
 
 function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
   const agent = createAgent();
-  return {
+  let isLocked = state === 'locked';
+  const auth = {
     state,
     agent,
     connect: vi.fn(),
-    connectVault: vi.fn().mockResolvedValue({ agent, recoveryPhrase: TEST_PHRASE }),
-    restoreFromPhrase: vi.fn().mockResolvedValue({ agent }),
+    connectVault: vi.fn(async () => {
+      isLocked = false;
+      return { agent, recoveryPhrase: TEST_PHRASE };
+    }),
+    restoreFromPhrase: vi.fn(async () => {
+      isLocked = false;
+      return { agent };
+    }),
     restoreSession: vi.fn(),
-    lock: vi.fn().mockResolvedValue(undefined),
+    lock: vi.fn(async () => {
+      isLocked = true;
+    }),
+    setLocked: (locked: boolean) => {
+      isLocked = locked;
+    },
   };
+  Object.defineProperty(auth, 'isLocked', { get: () => isLocked });
+  return auth;
 }
 
 function ConnectButton() {
@@ -105,27 +110,26 @@ function ConnectButton() {
   );
 }
 
-function DoubleConnectButton() {
-  const { connect } = useEnboxAuth();
-
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        void connect('1234', TEST_ENDPOINTS).catch(() => {});
-        void connect('1234', TEST_ENDPOINTS).catch(() => {});
-      }}
-    >
-      Double Connect
-    </button>
-  );
-}
-
 function SafeConnectButton() {
   const { connect } = useEnboxAuth();
   return (
     <button type="button" onClick={() => void connect('1234', TEST_ENDPOINTS).catch(() => {})}>
       Connect safely
+    </button>
+  );
+}
+
+function ConcurrentAuthenticationButton() {
+  const { connect, restore } = useEnboxAuth();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void connect('1234', TEST_ENDPOINTS).catch(() => {});
+        void restore(TEST_PHRASE, '1234').catch(() => {});
+      }}
+    >
+      Authenticate twice
     </button>
   );
 }
@@ -139,7 +143,7 @@ function UnlockButton() {
   );
 }
 
-function RestoreButton() {
+function RestoreButton({ dwnEndpoints }: { dwnEndpoints?: string[] }) {
   const { restore } = useEnboxAuth();
 
   return (
@@ -148,7 +152,7 @@ function RestoreButton() {
       onClick={() => restore(
         TEST_PHRASE,
         '1234',
-        TEST_ENDPOINTS,
+        dwnEndpoints,
       )}
     >
       Restore
@@ -164,7 +168,6 @@ function EndpointProbe() {
 describe('EnboxAuthProvider restore flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    registrationMocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     localStorage.clear();
     sessionStorage.clear();
     localStorage.setItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT, 'http://127.0.0.1:55500');
@@ -192,9 +195,8 @@ describe('EnboxAuthProvider restore flow', () => {
 
     await waitFor(() => {
       expect(auth.connectVault).toHaveBeenCalledWith({
-        password              : '1234',
-        dwnEndpoints          : TEST_ENDPOINTS,
-        identitySyncProtocols : TEST_IDENTITY_SYNC_PROTOCOLS,
+        password     : '1234',
+        dwnEndpoints : TEST_ENDPOINTS,
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
@@ -202,7 +204,38 @@ describe('EnboxAuthProvider restore flow', () => {
       version: 1,
       endpoints: TEST_ENDPOINTS,
     });
-    expect(registrationMocks.ensureRegistrationForDids).not.toHaveBeenCalled();
+  });
+
+  it('rejects a concurrent auth action without tearing down the active attempt', async () => {
+    const user = userEvent.setup();
+    const auth = createAuth();
+    let releaseConnect!: () => void;
+    auth.connectVault.mockImplementation(async () => {
+      await new Promise<void>((resolve) => {
+        releaseConnect = resolve;
+      });
+      return { agent: auth.agent, recoveryPhrase: TEST_PHRASE };
+    });
+    authMocks.create.mockResolvedValue(auth);
+    sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, 'preserved');
+
+    render(
+      <EnboxAuthProvider>
+        <ConcurrentAuthenticationButton />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Authenticate twice' }));
+    await waitFor(() => expect(auth.connectVault).toHaveBeenCalledOnce());
+
+    expect(auth.restoreFromPhrase).not.toHaveBeenCalled();
+    expect(auth.lock).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('preserved');
+
+    releaseConnect();
+    await waitFor(() => expect(useAuthStore.getState().unlocked).toBe(true));
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
   });
 
   it('does not re-register the agent or identities when unlocking', async () => {
@@ -219,7 +252,9 @@ describe('EnboxAuthProvider restore flow', () => {
       { did: { uri: ownerDid }, metadata: {} },
       { did: { uri: 'did:jwk:delegate' }, metadata: { connectedDid } },
     ]);
-    auth.agent.dwn.getRemoteDwnEndpointUrls.mockImplementation(async (did: string) => endpointsByDid[did]);
+    auth.agent.identity.getDwnEndpoints.mockImplementation(
+      async ({ didUri }: { didUri: string }) => endpointsByDid[didUri],
+    );
     auth.restoreSession.mockResolvedValue({ agent: auth.agent });
     authMocks.create.mockResolvedValue(auth);
 
@@ -233,31 +268,14 @@ describe('EnboxAuthProvider restore flow', () => {
     await user.click(screen.getByRole('button', { name: 'Unlock' }));
 
     await waitFor(() => expect(auth.restoreSession).toHaveBeenCalledOnce());
-    expect(registrationMocks.ensureRegistrationForDids).not.toHaveBeenCalled();
     expect(auth.agent.identity.list).not.toHaveBeenCalled();
-    expect(auth.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
-  });
-
-  it('coalesces duplicate first-time setup calls into one vault operation', async () => {
-    const user = userEvent.setup();
-    const auth = createAuth();
-    authMocks.create.mockResolvedValue(auth);
-
-    render(
-      <EnboxAuthProvider>
-        <DoubleConnectButton />
-      </EnboxAuthProvider>,
-    );
-
-    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
-    await user.click(screen.getByRole('button', { name: 'Double Connect' }));
-
-    await waitFor(() => {
-      expect(auth.connectVault).toHaveBeenCalledTimes(1);
+    expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledOnce();
+    expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
+      didUri: auth.agent.agentDid.uri,
     });
   });
 
-  it('configures scoped live sync at the SDK settle-check cadence', async () => {
+  it('configures scoped sync at the SDK default settle-check cadence', async () => {
     const auth = createAuth();
     authMocks.create.mockResolvedValue(auth);
 
@@ -268,15 +286,16 @@ describe('EnboxAuthProvider restore flow', () => {
     );
 
     await waitFor(() => {
-      expect(authMocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      const [options] = authMocks.create.mock.calls[0];
+      expect(options).toEqual(expect.objectContaining({
         identitySyncProtocols: TEST_IDENTITY_SYNC_PROTOCOLS,
         registration: expect.objectContaining({ persistTokens: true }),
-        sync: 'live',
       }));
+      expect(options).not.toHaveProperty('sync');
     });
   });
 
-  it('uses the validated pre-unlock cache when creating the auth manager', async () => {
+  it('shows the validated cache without treating it as endpoint authority', async () => {
     const cachedEndpoints = ['https://actor-a.example/dwn'];
     localStorage.setItem(STORAGE_KEYS.WALLET_DWN_ENDPOINTS, JSON.stringify({
       version: 1,
@@ -292,17 +311,17 @@ describe('EnboxAuthProvider restore flow', () => {
     );
 
     await waitFor(() => {
-      expect(authMocks.create).toHaveBeenCalledWith(expect.objectContaining({
-        dwnEndpoints: cachedEndpoints,
-      }));
+      expect(authMocks.create).toHaveBeenCalledOnce();
     });
+    expect(authMocks.create.mock.calls[0][0]).not.toHaveProperty('dwnEndpoints');
     expect(screen.getByText(cachedEndpoints[0])).toBeInTheDocument();
   });
 
   it('replaces the cache with signed agent DID endpoints after session restore', async () => {
     const signedEndpoints = ['https://signed-agent.example/dwn'];
     const auth = createAuth('locked');
-    auth.agent.agentDid.document.service[0].serviceEndpoint = signedEndpoints;
+    auth.agent.agentDid.document.service[0].serviceEndpoint = ['https://portable-snapshot.example/dwn'];
+    auth.agent.identity.getDwnEndpoints.mockResolvedValue(signedEndpoints);
     auth.restoreSession.mockResolvedValue({ agent: auth.agent });
     authMocks.create.mockResolvedValue(auth);
     sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, '1234');
@@ -324,16 +343,38 @@ describe('EnboxAuthProvider restore flow', () => {
     });
   });
 
+  it('relocks a vault unlocked by an incomplete automatic restore', async () => {
+    const auth = createAuth('locked');
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return undefined;
+    });
+    authMocks.create.mockResolvedValue(auth);
+    sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, '1234');
+
+    render(
+      <EnboxAuthProvider>
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(auth.lock).toHaveBeenCalledOnce());
+    expect(auth.isLocked).toBe(true);
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+    expect(useAuthStore.getState().unlocked).toBe(false);
+  });
+
   it('passes selected recovery endpoints to the SDK and retains signed agent defaults', async () => {
     const signedEndpoints = ['https://signed-agent.example/dwn'];
     const user = userEvent.setup();
     const auth = createAuth('locked');
-    auth.agent.agentDid.document.service[0].serviceEndpoint = signedEndpoints;
+    auth.agent.agentDid.document.service[0].serviceEndpoint = ['https://portable-snapshot.example/dwn'];
+    auth.agent.identity.getDwnEndpoints.mockResolvedValue(signedEndpoints);
     authMocks.create.mockResolvedValue(auth);
 
     render(
       <EnboxAuthProvider>
-        <RestoreButton />
+        <RestoreButton dwnEndpoints={TEST_ENDPOINTS} />
         <EndpointProbe />
       </EnboxAuthProvider>,
     );
@@ -354,7 +395,9 @@ describe('EnboxAuthProvider restore flow', () => {
   it('rolls back an SDK session when the stored agent DID service is malformed', async () => {
     const user = userEvent.setup();
     const auth = createAuth();
-    auth.agent.agentDid.document.service = [];
+    auth.agent.identity.getDwnEndpoints.mockRejectedValue(
+      new Error('Agent DID does not contain a DWN service.'),
+    );
     authMocks.create.mockResolvedValue(auth);
 
     render(
@@ -386,10 +429,8 @@ describe('EnboxAuthProvider restore flow', () => {
 
     await waitFor(() => {
       expect(auth.restoreFromPhrase).toHaveBeenCalledWith({
-        password              : '1234',
-        recoveryPhrase        : TEST_PHRASE,
-        dwnEndpoints          : TEST_ENDPOINTS,
-        identitySyncProtocols : TEST_IDENTITY_SYNC_PROTOCOLS,
+        password       : '1234',
+        recoveryPhrase : TEST_PHRASE,
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
