@@ -25,7 +25,6 @@ describe('wallet auth effects', () => {
 
   it('omits an endpoint override during normal phrase recovery', async () => {
     const auth = {
-      supportsAuthoritativeVaultRecovery: true,
       restoreFromPhrase: vi.fn(async () => ({ agent: {} })),
     };
 
@@ -46,7 +45,6 @@ describe('wallet auth effects', () => {
 
   it('normalizes recovery endpoints and rejects unsafe values before the SDK call', async () => {
     const auth = {
-      supportsAuthoritativeVaultRecovery: true,
       restoreFromPhrase: vi.fn(async () => ({ agent: {} })),
     };
 
@@ -67,19 +65,6 @@ describe('wallet auth effects', () => {
       'password',
       ['http://remote.example/dwn'],
     ))).rejects.toThrow('HTTPS');
-    expect(auth.restoreFromPhrase).not.toHaveBeenCalled();
-  });
-
-  it('fails closed before phrase recovery when the SDK would overwrite restored endpoints', async () => {
-    const auth = {
-      restoreFromPhrase: vi.fn(async () => ({ agent: {} })),
-    };
-
-    await expect(runEnboxPromise(restoreFromPhraseEffect(
-      auth as any,
-      'recovery phrase',
-      'password',
-    ))).rejects.toThrow('authoritative vault-recovery support');
     expect(auth.restoreFromPhrase).not.toHaveBeenCalled();
   });
 });

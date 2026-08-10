@@ -84,7 +84,6 @@ function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
   return {
     state,
     agent,
-    supportsAuthoritativeVaultRecovery: true,
     connect: vi.fn(),
     connectVault: vi.fn().mockResolvedValue({ agent, recoveryPhrase: TEST_PHRASE }),
     restoreFromPhrase: vi.fn().mockResolvedValue({ agent }),

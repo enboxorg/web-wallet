@@ -550,25 +550,6 @@ type ImportIdentityOptions = {
   ensurePublished?: boolean;
 };
 
-async function reconcilePortableIdentityForImport(
-  agent: EnboxAgent,
-  validatedIdentity: ValidatedPortableOwnerIdentity,
-): Promise<ValidatedPortableOwnerIdentity> {
-  // Portable restore must be atomic with the SDK release that resolves and
-  // reconciles the authoritative DID before touching the KMS or stores. A
-  // refresh-only capability (such as the original endpoint-trigger draft) is
-  // insufficient and would still let a stale backup document seed routing.
-  if (
-    (agent.identity as { supportsAuthoritativeDidImport?: boolean })
-      .supportsAuthoritativeDidImport !== true
-  ) {
-    throw new Error(
-      'This wallet requires an Enbox SDK with authoritative portable-DID import support.',
-    );
-  }
-  return validatedIdentity;
-}
-
 export async function importValidatedIdentity(
   agent: EnboxAgent,
   validatedIdentity: ValidatedPortableOwnerIdentity,
@@ -628,25 +609,18 @@ function importValidatedIdentityEffect(
       identity = existing;
     }
 
-    const importedNewIdentity = existing === undefined;
-    const authoritativeIdentity = importedNewIdentity
-      ? yield* Effect.tryPromise({
-          try: async () => reconcilePortableIdentityForImport(agent, validatedIdentity),
-          catch: sdkError('identity.resolvePortableOwner'),
-        })
-      : validatedIdentity;
-
     if (options.ensurePublished) {
       yield* Effect.tryPromise({
-        try: async () => ensurePortableOwnerPublished(authoritativeIdentity),
+        try: async () => ensurePortableOwnerPublished(validatedIdentity),
         catch: sdkError('identity.publishPortableOwner'),
       });
     }
 
+    const importedNewIdentity = existing === undefined;
     if (importedNewIdentity) {
       identity = yield* Effect.tryPromise({
         try: async (): Promise<any> => agent.identity.import({
-          portableIdentity: authoritativeIdentity.portableIdentity,
+          portableIdentity: validatedIdentity.portableIdentity,
         }),
         catch: sdkError('identity.import'),
       });

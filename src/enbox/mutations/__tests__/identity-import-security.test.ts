@@ -1,10 +1,8 @@
 import type { PortableIdentity } from '@enbox/agent';
-import { Ed25519 } from '@enbox/crypto';
 import { DidDht } from '@enbox/dids';
 import { describe, expect, it, vi } from 'vitest';
 
 import { importIdentity } from '../identity-mutations';
-import { validatePortableOwnerIdentity } from '@/features/connect/portable-owner-identity';
 
 async function ownerFixture(): Promise<PortableIdentity> {
   const did = await DidDht.create({
@@ -40,16 +38,12 @@ describe('identity import security boundary', () => {
     expect(agent.identity.import).not.toHaveBeenCalled();
   });
 
-  it('accepts an external public-only verification method without requiring an unrelated key', async () => {
+  it('rejects an owner file with an external verification-method controller', async () => {
     const portableIdentity = await ownerFixture();
-    const externalKey = await Ed25519.computePublicKey({ key: await Ed25519.generateKey() });
-    portableIdentity.portableDid.document.verificationMethod!.push({
-      id           : `${portableIdentity.portableDid.uri}#external`,
-      type         : 'JsonWebKey',
-      controller   : 'did:dht:external-controller',
-      publicKeyJwk : externalKey,
-    });
-    const validated = await validatePortableOwnerIdentity(portableIdentity);
-    expect(validated.portableIdentity.portableDid.privateKeys).toHaveLength(3);
+    portableIdentity.portableDid.document.verificationMethod![0].controller = 'did:dht:attacker';
+    const agent = { identity: { import: vi.fn() } };
+
+    await expect(importIdentity(agent, portableIdentity)).rejects.toThrow('external controller');
+    expect(agent.identity.import).not.toHaveBeenCalled();
   });
 });

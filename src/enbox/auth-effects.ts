@@ -168,14 +168,6 @@ export function restoreFromPhraseEffect(
 ) {
   return Effect.tryPromise({
     try: () => {
-      if (
-        (auth as WalletAuthManager & { supportsAuthoritativeVaultRecovery?: boolean })
-          .supportsAuthoritativeVaultRecovery !== true
-      ) {
-        throw new Error(
-          'This wallet requires an Enbox SDK with authoritative vault-recovery support.',
-        );
-      }
       const options = {
         password,
         recoveryPhrase,

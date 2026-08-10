@@ -147,7 +147,6 @@ function createAgent(did = 'did:dht:new', didMetadata?: Record<string, unknown>)
   return {
     agentDid: { uri: 'did:dht:agent' },
     identity: {
-      supportsAuthoritativeDidImport: true as boolean,
       create: vi.fn(async () => {
         mocks.calls.push('identity:create');
         return { did: { uri: did, metadata: didMetadata } };
@@ -163,11 +162,6 @@ function createAgent(did = 'did:dht:new', didMetadata?: Record<string, unknown>)
     },
     did: {
       delete: vi.fn(async () => { mocks.calls.push('did:delete'); }),
-      resolve: vi.fn(async (didUri: string) => ({
-        didDocument           : { id: didUri },
-        didDocumentMetadata   : { published: true },
-        didResolutionMetadata : {},
-      })),
     },
     dwn: {
       getRemoteDwnEndpointUrls: vi.fn(async () => ['https://imported.example/dwn']),
@@ -385,56 +379,6 @@ describe('identity mutations', () => {
     ]);
   });
 
-  it('delegates authoritative reconciliation to the atomic SDK importer', async () => {
-    const did = 'did:dht:imported';
-    const agent = createAgent(did);
-    const privateKeys = [{ kty: 'OKP', crv: 'Ed25519', d: 'private' }];
-    await importIdentity(agent, {
-      portableDid: {
-        uri      : did,
-        document : {
-          id      : did,
-          service : [{
-            id              : `${did}#dwn`,
-            type            : 'DecentralizedWebNode',
-            serviceEndpoint : ['https://backup.example/dwn'],
-          }],
-        },
-        metadata: { versionId: 'backup-v1' },
-        privateKeys,
-      },
-    });
-
-    expect(agent.did.resolve).not.toHaveBeenCalled();
-    expect(agent.identity.import).toHaveBeenCalledWith({
-      portableIdentity: expect.objectContaining({
-        portableDid: expect.objectContaining({
-          document: expect.objectContaining({
-            service: [expect.objectContaining({
-              serviceEndpoint: ['https://backup.example/dwn'],
-            })],
-          }),
-          metadata: { versionId: 'backup-v1' },
-          privateKeys,
-        }),
-      }),
-    });
-  });
-
-  it('fails closed before mutation when the SDK lacks authoritative import support', async () => {
-    const did = 'did:dht:missing';
-    const agent = createAgent(did);
-    agent.identity.supportsAuthoritativeDidImport = false;
-
-    await expect(importIdentity(agent, {
-      portableDid: { uri: did, document: { id: did } },
-    }, { ensurePublished: true })).rejects.toThrow('authoritative portable-DID import support');
-
-    expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
-    expect(agent.identity.import).not.toHaveBeenCalled();
-    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
-  });
-
   it('retains imported DID keys when identity metadata rollback fails', async () => {
     const did = 'did:dht:import-rollback-pending';
     const agent = createAgent(did);
@@ -477,6 +421,7 @@ describe('identity mutations', () => {
     const portableIdentity = { portableDid: { uri: did, document: { id: did } } } as any;
     const result = await importValidatedIdentity(agent, {
       did,
+      dwnEndpoints: ['https://imported.example/dwn'],
       portableIdentity,
     }, { allowExistingExact: true, ensurePublished: true });
 

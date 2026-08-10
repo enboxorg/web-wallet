@@ -41,6 +41,7 @@ const DID_DHT_DEFAULT_ALGORITHM_BY_CURVE: Record<string, string> = {
 
 export type ValidatedPortableOwnerIdentity = {
   did: string;
+  dwnEndpoints: string[];
   portableIdentity: PortableIdentity;
 };
 
@@ -64,11 +65,6 @@ function stableJson(value: unknown): string {
 
 function normalizeDidDhtDocumentForComparison(document: DidDocument): DidDocument {
   const normalized = cloneJson(document);
-  for (const service of normalized.service ?? []) {
-    if (typeof service.serviceEndpoint === 'string') {
-      service.serviceEndpoint = [service.serviceEndpoint];
-    }
-  }
   for (const method of normalized.verificationMethod ?? []) {
     const publicKey = method.publicKeyJwk;
     const defaultAlgorithm = publicKey?.crv === undefined
@@ -180,8 +176,8 @@ function collectVerificationMethods(
     if (!method.id.startsWith(`${did}#`) || method.id.length === did.length + 1) {
       throw invalidPortableIdentity('a verification method is not anchored to the DID');
     }
-    if (typeof method.controller !== 'string' || !Did.parse(method.controller)) {
-      throw invalidPortableIdentity('a verification method controller is not a DID');
+    if (method.controller !== did) {
+      throw invalidPortableIdentity('a verification method has an external controller');
     }
     if (methods.has(method.id)) {
       throw invalidPortableIdentity('the DID document contains a duplicate verification method');
@@ -356,23 +352,8 @@ async function validatePrivateKeys(
     normalizedPrivateKeys.push(canonicalPrivateKey(privateKey, derivedPublicKey, derivedThumbprint));
   }
 
-  const operationalMethodIds = [
-    `${portableDid.uri}#0`,
-    portableDid.document.assertionMethod?.[0],
-    portableDid.document.keyAgreement?.[0],
-  ];
-  for (const methodId of operationalMethodIds) {
-    if (typeof methodId !== 'string') {
-      throw invalidPortableIdentity('operational private key coverage is incomplete');
-    }
-    const methodPublicKey = methods.get(methodId)?.publicKeyJwk;
-    if (methodPublicKey === undefined) {
-      throw invalidPortableIdentity('operational private key coverage is incomplete');
-    }
-    const thumbprint = await computeJwkThumbprint({ jwk: methodPublicKey });
-    if (!privateThumbprints.has(thumbprint)) {
-      throw invalidPortableIdentity('operational private key coverage is incomplete');
-    }
+  if ([...methodPublicKeys.keys()].some((thumbprint) => !privateThumbprints.has(thumbprint))) {
+    throw invalidPortableIdentity('private key coverage is incomplete');
   }
 
   return normalizedPrivateKeys;
@@ -391,32 +372,13 @@ export async function ensurePortableOwnerPublished(
     && resolution.didDocument !== undefined
     && resolution.didDocument !== null
   ) {
-    const authoritativeDocument = cloneJson(resolution.didDocument);
-    if (authoritativeDocument.id !== portableDid.uri) {
-      throw invalidPortableIdentity('the resolved DID document ID does not match the DID');
+    if (!portableOwnerDocumentsMatch(resolution.didDocument, portableDid.document)) {
+      throw invalidPortableIdentity('the published did:dht document differs from the imported document');
     }
-    assertOwnerController(authoritativeDocument, portableDid.uri);
-    validateDwnEndpoints(authoritativeDocument, portableDid.uri);
-    const verificationMethods = collectVerificationMethods(authoritativeDocument, portableDid.uri);
-    assertVerificationRelationships(authoritativeDocument, verificationMethods);
-    const authoritativePortableDid: PortableDid = {
-      ...portableDid,
-      document : authoritativeDocument,
-      metadata : {
-        ...portableDid.metadata,
-        ...resolution.didDocumentMetadata,
-        published: true,
-      },
-    };
-    await assertMethodBinding(authoritativePortableDid, verificationMethods);
-    authoritativePortableDid.privateKeys = await validatePrivateKeys(
-      authoritativePortableDid,
-      verificationMethods,
-    );
-    portableDid.document = authoritativePortableDid.document;
-    portableDid.privateKeys = authoritativePortableDid.privateKeys;
     portableDid.metadata = {
-      ...authoritativePortableDid.metadata,
+      ...portableDid.metadata,
+      ...resolution.didDocumentMetadata,
+      published: true,
     };
     return;
   }
@@ -424,7 +386,6 @@ export async function ensurePortableOwnerPublished(
     throw invalidPortableIdentity(`the did:dht publication state could not be verified (${resolutionError ?? 'unknown error'})`);
   }
 
-  validateDwnEndpoints(portableDid.document, portableDid.uri);
   const bearerDid = await DidDht.import({ portableDid });
   const publication = await DidDht.publish({ did: bearerDid });
   if (publication.didRegistrationMetadata.error !== undefined) {
@@ -468,14 +429,16 @@ export async function validatePortableOwnerIdentity(input: unknown): Promise<Val
   }
 
   assertOwnerController(portableDid.document, portableDid.uri);
+  const dwnEndpoints = validateDwnEndpoints(portableDid.document, portableDid.uri);
   const verificationMethods = collectVerificationMethods(portableDid.document, portableDid.uri);
-  await assertMethodBinding(portableDid, verificationMethods);
   assertVerificationRelationships(portableDid.document, verificationMethods);
+  await assertMethodBinding(portableDid, verificationMethods);
   portableDid.privateKeys = await validatePrivateKeys(portableDid, verificationMethods);
   await assertDidDhtDocumentRoundTrips(portableDid);
 
   return {
     did: portableDid.uri,
+    dwnEndpoints,
     portableIdentity: {
       portableDid,
       metadata: {
