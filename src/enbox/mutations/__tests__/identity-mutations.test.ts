@@ -491,21 +491,15 @@ describe('identity mutations', () => {
       ['https://dwn.example/path'],
       [did],
     );
-    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
-      did,
-      options: { protocols: ['https://identity.foundation/protocols/profile'] },
-    });
     expect(mocks.calls).toEqual([
       'registration:ensure',
       'identity:setDwnEndpoints',
-      'sync:update',
     ]);
   });
 
   it('re-registers an existing endpoint idempotently before applying it', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
-    agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example/path']);
 
     await updateDwnEndpoints(agent, {
       did,
@@ -525,11 +519,6 @@ describe('identity mutations', () => {
   it('registers every retained endpoint when endpoints are removed or reordered', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
-    agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue([
-      'https://dwn-a.example',
-      'https://dwn-b.example',
-      'https://dwn-c.example',
-    ]);
 
     await updateDwnEndpoints(agent, {
       did,
@@ -546,7 +535,7 @@ describe('identity mutations', () => {
     });
   });
 
-  it('registers every requested endpoint even when the resolver cache reports one', async () => {
+  it('registers every requested endpoint without consulting the resolver cache', async () => {
     const did = 'did:dht:existing';
     const agent = createAgent(did);
     agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn-a.example']);
@@ -564,6 +553,7 @@ describe('identity mutations', () => {
       ['https://dwn-a.example', 'https://dwn-b.example', 'https://dwn-c.example'],
       [did],
     );
+    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(agent.identity.setDwnEndpoints).toHaveBeenCalledWith({
       didUri: did,
       endpoints: [

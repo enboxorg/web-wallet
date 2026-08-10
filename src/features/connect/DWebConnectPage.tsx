@@ -34,7 +34,6 @@ import {
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
-import { getFreshDwnEndpoints } from '@/enbox/fresh-dwn-endpoints';
 import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kernel';
 import {
   isDidSupportedByRequest,
@@ -251,7 +250,10 @@ export default function DWebConnectPage() {
         );
         if (definitionsToOverride.length > 0) {
           setStatusMessage('Replacing protocol setup...');
-          const dwnEndpoints = await getFreshDwnEndpoints(liveAgent, approveAsDid);
+          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
+            didUri  : approveAsDid,
+            refresh : true,
+          });
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,

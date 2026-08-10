@@ -697,16 +697,6 @@ export function updateDwnEndpointsEffect(params: UpdateDwnEndpointsParams) {
         }),
       catch: sdkError('identity.setDwnEndpoints'),
     });
-    const syncOptions = yield* Effect.tryPromise({
-      try: async () => agent.sync.getIdentityOptions(params.did),
-      catch: sdkError('sync.getIdentityOptions'),
-    });
-    if (syncOptions !== undefined) {
-      yield* Effect.tryPromise({
-        try: async () => agent.sync.updateIdentityOptions({ did: params.did, options: syncOptions }),
-        catch: sdkError('sync.updateIdentityOptions'),
-      });
-    }
     yield* publishWalletEvent({
       _tag : 'identity.dwnEndpoints.updated',
       did  : params.did,

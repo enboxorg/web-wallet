@@ -18,7 +18,7 @@ const mocks = vi.hoisted(() => {
     agent: {
       id: 'agent-1',
       identity: {
-        refreshDwnEndpoints: vi.fn(),
+        getDwnEndpoints: vi.fn(),
       },
       dwn: {
         getRemoteDwnEndpointUrls: vi.fn(),
@@ -202,7 +202,7 @@ describe('DWebConnectPage', () => {
     mocks.transport.awaitRequest.mockResolvedValue(connectRequest());
     mocks.transport.sendResponseAwaitingAck.mockResolvedValue(true);
     mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
-    mocks.agent.identity.refreshDwnEndpoints.mockResolvedValue(['https://dwn.example']);
+    mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
     mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
     mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
@@ -250,7 +250,7 @@ describe('DWebConnectPage', () => {
       expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe');
     });
     expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
-    expect(mocks.agent.identity.refreshDwnEndpoints).not.toHaveBeenCalled();
+    expect(mocks.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
     expect(mocks.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
@@ -295,6 +295,10 @@ describe('DWebConnectPage', () => {
       ['https://dwn.example'],
       [permissionRequest.protocolDefinition],
     );
+    expect(mocks.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
+      didUri  : 'did:dht:alice',
+      refresh : true,
+    });
 
     await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe'));
     expect(await screen.findByText('Connected!')).toBeInTheDocument();

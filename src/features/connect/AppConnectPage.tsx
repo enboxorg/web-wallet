@@ -28,8 +28,6 @@ import {
 } from './connect-deep-link';
 
 import { Button } from '@/components/ui/Button';
-import { getFreshDwnEndpoints } from '@/enbox/fresh-dwn-endpoints';
-
 import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
@@ -440,7 +438,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
           protocolSetupStatuses,
         );
         if (definitionsToOverride.length > 0) {
-          const dwnEndpoints = await getFreshDwnEndpoints(liveAgent, approveAsDid);
+          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
+            didUri  : approveAsDid,
+            refresh : true,
+          });
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,
