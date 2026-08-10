@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
-import type { SyncEvent } from '@enbox/agent';
+import type { SyncEvent, SyncIdentityOptions } from '@enbox/agent';
+import type { DwnEndpointResolution } from '@enbox/dids';
 
+import { ServiceConfigProtocolDefinition } from '@enbox/agent';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
@@ -25,7 +27,8 @@ const sdkMocks = vi.hoisted(() => ({
   syncListeners : new Set<(event: SyncEvent) => void>(),
 }));
 
-vi.mock('@enbox/api', () => ({
+vi.mock('@enbox/api', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@enbox/api')>(),
   Enbox: function Enbox(options: { connectedDid: string; delegateDid?: string }) {
     return {
       dwn: {
@@ -77,15 +80,28 @@ function createWrapper(queryClient: QueryClient) {
   };
 }
 
-function setAgent(optionsByDid: Record<string, { delegateDid?: string }> = {}): void {
+function setAgent(optionsByDid: Record<string, Partial<SyncIdentityOptions>> = {}): void {
   useAuthStore.setState({
     initialized: true,
     unlocked   : true,
     firstTime  : false,
     agent      : {
       agentDid: { uri: 'did:dht:agent' },
+      identity: {
+        getDwnEndpointStatus: vi.fn(async ({ didUri }: { didUri: string }) => ({
+          status    : 'ready',
+          didUri,
+          endpoints : ['https://new.example'],
+        })),
+      },
       sync    : {
-        getIdentityOptions: vi.fn(async (did: string) => optionsByDid[did]),
+        getIdentityOptions: vi.fn(async (did: string) => {
+          const options = optionsByDid[did];
+          return options === undefined
+            ? undefined
+            : { protocols: [ProfileDefinition.protocol, ConnectDefinition.protocol], ...options };
+        }),
+        updateIdentityOptions: vi.fn(async () => {}),
         on: vi.fn((listener: (event: SyncEvent) => void) => {
           sdkMocks.syncListeners.add(listener);
           return () => sdkMocks.syncListeners.delete(listener);
@@ -114,6 +130,22 @@ function emitSyncEvent(event: SyncEvent): void {
   for (const listener of sdkMocks.syncListeners) {
     listener(event);
   }
+}
+
+function serviceConfigEvent(tenantDid: string): SyncEvent {
+  return {
+    type           : 'delivery:applied',
+    tenantDid,
+    remoteEndpoint : 'https://old.example',
+    messageCid     : 'service-config-cid',
+    descriptor     : {
+      interface    : 'Records',
+      method       : 'Write',
+      protocol     : ServiceConfigProtocolDefinition.protocol,
+      protocolPath : 'serviceConfig',
+      author       : tenantDid,
+    },
+  };
 }
 
 describe('useSyncQueryInvalidation', () => {
@@ -162,16 +194,19 @@ describe('useSyncQueryInvalidation', () => {
   });
 
   it('uses single-protocol subscriptions for a delegated identity', async () => {
-    setAgent({ 'did:dht:identity': { delegateDid: 'did:dht:delegate' } });
+    setAgent({ 'did:dht:owner': { delegateDid: 'did:dht:delegate' } });
     const queryClient = createQueryClient();
     renderHook(
-      () => useSyncQueryInvalidation([{ did: { uri: 'did:dht:identity' } }]),
+      () => useSyncQueryInvalidation([{
+        did      : { uri: 'did:dht:delegate' },
+        metadata : { connectedDid: 'did:dht:owner' },
+      }]),
       { wrapper: createWrapper(queryClient) },
     );
 
     await settleSubscriptions();
     const identitySubscriptions = sdkMocks.subscriptions.filter(
-      ({ connectedDid }) => connectedDid === 'did:dht:identity',
+      ({ connectedDid }) => connectedDid === 'did:dht:owner',
     );
 
     expect(identitySubscriptions).toHaveLength(2);
@@ -182,6 +217,23 @@ describe('useSyncQueryInvalidation', () => {
       ]),
     );
     expect(identitySubscriptions.every(({ delegateDid }) => delegateDid === 'did:dht:delegate')).toBe(true);
+  });
+
+  it('does not open owner subscriptions for an unregistered delegate', async () => {
+    setAgent();
+    const queryClient = createQueryClient();
+    renderHook(
+      () => useSyncQueryInvalidation([{
+        did      : { uri: 'did:dht:delegate' },
+        metadata : { connectedDid: 'did:dht:owner' },
+      }]),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await settleSubscriptions();
+    expect(sdkMocks.subscriptions).not.toContainEqual(
+      expect.objectContaining({ connectedDid: 'did:dht:owner' }),
+    );
   });
 
   it('does not recreate subscriptions when a refetch returns the same identities', async () => {
@@ -342,6 +394,77 @@ describe('useSyncQueryInvalidation', () => {
       exact: true,
     });
     expect(invalidateSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('freshly resolves and retargets sync after a service-config wake', async () => {
+    const options = {
+      protocols: [
+        ProfileDefinition.protocol,
+        ServiceConfigProtocolDefinition.protocol,
+      ],
+    };
+    setAgent({ 'did:dht:agent': options });
+    const agent = useAuthStore.getState().agent!;
+    let resolveFirst!: (status: DwnEndpointResolution) => void;
+    vi.mocked(agent.identity.getDwnEndpointStatus).mockImplementationOnce(
+      () => new Promise((resolve) => { resolveFirst = resolve; }),
+    );
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const adoptDwnEndpoints = vi.fn();
+    renderHook(() => useSyncQueryInvalidation([], adoptDwnEndpoints), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await settleSubscriptions();
+    vi.mocked(agent.sync.updateIdentityOptions).mockClear();
+    act(() => {
+      emitSyncEvent(serviceConfigEvent('did:dht:agent'));
+      emitSyncEvent(serviceConfigEvent('did:dht:agent'));
+    });
+    expect(agent.identity.getDwnEndpointStatus).toHaveBeenCalledOnce();
+    resolveFirst({
+      status    : 'ready',
+      didUri    : 'did:dht:agent',
+      endpoints : ['https://stale.example'],
+    });
+    await settleSubscriptions();
+
+    expect(agent.identity.getDwnEndpointStatus).toHaveBeenCalledTimes(2);
+    expect(agent.identity.getDwnEndpointStatus).toHaveBeenCalledWith({
+      didUri  : 'did:dht:agent',
+      refresh : true,
+    });
+    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
+      did     : 'did:dht:agent',
+      options,
+    });
+    expect(adoptDwnEndpoints).toHaveBeenCalledWith(['https://new.example']);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.dwnEndpoints('did:dht:agent'),
+    });
+  });
+
+  it('preserves existing routing when a fresh endpoint resolution fails', async () => {
+    setAgent({ 'did:dht:identity': { protocols: [ProfileDefinition.protocol] } });
+    const agent = useAuthStore.getState().agent!;
+    vi.mocked(agent.identity.getDwnEndpointStatus).mockResolvedValue({
+      status          : 'resolution-failed',
+      didUri          : 'did:dht:identity',
+      message         : 'Resolver unavailable',
+      resolutionError : 'internalError',
+    });
+    const queryClient = createQueryClient();
+    renderHook(
+      () => useSyncQueryInvalidation([{ did: { uri: 'did:dht:identity' } }]),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await settleSubscriptions();
+    act(() => emitSyncEvent(serviceConfigEvent('did:dht:identity')));
+    await settleSubscriptions();
+
+    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
   });
 
   it('invalidates profile queries from wallet domain events', async () => {

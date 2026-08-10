@@ -72,7 +72,6 @@ import {
 import {
   isDidSupportedByRequest,
   preflightConnectRequest,
-  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { detectConnectRefresh } from './connect-refresh';
@@ -421,11 +420,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
     setPhase('authorizing');
     try {
-      const preflight = preflightConnectRequest(connectionRequest);
       if (!isDidSupportedByRequest(approveAsDid, connectionRequest.supportedDidMethods)) {
         throw new Error('This profile uses an ID type the app does not support.');
       }
-      await preflightDelegateEncryption(liveAgent, connectionRequest, preflight);
 
       // If the owner opted into replacing a custom protocol installed with a
       // different definition, author the replacement (locally + across owner

@@ -10,11 +10,9 @@ const mocks = vi.hoisted(() => ({
   agent: {
     id: 'agent-1',
     identity: { getDwnEndpoints: vi.fn() },
-    dwn: { getRemoteDwnEndpointUrls: vi.fn() },
   },
   approveConnectRequest: vi.fn(),
   denyConnectRequest: vi.fn(),
-  ensureRegistrationForDids: vi.fn(),
   fetchConnectRequest: vi.fn(),
   generatePin: vi.fn(),
   waitForRelayCompletion: vi.fn(),
@@ -86,10 +84,6 @@ vi.mock('@/enbox/hooks/use-all-permissions', () => ({
     isPending : mocks.allPermissionsPending,
     isError   : mocks.allPermissionsError,
   }),
-}));
-
-vi.mock('@/enbox/registration', () => ({
-  ensureRegistrationForDids: mocks.ensureRegistrationForDids,
 }));
 
 vi.mock('@/enbox/hooks/use-permissions', () => ({
@@ -208,8 +202,6 @@ describe('AppConnectPage', () => {
     });
     mocks.scannerHasCamera.mockResolvedValue(false);
     mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
-    mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
-    mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.waitForRelayCompletion.mockResolvedValue(false);
     mocks.allPermissions = [];
@@ -286,9 +278,7 @@ describe('AppConnectPage', () => {
     await waitFor(() => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
     });
-    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
     expect(mocks.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
-    expect(mocks.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     // Protocol preparation is owned by the approval ceremony itself
     // (agent >=0.8.17) — the wallet no longer runs a pre-approval step.
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(

@@ -22,6 +22,7 @@ vi.mock('../protocols', () => ({
   IDENTITY_SYNC_PROTOCOLS: [
     'https://identity.foundation/protocols/profile',
     'https://identity.foundation/protocols/connect',
+    'https://identity.foundation/protocols/service-config',
   ],
   installProtocolsEffect: mocks.installProtocols,
 }));
@@ -29,13 +30,11 @@ vi.mock('../protocols', () => ({
 const desiredProtocols = [
   'https://identity.foundation/protocols/profile',
   'https://identity.foundation/protocols/connect',
+  'https://identity.foundation/protocols/service-config',
 ];
 
 function createAgent(existingOptions: Record<string, unknown> = {}) {
   return {
-    dwn: {
-      getRemoteDwnEndpointUrls: vi.fn(async () => ['https://dwn.example']),
-    },
     sync: {
       getIdentityOptions: vi.fn(async (did: string) => existingOptions[did]),
       registerIdentity: vi.fn(),
@@ -59,7 +58,6 @@ describe('reconcileIdentitySync', () => {
     const result = await reconcileIdentitySync(agent, [identity]);
 
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
-    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did: 'did:dht:new',
       options: { protocols: desiredProtocols },
@@ -103,7 +101,7 @@ describe('reconcileIdentitySync', () => {
     expect(result.changedDids).toEqual([]);
   });
 
-  it('uses connectedDid metadata when an identity is represented by a delegate DID', async () => {
+  it('leaves delegated sync registration to the SDK grant lifecycle', async () => {
     const identity = {
       did: { uri: 'did:dht:delegate' },
       metadata: { connectedDid: 'did:dht:owner' },
@@ -112,17 +110,10 @@ describe('reconcileIdentitySync', () => {
 
     await reconcileIdentitySync(agent, [identity]);
 
-    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(mocks.installProtocols).not.toHaveBeenCalled();
-    expect(agent.sync.getIdentityOptions).toHaveBeenCalledWith('did:dht:owner');
-    expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
-      did: 'did:dht:owner',
-      options: {
-        delegateDid: 'did:dht:delegate',
-        protocols: desiredProtocols,
-      },
-    });
+    expect(agent.sync.getIdentityOptions).not.toHaveBeenCalled();
+    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
   });
 
   it('continues reconciling later identities when one sync registration fails', async () => {
@@ -147,7 +138,6 @@ describe('reconcileIdentitySync', () => {
       did: 'did:dht:good',
       options: { protocols: desiredProtocols },
     });
-    expect(agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     warn.mockRestore();
   });

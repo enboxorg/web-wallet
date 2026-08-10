@@ -12,6 +12,7 @@ import {
   deleteIdentity,
   exportIdentity,
   importIdentity,
+  PublishedIdentitySetupError,
   type CreateIdentityParams,
   type UpdateIdentityProfileParams,
   type UpdateDwnEndpointsParams,
@@ -56,8 +57,7 @@ export function useCreateIdentity() {
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
     },
     onError: (error) => {
-      const publishedIdentity = error instanceof Error
-        && 'publishedIdentity' in error
+      const publishedIdentity = error instanceof PublishedIdentitySetupError
         ? error.publishedIdentity
         : undefined;
       if (publishedIdentity !== undefined) {

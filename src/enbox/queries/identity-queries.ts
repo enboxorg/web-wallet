@@ -9,7 +9,7 @@ import { Effect } from 'effect';
 import { DwnApi } from '@enbox/api/advanced';
 import { Enbox } from '@enbox/api';
 import { ProfileProtocol } from '@enbox/protocols';
-import { DwnDateSort, getDwnServiceEndpointUrls } from '@enbox/agent';
+import { DwnDateSort } from '@enbox/agent';
 
 import type { EnboxAgent, IdentityProfile } from '../types';
 import { sdkError } from '../effect/errors';
@@ -200,8 +200,8 @@ export function fetchDwnEndpointsEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
-      try: async () => getDwnServiceEndpointUrls(did, agent.did),
-      catch: sdkError('did.getDwnServiceEndpointUrls'),
+      try: async () => agent.identity.getDwnEndpoints({ didUri: did }),
+      catch: sdkError('identity.getDwnEndpoints'),
     });
   });
 }

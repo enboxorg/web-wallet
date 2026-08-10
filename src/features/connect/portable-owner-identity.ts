@@ -13,7 +13,6 @@ import {
 } from '@enbox/crypto';
 import {
   Did,
-  DidDht,
   DidDhtDocument,
   identityKeyToIdentifier,
   isPortableDid,
@@ -41,7 +40,6 @@ const DID_DHT_DEFAULT_ALGORITHM_BY_CURVE: Record<string, string> = {
 
 export type ValidatedPortableOwnerIdentity = {
   did: string;
-  dwnEndpoints: string[];
   portableIdentity: PortableIdentity;
 };
 
@@ -129,7 +127,7 @@ function assertOwnerController(document: DidDocument, did: string): void {
   throw invalidPortableIdentity('the DID document has an external controller');
 }
 
-function validateDwnEndpoints(document: DidDocument, did: string): string[] {
+function validateDwnEndpoints(document: DidDocument, did: string): void {
   if (!Array.isArray(document.service)) {
     throw invalidPortableIdentity('the DID document has no DWN service');
   }
@@ -153,7 +151,7 @@ function validateDwnEndpoints(document: DidDocument, did: string): string[] {
   dwnServices[0].serviceEndpoint = rawEndpoints;
 
   try {
-    return normalizeDwnEndpoints(rawEndpoints as string[]);
+    normalizeDwnEndpoints(rawEndpoints as string[]);
   } catch (error) {
     const detail = error instanceof Error ? error.message : 'invalid DWN endpoints';
     throw invalidPortableIdentity(detail.replace(/\.$/, ''));
@@ -359,47 +357,6 @@ async function validatePrivateKeys(
   return normalizedPrivateKeys;
 }
 
-/** Publish a new owner DID or prove an existing DHT document is identical. */
-export async function ensurePortableOwnerPublished(
-  validatedIdentity: ValidatedPortableOwnerIdentity,
-): Promise<void> {
-  const { portableDid } = validatedIdentity.portableIdentity;
-  const resolution = await DidDht.resolve(validatedIdentity.did);
-  const resolutionError = resolution.didResolutionMetadata.error;
-
-  if (
-    resolutionError === undefined
-    && resolution.didDocument !== undefined
-    && resolution.didDocument !== null
-  ) {
-    if (!portableOwnerDocumentsMatch(resolution.didDocument, portableDid.document)) {
-      throw invalidPortableIdentity('the published did:dht document differs from the imported document');
-    }
-    portableDid.metadata = {
-      ...portableDid.metadata,
-      ...resolution.didDocumentMetadata,
-      published: true,
-    };
-    return;
-  }
-  if (resolutionError !== 'notFound') {
-    throw invalidPortableIdentity(`the did:dht publication state could not be verified (${resolutionError ?? 'unknown error'})`);
-  }
-
-  const bearerDid = await DidDht.import({ portableDid });
-  const publication = await DidDht.publish({ did: bearerDid });
-  if (publication.didRegistrationMetadata.error !== undefined) {
-    throw invalidPortableIdentity(`the did:dht document could not be published (${publication.didRegistrationMetadata.error})`);
-  }
-  if (publication.didDocumentMetadata.published !== true) {
-    throw invalidPortableIdentity('the did:dht document could not be published (publication was not acknowledged)');
-  }
-  portableDid.metadata = {
-    ...portableDid.metadata,
-    ...publication.didDocumentMetadata,
-  };
-}
-
 /** Validate and normalize an imported identity before it reaches the wallet KMS. */
 export async function validatePortableOwnerIdentity(input: unknown): Promise<ValidatedPortableOwnerIdentity> {
   if (!isPlainRecord(input) || !isPortableDid(input.portableDid) || !isPlainRecord(input.metadata)) {
@@ -429,7 +386,7 @@ export async function validatePortableOwnerIdentity(input: unknown): Promise<Val
   }
 
   assertOwnerController(portableDid.document, portableDid.uri);
-  const dwnEndpoints = validateDwnEndpoints(portableDid.document, portableDid.uri);
+  validateDwnEndpoints(portableDid.document, portableDid.uri);
   const verificationMethods = collectVerificationMethods(portableDid.document, portableDid.uri);
   assertVerificationRelationships(portableDid.document, verificationMethods);
   await assertMethodBinding(portableDid, verificationMethods);
@@ -438,7 +395,6 @@ export async function validatePortableOwnerIdentity(input: unknown): Promise<Val
 
   return {
     did: portableDid.uri,
-    dwnEndpoints,
     portableIdentity: {
       portableDid,
       metadata: {

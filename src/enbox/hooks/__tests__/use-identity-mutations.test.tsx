@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 import { queryKeys } from '../../queries/query-keys';
 import { useCreateIdentity } from '../use-identity-mutations';
+import { PublishedIdentitySetupError } from '../../mutations/identity-mutations';
 
 const mocks = vi.hoisted(() => ({
   agent: { id: 'agent-1' },
@@ -15,7 +16,8 @@ vi.mock('../use-agent', () => ({
   useAgent: () => mocks.agent,
 }));
 
-vi.mock('../../mutations/identity-mutations', () => ({
+vi.mock('../../mutations/identity-mutations', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../mutations/identity-mutations')>(),
   createIdentity: mocks.createIdentity,
 }));
 
@@ -90,9 +92,7 @@ describe('useCreateIdentity', () => {
   it('keeps a published identity discoverable when later setup fails', async () => {
     const queryClient = createQueryClient();
     const identity = { did: { uri: 'did:dht:published' }, metadata: { name: 'New' } };
-    const error = Object.assign(new Error('registration failed'), {
-      publishedIdentity: identity,
-    });
+    const error = new PublishedIdentitySetupError(identity, new Error('registration failed'));
     mocks.createIdentity.mockRejectedValue(error);
 
     const { result } = renderHook(() => useCreateIdentity(), {

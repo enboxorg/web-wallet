@@ -55,8 +55,8 @@ export function isRepairableRegistrationFailure(error: string): boolean {
 
 /**
  * Repair a remote tenant registration only after sync receives a definitive
- * server rejection. Rebuilding the local sync registration removes a durable
- * paused link and immediately reopens live links with the existing scope.
+ * server rejection. Updating the existing sync options removes the durable
+ * paused link and immediately reopens live links with the same scope.
  * Concurrent failures from multiple protocol projections share one repair.
  */
 export async function repairRegistrationFromSyncEvent(
@@ -78,8 +78,7 @@ export async function repairRegistrationFromSyncEvent(
         return;
       }
 
-      await agent.sync.unregisterIdentity(event.tenantDid);
-      await agent.sync.registerIdentity({
+      await agent.sync.updateIdentityOptions({
         did     : event.tenantDid,
         options : syncOptions,
       });

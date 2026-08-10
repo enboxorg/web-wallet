@@ -1,6 +1,12 @@
 import type { DwnSubscriptionMessage } from '@enbox/dwn-clients';
 import type { SyncEvent, SyncMessageDescriptor } from '@enbox/agent';
 
+import {
+  isServiceConfigNoticeDelivery,
+  normalizeSyncProtocols,
+  ServiceConfigProtocolDefinition,
+  syncRegistrationCoversProtocol,
+} from '@enbox/agent';
 import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Enbox } from '@enbox/api';
@@ -10,7 +16,6 @@ import { Effect, Stream } from 'effect';
 import { useAuthStore } from '@/stores/auth-store';
 
 import { getIdentityDid } from '../identity-sync';
-import { IDENTITY_SYNC_PROTOCOLS } from '../protocols';
 import { queryKeys } from '../queries/query-keys';
 import { interruptEnboxFork, runEnboxFork } from '../effect/runtime';
 import { WalletEventBus, type WalletEvent } from '../effect/wallet-events';
@@ -53,10 +58,6 @@ function invalidateWalletEventQueries(
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.all, exact: true });
       break;
 
-    case 'identity.dwnEndpoints.updated':
-      queryClient.invalidateQueries({ queryKey: queryKeys.identities.dwnEndpoints(event.did) });
-      break;
-
     case 'connect.approved':
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(event.connectedDid) });
       break;
@@ -71,6 +72,9 @@ function queueIdentityDescriptor(
   did: string,
   pending: PendingInvalidations,
 ): void {
+  if (descriptor.protocol === ServiceConfigProtocolDefinition.protocol) {
+    return;
+  }
   pending.activity.add(did);
 
   if (descriptor.interface === 'Protocols') {
@@ -99,18 +103,26 @@ function queueIdentityDescriptor(
  * delegated identities because delegated MessagesSubscribe grants are scoped
  * to exactly one protocol.
  */
-export function useSyncQueryInvalidation(identities: unknown[] | undefined): void {
+export function useSyncQueryInvalidation(
+  identities: unknown[] | undefined,
+  onAgentDwnEndpoints?: (endpoints: string[]) => void,
+): void {
   const agent = useAuthStore((state) => state.agent);
   const queryClient = useQueryClient();
   const identityTargetKey = useMemo(() => {
-    const targets = new Map<string, string | undefined>();
+    const targets = new Map<string, string | null>();
     for (const identity of identities ?? []) {
       const connectedDid = getIdentityDid(identity);
       if (!connectedDid) {
         continue;
       }
       const identityDid = (identity as { did?: { uri?: unknown } })?.did?.uri;
-      targets.set(connectedDid, typeof identityDid === 'string' ? identityDid : undefined);
+      targets.set(
+        connectedDid,
+        typeof identityDid === 'string' && identityDid !== connectedDid
+          ? identityDid
+          : null,
+      );
     }
     return JSON.stringify(
       [...targets].sort(([left], [right]) => left.localeCompare(right)),
@@ -138,6 +150,8 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
     const currentAgent = agent;
 
     const pending = createPendingInvalidations();
+    const dwnRefreshRequested = new Set<string>();
+    const dwnRefreshes = new Map<string, Promise<void>>();
     const messageSubscriptions: Array<{ close: () => Promise<void> }> = [];
     const removeListeners: Array<() => void> = [];
     let cancelled = false;
@@ -169,6 +183,94 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
     function scheduleFlush(): void {
       if (flushTimer === undefined) {
         flushTimer = setTimeout(flush, INVALIDATION_DEBOUNCE_MS);
+      }
+    }
+
+    async function refreshDwnRouting(did: string): Promise<void> {
+      const status = await currentAgent.identity.getDwnEndpointStatus({
+        didUri  : did,
+        refresh : true,
+      });
+      if (cancelled || dwnRefreshRequested.has(did)) {
+        return;
+      }
+
+      queryClient.invalidateQueries({ queryKey: queryKeys.identities.dwnEndpoints(did) });
+      if (status.status === 'resolution-failed') {
+        return;
+      }
+      if (status.status === 'ready' && did === currentAgent.agentDid.uri) {
+        try {
+          onAgentDwnEndpoints?.(status.endpoints);
+        } catch (error) {
+          console.warn('Unable to adopt the refreshed wallet DWN endpoints:', error);
+        }
+      }
+
+      const options = await currentAgent.sync.getIdentityOptions(did);
+      if (cancelled || dwnRefreshRequested.has(did) || options === undefined) {
+        return;
+      }
+      const routedOptions = did === currentAgent.agentDid.uri
+        && !syncRegistrationCoversProtocol(options, ServiceConfigProtocolDefinition.protocol)
+        ? {
+            ...options,
+            protocols: normalizeSyncProtocols([
+              ...options.protocols,
+              ServiceConfigProtocolDefinition.protocol,
+            ]),
+          }
+        : options;
+      await currentAgent.sync.updateIdentityOptions({ did, options: routedOptions });
+    }
+
+    function requestDwnRoutingRefresh(did: string): void {
+      dwnRefreshRequested.add(did);
+      if (dwnRefreshes.has(did)) {
+        return;
+      }
+
+      const refresh = (async (): Promise<void> => {
+        while (!cancelled && dwnRefreshRequested.delete(did)) {
+          try {
+            await refreshDwnRouting(did);
+          } catch (error) {
+            if (!cancelled) {
+              console.warn(`Unable to refresh DWN routing for ${did}:`, error);
+            }
+          }
+        }
+      })().finally(() => {
+        dwnRefreshes.delete(did);
+        if (!cancelled && dwnRefreshRequested.has(did)) {
+          requestDwnRoutingRefresh(did);
+        }
+      });
+      dwnRefreshes.set(did, refresh);
+    }
+
+    async function includeAgentDwnWakes(did: string): Promise<void> {
+      try {
+        const options = await currentAgent.sync.getIdentityOptions(did);
+        if (cancelled
+          || options === undefined
+          || syncRegistrationCoversProtocol(options, ServiceConfigProtocolDefinition.protocol)) {
+          return;
+        }
+        await currentAgent.sync.updateIdentityOptions({
+          did,
+          options: {
+            ...options,
+            protocols: normalizeSyncProtocols([
+              ...options.protocols,
+              ServiceConfigProtocolDefinition.protocol,
+            ]),
+          },
+        });
+      } catch (error) {
+        if (!cancelled) {
+          console.warn(`Unable to enable DWN endpoint wakes for ${did}:`, error);
+        }
       }
     }
 
@@ -232,10 +334,11 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
       }
     }
 
-    async function subscribeIdentity(did: string): Promise<void> {
-      const syncOptions = typeof currentAgent.sync?.getIdentityOptions === 'function'
-        ? await currentAgent.sync.getIdentityOptions(did)
-        : undefined;
+    async function subscribeIdentity(did: string, delegateDid?: string): Promise<void> {
+      const syncOptions = await currentAgent.sync.getIdentityOptions(did);
+      if (delegateDid !== undefined && syncOptions === undefined) {
+        return;
+      }
       const enbox = new Enbox({
         agent: currentAgent,
         connectedDid: did,
@@ -247,24 +350,43 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
         return;
       }
 
-      await Promise.all(
-        IDENTITY_SYNC_PROTOCOLS.map((protocol) => openSubscription(enbox, did, protocol)),
-      );
+      if (syncOptions.protocols === 'all') {
+        await openSubscription(enbox, did);
+      } else {
+        await Promise.all(
+          syncOptions.protocols.map((protocol) => openSubscription(enbox, did, protocol)),
+        );
+      }
     }
 
-    const identityDids = (JSON.parse(identityTargetKey) as Array<[string, string | undefined]>)
+    const identityTargets = JSON.parse(identityTargetKey) as Array<[string, string | null]>;
+    const identityDids = identityTargets
       .map(([connectedDid]) => connectedDid);
     const identityDidSet = new Set(identityDids);
     const agentDid = agent.agentDid?.uri;
     removeListeners.push(agent.sync.on((event: SyncEvent): void => {
-      if (event.tenantDid === agentDid) {
+      const isAgentDid = event.tenantDid === agentDid;
+      if (!isAgentDid && !identityDidSet.has(event.tenantDid)) {
+        return;
+      }
+      if (isServiceConfigNoticeDelivery(event, event.tenantDid)) {
+        requestDwnRoutingRefresh(event.tenantDid);
+        return;
+      }
+      if (isAgentDid) {
+        if (event.type === 'identity:registration-change') {
+          void includeAgentDwnWakes(event.tenantDid);
+        }
         if (event.type === 'delivery:applied') {
           pending.identities = true;
           scheduleFlush();
         }
         return;
       }
-      if (!identityDidSet.has(event.tenantDid)) {
+      if (event.type === 'identity:registration-change') {
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.identities.dwnEndpoints(event.tenantDid),
+        });
         return;
       }
       if (event.type === 'delivery:applied') {
@@ -273,7 +395,13 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
       }
     }));
 
-    const subscriptions = identityDids.map(subscribeIdentity);
+    if (typeof agentDid === 'string' && agentDid.length > 0) {
+      void includeAgentDwnWakes(agentDid);
+    }
+
+    const subscriptions = identityTargets.map(
+      ([did, delegateDid]) => subscribeIdentity(did, delegateDid ?? undefined),
+    );
     if (typeof agentDid === 'string' && agentDid.length > 0) {
       subscriptions.push(openSubscription(new Enbox({ agent, connectedDid: agentDid }), undefined));
     }
@@ -297,5 +425,5 @@ export function useSyncQueryInvalidation(identities: unknown[] | undefined): voi
         clearTimeout(flushTimer);
       }
     };
-  }, [agent, identityTargetKey, queryClient]);
+  }, [agent, identityTargetKey, onAgentDwnEndpoints, queryClient]);
 }

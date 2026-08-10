@@ -1,19 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
-
-const mocks = vi.hoisted(() => ({
-  getEncryptionKeyInfo: vi.fn(),
-}));
-
-vi.mock('@enbox/agent', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@enbox/agent')>(),
-  getEncryptionKeyInfo: mocks.getEncryptionKeyInfo,
-}));
 
 import {
   isDidSupportedByRequest,
   preflightConnectPermissions,
-  preflightDelegateEncryption,
   preflightConnectRequest,
   validateConnectPermissionSemantics,
 } from '../connect-request-preflight';
@@ -182,23 +172,4 @@ describe('connect request preflight', () => {
     expect(isDidSupportedByRequest('did:dht:abc#key', ['did:dht'])).toBe(false);
   });
 
-  it('requires a delegate encryption key before approving encrypted read access', async () => {
-    const encryptedPermissions = [{
-      protocolDefinition: {
-        ...definition,
-        types: { task: { ...definition.types.task, encryptionRequired: true } },
-      },
-      permissionScopes: [{ interface: 'Records', method: 'Read', protocol }],
-    }] as ConnectPermissionRequest[];
-    const request = relayRequest({
-      delegateDid: 'did:jwk:delegate',
-      permissionRequests: encryptedPermissions,
-    });
-    const preflight = preflightConnectRequest(request);
-    const agent = { id: 'agent' } as Parameters<typeof preflightDelegateEncryption>[0];
-
-    await preflightDelegateEncryption(agent, request, preflight);
-
-    expect(mocks.getEncryptionKeyInfo).toHaveBeenCalledWith(agent, 'did:jwk:delegate');
-  });
 });

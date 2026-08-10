@@ -34,9 +34,6 @@ import { runEnboxPromise } from '../effect/runtime';
 import { runIdentitySetupSingleFlight } from '../effect/keyed-single-flight';
 import { normalizeProfileImageBlob } from '@/lib/profile-images';
 import {
-  ensurePortableOwnerPublished,
-  portableOwnerDocumentsMatch,
-  type ValidatedPortableOwnerIdentity,
   validatePortableOwnerIdentity,
 } from '@/features/connect/portable-owner-identity';
 import { clearCachedProfileImagesEffect } from '../effect/profile-image-cache';
@@ -126,13 +123,6 @@ function createProfileApi(enbox: Enbox) {
 }
 
 type ProfileApi = ReturnType<typeof createProfileApi>;
-
-function requireRecordContextId(record: { contextId?: string }): string {
-  if (record.contextId === undefined) {
-    throw new Error('Profile record is missing its context ID.');
-  }
-  return record.contextId;
-}
 
 function createWalletRecordBestEffortEffect(did: string, warningPrefix: string) {
   return Effect.gen(function* () {
@@ -341,7 +331,7 @@ export function createIdentityEffect(params: CreateIdentityParams) {
         }),
         catch: sdkError('profile.set'),
       });
-      const profileContextId = requireRecordContextId(profileRecord);
+      const profileContextId = profileRecord.contextId;
 
       // 6. Set avatar if provided
       if (params.avatar) {
@@ -429,7 +419,7 @@ export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams)
       catch: sdkError('profile.set'),
     });
 
-    const contextId = requireRecordContextId(profileRecord);
+    const contextId = profileRecord.contextId;
 
     if (params.avatar !== undefined) {
       if (params.avatar) {
@@ -536,27 +526,9 @@ export function exportIdentityEffect(did: string) {
 export async function importIdentity(
   agent: EnboxAgent,
   portableIdentity: any,
-  options: ImportIdentityOptions = {},
 ) {
   return runEnboxPromise(
-    importIdentityEffect(portableIdentity, options).pipe(
-      Effect.provide(enboxLiveLayer(agent)),
-    ),
-  );
-}
-
-type ImportIdentityOptions = {
-  allowExistingExact?: boolean;
-  ensurePublished?: boolean;
-};
-
-export async function importValidatedIdentity(
-  agent: EnboxAgent,
-  validatedIdentity: ValidatedPortableOwnerIdentity,
-  options: ImportIdentityOptions = {},
-) {
-  return runEnboxPromise(
-    importValidatedIdentityEffect(validatedIdentity, options).pipe(
+    importIdentityEffect(portableIdentity).pipe(
       Effect.provide(enboxLiveLayer(agent)),
     ),
   );
@@ -564,26 +536,14 @@ export async function importValidatedIdentity(
 
 export function importIdentityEffect(
   portableIdentity: any,
-  options: ImportIdentityOptions = {},
 ) {
   return Effect.tryPromise({
     try: async () => validatePortableOwnerIdentity(portableIdentity),
     catch: sdkError('identity.validatePortableOwner'),
   }).pipe(
-    Effect.flatMap((validatedIdentity) => importValidatedIdentityEffect(validatedIdentity, options)),
-  );
-}
-
-function importValidatedIdentityEffect(
-  validatedIdentity: ValidatedPortableOwnerIdentity,
-  options: ImportIdentityOptions,
-) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    const existing = yield* getIdentityEffect(validatedIdentity.did);
-    let identity: any;
-    if (existing) {
-      if (!options.allowExistingExact) {
+    Effect.flatMap((validatedIdentity) => Effect.gen(function* () {
+      const agent = yield* CurrentAgent;
+      if (yield* getIdentityEffect(validatedIdentity.did)) {
         return yield* Effect.fail(
           new DuplicateIdentityError({
             did: validatedIdentity.did,
@@ -591,72 +551,41 @@ function importValidatedIdentityEffect(
           }),
         );
       }
-      const existingPortableIdentity = yield* Effect.tryPromise({
-        try: async () => existing.export(),
-        catch: sdkError('identity.exportExisting'),
-      });
-      if (!portableOwnerDocumentsMatch(
-        existingPortableIdentity.portableDid.document,
-        validatedIdentity.portableIdentity.portableDid.document,
-      )) {
-        return yield* Effect.fail(
-          new DuplicateIdentityError({
-            did: validatedIdentity.did,
-            message: 'Identity already exists',
-          }),
-        );
-      }
-      identity = existing;
-    }
 
-    if (options.ensurePublished) {
-      yield* Effect.tryPromise({
-        try: async () => ensurePortableOwnerPublished(validatedIdentity),
-        catch: sdkError('identity.publishPortableOwner'),
-      });
-    }
-
-    const importedNewIdentity = existing === undefined;
-    if (importedNewIdentity) {
-      identity = yield* Effect.tryPromise({
+      const identity = yield* Effect.tryPromise({
         try: async (): Promise<any> => agent.identity.import({
           portableIdentity: validatedIdentity.portableIdentity,
         }),
         catch: sdkError('identity.import'),
       });
-    }
-    const did = identity.did.uri;
-    if (did !== validatedIdentity.did) {
-      const mismatch = sdkError('identity.importDidMismatch')(
-        new Error('Imported identity does not match the validated owner DID.'),
-      );
-      return yield* rollbackLocalIdentityEffect(did, mismatch);
-    }
+      const did = identity.did.uri;
+      if (did !== validatedIdentity.did) {
+        const mismatch = sdkError('identity.importDidMismatch')(
+          new Error('Imported identity does not match the validated owner DID.'),
+        );
+        return yield* rollbackLocalIdentityEffect(did, mismatch);
+      }
 
-    const prepareImportedIdentity = Effect.gen(function* () {
       // Import preserves the DID's existing remote tenant ownership. Re-registering
       // here could silently rebind a provider-auth account, so only prepare local state.
-      yield* installProtocolsEffect(did);
-    });
-    yield* importedNewIdentity
-      ? prepareImportedIdentity.pipe(
-          Effect.catchAll((cause) => rollbackLocalIdentityEffect(did, cause)),
-        )
-      : prepareImportedIdentity;
+      yield* installProtocolsEffect(did).pipe(
+        Effect.catchAll((cause) => rollbackLocalIdentityEffect(did, cause)),
+      );
 
-    // Register for sync
-    yield* registerIdentityForSyncEffect(did);
+      // Register for sync
+      yield* registerIdentityForSyncEffect(did);
 
-    // Create wallet record
-    yield* createWalletRecordBestEffortEffect(
-      did,
-      'Failed to create wallet record on import:',
-    );
+      // Create wallet record
+      yield* createWalletRecordBestEffortEffect(
+        did,
+        'Failed to create wallet record on import:',
+      );
 
-    yield* publishWalletEvent({ _tag: 'identity.imported', did });
+      yield* publishWalletEvent({ _tag: 'identity.imported', did });
 
-    return identity;
-  });
+      return identity;
+    })),
+  );
 }
 
 // ── Update DWN endpoints ───────────────────────────────────────────
@@ -696,10 +625,6 @@ export function updateDwnEndpointsEffect(params: UpdateDwnEndpointsParams) {
           endpoints,
         }),
       catch: sdkError('identity.setDwnEndpoints'),
-    });
-    yield* publishWalletEvent({
-      _tag : 'identity.dwnEndpoints.updated',
-      did  : params.did,
     });
   });
 }

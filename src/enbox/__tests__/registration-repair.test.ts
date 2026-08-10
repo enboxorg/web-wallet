@@ -38,11 +38,8 @@ function createAgent() {
         calls.push('sync:get-options');
         return { protocols: ['https://example.com/protocol'] };
       }),
-      unregisterIdentity: vi.fn(async () => {
-        calls.push('sync:unregister');
-      }),
-      registerIdentity: vi.fn(async () => {
-        calls.push('sync:register');
+      updateIdentityOptions: vi.fn(async () => {
+        calls.push('sync:update');
       }),
     },
   };
@@ -87,16 +84,14 @@ describe('registration repair', () => {
       ['https://dwn.example'],
       ['did:dht:alice'],
     );
-    expect(agent.sync.unregisterIdentity).toHaveBeenCalledWith('did:dht:alice');
-    expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
+    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
       did     : 'did:dht:alice',
       options : { protocols: ['https://example.com/protocol'] },
     });
     expect(agent.calls).toEqual([
       'tenant:register',
       'sync:get-options',
-      'sync:unregister',
-      'sync:register',
+      'sync:update',
     ]);
   });
 
@@ -121,8 +116,7 @@ describe('registration repair', () => {
     releaseRegistration();
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
-    expect(agent.sync.unregisterIdentity).toHaveBeenCalledOnce();
-    expect(agent.sync.registerIdentity).toHaveBeenCalledOnce();
+    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledOnce();
   });
 
   it('serializes repairs for different endpoints of the same DID', async () => {
@@ -159,8 +153,7 @@ describe('registration repair', () => {
       ['https://dwn-b.example'],
       ['did:dht:alice'],
     );
-    expect(agent.sync.unregisterIdentity).toHaveBeenCalledTimes(2);
-    expect(agent.sync.registerIdentity).toHaveBeenCalledTimes(2);
+    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledTimes(2);
   });
 
   it('does not disturb sync when the tenant registration repair fails', async () => {
@@ -173,8 +166,7 @@ describe('registration repair', () => {
     )).rejects.toThrow('registration rejected');
 
     expect(agent.sync.getIdentityOptions).not.toHaveBeenCalled();
-    expect(agent.sync.unregisterIdentity).not.toHaveBeenCalled();
-    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
+    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
   });
 
   it('ignores suspended tenants without sending a registration request', async () => {
@@ -186,6 +178,6 @@ describe('registration repair', () => {
     )).resolves.toBe(false);
 
     expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
-    expect(agent.sync.unregisterIdentity).not.toHaveBeenCalled();
+    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
   });
 });

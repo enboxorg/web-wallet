@@ -143,7 +143,18 @@ let relayCeremonyActive = false;
  */
 function AuthGate() {
   const location = useLocation();
-  const { initialized, unlocked, firstTime, connect, unlock, lock, restore, error, isLoading } = useAuth();
+  const {
+    initialized,
+    unlocked,
+    firstTime,
+    connect,
+    unlock,
+    lock,
+    restore,
+    adoptDwnEndpoints,
+    error,
+    isLoading,
+  } = useAuth();
   const setPhrase = useBackupSeedStore((s) => s.setPhrase);
   const needsBackup = useBackupSeedStore((s) => !!s.phrase);
 
@@ -170,7 +181,7 @@ function AuthGate() {
 
   // Only query identities when unlocked
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
-  useSyncQueryInvalidation(identities);
+  useSyncQueryInvalidation(identities, adoptDwnEndpoints);
   useIdentitySyncReconciliation(identities);
   useRegistrationRepair();
 

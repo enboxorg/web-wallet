@@ -2,12 +2,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { PortableIdentity } from '@enbox/agent';
 
 import { Ed25519 } from '@enbox/crypto';
-import { DidDht, DidDhtDocument, DidJwk } from '@enbox/dids';
+import { DidDht, DidJwk } from '@enbox/dids';
 
-import {
-  ensurePortableOwnerPublished,
-  validatePortableOwnerIdentity,
-} from '../portable-owner-identity';
+import { validatePortableOwnerIdentity } from '../portable-owner-identity';
 
 async function dhtFixture(): Promise<PortableIdentity> {
   const did = await DidDht.create({
@@ -154,56 +151,7 @@ describe('portable owner identity validation', () => {
     );
   });
 
-  it('verifies an existing published document or publishes a new one', async () => {
-    const existing = await validatePortableOwnerIdentity(await dhtFixture());
-    existing.portableIdentity.portableDid.metadata.versionId = '7';
-    const publish = vi.spyOn(DidDht, 'publish');
-    vi.spyOn(DidDht, 'resolve').mockResolvedValue({
-      didDocument           : structuredClone(existing.portableIdentity.portableDid.document),
-      didDocumentMetadata   : { published: true, versionId: '9' },
-      didResolutionMetadata : {},
-    } as any);
-
-    await ensurePortableOwnerPublished(existing);
-    expect(publish).not.toHaveBeenCalled();
-    expect(existing.portableIdentity.portableDid.metadata.published).toBe(true);
-    expect(existing.portableIdentity.portableDid.metadata.versionId).toBe('9');
-
-    vi.restoreAllMocks();
-    const unpublished = await validatePortableOwnerIdentity(await dhtFixture());
-    vi.spyOn(DidDht, 'resolve').mockResolvedValue({
-      didDocument           : undefined,
-      didDocumentMetadata   : {},
-      didResolutionMetadata : { error: 'notFound' },
-    } as any);
-    const publishNew = vi.spyOn(DidDht, 'publish').mockResolvedValue({
-      didDocument           : unpublished.portableIdentity.portableDid.document,
-      didDocumentMetadata   : { published: true, versionId: '11' },
-      didRegistrationMetadata: {},
-    } as any);
-
-    await ensurePortableOwnerPublished(unpublished);
-    expect(publishNew).toHaveBeenCalledTimes(1);
-    expect(unpublished.portableIdentity.portableDid.metadata.published).toBe(true);
-    expect(unpublished.portableIdentity.portableDid.metadata.versionId).toBe('11');
-  });
-
-  it('accepts the real DID-DHT DNS representation of the imported document', async () => {
-    const existing = await validatePortableOwnerIdentity(await dhtFixture());
-    const packet = await DidDhtDocument.toDnsPacket({
-      didDocument : existing.portableIdentity.portableDid.document,
-      didMetadata : existing.portableIdentity.portableDid.metadata,
-    });
-    const resolution = await DidDhtDocument.fromDnsPacket({
-      didUri    : existing.did,
-      dnsPacket : packet,
-    });
-    vi.spyOn(DidDht, 'resolve').mockResolvedValue(resolution);
-
-    await expect(ensurePortableOwnerPublished(existing)).resolves.toBeUndefined();
-  });
-
-  it('canonicalizes equivalent DID-DHT document representations before publication checks', async () => {
+  it('normalizes equivalent DID-DHT document representations', async () => {
     const fixture = await dhtFixture();
     fixture.portableDid.document.controller = [fixture.portableDid.uri];
     fixture.portableDid.document.service![0].serviceEndpoint = 'https://dwn.example';
@@ -219,33 +167,6 @@ describe('portable owner identity validation', () => {
     expect(existing.portableIdentity.portableDid.document.service![0].serviceEndpoint).toEqual([
       'https://dwn.example',
     ]);
-    const packet = await DidDhtDocument.toDnsPacket({
-      didDocument : existing.portableIdentity.portableDid.document,
-      didMetadata : existing.portableIdentity.portableDid.metadata,
-    });
-    const resolution = await DidDhtDocument.fromDnsPacket({
-      didUri    : existing.did,
-      dnsPacket : packet,
-    });
-    vi.spyOn(DidDht, 'resolve').mockResolvedValue(resolution);
-
-    await expect(ensurePortableOwnerPublished(existing)).resolves.toBeUndefined();
-  });
-
-  it('rejects a publication attempt that was not acknowledged', async () => {
-    const unpublished = await validatePortableOwnerIdentity(await dhtFixture());
-    vi.spyOn(DidDht, 'resolve').mockResolvedValue({
-      didDocument           : undefined,
-      didDocumentMetadata   : {},
-      didResolutionMetadata : { error: 'notFound' },
-    } as any);
-    vi.spyOn(DidDht, 'publish').mockResolvedValue({
-      didDocument           : unpublished.portableIdentity.portableDid.document,
-      didDocumentMetadata   : { published: false },
-      didRegistrationMetadata: {},
-    } as any);
-
-    await expect(ensurePortableOwnerPublished(unpublished)).rejects.toThrow('publication was not acknowledged');
   });
 
   it('rejects connected identities', async () => {

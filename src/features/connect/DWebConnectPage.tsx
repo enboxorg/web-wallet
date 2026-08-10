@@ -38,7 +38,6 @@ import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kerne
 import {
   isDidSupportedByRequest,
   preflightConnectRequest,
-  preflightDelegateEncryption,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
@@ -231,11 +230,9 @@ export default function DWebConnectPage() {
     setPhase('connecting');
 
     try {
-      const preflight = preflightConnectRequest(connectRequest);
       if (!isDidSupportedByRequest(approveAsDid, connectRequest.supportedDidMethods)) {
         throw new Error('This profile uses an ID type the app does not support.');
       }
-      await preflightDelegateEncryption(liveAgent, connectRequest, preflight);
 
       setStatusMessage('Getting your profile ready...');
       // If the owner opted into replacing a custom protocol installed with a

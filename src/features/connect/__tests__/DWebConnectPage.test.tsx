@@ -20,13 +20,9 @@ const mocks = vi.hoisted(() => {
       identity: {
         getDwnEndpoints: vi.fn(),
       },
-      dwn: {
-        getRemoteDwnEndpointUrls: vi.fn(),
-      },
     },
     approvePopupConnectRequest: vi.fn(),
     createTransport: vi.fn(),
-    ensureRegistrationForDids: vi.fn(),
     queryProtocolSetupStatus: vi.fn(),
     reconfigureProtocolsForOverride: vi.fn(),
     publishWalletEvent: vi.fn(),
@@ -88,10 +84,6 @@ vi.mock('@/enbox/hooks/use-permissions', () => ({
     isLoading : false,
     isError   : false,
   }),
-}));
-
-vi.mock('@/enbox/registration', () => ({
-  ensureRegistrationForDids: mocks.ensureRegistrationForDids,
 }));
 
 vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
@@ -203,8 +195,6 @@ describe('DWebConnectPage', () => {
     mocks.transport.sendResponseAwaitingAck.mockResolvedValue(true);
     mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
     mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
-    mocks.agent.dwn.getRemoteDwnEndpointUrls.mockResolvedValue(['https://dwn.example']);
-    mocks.ensureRegistrationForDids.mockResolvedValue(undefined);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.permissions = [];
@@ -249,9 +239,7 @@ describe('DWebConnectPage', () => {
     await waitFor(() => {
       expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe');
     });
-    expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
     expect(mocks.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
-    expect(mocks.agent.dwn.getRemoteDwnEndpointUrls).not.toHaveBeenCalled();
     expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       expect.objectContaining({ clientDid: 'did:jwk:dapp-client', state: 'state-1' }),

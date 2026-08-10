@@ -44,17 +44,6 @@ export class DwnRegistrationError extends Schema.TaggedError<DwnRegistrationErro
   },
 ) {}
 
-export class ProtocolInstallationError extends Schema.TaggedError<ProtocolInstallationError>('ProtocolInstallationError')(
-  'ProtocolInstallationError',
-  {
-    protocol     : Schema.String,
-    statusCode   : Schema.optional(Schema.Number),
-    statusDetail : Schema.optional(Schema.String),
-    cause        : Schema.Unknown,
-    message      : Schema.String,
-  },
-) {}
-
 export class IdentityPublishError extends Schema.TaggedError<IdentityPublishError>('IdentityPublishError')(
   'IdentityPublishError',
   {
@@ -83,7 +72,6 @@ export type EnboxEffectError =
   | EnboxSdkError
   | EnboxStorageError
   | DwnRegistrationError
-  | ProtocolInstallationError
   | IdentityPublishError
   | IdentityNotFoundError
   | DuplicateIdentityError;

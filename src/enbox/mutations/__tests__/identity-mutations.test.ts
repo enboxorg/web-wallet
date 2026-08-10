@@ -4,7 +4,6 @@ import { Effect } from 'effect';
 import {
   createIdentity,
   importIdentity,
-  importValidatedIdentity,
   updateDwnEndpoints,
   updateIdentityProfile,
 } from '../identity-mutations';
@@ -82,7 +81,6 @@ const mocks = vi.hoisted(() => {
       };
     }),
     ensureRegistration: vi.fn(),
-    ensurePortableOwnerPublished: vi.fn(),
     installProtocols: vi.fn(),
     validatePortableOwnerIdentity: vi.fn(),
   };
@@ -137,9 +135,6 @@ vi.mock('@/lib/dwn-endpoints', async (importOriginal) => ({
 }));
 
 vi.mock('@/features/connect/portable-owner-identity', () => ({
-  ensurePortableOwnerPublished: mocks.ensurePortableOwnerPublished,
-  portableOwnerDocumentsMatch: (left: unknown, right: unknown) =>
-    JSON.stringify(left) === JSON.stringify(right),
   validatePortableOwnerIdentity: mocks.validatePortableOwnerIdentity,
 }));
 
@@ -181,10 +176,8 @@ describe('identity mutations', () => {
   beforeEach(() => {
     mocks.calls.length = 0;
     vi.clearAllMocks();
-    mocks.ensurePortableOwnerPublished.mockResolvedValue(undefined);
     mocks.validatePortableOwnerIdentity.mockImplementation(async (portableIdentity: any) => ({
       did: portableIdentity.portableDid.uri,
-      dwnEndpoints: ['https://imported.example/dwn'],
       portableIdentity,
     }));
   });
@@ -360,7 +353,6 @@ describe('identity mutations', () => {
     await importIdentity(agent, { portableDid: { uri: did } });
 
     expect(mocks.installProtocols).toHaveBeenCalledWith(did);
-    expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
       did,
@@ -405,47 +397,6 @@ describe('identity mutations', () => {
       portableDid: { uri: did, document: { id: did } },
     })).rejects.toThrow('Identity already exists');
 
-    expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
-    expect(agent.identity.import).not.toHaveBeenCalled();
-  });
-
-  it('resumes an explicitly idempotent portable-owner import without importing keys twice', async () => {
-    const did = 'did:dht:imported';
-    const agent = createAgent(did);
-    const existingIdentity = {
-      did: { uri: did },
-      export: vi.fn(async () => ({ portableDid: { uri: did, document: { id: did } } })),
-    };
-    agent.identity.get.mockResolvedValue(existingIdentity);
-
-    const portableIdentity = { portableDid: { uri: did, document: { id: did } } } as any;
-    const result = await importValidatedIdentity(agent, {
-      did,
-      dwnEndpoints: ['https://imported.example/dwn'],
-      portableIdentity,
-    }, { allowExistingExact: true, ensurePublished: true });
-
-    expect(result).toBe(existingIdentity);
-    expect(mocks.ensurePortableOwnerPublished).toHaveBeenCalledOnce();
-    expect(agent.identity.import).not.toHaveBeenCalled();
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
-    expect(mocks.installProtocols).toHaveBeenCalledWith(did);
-    expect(agent.sync.registerIdentity).toHaveBeenCalledOnce();
-  });
-
-  it('rejects a portable-owner import when the existing DID document differs', async () => {
-    const did = 'did:dht:imported';
-    const agent = createAgent(did);
-    agent.identity.get.mockResolvedValue({
-      did: { uri: did },
-      export: vi.fn(async () => ({ portableDid: { uri: did, document: { id: did, version: 1 } } })),
-    });
-
-    await expect(importIdentity(agent, {
-      portableDid: { uri: did, document: { id: did, version: 2 } },
-    })).rejects.toThrow('Identity already exists');
-
-    expect(mocks.ensurePortableOwnerPublished).not.toHaveBeenCalled();
     expect(agent.identity.import).not.toHaveBeenCalled();
   });
 
