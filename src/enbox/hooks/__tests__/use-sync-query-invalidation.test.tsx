@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { SyncEvent, SyncIdentityOptions } from '@enbox/agent';
 import type { DwnEndpointResolution } from '@enbox/dids';
 
-import { ServiceConfigProtocolDefinition } from '@enbox/agent';
+import { normalizeSyncProtocols, ServiceConfigProtocolDefinition } from '@enbox/agent';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
@@ -101,7 +101,13 @@ function setAgent(optionsByDid: Record<string, Partial<SyncIdentityOptions>> = {
             ? undefined
             : { protocols: [ProfileDefinition.protocol, ConnectDefinition.protocol], ...options };
         }),
-        updateIdentityOptions: vi.fn(async () => {}),
+        setIdentityOptions: vi.fn(async ({ did, options }: {
+          did: string;
+          options: SyncIdentityOptions;
+        }) => {
+          optionsByDid[did] = options;
+        }),
+        refreshIdentityRouting: vi.fn(async () => {}),
         on: vi.fn((listener: (event: SyncEvent) => void) => {
           sdkMocks.syncListeners.add(listener);
           return () => sdkMocks.syncListeners.delete(listener);
@@ -417,7 +423,6 @@ describe('useSyncQueryInvalidation', () => {
     });
 
     await settleSubscriptions();
-    vi.mocked(agent.sync.updateIdentityOptions).mockClear();
     act(() => {
       emitSyncEvent(serviceConfigEvent('did:dht:agent'));
       emitSyncEvent(serviceConfigEvent('did:dht:agent'));
@@ -435,14 +440,44 @@ describe('useSyncQueryInvalidation', () => {
       didUri  : 'did:dht:agent',
       refresh : true,
     });
-    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
-      did     : 'did:dht:agent',
-      options,
-    });
+    expect(agent.sync.refreshIdentityRouting).toHaveBeenCalledWith('did:dht:agent');
     expect(adoptDwnEndpoints).toHaveBeenCalledWith(['https://new.example']);
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.dwnEndpoints('did:dht:agent'),
     });
+  });
+
+  it('adds service-config wakes to the agent DID sync scope once', async () => {
+    setAgent({ 'did:dht:agent': { protocols: [ProfileDefinition.protocol] } });
+    const agent = useAuthStore.getState().agent!;
+    const queryClient = createQueryClient();
+    renderHook(() => useSyncQueryInvalidation([]), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await settleSubscriptions();
+    expect(agent.sync.setIdentityOptions).toHaveBeenCalledWith({
+      did     : 'did:dht:agent',
+      options : {
+        protocols: normalizeSyncProtocols([
+          ProfileDefinition.protocol,
+          ServiceConfigProtocolDefinition.protocol,
+        ]),
+      },
+    });
+
+    act(() => emitSyncEvent({
+      type      : 'identity:registration-change',
+      tenantDid : 'did:dht:agent',
+      options   : {
+        protocols: [
+          ProfileDefinition.protocol,
+          ServiceConfigProtocolDefinition.protocol,
+        ],
+      },
+    }));
+    await settleSubscriptions();
+    expect(agent.sync.setIdentityOptions).toHaveBeenCalledOnce();
   });
 
   it('preserves existing routing when a fresh endpoint resolution fails', async () => {
@@ -464,7 +499,7 @@ describe('useSyncQueryInvalidation', () => {
     act(() => emitSyncEvent(serviceConfigEvent('did:dht:identity')));
     await settleSubscriptions();
 
-    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
+    expect(agent.sync.refreshIdentityRouting).not.toHaveBeenCalled();
   });
 
   it('invalidates profile queries from wallet domain events', async () => {

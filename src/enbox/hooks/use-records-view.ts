@@ -49,7 +49,7 @@ class RecordViewStore<T> {
         this.snapshot = snapshot;
         this.emit();
       });
-      this.snapshot = view.getState();
+      this.snapshot = view.getSnapshot();
       this.emit();
     } catch (error) {
       if (this.closed) {

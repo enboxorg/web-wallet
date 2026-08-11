@@ -92,6 +92,14 @@ vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
 }));
 
 vi.mock('@enbox/browser', () => ({
+  createBlobUrlPool: () => ({
+    acquire : vi.fn(() => ({
+      url          : 'blob:test',
+      release      : vi.fn(),
+      releaseAfter : vi.fn(),
+    })),
+    dispose : vi.fn(),
+  }),
   WalletPostMessageTransport: {
     create: mocks.createTransport,
   },

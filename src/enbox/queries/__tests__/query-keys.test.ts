@@ -18,53 +18,15 @@ describe('queryKeys.identities.all', () => {
   });
 });
 
-// ── identities.detail ───────────────────────────────────────────────
-
-describe('queryKeys.identities.detail', () => {
-  it('returns an array', () => {
-    expect(Array.isArray(queryKeys.identities.detail('did:dht:abc'))).toBe(
-      true,
-    );
-  });
-
-  it('starts with "identities" and includes the DID', () => {
-    const key = queryKeys.identities.detail('did:dht:test123');
-    expect(key[0]).toBe('identities');
-    expect(key[1]).toBe('did:dht:test123');
-  });
-
-  it('has exactly two elements', () => {
-    expect(queryKeys.identities.detail('did:dht:x')).toHaveLength(2);
-  });
-
-  it('produces different keys for different DIDs', () => {
-    const key1 = queryKeys.identities.detail('did:dht:alice');
-    const key2 = queryKeys.identities.detail('did:dht:bob');
-    expect(key1).not.toEqual(key2);
-  });
-
-  it('is a superset of identities.all (prefix matching)', () => {
-    const all = queryKeys.identities.all;
-    const detail = queryKeys.identities.detail('did:dht:abc');
-    // detail starts with all elements of `all`
-    all.forEach((segment, i) => {
-      expect(detail[i]).toBe(segment);
-    });
-    expect(detail.length).toBeGreaterThan(all.length);
-  });
-});
-
 // ── identities sub-keys (profile, protocols, etc.) ──────────────────
 
 const subKeyFactories = [
   'profile',
   'protocols',
   'permissions',
-  'wallets',
   'activity',
   'dwnEndpoints',
-  'syncRemotes',
-  'syncLinks',
+  'syncStatus',
 ] as const;
 
 describe.each(subKeyFactories)('queryKeys.identities.%s', (subKey) => {
@@ -89,16 +51,6 @@ describe.each(subKeyFactories)('queryKeys.identities.%s', (subKey) => {
     const key1 = factory('did:dht:alice');
     const key2 = factory('did:dht:bob');
     expect(key1).not.toEqual(key2);
-  });
-
-  it('is a superset of identities.detail (prefix matching for invalidation)', () => {
-    const did = 'did:dht:prefix-test';
-    const detail = queryKeys.identities.detail(did);
-    const subKeyResult = factory(did);
-    detail.forEach((segment, i) => {
-      expect(subKeyResult[i]).toBe(segment);
-    });
-    expect(subKeyResult.length).toBeGreaterThan(detail.length);
   });
 
   it('is a superset of identities.all (prefix matching for invalidation)', () => {

@@ -26,10 +26,6 @@ export type IdentitySyncReconcileResult = {
   failedDids: string[];
 };
 
-function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function getIdentityTarget(identity: unknown): IdentityTarget | undefined {
   const candidate = identity as IdentityLike | undefined;
   const identityDid = candidate?.did?.uri;
@@ -86,7 +82,6 @@ function getSyncOptionsEffect(did: string) {
 
 function applySyncOptionsEffect(
   did: string,
-  existing: SyncIdentityOptions | undefined,
   protocols: readonly [string, ...string[]],
 ) {
   return Effect.gen(function* () {
@@ -95,43 +90,16 @@ function applySyncOptionsEffect(
       protocols: [...protocols],
     };
 
-    if (existing) {
-      yield* Effect.tryPromise({
-        try: () => runIdentitySetupSingleFlight(
-          agent,
-          did,
-          async () => agent.sync.updateIdentityOptions({ did, options }),
-        ),
-        catch: sdkError('sync.updateIdentityOptions'),
-      });
-      return true;
-    }
-
-    const registered = yield* Effect.tryPromise({
+    yield* Effect.tryPromise({
       try: () => runIdentitySetupSingleFlight(
         agent,
         did,
-        async () => agent.sync.registerIdentity({ did, options }),
+        async () => agent.sync.setIdentityOptions({ did, options }),
       ),
-      catch: sdkError('sync.registerIdentity'),
-    }).pipe(
-      Effect.as(true),
-      Effect.catchAll((error) => {
-        if (getErrorMessage(error).includes('already registered')) {
-          return Effect.tryPromise({
-            try: () => runIdentitySetupSingleFlight(
-              agent,
-              did,
-              async () => agent.sync.updateIdentityOptions({ did, options }),
-            ),
-            catch: sdkError('sync.updateIdentityOptions'),
-          }).pipe(Effect.as(true));
-        }
-        return Effect.fail(error);
-      }),
-    );
+      catch: sdkError('sync.setIdentityOptions'),
+    });
 
-    return registered;
+    return true;
   });
 }
 
@@ -177,7 +145,7 @@ export function reconcileIdentitySyncEffect(
         if (sameProtocolScope(existing, IDENTITY_SYNC_PROTOCOLS)) {
           return false;
         }
-        return yield* applySyncOptionsEffect(did, existing, IDENTITY_SYNC_PROTOCOLS);
+        return yield* applySyncOptionsEffect(did, IDENTITY_SYNC_PROTOCOLS);
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {

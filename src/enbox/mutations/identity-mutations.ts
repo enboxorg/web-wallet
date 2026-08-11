@@ -7,7 +7,7 @@
  *
  * SYNC POLICY: We do NOT manually manage sync (stopSync/startSync).
  * The SDK manages sync automatically. We only:
- * - Register new identity DIDs for sync
+ * - Set sync options for new identity DIDs
  * - Register DIDs as DWN tenants
  * - Install protocols locally before writing records
  */
@@ -39,7 +39,7 @@ import {
 import { clearCachedProfileImagesEffect } from '../effect/profile-image-cache';
 import { publishWalletEvent } from '../effect/wallet-events';
 
-function registerIdentityForSyncEffect(did: string) {
+function setIdentitySyncOptionsEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     yield* Effect.tryPromise({
@@ -47,12 +47,12 @@ function registerIdentityForSyncEffect(did: string) {
         runIdentitySetupSingleFlight(
           agent,
           did,
-          () => agent.sync.registerIdentity({
+          () => agent.sync.setIdentityOptions({
             did,
             options: { protocols: IDENTITY_SYNC_PROTOCOLS },
           }),
         ),
-      catch: sdkError('sync.registerIdentity'),
+      catch: sdkError('sync.setIdentityOptions'),
     }).pipe(Effect.catchAll(() => Effect.void));
   });
 }
@@ -82,8 +82,8 @@ function deleteLocalIdentityEffect(did: string) {
     const agent = yield* CurrentAgent;
 
     yield* Effect.tryPromise({
-      try: () => agent.sync.unregisterIdentity(did),
-      catch: sdkError('sync.unregisterIdentity'),
+      try: () => agent.sync.removeIdentity(did),
+      catch: sdkError('sync.removeIdentity'),
     }).pipe(Effect.catchAll(() => Effect.void));
 
     yield* Effect.tryPromise({
@@ -303,7 +303,7 @@ export function createIdentityEffect(params: CreateIdentityParams) {
     return yield* Effect.gen(function* () {
       // 2. Register identity as DWN tenant on remote endpoints.
       //    Must happen before sync registration — with live sync active,
-      //    registerIdentity hot-adds a subscription that requires the DID
+      //    setIdentityOptions hot-adds a subscription that requires the DID
       //    to be a recognised tenant on the remote DWN.
       yield* ensureRegistrationEffect(dwnEndpoints, [did]);
 
@@ -312,7 +312,7 @@ export function createIdentityEffect(params: CreateIdentityParams) {
       yield* installProtocolsEffect(did);
 
       // 4. Register identity DID for sync after protocol bootstrap is complete.
-      yield* registerIdentityForSyncEffect(did);
+      yield* setIdentitySyncOptionsEffect(did);
 
       // 5. Set profile social data
       const enbox = yield* createEnboxEffect(did);
@@ -482,8 +482,8 @@ export function deleteIdentityEffect(did: string) {
     yield* getRequiredIdentityEffect(did);
 
     yield* Effect.tryPromise({
-      try: () => agent.sync.unregisterIdentity(did),
-      catch: sdkError('sync.unregisterIdentity'),
+      try: () => agent.sync.removeIdentity(did),
+      catch: sdkError('sync.removeIdentity'),
     }).pipe(Effect.catchAll(() => Effect.void));
 
     yield* Effect.tryPromise({
@@ -573,7 +573,7 @@ export function importIdentityEffect(
       );
 
       // Register for sync
-      yield* registerIdentityForSyncEffect(did);
+      yield* setIdentitySyncOptionsEffect(did);
 
       // Create wallet record
       yield* createWalletRecordBestEffortEffect(

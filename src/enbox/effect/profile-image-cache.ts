@@ -1,14 +1,14 @@
 import type { MaterializedRecord } from '@enbox/api';
+import type { BlobUrlLease } from '@enbox/browser';
 
+import { createBlobUrlPool } from '@enbox/browser';
 import { Context, Effect, Layer } from 'effect';
-
-import { sdkError } from './errors';
 
 export type ProfileImageSlot = 'avatar' | 'hero';
 
 type CachedProfileImageUrl = {
   key: string;
-  url: string;
+  lease: BlobUrlLease;
 };
 
 export interface ProfileImageCacheService {
@@ -37,19 +37,8 @@ function imageRecordCacheKey(record: MaterializedRecord<Blob>['record']): string
     .join('|');
 }
 
-function revokeObjectUrl(url: string): void {
-  try {
-    URL.revokeObjectURL(url);
-  } catch {
-    // Best-effort cleanup only.
-  }
-}
-
-function revokeObjectUrlLater(url: string): void {
-  setTimeout(() => revokeObjectUrl(url), BLOB_URL_REVOKE_DELAY_MS);
-}
-
 function makeProfileImageCacheService(): ProfileImageCacheService {
+  const pool = createBlobUrlPool();
   const urls = new Map<string, Partial<Record<ProfileImageSlot, CachedProfileImageUrl>>>();
 
   function setCachedImageUrl(
@@ -63,9 +52,7 @@ function makeProfileImageCacheService(): ProfileImageCacheService {
     cache[slot] = next;
     urls.set(did, cache);
 
-    if (previous && previous.url !== next.url) {
-      revokeObjectUrlLater(previous.url);
-    }
+    previous?.lease.releaseAfter(BLOB_URL_REVOKE_DELAY_MS);
   }
 
   function clear(did: string, slot: ProfileImageSlot): Effect.Effect<void> {
@@ -81,7 +68,7 @@ function makeProfileImageCacheService(): ProfileImageCacheService {
       if (!cache.avatar && !cache.hero) {
         urls.delete(did);
       }
-      revokeObjectUrlLater(previous.url);
+      previous.lease.releaseAfter(BLOB_URL_REVOKE_DELAY_MS);
     });
   }
 
@@ -93,17 +80,14 @@ function makeProfileImageCacheService(): ProfileImageCacheService {
       }
 
       urls.delete(did);
-      if (cache.avatar) revokeObjectUrlLater(cache.avatar.url);
-      if (cache.hero) revokeObjectUrlLater(cache.hero.url);
+      cache.avatar?.lease.releaseAfter(BLOB_URL_REVOKE_DELAY_MS);
+      cache.hero?.lease.releaseAfter(BLOB_URL_REVOKE_DELAY_MS);
     });
   }
 
   const clearAll = Effect.sync(() => {
-    for (const cache of urls.values()) {
-      if (cache.avatar) revokeObjectUrl(cache.avatar.url);
-      if (cache.hero) revokeObjectUrl(cache.hero.url);
-    }
     urls.clear();
+    pool.dispose();
   });
 
   return {
@@ -112,16 +96,13 @@ function makeProfileImageCacheService(): ProfileImageCacheService {
       const cached = urls.get(did)?.[slot];
 
       if (key && cached?.key === key) {
-        return Effect.succeed(cached.url);
+        return Effect.succeed(cached.lease.url);
       }
 
-      return Effect.tryPromise({
-        try: async () => {
-          const url = URL.createObjectURL(image.value);
-          setCachedImageUrl(did, slot, { key: key || url, url });
-          return url;
-        },
-        catch: sdkError(`profile.${slot}.blob`),
+      return Effect.sync(() => {
+        const lease = pool.acquire(image.value);
+        setCachedImageUrl(did, slot, { key, lease });
+        return lease.url;
       });
     },
     clear,

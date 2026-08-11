@@ -207,21 +207,10 @@ export function useSyncQueryInvalidation(
         }
       }
 
-      const options = await currentAgent.sync.getIdentityOptions(did);
-      if (cancelled || dwnRefreshRequested.has(did) || options === undefined) {
+      if (cancelled || dwnRefreshRequested.has(did)) {
         return;
       }
-      const routedOptions = did === currentAgent.agentDid.uri
-        && !syncRegistrationCoversProtocol(options, ServiceConfigProtocolDefinition.protocol)
-        ? {
-            ...options,
-            protocols: normalizeSyncProtocols([
-              ...options.protocols,
-              ServiceConfigProtocolDefinition.protocol,
-            ]),
-          }
-        : options;
-      await currentAgent.sync.updateIdentityOptions({ did, options: routedOptions });
+      await currentAgent.sync.refreshIdentityRouting(did);
     }
 
     function requestDwnRoutingRefresh(did: string): void {
@@ -257,7 +246,7 @@ export function useSyncQueryInvalidation(
           || syncRegistrationCoversProtocol(options, ServiceConfigProtocolDefinition.protocol)) {
           return;
         }
-        await currentAgent.sync.updateIdentityOptions({
+        await currentAgent.sync.setIdentityOptions({
           did,
           options: {
             ...options,

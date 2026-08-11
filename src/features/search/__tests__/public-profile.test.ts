@@ -47,10 +47,6 @@ describe('fetchPublicProfile', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetPublicProfileClientForTests();
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: vi.fn((blob: Blob) => `blob:${blob.size}`),
-    });
   });
 
   it('reads public text by query and unpublished media by direct read', async () => {
@@ -79,9 +75,9 @@ describe('fetchPublicProfile', () => {
       displayName: 'Alice',
       tagline: 'Builder',
       bio: 'Public bio',
-      avatarUrl: 'blob:6',
-      heroUrl: 'blob:4',
     });
+    expect(await profile.avatar?.text()).toBe('avatar');
+    expect(await profile.hero?.text()).toBe('hero');
     expect(mocks.records.query).toHaveBeenCalledWith({
       from: 'did:dht:alice',
       filter: {
@@ -106,8 +102,8 @@ describe('fetchPublicProfile', () => {
     const profile = await fetchPublicProfile('did:dht:bob');
 
     expect(profile.displayName).toBe('Bob');
-    expect(profile.avatarUrl).toBeUndefined();
-    expect(profile.heroUrl).toBeUndefined();
+    expect(profile.avatar).toBeUndefined();
+    expect(profile.hero).toBeUndefined();
   });
 
   it('does not expose orphaned media when the root profile is absent', async () => {
@@ -120,8 +116,8 @@ describe('fetchPublicProfile', () => {
       displayName: '',
       tagline: undefined,
       bio: undefined,
-      avatarUrl: undefined,
-      heroUrl: undefined,
+      avatar: undefined,
+      hero: undefined,
     });
     expect(mocks.records.read).not.toHaveBeenCalled();
   });

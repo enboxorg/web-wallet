@@ -1,4 +1,7 @@
-import { useState, useEffect, useRef } from 'react';
+import type { BlobUrlLease } from '@enbox/browser';
+
+import { createBlobUrlPool } from '@enbox/browser';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Search, AlertCircle, UserCheck } from 'lucide-react';
@@ -10,13 +13,31 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { PublicIdentityCard } from '@/components/identity/PublicIdentityCard';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { truncateDid } from '@/lib/utils';
-import type { IdentityProfile } from '@/enbox/types';
 import { fetchPublicProfile } from './public-profile';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
 
 const SEARCH_HISTORY_KEY = 'enbox:searchHistory';
 const MAX_HISTORY = 5;
+const URL_RELEASE_DELAY_MS = 60_000;
+const profileImageUrls = createBlobUrlPool();
+
+function useProfileImageUrl(blob: Blob | undefined): string | undefined {
+  const [binding, setBinding] = useState<{ blob: Blob; lease: BlobUrlLease }>();
+
+  useEffect(() => {
+    if (blob === undefined) {
+      setBinding(undefined);
+      return;
+    }
+
+    const lease = profileImageUrls.acquire(blob);
+    setBinding({ blob, lease });
+    return () => lease.releaseAfter(URL_RELEASE_DELAY_MS);
+  }, [blob]);
+
+  return binding !== undefined && binding.blob === blob ? binding.lease.url : undefined;
+}
 
 function getSearchHistory(): string[] {
   try {
@@ -43,7 +64,6 @@ export default function SearchPage() {
   const [didInput, setDidInput] = useState(routeDid ?? '');
   const [searchDid, setSearchDid] = useState(routeDid ?? '');
   const [searchHistory, setSearchHistory] = useState<string[]>(() => getSearchHistory());
-  const prevProfileRef = useRef<IdentityProfile | null>(null);
 
   // Pre-fill from route param changes
   useEffect(() => {
@@ -53,14 +73,6 @@ export default function SearchPage() {
     }
   }, [routeDid]);
 
-  // Revoke blob URLs on unmount
-  useEffect(() => {
-    return () => {
-      if (prevProfileRef.current?.avatarUrl) URL.revokeObjectURL(prevProfileRef.current.avatarUrl);
-      if (prevProfileRef.current?.heroUrl) URL.revokeObjectURL(prevProfileRef.current.heroUrl);
-    };
-  }, []);
-
   const {
     data: profile,
     isLoading,
@@ -68,18 +80,12 @@ export default function SearchPage() {
     error,
   } = useQuery({
     queryKey: queryKeys.didLookup(searchDid),
-    queryFn: async () => {
-      // Revoke previous blob URLs
-      if (prevProfileRef.current?.avatarUrl) URL.revokeObjectURL(prevProfileRef.current.avatarUrl);
-      if (prevProfileRef.current?.heroUrl) URL.revokeObjectURL(prevProfileRef.current.heroUrl);
-
-      const result = await fetchPublicProfile(searchDid);
-      prevProfileRef.current = result;
-      return result;
-    },
+    queryFn: () => fetchPublicProfile(searchDid),
     enabled: searchDid.startsWith('did:'),
     retry: false,
   });
+  const avatarUrl = useProfileImageUrl(profile?.avatar);
+  const heroUrl = useProfileImageUrl(profile?.hero);
 
   // Track successful searches in history
   useEffect(() => {
@@ -164,8 +170,8 @@ export default function SearchPage() {
               displayName={profile.displayName}
               tagline={profile.tagline}
               bio={profile.bio}
-              avatarUrl={profile.avatarUrl}
-              heroUrl={profile.heroUrl}
+              avatarUrl={avatarUrl}
+              heroUrl={heroUrl}
             />
           ) : (
             <div className="flex flex-col items-center gap-3 rounded-lg border border-border-default bg-surface-1 p-8 text-center">

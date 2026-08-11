@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => {
   const close = vi.fn(async () => undefined);
   const observe = vi.fn(async () => ({
     close,
-    getState: () => ({
+    getSnapshot: () => ({
       records: [{
         record : { id: 'wallet-record' },
         value  : { webWallets: ['https://wallet.example'] },

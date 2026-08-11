@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { ReplicationLinkSnapshot, RemoteSyncStatus, SyncIdentityStatus } from '@enbox/agent';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
@@ -24,12 +25,32 @@ afterAll(() => {
   useAuthStore.setState({ agent: null });
 });
 
+function createSyncStatus(
+  remotes: RemoteSyncStatus[],
+  links: ReplicationLinkSnapshot[],
+): SyncIdentityStatus {
+  return {
+    registration : undefined,
+    health       : {
+      connectivity            : 'online',
+      failedMessageCount      : 0,
+      degradedLinkCount       : 0,
+      quotaBlockedMessageCount: 0,
+      syncHealthy             : true,
+    },
+    connectivity : 'online',
+    currentness  : 'caught-up',
+    remotes,
+    links,
+  };
+}
+
 describe('RemoteSyncStatusPanel', () => {
   it('renders each remote state and quota detail', async () => {
     useAuthStore.setState({
       agent: {
         sync: {
-          getRemoteSyncStatus: vi.fn(async () => [
+          getIdentitySyncStatus: vi.fn(async () => createSyncStatus([
             {
               tenantDid               : 'did:dht:alice',
               remoteEndpoint          : 'https://healthy.example/dwn',
@@ -47,8 +68,7 @@ describe('RemoteSyncStatusPanel', () => {
               failedMessageCount      : 0,
               lastError               : 'Tenant storage quota exceeded',
             },
-          ]),
-          getReplicationLinks: vi.fn(async () => [
+          ], [
             {
               tenantDid      : 'did:dht:alice',
               remoteEndpoint : 'https://healthy.example/dwn',
@@ -65,7 +85,7 @@ describe('RemoteSyncStatusPanel', () => {
               connectivity   : 'online',
               isPullCurrent  : false,
             },
-          ]),
+          ])),
           on: vi.fn(() => () => {}),
           retryRemoteNow: vi.fn(),
         },
@@ -91,15 +111,14 @@ describe('RemoteSyncStatusPanel', () => {
     useAuthStore.setState({
       agent: {
         sync: {
-          getRemoteSyncStatus: vi.fn(async () => [{
+          getIdentitySyncStatus: vi.fn(async () => createSyncStatus([{
             tenantDid               : 'did:dht:alice',
             remoteEndpoint          : 'https://full.example/dwn',
             state                   : 'quota-blocked',
             connectivity            : 'online',
             quotaBlockedMessageCount: 1,
             failedMessageCount      : 0,
-          }]),
-          getReplicationLinks: vi.fn(async () => []),
+          }], [])),
           on: vi.fn(() => () => {}),
           retryRemoteNow,
         },
@@ -122,15 +141,14 @@ describe('RemoteSyncStatusPanel', () => {
     useAuthStore.setState({
       agent: {
         sync: {
-          getRemoteSyncStatus: vi.fn(async () => [{
+          getIdentitySyncStatus: vi.fn(async () => createSyncStatus([{
             tenantDid               : 'did:dht:owner',
             remoteEndpoint          : 'https://shared.example/dwn',
             state                   : 'healthy',
             connectivity            : 'online',
             quotaBlockedMessageCount: 0,
             failedMessageCount      : 0,
-          }]),
-          getReplicationLinks: vi.fn(async () => [{
+          }], [{
             tenantDid      : 'did:dht:owner',
             remoteEndpoint : 'https://shared.example/dwn',
             scope          : {
@@ -142,7 +160,7 @@ describe('RemoteSyncStatusPanel', () => {
             status       : 'live',
             connectivity : 'online',
             isPullCurrent: false,
-          }]),
+          }])),
           on: vi.fn(() => () => {}),
           retryRemoteNow: vi.fn(),
         },

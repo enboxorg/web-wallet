@@ -126,10 +126,10 @@ function caughtUpLabel(links: ReplicationLinkSnapshot[]): string {
 }
 
 export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
-  const { links, remotes } = useLiveSyncStatus(did);
+  const status = useLiveSyncStatus(did);
   const retryRemote = useRetryRemoteSync(did);
-  const isLoading = links.isLoading || remotes.isLoading;
-  const error = links.error ?? remotes.error;
+  const remotes = status.data?.remotes;
+  const links = status.data?.links;
 
   async function handleRetry(remoteEndpoint: string): Promise<void> {
     try {
@@ -147,21 +147,21 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
         <h3 className="text-sm font-semibold text-text-primary">Remote sync</h3>
       </div>
 
-      {isLoading && <Loader message="Loading remote sync status..." />}
-      {error && (
-        <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load remote sync status'} />
+      {status.isLoading && <Loader message="Loading remote sync status..." />}
+      {status.error && (
+        <ErrorAlert message={status.error instanceof Error ? status.error.message : 'Failed to load remote sync status'} />
       )}
-      {!isLoading && !error && remotes.data?.length === 0 && (
+      {!status.isLoading && !status.error && remotes?.length === 0 && (
         <div className="rounded-lg border border-border-default bg-surface-1 px-4 py-3 text-sm text-text-tertiary">
           No active remote sync links yet.
         </div>
       )}
 
-      {!error && remotes.data?.map((remote) => {
+      {!status.error && remotes?.map((remote) => {
         const nextProbe = formatTimestamp(remote.nextProbeAt);
         const lastActivity = formatTimestamp(remote.lastActivityAt);
         const retrying = retryRemote.isPending && retryRemote.variables === remote.remoteEndpoint;
-        const remoteLinks = links.data?.filter(
+        const remoteLinks = links?.filter(
           ({ remoteEndpoint }) => remoteEndpoint === remote.remoteEndpoint,
         ) ?? [];
 

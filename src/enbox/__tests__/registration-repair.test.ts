@@ -34,12 +34,8 @@ function createAgent() {
   return {
     calls,
     sync: {
-      getIdentityOptions: vi.fn(async () => {
-        calls.push('sync:get-options');
-        return { protocols: ['https://example.com/protocol'] };
-      }),
-      updateIdentityOptions: vi.fn(async () => {
-        calls.push('sync:update');
+      refreshIdentityRouting: vi.fn(async () => {
+        calls.push('sync:refresh-routing');
       }),
     },
   };
@@ -84,14 +80,10 @@ describe('registration repair', () => {
       ['https://dwn.example'],
       ['did:dht:alice'],
     );
-    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
-      did     : 'did:dht:alice',
-      options : { protocols: ['https://example.com/protocol'] },
-    });
+    expect(agent.sync.refreshIdentityRouting).toHaveBeenCalledWith('did:dht:alice');
     expect(agent.calls).toEqual([
       'tenant:register',
-      'sync:get-options',
-      'sync:update',
+      'sync:refresh-routing',
     ]);
   });
 
@@ -116,10 +108,10 @@ describe('registration repair', () => {
     releaseRegistration();
 
     await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
-    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledOnce();
+    expect(agent.sync.refreshIdentityRouting).toHaveBeenCalledOnce();
   });
 
-  it('serializes repairs for different endpoints of the same DID', async () => {
+  it('lets the sync engine serialize routing refreshes for different endpoints', async () => {
     const agent = createAgent();
     let releaseFirstRegistration!: () => void;
     const firstRegistrationGate = new Promise<void>((resolve) => {
@@ -142,7 +134,7 @@ describe('registration repair', () => {
     );
 
     await vi.waitFor(() => {
-      expect(mocks.ensureRegistrationForDids).toHaveBeenCalledTimes(1);
+      expect(mocks.ensureRegistrationForDids).toHaveBeenCalledTimes(2);
     });
     releaseFirstRegistration();
 
@@ -153,7 +145,7 @@ describe('registration repair', () => {
       ['https://dwn-b.example'],
       ['did:dht:alice'],
     );
-    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledTimes(2);
+    expect(agent.sync.refreshIdentityRouting).toHaveBeenCalledTimes(2);
   });
 
   it('does not disturb sync when the tenant registration repair fails', async () => {
@@ -165,8 +157,7 @@ describe('registration repair', () => {
       repairFailedEvent('MessagesQuery failed: 401 Not a registered tenant.'),
     )).rejects.toThrow('registration rejected');
 
-    expect(agent.sync.getIdentityOptions).not.toHaveBeenCalled();
-    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
+    expect(agent.sync.refreshIdentityRouting).not.toHaveBeenCalled();
   });
 
   it('ignores suspended tenants without sending a registration request', async () => {
@@ -178,6 +169,6 @@ describe('registration repair', () => {
     )).resolves.toBe(false);
 
     expect(mocks.ensureRegistrationForDids).not.toHaveBeenCalled();
-    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
+    expect(agent.sync.refreshIdentityRouting).not.toHaveBeenCalled();
   });
 });

@@ -8,6 +8,11 @@ import { sdkError } from '@/enbox/effect/errors';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import type { IdentityProfile } from '@/enbox/types';
 
+export type PublicIdentityProfile = Omit<IdentityProfile, 'avatarUrl' | 'heroUrl'> & {
+  avatar?: Blob;
+  hero?: Blob;
+};
+
 /** Lazily-created reader so repeated lookups share its bounded retry/cache layer. */
 let _profileReader: ProfileReader | undefined;
 
@@ -18,10 +23,6 @@ function getProfileReaderEffect() {
     }
     return _profileReader;
   });
-}
-
-function objectUrl(blob: Blob | undefined): string | undefined {
-  return blob ? URL.createObjectURL(blob) : undefined;
 }
 
 /** Fetch a public profile via anonymous DWN reads. */
@@ -41,13 +42,13 @@ export function fetchPublicProfileEffect(did: string) {
       displayName : profile.displayName ?? '',
       tagline     : profile.tagline,
       bio         : profile.bio,
-      avatarUrl   : objectUrl(images.avatar),
-      heroUrl     : objectUrl(images.hero),
-    } satisfies IdentityProfile;
+      avatar      : images.avatar,
+      hero        : images.hero,
+    } satisfies PublicIdentityProfile;
   });
 }
 
-export function fetchPublicProfile(did: string): Promise<IdentityProfile> {
+export function fetchPublicProfile(did: string): Promise<PublicIdentityProfile> {
   return runEnboxPromise(fetchPublicProfileEffect(did));
 }
 

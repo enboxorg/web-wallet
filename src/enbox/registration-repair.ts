@@ -12,30 +12,6 @@ const REPAIRABLE_REGISTRATION_DETAILS = [
 ] as const;
 
 const registrationRepairFlights = makeKeyedSingleFlight();
-const repairQueuesByAgent = new WeakMap<object, Map<string, Promise<unknown>>>();
-
-function runRegistrationRepairSerial<T>(
-  agent: object,
-  did: string,
-  operation: () => Promise<T>,
-): Promise<T> {
-  let queues = repairQueuesByAgent.get(agent);
-  if (queues === undefined) {
-    queues = new Map();
-    repairQueuesByAgent.set(agent, queues);
-  }
-
-  const previous = queues.get(did) ?? Promise.resolve();
-  const repair = previous.catch(() => undefined).then(operation);
-  queues.set(did, repair);
-  const cleanup = (): void => {
-    if (queues.get(did) === repair) {
-      queues.delete(did);
-    }
-  };
-  void repair.then(cleanup, cleanup);
-  return repair;
-}
 
 /**
  * Match only the server's definitive registration failures. A suspended
@@ -55,8 +31,8 @@ export function isRepairableRegistrationFailure(error: string): boolean {
 
 /**
  * Repair a remote tenant registration only after sync receives a definitive
- * server rejection. Updating the existing sync options removes the durable
- * paused link and immediately reopens live links with the same scope.
+ * server rejection. Refreshing routing removes the durable paused link and
+ * immediately reopens live links with the existing scope.
  * Concurrent failures from multiple protocol projections share one repair.
  */
 export async function repairRegistrationFromSyncEvent(
@@ -69,21 +45,10 @@ export async function repairRegistrationFromSyncEvent(
 
   const [endpoint] = normalizeDwnEndpoints([event.remoteEndpoint]);
   const repairKey = JSON.stringify([event.tenantDid, endpoint]);
-  await registrationRepairFlights.run(agent, repairKey, () =>
-    runRegistrationRepairSerial(agent, event.tenantDid, async (): Promise<void> => {
-      await ensureRegistrationForDids(agent, [endpoint], [event.tenantDid]);
-
-      const syncOptions = await agent.sync.getIdentityOptions(event.tenantDid);
-      if (syncOptions === undefined) {
-        return;
-      }
-
-      await agent.sync.updateIdentityOptions({
-        did     : event.tenantDid,
-        options : syncOptions,
-      });
-    })
-  );
+  await registrationRepairFlights.run(agent, repairKey, async (): Promise<void> => {
+    await ensureRegistrationForDids(agent, [endpoint], [event.tenantDid]);
+    await agent.sync.refreshIdentityRouting(event.tenantDid);
+  });
 
   return true;
 }
