@@ -174,6 +174,7 @@ describe('connect-kernel', () => {
     it('runs the ceremony, seals with the PIN, and posts to the callback', async () => {
       const agent = { id: 'agent-1' } as any;
       const request = connectRequest({ requestedSessionTtlSeconds: 86_400 });
+      const originalRequest = structuredClone(request);
 
       await approveConnectRequest('did:dht:alice', request, '1234', 3_600, agent);
 
@@ -181,7 +182,7 @@ describe('connect-kernel', () => {
         agent,
         approvedSessionTtlSeconds : 3_600,
         providerDid               : 'did:dht:alice',
-        request                   : expect.objectContaining({ requestedSessionTtlSeconds: 3_600 }),
+        request,
         transport                 : 'relay',
       });
       expect(mocks.sealApprovedResponse).toHaveBeenCalledWith({
@@ -197,8 +198,7 @@ describe('connect-kernel', () => {
         idToken     : 'sealed-response-jwe',
       });
       // Seal happens before delivery, after the ceremony.
-      expect(mocks.executeConnectApproval.mock.calls[0][0].request).not.toBe(request);
-      expect(request.requestedSessionTtlSeconds).toBe(86_400);
+      expect(request).toEqual(originalRequest);
       expect(mocks.sealApprovedResponse.mock.calls[0][0].request).toBe(request);
       expect(mocks.executeConnectApproval.mock.invocationCallOrder[0])
         .toBeLessThan(mocks.sealApprovedResponse.mock.invocationCallOrder[0]);
@@ -261,6 +261,7 @@ describe('connect-kernel', () => {
     it('stamps the transport origin into the ceremony request but seals the original', async () => {
       const agent = { id: 'agent-1' } as any;
       const request = connectRequest({ reply: { mode: 'post_message' } });
+      const originalRequest = structuredClone(request);
 
       await expect(
         approvePopupConnectRequest(
@@ -277,17 +278,17 @@ describe('connect-kernel', () => {
         approvedSessionTtlSeconds : 604_800,
         providerDid               : 'did:dht:alice',
         request                   : expect.objectContaining({
-          applicationId              : 'https://app.example',
-          clientMetadata             : { origin: 'https://app.example' },
-          requestedSessionTtlSeconds : 604_800,
+          applicationId  : 'https://app.example',
+          clientMetadata : { origin: 'https://app.example' },
         }),
         transport                 : 'postMessage',
       });
+      expect(mocks.executeConnectApproval.mock.calls[0][0].request)
+        .not.toHaveProperty('requestedSessionTtlSeconds');
       const sealArgs = mocks.sealApprovedResponse.mock.calls[0][0];
       expect(sealArgs.request).toBe(request);
       expect(sealArgs.pin).toBeUndefined();
-      expect(request).not.toHaveProperty('applicationId');
-      expect(request).not.toHaveProperty('requestedSessionTtlSeconds');
+      expect(request).toEqual(originalRequest);
     });
 
     it('never retries the popup ceremony', async () => {

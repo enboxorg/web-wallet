@@ -19,36 +19,6 @@ type ConnectRequestWithApplicationId = ConnectRequest & {
   applicationId?: string;
 };
 
-type ExecuteConnectApprovalBaseParams = Omit<
-  Parameters<typeof executeConnectApproval>[0],
-  'approvedSessionTtlSeconds'
->;
-
-type ExecuteConnectApprovalCompatibilityParams = ExecuteConnectApprovalBaseParams & {
-  approvedSessionTtlSeconds: number;
-};
-
-/**
- * Bridges released agents, which read the approved lifetime from the request,
- * and newer agents, which give the provider-owned option precedence. Both
- * receive the same wallet-selected value and the ceremony is invoked once.
- */
-function executeConnectApprovalWithApprovedSessionTtl(
-  params: ExecuteConnectApprovalBaseParams,
-  approvedSessionTtlSeconds: number,
-): ReturnType<typeof executeConnectApproval> {
-  const compatibilityParams = {
-    ...params,
-    approvedSessionTtlSeconds,
-    request: {
-      ...params.request,
-      requestedSessionTtlSeconds: approvedSessionTtlSeconds,
-    },
-  } satisfies ExecuteConnectApprovalCompatibilityParams;
-
-  return executeConnectApproval(compatibilityParams);
-}
-
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
 }
@@ -206,12 +176,13 @@ export function approveConnectRequestEffect(
     const callbackUrl = getRelayCallbackUrl(request);
     const idToken = yield* Effect.tryPromise({
       try: async () => {
-        const approval = await executeConnectApprovalWithApprovedSessionTtl({
+        const approval = await executeConnectApproval({
           agent,
+          approvedSessionTtlSeconds,
           providerDid : selectedDid,
           request,
           transport   : 'relay',
-        }, approvedSessionTtlSeconds);
+        });
         return ConnectProvider.sealApprovedResponse({
           request,
           providerDid : selectedDid,
@@ -305,12 +276,13 @@ export function approvePopupConnectRequestEffect(
     };
     return yield* Effect.tryPromise({
       try: async () => {
-        const approval = await executeConnectApprovalWithApprovedSessionTtl({
+        const approval = await executeConnectApproval({
           agent,
+          approvedSessionTtlSeconds,
           providerDid : selectedDid,
           request     : approvalRequest,
           transport   : 'postMessage',
-        }, approvedSessionTtlSeconds);
+        });
         return ConnectProvider.sealApprovedResponse({
           request,
           providerDid : selectedDid,
