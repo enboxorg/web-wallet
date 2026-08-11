@@ -60,7 +60,7 @@
 | E2E Testing | [Playwright](https://playwright.dev/) + [axe-core](https://www.deque.com/axe/) |
 | CI/CD | [GitHub Actions](https://github.com/features/actions) + [Codecov](https://codecov.io/) |
 | Deployment | [Cloudflare Pages](https://pages.cloudflare.com/) |
-| SDK | `@enbox/agent` `@enbox/api` `@enbox/auth` `@enbox/protocols` |
+| SDK | `@enbox/agent` `@enbox/browser` `@enbox/protocols` |
 
 ## Getting Started
 

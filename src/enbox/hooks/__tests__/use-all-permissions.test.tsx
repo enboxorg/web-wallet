@@ -30,7 +30,6 @@ describe('useAllPermissions', () => {
     vi.clearAllMocks();
     useAuthStore.setState({
       initialized : true,
-      unlocked    : true,
       firstTime   : false,
       agent       : { id: 'agent-1' } as never,
     });

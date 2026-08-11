@@ -94,11 +94,12 @@ export function createMockAgent(overrides?: { agentDid?: string }) {
       setDwnEndpoints: vi.fn(),
     },
     sync: {
-      registerIdentity: vi.fn(),
-      unregisterIdentity: vi.fn(),
-      startSync: vi.fn().mockResolvedValue(undefined),
-      stopSync: vi.fn().mockResolvedValue(undefined),
-      sync: vi.fn().mockResolvedValue(undefined),
+      setIdentityOptions     : vi.fn(),
+      refreshIdentityRouting: vi.fn(),
+      removeIdentity         : vi.fn(),
+      startSync              : vi.fn().mockResolvedValue(undefined),
+      stopSync               : vi.fn().mockResolvedValue(undefined),
+      sync                   : vi.fn().mockResolvedValue(undefined),
     },
     did: {
       delete: vi.fn(),

@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { useCreateIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { useAuth } from '@/enbox/hooks/use-auth';
+import { useBlobUrl } from '@/enbox/hooks/use-blob-url';
 import { generateName, generateAvatar, generateBanner } from '@/lib/identity-generators';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { randomUuidEffect } from '@/lib/browser-effects';
@@ -35,9 +36,9 @@ export default function CreateIdentityPage() {
 
   // Image state: blobs for submission, URLs for preview
   const [avatarBlob, setAvatarBlob] = useState<Blob | null>(null);
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [heroBlob, setHeroBlob] = useState<Blob | null>(null);
-  const [heroPreview, setHeroPreview] = useState<string | null>(null);
+  const avatarPreview = useBlobUrl(avatarBlob);
+  const heroPreview = useBlobUrl(heroBlob);
   // Track if user uploaded custom images (so regenerate doesn't overwrite)
   const [avatarCustom, setAvatarCustom] = useState(false);
   const [heroCustom, setHeroCustom] = useState(false);
@@ -52,8 +53,6 @@ export default function CreateIdentityPage() {
       generateAvatar(seed).then((blob) => {
         if (cancelled) return;
         setAvatarBlob(blob);
-        if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-        setAvatarPreview(URL.createObjectURL(blob));
       });
       return () => { cancelled = true; };
     }
@@ -65,20 +64,10 @@ export default function CreateIdentityPage() {
       generateBanner(seed).then((blob) => {
         if (cancelled) return;
         setHeroBlob(blob);
-        if (heroPreview) URL.revokeObjectURL(heroPreview);
-        setHeroPreview(URL.createObjectURL(blob));
       });
       return () => { cancelled = true; };
     }
   }, [seed]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Clean up object URLs on unmount
-  useEffect(() => {
-    return () => {
-      if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-      if (heroPreview) URL.revokeObjectURL(heroPreview);
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRegenerate = useCallback(() => {
     setAvatarCustom(false);
@@ -89,26 +78,19 @@ export default function CreateIdentityPage() {
   function handleAvatarUpload(file: File) {
     setAvatarCustom(true);
     setAvatarBlob(file);
-    if (avatarPreview) URL.revokeObjectURL(avatarPreview);
-    setAvatarPreview(URL.createObjectURL(file));
   }
 
   function handleHeroUpload(file: File) {
     setHeroCustom(true);
     setHeroBlob(file);
-    if (heroPreview) URL.revokeObjectURL(heroPreview);
-    setHeroPreview(URL.createObjectURL(file));
   }
 
   function handleHeroClear() {
     setHeroCustom(false);
     setHeroBlob(null);
-    if (heroPreview) URL.revokeObjectURL(heroPreview);
-    setHeroPreview(null);
     // Regenerate a banner
     generateBanner(seed).then((blob) => {
       setHeroBlob(blob);
-      setHeroPreview(URL.createObjectURL(blob));
     });
   }
 

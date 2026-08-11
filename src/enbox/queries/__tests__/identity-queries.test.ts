@@ -1,26 +1,38 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { fetchPermissions, fetchProfile } from '../identity-queries';
+import {
+  fetchActivity,
+  fetchPermissions,
+  fetchProfile,
+  fetchProtocols,
+} from '../identity-queries';
 
 const mocks = vi.hoisted(() => {
+  const activityQuery = vi.fn();
+  const close = vi.fn();
+  const protocolQuery = vi.fn();
   const query = vi.fn();
 
   return {
+    activityQuery,
+    close,
+    protocolQuery,
     query,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
+        close,
+        dwn: {
+          protocols: { query: protocolQuery },
+          records: { query: activityQuery },
+        },
         using: vi.fn(() => ({ records: { query } })),
       };
     }),
   };
 });
 
-vi.mock('@enbox/api', () => ({
+vi.mock('@enbox/browser', () => ({
   Enbox: mocks.Enbox,
-}));
-
-vi.mock('@enbox/api/advanced', () => ({
-  DwnApi: vi.fn(),
 }));
 
 vi.mock('@enbox/protocols', () => ({
@@ -29,7 +41,7 @@ vi.mock('@enbox/protocols', () => ({
 }));
 
 vi.mock('@enbox/agent', () => ({
-  getDwnServiceEndpointUrls: vi.fn(),
+  DwnDateSort: { CreatedDescending: 'createdDescending' },
 }));
 
 function createProfileRecord(
@@ -47,7 +59,7 @@ function createProfileRecord(
   };
 }
 
-function createImageRecord(id: string, dataCid: string) {
+function createImageRecord(id: string, dataCid: string | undefined) {
   return {
     record: {
       id,
@@ -60,31 +72,11 @@ function createImageRecord(id: string, dataCid: string) {
 }
 
 describe('fetchProfile', () => {
-  let urlCounter = 0;
-  let createObjectUrl: ReturnType<typeof vi.fn>;
-  let revokeObjectUrl: ReturnType<typeof vi.fn>;
-
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.useFakeTimers();
-    urlCounter = 0;
-    createObjectUrl = vi.fn(() => `blob:profile-${++urlCounter}`);
-    revokeObjectUrl = vi.fn();
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: createObjectUrl,
-    });
-    Object.defineProperty(URL, 'revokeObjectURL', {
-      configurable: true,
-      value: revokeObjectUrl,
-    });
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it('reuses object URLs when refetching unchanged profile image records', async () => {
+  it('projects raw profile image blobs with stable record keys', async () => {
     const avatarRecord = createImageRecord('avatar-record', 'avatar-cid');
     const heroRecord = createImageRecord('hero-record', 'hero-cid');
     mocks.query.mockResolvedValue({
@@ -94,10 +86,10 @@ describe('fetchProfile', () => {
     const first = await fetchProfile({}, 'did:dht:alice');
     const second = await fetchProfile({}, 'did:dht:alice');
 
-    expect(second.avatarUrl).toBe(first.avatarUrl);
-    expect(second.heroUrl).toBe(first.heroUrl);
-    expect(createObjectUrl).toHaveBeenCalledTimes(2);
-    expect(revokeObjectUrl).not.toHaveBeenCalled();
+    expect(first.avatar).toEqual({ blob: avatarRecord.value, key: 'avatar-cid' });
+    expect(first.hero).toEqual({ blob: heroRecord.value, key: 'hero-cid' });
+    expect(second.avatar).toEqual(first.avatar);
+    expect(second.hero).toEqual(first.hero);
     expect(mocks.query).toHaveBeenCalledTimes(2);
     expect(mocks.query).toHaveBeenCalledWith('profile', {
       materialize: {
@@ -105,6 +97,7 @@ describe('fetchProfile', () => {
       },
       pagination: { limit: 1 },
     });
+    expect(mocks.close).toHaveBeenCalledTimes(2);
   });
 
   it('marks profiles without a local profile record as not hydrated', async () => {
@@ -114,26 +107,82 @@ describe('fetchProfile', () => {
 
     expect(profile.hasProfileRecord).toBe(false);
     expect(profile.displayName).toBe('');
-    expect(profile.avatarUrl).toBeUndefined();
-    expect(profile.heroUrl).toBeUndefined();
+    expect(profile.avatar).toBeUndefined();
+    expect(profile.hero).toBeUndefined();
+    expect(mocks.close).toHaveBeenCalledOnce();
   });
 
-  it('delays revoking replaced object URLs so rendered images do not break during refetch', async () => {
-    const firstAvatar = createImageRecord('avatar-record-1', 'avatar-cid-1');
-    const secondAvatar = createImageRecord('avatar-record-2', 'avatar-cid-2');
-    mocks.query
-      .mockResolvedValueOnce({ records: [createProfileRecord(firstAvatar)] })
-      .mockResolvedValueOnce({ records: [createProfileRecord(secondAvatar)] });
+  it('falls back to record identity when an image has no data CID', async () => {
+    const avatarRecord = createImageRecord('avatar-record', undefined);
+    mocks.query.mockResolvedValue({ records: [createProfileRecord(avatarRecord)] });
 
-    const first = await fetchProfile({}, 'did:dht:bob');
-    const second = await fetchProfile({}, 'did:dht:bob');
+    const profile = await fetchProfile({}, 'did:dht:bob');
 
-    expect(second.avatarUrl).not.toBe(first.avatarUrl);
-    expect(revokeObjectUrl).not.toHaveBeenCalled();
+    expect(profile.avatar?.key).toBe('avatar-record|2026-05-28T00:00:00.000Z');
+  });
+});
 
-    vi.runOnlyPendingTimers();
+describe('raw DWN reads', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
-    expect(revokeObjectUrl).toHaveBeenCalledWith(first.avatarUrl);
+  it('uses and closes the Enbox raw-DWN escape hatch for protocols', async () => {
+    mocks.protocolQuery.mockResolvedValue({
+      protocols: [{
+        definition: {
+          protocol  : 'https://example.com/protocol',
+          published : true,
+        },
+      }],
+    });
+
+    await expect(fetchProtocols({} as never, 'did:dht:alice')).resolves.toEqual([{
+      uri        : 'https://example.com/protocol',
+      published  : true,
+      definition : {
+        protocol  : 'https://example.com/protocol',
+        published : true,
+      },
+    }]);
+    expect(mocks.protocolQuery).toHaveBeenCalledWith({});
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
+
+  it('uses and closes the Enbox raw-DWN escape hatch for activity', async () => {
+    mocks.activityQuery.mockResolvedValue({
+      records: [{
+        id          : 'record-1',
+        protocol    : 'https://example.com/protocol',
+        protocolPath: 'note',
+        dateCreated : '2026-08-11T00:00:00.000Z',
+        author      : 'did:dht:alice',
+      }],
+    });
+
+    await expect(fetchActivity({} as never, 'did:dht:alice', 5)).resolves.toEqual([{
+      id           : 'record-1',
+      protocol     : 'https://example.com/protocol',
+      protocolPath : 'note',
+      schema       : undefined,
+      dataFormat   : undefined,
+      dateCreated  : '2026-08-11T00:00:00.000Z',
+      author       : 'did:dht:alice',
+      published    : undefined,
+    }]);
+    expect(mocks.activityQuery).toHaveBeenCalledWith({
+      filter     : {},
+      dateSort   : 'createdDescending',
+      pagination : { limit: 5 },
+    });
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
+
+  it('closes the Enbox facade when a raw read fails', async () => {
+    mocks.activityQuery.mockRejectedValue(new Error('query failed'));
+
+    await expect(fetchActivity({} as never, 'did:dht:alice')).rejects.toThrow('query failed');
+    expect(mocks.close).toHaveBeenCalledOnce();
   });
 });
 

@@ -8,13 +8,17 @@ import { runEnboxPromise } from '../effect/runtime';
 import { IDENTITY_SYNC_PROTOCOLS, installProtocolsEffect } from '../protocols';
 
 const mocks = vi.hoisted(() => ({
+  close: vi.fn(),
   ensureReady: vi.fn(async () => {}),
 }));
 
-vi.mock('@enbox/api', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@enbox/api')>(),
+vi.mock('@enbox/browser', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@enbox/browser')>(),
   Enbox: vi.fn(function Enbox() {
-    return { protocols: { ensureReady: mocks.ensureReady } };
+    return {
+      close     : mocks.close,
+      protocols : { ensureReady: mocks.ensureReady },
+    };
   }),
 }));
 
@@ -33,5 +37,6 @@ describe('wallet protocol manifest', () => {
     expect(options.application.protocols.map(({ protocol }) => protocol.definition.protocol))
       .toEqual(IDENTITY_SYNC_PROTOCOLS);
     expect(options.application.protocols.at(-1)?.permissions).toEqual(['read']);
+    expect(mocks.close).toHaveBeenCalledOnce();
   });
 });

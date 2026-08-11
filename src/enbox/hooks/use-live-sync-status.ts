@@ -1,4 +1,4 @@
-import type { ReplicationLinkSnapshot, RemoteSyncStatus, SyncEvent } from '@enbox/agent';
+import type { SyncEvent, SyncIdentityStatus } from '@enbox/agent';
 
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -10,23 +10,17 @@ const STATUS_EVENT_COALESCE_MS = 500;
 const STATUS_SAFETY_REFRESH_MS = 5 * 60_000;
 
 /**
- * Reads live-sync health and link progress, refreshing from sync events rather
- * than polling the local stores every few seconds. The infrequent safety
- * refresh covers durable state changes that do not have a dedicated event.
+ * Reads one identity's live-sync status, refreshing from scoped sync events.
+ * The infrequent safety read also covers mutations made by another browser
+ * context, whose engine-local health events are not delivered to this tab.
  */
 export function useLiveSyncStatus(did: string) {
   const agent = useAgent();
   const queryClient = useQueryClient();
 
-  const remotes = useQuery<RemoteSyncStatus[]>({
-    queryKey       : queryKeys.identities.syncRemotes(did),
-    queryFn        : async () => agent.sync.getRemoteSyncStatus(did),
-    enabled        : !!did,
-    refetchInterval: STATUS_SAFETY_REFRESH_MS,
-  });
-  const links = useQuery<ReplicationLinkSnapshot[]>({
-    queryKey       : queryKeys.identities.syncLinks(did),
-    queryFn        : async () => agent.sync.getReplicationLinks(did),
+  const status = useQuery<SyncIdentityStatus>({
+    queryKey       : queryKeys.identities.syncStatus(did),
+    queryFn        : async () => agent.sync.getIdentitySyncStatus(did),
     enabled        : !!did,
     refetchInterval: STATUS_SAFETY_REFRESH_MS,
   });
@@ -36,10 +30,7 @@ export function useLiveSyncStatus(did: string) {
 
     const flush = (): void => {
       refreshTimer = undefined;
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.identities.syncRemotes(did) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.identities.syncLinks(did) }),
-      ]);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.identities.syncStatus(did) });
     };
 
     const unsubscribe = agent.sync.on((event: SyncEvent): void => {
@@ -57,7 +48,7 @@ export function useLiveSyncStatus(did: string) {
     };
   }, [agent, did, queryClient]);
 
-  return { links, remotes };
+  return status;
 }
 
 export function useRetryRemoteSync(did: string) {
@@ -68,11 +59,8 @@ export function useRetryRemoteSync(did: string) {
     mutationFn: async (remoteEndpoint: string) => {
       await agent.sync.retryRemoteNow(did, remoteEndpoint);
     },
-    onSuccess: async () => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: queryKeys.identities.syncRemotes(did) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.identities.syncLinks(did) }),
-      ]);
-    },
+    onSuccess: async () => queryClient.invalidateQueries({
+      queryKey: queryKeys.identities.syncStatus(did),
+    }),
   });
 }

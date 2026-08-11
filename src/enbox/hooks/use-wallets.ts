@@ -13,7 +13,7 @@ import type { WalletData } from '@enbox/protocols';
 
 import { useMemo } from 'react';
 
-import { Enbox } from '@enbox/api';
+import { Enbox } from '@enbox/browser';
 import { ConnectProtocol } from '@enbox/protocols';
 
 import { useAuthStore } from '../../stores/auth-store';
@@ -36,14 +36,23 @@ export function useWallets(did: string | undefined): UseWalletsResult {
     if (agent === null || did === undefined) {
       return null;
     }
-    return async () => {
-      const enbox = new Enbox({ agent, connectedDid: did });
-      return enbox
-        .using(ConnectProtocol)
-        .records.observe('wallet', {
-          materialize : true,
-          pagination  : { limit: WALLET_PAGE_LIMIT },
-        });
+    return async (signal: AbortSignal) => {
+      const enbox = new Enbox({ agent, connectedDid: did, signal });
+      const closeEnbox = (): void => enbox.close();
+      signal.addEventListener('abort', closeEnbox, { once: true });
+      try {
+        return await enbox
+          .using(ConnectProtocol)
+          .records.observe('wallet', {
+            materialize : true,
+            pagination  : { limit: WALLET_PAGE_LIMIT },
+            signal,
+          });
+      } catch (error) {
+        signal.removeEventListener('abort', closeEnbox);
+        closeEnbox();
+        throw error;
+      }
     };
   }, [agent, did]);
 

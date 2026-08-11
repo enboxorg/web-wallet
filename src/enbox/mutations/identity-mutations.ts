@@ -7,13 +7,14 @@
  *
  * SYNC POLICY: We do NOT manually manage sync (stopSync/startSync).
  * The SDK manages sync automatically. We only:
- * - Register new identity DIDs for sync
+ * - Set sync options for new identity DIDs
  * - Register DIDs as DWN tenants
  * - Install protocols locally before writing records
  */
 
+import type { Enbox } from '@enbox/browser';
+
 import { Effect } from 'effect';
-import { Enbox } from '@enbox/api';
 import {
   ProfileProtocol,
   ConnectProtocol,
@@ -29,6 +30,7 @@ import {
   IdentityPublishError,
   sdkError,
 } from '../effect/errors';
+import { withEnboxEffect } from '../effect/enbox-effect';
 import { CurrentAgent, enboxLiveLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
 import { runIdentitySetupSingleFlight } from '../effect/keyed-single-flight';
@@ -36,10 +38,9 @@ import { normalizeProfileImageBlob } from '@/lib/profile-images';
 import {
   validatePortableOwnerIdentity,
 } from '@/features/connect/portable-owner-identity';
-import { clearCachedProfileImagesEffect } from '../effect/profile-image-cache';
 import { publishWalletEvent } from '../effect/wallet-events';
 
-function registerIdentityForSyncEffect(did: string) {
+function setIdentitySyncOptionsEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     yield* Effect.tryPromise({
@@ -47,12 +48,12 @@ function registerIdentityForSyncEffect(did: string) {
         runIdentitySetupSingleFlight(
           agent,
           did,
-          () => agent.sync.registerIdentity({
+          () => agent.sync.setIdentityOptions({
             did,
             options: { protocols: IDENTITY_SYNC_PROTOCOLS },
           }),
         ),
-      catch: sdkError('sync.registerIdentity'),
+      catch: sdkError('sync.setIdentityOptions'),
     }).pipe(Effect.catchAll(() => Effect.void));
   });
 }
@@ -82,8 +83,8 @@ function deleteLocalIdentityEffect(did: string) {
     const agent = yield* CurrentAgent;
 
     yield* Effect.tryPromise({
-      try: () => agent.sync.unregisterIdentity(did),
-      catch: sdkError('sync.unregisterIdentity'),
+      try: () => agent.sync.removeIdentity(did),
+      catch: sdkError('sync.removeIdentity'),
     }).pipe(Effect.catchAll(() => Effect.void));
 
     yield* Effect.tryPromise({
@@ -108,16 +109,6 @@ function rollbackLocalIdentityEffect(did: string, cause: unknown) {
   );
 }
 
-function createEnboxEffect(did: string) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    return yield* Effect.try({
-      try: () => new Enbox({ agent, connectedDid: did }),
-      catch: sdkError('enbox.create'),
-    });
-  });
-}
-
 function createProfileApi(enbox: Enbox) {
   return enbox.using(ProfileProtocol);
 }
@@ -125,8 +116,7 @@ function createProfileApi(enbox: Enbox) {
 type ProfileApi = ReturnType<typeof createProfileApi>;
 
 function createWalletRecordBestEffortEffect(did: string, warningPrefix: string) {
-  return Effect.gen(function* () {
-    const enbox = yield* createEnboxEffect(did);
+  return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
     const connect = enbox.using(ConnectProtocol);
     const { records: existingWallets } = yield* Effect.tryPromise({
       try: () => connect.records.query('wallet'),
@@ -142,7 +132,7 @@ function createWalletRecordBestEffortEffect(did: string, warningPrefix: string) 
         catch: sdkError('connect.wallet.create'),
       });
     }
-  }).pipe(
+  })).pipe(
     Effect.catchAll((err) =>
       Effect.sync(() => {
         console.warn(warningPrefix, err);
@@ -303,7 +293,7 @@ export function createIdentityEffect(params: CreateIdentityParams) {
     return yield* Effect.gen(function* () {
       // 2. Register identity as DWN tenant on remote endpoints.
       //    Must happen before sync registration — with live sync active,
-      //    registerIdentity hot-adds a subscription that requires the DID
+      //    setIdentityOptions hot-adds a subscription that requires the DID
       //    to be a recognised tenant on the remote DWN.
       yield* ensureRegistrationEffect(dwnEndpoints, [did]);
 
@@ -312,51 +302,51 @@ export function createIdentityEffect(params: CreateIdentityParams) {
       yield* installProtocolsEffect(did);
 
       // 4. Register identity DID for sync after protocol bootstrap is complete.
-      yield* registerIdentityForSyncEffect(did);
+      yield* setIdentitySyncOptionsEffect(did);
 
       // 5. Set profile social data
-      const enbox = yield* createEnboxEffect(did);
-      const api = createProfileApi(enbox);
+      return yield* withEnboxEffect(did, (enbox) => Effect.gen(function* () {
+        const api = createProfileApi(enbox);
+        const socialData = {
+          displayName: params.displayName,
+          ...(params.tagline && { tagline: params.tagline }),
+          ...(params.bio && { bio: params.bio }),
+        };
 
-      const socialData = {
-        displayName: params.displayName,
-        ...(params.tagline && { tagline: params.tagline }),
-        ...(params.bio && { bio: params.bio }),
-      };
+        const profileRecord = yield* Effect.tryPromise({
+          try: () => api.records.set('profile', {
+            data      : socialData,
+            published : true,
+          }),
+          catch: sdkError('profile.set'),
+        });
+        const profileContextId = profileRecord.contextId;
 
-      const profileRecord = yield* Effect.tryPromise({
-        try: () => api.records.set('profile', {
-          data      : socialData,
-          published : true,
-        }),
-        catch: sdkError('profile.set'),
-      });
-      const profileContextId = profileRecord.contextId;
+        // 6. Set avatar if provided
+        if (params.avatar) {
+          yield* setProfileImageEffect(api, profileContextId, 'avatar', params.avatar, 'Avatar image');
+        }
 
-      // 6. Set avatar if provided
-      if (params.avatar) {
-        yield* setProfileImageEffect(api, profileContextId, 'avatar', params.avatar, 'Avatar image');
-      }
+        // 7. Set hero if provided
+        if (params.hero) {
+          yield* setProfileImageEffect(api, profileContextId, 'hero', params.hero, 'Banner image');
+        }
 
-      // 7. Set hero if provided
-      if (params.hero) {
-        yield* setProfileImageEffect(api, profileContextId, 'hero', params.hero, 'Banner image');
-      }
+        // 8. Create wallet record
+        yield* createWalletRecordBestEffortEffect(did, 'Failed to create wallet record:');
 
-      // 8. Create wallet record
-      yield* createWalletRecordBestEffortEffect(did, 'Failed to create wallet record:');
+        yield* publishWalletEvent({ _tag: 'identity.created', did });
+        yield* publishWalletEvent({
+          _tag     : 'identity.profile.updated',
+          did,
+          avatar   : params.avatar !== undefined,
+          hero     : params.hero !== undefined,
+          metadata : true,
+          timestamp: Date.now(),
+        });
 
-      yield* publishWalletEvent({ _tag: 'identity.created', did });
-      yield* publishWalletEvent({
-        _tag     : 'identity.profile.updated',
-        did,
-        avatar   : params.avatar !== undefined,
-        hero     : params.hero !== undefined,
-        metadata : true,
-        timestamp: Date.now(),
-      });
-
-      return identity;
+        return identity;
+      }));
     }).pipe(
       Effect.mapError((cause) => new PublishedIdentitySetupError(identity, cause)),
     );
@@ -402,67 +392,67 @@ export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams)
       });
     }
 
-    const enbox = yield* createEnboxEffect(params.did);
-    const api = createProfileApi(enbox);
+    return yield* withEnboxEffect(params.did, (enbox) => Effect.gen(function* () {
+      const api = createProfileApi(enbox);
+      const socialData = {
+        displayName: params.displayName,
+        ...(params.tagline !== undefined && { tagline: params.tagline }),
+        ...(params.bio !== undefined && { bio: params.bio }),
+      };
 
-    const socialData = {
-      displayName: params.displayName,
-      ...(params.tagline !== undefined && { tagline: params.tagline }),
-      ...(params.bio !== undefined && { bio: params.bio }),
-    };
+      const profileRecord = yield* Effect.tryPromise({
+        try: () => api.records.set('profile', {
+          data      : socialData,
+          published : true,
+        }),
+        catch: sdkError('profile.set'),
+      });
 
-    const profileRecord = yield* Effect.tryPromise({
-      try: () => api.records.set('profile', {
-        data      : socialData,
-        published : true,
-      }),
-      catch: sdkError('profile.set'),
-    });
+      const contextId = profileRecord.contextId;
 
-    const contextId = profileRecord.contextId;
-
-    if (params.avatar !== undefined) {
-      if (params.avatar) {
-        yield* setProfileImageEffect(api, contextId, 'avatar', params.avatar, 'Avatar image');
-      } else {
-        const existing = yield* Effect.tryPromise({
-          try: () => readProfileImage(api, contextId, 'avatar'),
-          catch: sdkError('profile.avatar.get'),
-        });
-        if (existing) {
-          yield* Effect.tryPromise({
-            try: () => existing.delete(),
-            catch: sdkError('profile.avatar.delete'),
+      if (params.avatar !== undefined) {
+        if (params.avatar) {
+          yield* setProfileImageEffect(api, contextId, 'avatar', params.avatar, 'Avatar image');
+        } else {
+          const existing = yield* Effect.tryPromise({
+            try: () => readProfileImage(api, contextId, 'avatar'),
+            catch: sdkError('profile.avatar.get'),
           });
+          if (existing) {
+            yield* Effect.tryPromise({
+              try: () => existing.delete(),
+              catch: sdkError('profile.avatar.delete'),
+            });
+          }
         }
       }
-    }
 
-    if (params.hero !== undefined) {
-      if (params.hero) {
-        yield* setProfileImageEffect(api, contextId, 'hero', params.hero, 'Banner image');
-      } else {
-        const existing = yield* Effect.tryPromise({
-          try: () => readProfileImage(api, contextId, 'hero'),
-          catch: sdkError('profile.hero.get'),
-        });
-        if (existing) {
-          yield* Effect.tryPromise({
-            try: () => existing.delete(),
-            catch: sdkError('profile.hero.delete'),
+      if (params.hero !== undefined) {
+        if (params.hero) {
+          yield* setProfileImageEffect(api, contextId, 'hero', params.hero, 'Banner image');
+        } else {
+          const existing = yield* Effect.tryPromise({
+            try: () => readProfileImage(api, contextId, 'hero'),
+            catch: sdkError('profile.hero.get'),
           });
+          if (existing) {
+            yield* Effect.tryPromise({
+              try: () => existing.delete(),
+              catch: sdkError('profile.hero.delete'),
+            });
+          }
         }
       }
-    }
 
-    yield* publishWalletEvent({
-      _tag     : 'identity.profile.updated',
-      did      : params.did,
-      avatar   : params.avatar !== undefined,
-      hero     : params.hero !== undefined,
-      metadata : true,
-      timestamp: Date.now(),
-    });
+      yield* publishWalletEvent({
+        _tag     : 'identity.profile.updated',
+        did      : params.did,
+        avatar   : params.avatar !== undefined,
+        hero     : params.hero !== undefined,
+        metadata : true,
+        timestamp: Date.now(),
+      });
+    }));
   });
 }
 
@@ -482,8 +472,8 @@ export function deleteIdentityEffect(did: string) {
     yield* getRequiredIdentityEffect(did);
 
     yield* Effect.tryPromise({
-      try: () => agent.sync.unregisterIdentity(did),
-      catch: sdkError('sync.unregisterIdentity'),
+      try: () => agent.sync.removeIdentity(did),
+      catch: sdkError('sync.removeIdentity'),
     }).pipe(Effect.catchAll(() => Effect.void));
 
     yield* Effect.tryPromise({
@@ -496,7 +486,6 @@ export function deleteIdentityEffect(did: string) {
       catch: sdkError('did.delete'),
     });
 
-    yield* clearCachedProfileImagesEffect(did);
     yield* publishWalletEvent({ _tag: 'identity.deleted', did });
   });
 }
@@ -573,7 +562,7 @@ export function importIdentityEffect(
       );
 
       // Register for sync
-      yield* registerIdentityForSyncEffect(did);
+      yield* setIdentitySyncOptionsEffect(did);
 
       // Create wallet record
       yield* createWalletRecordBestEffortEffect(

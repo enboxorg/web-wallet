@@ -37,8 +37,7 @@ function createAgent(existingOptions: Record<string, unknown> = {}) {
   return {
     sync: {
       getIdentityOptions: vi.fn(async (did: string) => existingOptions[did]),
-      registerIdentity: vi.fn(),
-      updateIdentityOptions: vi.fn(),
+      setIdentityOptions: vi.fn(),
       sync: vi.fn(),
     },
   };
@@ -58,7 +57,7 @@ describe('reconcileIdentitySync', () => {
     const result = await reconcileIdentitySync(agent, [identity]);
 
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
-    expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
+    expect(agent.sync.setIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:new',
       options: { protocols: desiredProtocols },
     });
@@ -75,8 +74,7 @@ describe('reconcileIdentitySync', () => {
 
     const result = await reconcileIdentitySync(agent, [identity]);
 
-    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
-    expect(agent.sync.updateIdentityOptions).toHaveBeenCalledWith({
+    expect(agent.sync.setIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:existing',
       options: { protocols: desiredProtocols },
     });
@@ -94,8 +92,7 @@ describe('reconcileIdentitySync', () => {
     const result = await reconcileIdentitySync(agent, [identity]);
 
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
-    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
-    expect(agent.sync.updateIdentityOptions).not.toHaveBeenCalled();
+    expect(agent.sync.setIdentityOptions).not.toHaveBeenCalled();
     expect(agent.sync.sync).not.toHaveBeenCalled();
     expect(mocks.installProtocols).toHaveBeenCalledWith('did:dht:known');
     expect(result.changedDids).toEqual([]);
@@ -113,13 +110,13 @@ describe('reconcileIdentitySync', () => {
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(mocks.installProtocols).not.toHaveBeenCalled();
     expect(agent.sync.getIdentityOptions).not.toHaveBeenCalled();
-    expect(agent.sync.registerIdentity).not.toHaveBeenCalled();
+    expect(agent.sync.setIdentityOptions).not.toHaveBeenCalled();
   });
 
   it('continues reconciling later identities when one sync registration fails', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const agent = createAgent();
-    agent.sync.registerIdentity.mockImplementation(async ({ did }: { did: string }) => {
+    agent.sync.setIdentityOptions.mockImplementation(async ({ did }: { did: string }) => {
       if (did === 'did:dht:bad') {
         throw new Error('sync registration failed');
       }
@@ -134,7 +131,7 @@ describe('reconcileIdentitySync', () => {
       changedDids: ['did:dht:good'],
       failedDids: ['did:dht:bad'],
     });
-    expect(agent.sync.registerIdentity).toHaveBeenCalledWith({
+    expect(agent.sync.setIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:good',
       options: { protocols: desiredProtocols },
     });

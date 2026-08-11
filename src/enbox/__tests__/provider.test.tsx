@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { EnboxAuthProvider, useEnboxAuth } from '../provider';
-import { SESSION_PIN_KEY, SESSION_VAULT_PASSWORD_KEY, STORAGE_KEYS } from '@/lib/constants';
+import { SESSION_VAULT_PASSWORD_KEY, STORAGE_KEYS } from '@/lib/constants';
 import { useAuthStore } from '@/stores/auth-store';
 
 const TEST_PHRASE =
@@ -19,10 +19,18 @@ const authMocks = vi.hoisted(() => ({
   create: vi.fn(),
 }));
 
-vi.mock('@enbox/auth', () => ({
+const queryMocks = vi.hoisted(() => ({
+  invalidateQueries: vi.fn(),
+}));
+
+vi.mock('@enbox/browser', () => ({
   AuthManager: {
     create: authMocks.create,
   },
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => queryMocks,
 }));
 
 vi.mock('../protocols', () => ({
@@ -89,6 +97,7 @@ function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
     lock: vi.fn(async () => {
       isLocked = true;
     }),
+    shutdown: vi.fn(async () => {}),
     setLocked: (locked: boolean) => {
       isLocked = locked;
     },
@@ -110,10 +119,13 @@ function ConnectButton() {
   );
 }
 
-function SafeConnectButton() {
+function SafeConnectButton({ onSettled }: { onSettled?: () => void }) {
   const { connect } = useEnboxAuth();
   return (
-    <button type="button" onClick={() => void connect('1234', TEST_ENDPOINTS).catch(() => {})}>
+    <button
+      type="button"
+      onClick={() => void connect('1234', TEST_ENDPOINTS).catch(() => {}).finally(onSettled)}
+    >
       Connect safely
     </button>
   );
@@ -170,10 +182,8 @@ describe('EnboxAuthProvider restore flow', () => {
     vi.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
-    localStorage.setItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT, 'http://127.0.0.1:55500');
     useAuthStore.setState({
       initialized: false,
-      unlocked: false,
       firstTime: false,
       agent: null,
     });
@@ -234,7 +244,7 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('preserved');
 
     releaseConnect();
-    await waitFor(() => expect(useAuthStore.getState().unlocked).toBe(true));
+    await waitFor(() => expect(useAuthStore.getState().agent).toBe(auth.agent));
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
   });
 
@@ -293,6 +303,82 @@ describe('EnboxAuthProvider restore flow', () => {
       }));
       expect(options).not.toHaveProperty('sync');
     });
+  });
+
+  it('shuts down its AuthManager when unmounted', async () => {
+    const auth = createAuth();
+    authMocks.create.mockResolvedValue(auth);
+
+    const view = render(
+      <EnboxAuthProvider>
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    useAuthStore.getState().setUnlocked(auth.agent);
+    view.unmount();
+
+    await waitFor(() => expect(auth.shutdown).toHaveBeenCalledOnce());
+    expect(useAuthStore.getState()).toMatchObject({
+      agent       : null,
+      initialized : false,
+    });
+  });
+
+  it('does not publish an agent after unmount during endpoint resolution', async () => {
+    const user = userEvent.setup();
+    const auth = createAuth();
+    const settled = vi.fn();
+    let resolveEndpoints!: (endpoints: string[]) => void;
+    auth.agent.identity.getDwnEndpoints.mockReturnValue(new Promise((resolve) => {
+      resolveEndpoints = resolve;
+    }));
+    authMocks.create.mockResolvedValue(auth);
+
+    const view = render(
+      <EnboxAuthProvider>
+        <SafeConnectButton onSettled={settled} />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    await user.click(screen.getByRole('button', { name: 'Connect safely' }));
+    await waitFor(() => expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledOnce());
+
+    view.unmount();
+    resolveEndpoints(TEST_ENDPOINTS);
+
+    await waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(auth.shutdown).toHaveBeenCalledOnce();
+    expect(auth.lock).not.toHaveBeenCalled();
+    expect(useAuthStore.getState()).toMatchObject({
+      agent       : null,
+      initialized : false,
+    });
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+    expect(queryMocks.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it('shuts down an AuthManager that finishes creating after unmount', async () => {
+    const auth = createAuth();
+    let resolveCreate!: (value: typeof auth) => void;
+    authMocks.create.mockReturnValue(new Promise((resolve) => {
+      resolveCreate = resolve;
+    }));
+
+    const view = render(
+      <EnboxAuthProvider>
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalledOnce());
+    view.unmount();
+    resolveCreate(auth);
+
+    await waitFor(() => expect(auth.shutdown).toHaveBeenCalledOnce());
+    expect(useAuthStore.getState().initialized).toBe(false);
   });
 
   it('shows the validated cache without treating it as endpoint authority', async () => {
@@ -361,7 +447,7 @@ describe('EnboxAuthProvider restore flow', () => {
     await waitFor(() => expect(auth.lock).toHaveBeenCalledOnce());
     expect(auth.isLocked).toBe(true);
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
-    expect(useAuthStore.getState().unlocked).toBe(false);
+    expect(useAuthStore.getState().agent).toBeNull();
   });
 
   it('passes selected recovery endpoints to the SDK and retains signed agent defaults', async () => {
@@ -410,7 +496,7 @@ describe('EnboxAuthProvider restore flow', () => {
     await user.click(screen.getByRole('button', { name: 'Connect safely' }));
 
     await waitFor(() => expect(auth.lock).toHaveBeenCalledOnce());
-    expect(useAuthStore.getState().unlocked).toBe(false);
+    expect(useAuthStore.getState().agent).toBeNull();
   });
 
   it('uses restoreFromPhrase instead of generic connect', async () => {
@@ -442,7 +528,6 @@ describe('EnboxAuthProvider restore flow', () => {
     const auth = createAuth('locked');
     authMocks.create.mockResolvedValue(auth);
     localStorage.setItem('enbox:enbox:auth:previouslyConnected', 'true');
-    sessionStorage.setItem(SESSION_PIN_KEY, '0000');
 
     render(
       <EnboxAuthProvider>
@@ -461,8 +546,6 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(auth.agent.vault._store.clear).not.toHaveBeenCalled();
     expect(auth.agent.secrets._store.clear).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
-    expect(sessionStorage.getItem(SESSION_PIN_KEY)).toBeNull();
     expect(localStorage.getItem('enbox:enbox:auth:previouslyConnected')).toBe('true');
-    expect(localStorage.getItem(STORAGE_KEYS.LOCAL_DWN_ENDPOINT)).toBe('http://127.0.0.1:55500');
   });
 });

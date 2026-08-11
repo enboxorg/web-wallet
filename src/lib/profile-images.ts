@@ -31,7 +31,7 @@ export function normalizeProfileImageBlob(blob: Blob, label = 'Image'): Blob {
     throw new Error(profileImageTypeError(label));
   }
 
-  // `@enbox/api` accepts Blob but not File. Slicing preserves bytes and MIME
+  // `@enbox/browser` accepts Blob but not File. Slicing preserves bytes and MIME
   // while stripping File-specific runtime type information.
   return blob.slice(0, blob.size, normalizedType);
 }

@@ -10,6 +10,7 @@ import { Sparkles, Pencil, Camera, ImagePlus } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
 import { Avatar } from '@/components/ui/Avatar';
+import { useBlobUrl } from '@/enbox/hooks/use-blob-url';
 import { generateName, generateAvatar, generateBanner } from '@/lib/identity-generators';
 import { cn } from '@/lib/utils';
 
@@ -33,9 +34,9 @@ export function SetupIdentityStep({
 }: SetupIdentityStepProps) {
   const [displayName, setDisplayName] = useState('');
   const [avatarBlob, setAvatarBlob] = useState<Blob | null>(null);
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
   const [bannerBlob, setBannerBlob] = useState<Blob | null>(null);
-  const [bannerUrl, setBannerUrl] = useState<string | null>(null);
+  const avatarUrl = useBlobUrl(avatarBlob);
+  const bannerUrl = useBlobUrl(bannerBlob);
 
   const avatarInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -50,13 +51,11 @@ export function SetupIdentityStep({
     generateAvatar(seed).then((blob) => {
       if (cancelled) return;
       setAvatarBlob(blob);
-      setAvatarUrl(URL.createObjectURL(blob));
     });
 
     generateBanner(seed).then((blob) => {
       if (cancelled) return;
       setBannerBlob(blob);
-      setBannerUrl(URL.createObjectURL(blob));
     });
 
     return () => {
@@ -64,31 +63,19 @@ export function SetupIdentityStep({
     };
   }, [seed]);
 
-  // Clean up object URLs
-  useEffect(() => {
-    return () => {
-      if (avatarUrl) URL.revokeObjectURL(avatarUrl);
-      if (bannerUrl) URL.revokeObjectURL(bannerUrl);
-    };
-  }, [avatarUrl, bannerUrl]);
-
   const handleAvatarFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (avatarUrl) URL.revokeObjectURL(avatarUrl);
     setAvatarBlob(file);
-    setAvatarUrl(URL.createObjectURL(file));
     e.target.value = '';
-  }, [avatarUrl]);
+  }, []);
 
   const handleBannerFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (bannerUrl) URL.revokeObjectURL(bannerUrl);
     setBannerBlob(file);
-    setBannerUrl(URL.createObjectURL(file));
     e.target.value = '';
-  }, [bannerUrl]);
+  }, []);
 
   const handleCreate = useCallback(() => {
     if (!avatarBlob || !bannerBlob) return;

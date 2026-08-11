@@ -7,10 +7,10 @@ import tailwindcss from '@tailwindcss/vite';
 import nodePolyfills from 'vite-plugin-node-stdlib-browser';
 import { VitePWA } from 'vite-plugin-pwa';
 
-const authPkg = JSON.parse(fs.readFileSync(
-  path.resolve(__dirname, 'node_modules/@enbox/auth/package.json'), 'utf-8',
+const browserPkg = JSON.parse(fs.readFileSync(
+  path.resolve(__dirname, 'node_modules/@enbox/browser/package.json'), 'utf-8',
 ));
-const authVersion = authPkg.version as string;
+const browserVersion = browserPkg.version as string;
 
 /**
  * Replaces `__PRODUCT_BRAND__` in index.html with the product brand slug so
@@ -39,8 +39,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     define: {
-      global                        : 'globalThis',
-      '__ENBOX_AUTH_SDK_VERSION__'   : JSON.stringify(authVersion),
+      global                          : 'globalThis',
+      '__ENBOX_BROWSER_SDK_VERSION__' : JSON.stringify(browserVersion),
     },
     plugins: [
       tailwindcss(),

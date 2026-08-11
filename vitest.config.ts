@@ -8,7 +8,7 @@ export default defineConfig({
     },
   },
   define: {
-    '__ENBOX_AUTH_SDK_VERSION__': JSON.stringify('test'),
+    '__ENBOX_BROWSER_SDK_VERSION__': JSON.stringify('test'),
   },
   test: {
     globals: true,

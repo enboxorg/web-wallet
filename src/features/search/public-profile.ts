@@ -1,54 +1,52 @@
-import type { ProfileReader } from '@enbox/protocols';
+import type { ProfileReader, ProfileSnapshot, PublicProfile } from '@enbox/browser';
 
-import { Effect } from 'effect';
-import { Enbox } from '@enbox/api';
-import { createProfileReader } from '@enbox/protocols';
+import { createProfileReader, Enbox } from '@enbox/browser';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
-import { sdkError } from '@/enbox/effect/errors';
-import { runEnboxPromise } from '@/enbox/effect/runtime';
-import type { IdentityProfile } from '@/enbox/types';
-
-/** Lazily-created reader so repeated lookups share its bounded retry/cache layer. */
 let _profileReader: ProfileReader | undefined;
 
-function getProfileReaderEffect() {
-  return Effect.sync(() => {
-    if (!_profileReader) {
-      _profileReader = createProfileReader(Enbox.anonymous());
-    }
-    return _profileReader;
-  });
+function getProfileReader(): ProfileReader {
+  _profileReader ??= createProfileReader(Enbox.anonymous(), { images: 'eager' });
+  return _profileReader;
 }
 
-function objectUrl(blob: Blob | undefined): string | undefined {
-  return blob ? URL.createObjectURL(blob) : undefined;
-}
-
-/** Fetch a public profile via anonymous DWN reads. */
-export function fetchPublicProfileEffect(did: string) {
-  return Effect.gen(function* () {
-    const reader = yield* getProfileReaderEffect();
-    const { profile, images } = yield* Effect.tryPromise({
-      try: async () => ({
-        profile: await reader.get(did),
-        images: await reader.loadImages(did),
-      }),
-      catch: sdkError('publicProfile.read'),
-    });
+/** Bind one public profile directly to the reader's reference-stable snapshot. */
+export function usePublicProfile(did: string, enabled: boolean) {
+  const subscribe = useCallback((listener: () => void): (() => void) => {
+    return enabled
+      ? getProfileReader().watch([did], listener)
+      : (): void => {};
+  }, [did, enabled]);
+  const getSnapshot = useCallback((): ProfileSnapshot | undefined => {
+    return enabled ? getProfileReader().getSnapshot(did) : undefined;
+  }, [did, enabled]);
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useMemo(() => {
+    const isError = snapshot?.status === 'error';
+    const isLoading = enabled && (
+      snapshot === undefined || snapshot.status === 'loading'
+    );
+    const failure = snapshot?.profile.failure;
+    const data: PublicProfile | undefined = snapshot === undefined || isError || isLoading
+      ? undefined
+      : {
+        did         : snapshot.did,
+        displayName : snapshot.profile.value?.displayName ?? '',
+        tagline     : snapshot.profile.value?.tagline,
+        bio         : snapshot.profile.value?.bio,
+        avatar      : snapshot.avatar.value,
+        hero        : snapshot.hero.value,
+      };
 
     return {
-      did         : profile.did,
-      displayName : profile.displayName ?? '',
-      tagline     : profile.tagline,
-      bio         : profile.bio,
-      avatarUrl   : objectUrl(images.avatar),
-      heroUrl     : objectUrl(images.hero),
-    } satisfies IdentityProfile;
-  });
-}
-
-export function fetchPublicProfile(did: string): Promise<IdentityProfile> {
-  return runEnboxPromise(fetchPublicProfileEffect(did));
+      data,
+      error: failure === undefined
+        ? undefined
+        : new Error(failure.message, { cause: failure.cause }),
+      isError,
+      isLoading,
+    };
+  }, [enabled, snapshot]);
 }
 
 export function resetPublicProfileClientForTests(): void {

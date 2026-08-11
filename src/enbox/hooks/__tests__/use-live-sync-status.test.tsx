@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import type { SyncEvent } from '@enbox/agent';
+import type { SyncEvent, SyncIdentityStatus } from '@enbox/agent';
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
@@ -20,29 +20,41 @@ afterEach(() => {
 });
 
 describe('useLiveSyncStatus', () => {
-  it('coalesces matching sync events into remote and link refreshes', async () => {
+  it('coalesces matching sync events into one identity-status refresh', async () => {
     let listener: ((event: SyncEvent) => void) | undefined;
     const unsubscribe = vi.fn();
-    const getRemoteSyncStatus = vi.fn(async () => [{
-      tenantDid               : 'did:dht:alice',
-      remoteEndpoint          : 'https://dwn.example',
-      state                   : 'healthy',
-      connectivity            : 'online',
-      quotaBlockedMessageCount: 0,
-      failedMessageCount      : 0,
-    }]);
-    const getReplicationLinks = vi.fn(async () => [{
-      tenantDid      : 'did:dht:alice',
-      remoteEndpoint : 'https://dwn.example',
-      scope          : { kind: 'full' },
-      status         : 'live',
-      connectivity   : 'online',
-    }]);
+    const getIdentitySyncStatus = vi.fn(async (): Promise<SyncIdentityStatus> => ({
+      registration : undefined,
+      health       : {
+        connectivity            : 'online',
+        failedMessageCount      : 0,
+        degradedLinkCount       : 0,
+        quotaBlockedMessageCount: 0,
+        syncHealthy             : true,
+      },
+      connectivity : 'online',
+      currentness  : 'caught-up',
+      remotes      : [{
+        tenantDid               : 'did:dht:alice',
+        remoteEndpoint          : 'https://dwn.example',
+        state                   : 'healthy',
+        connectivity            : 'online',
+        quotaBlockedMessageCount: 0,
+        failedMessageCount      : 0,
+      }],
+      links: [{
+        tenantDid      : 'did:dht:alice',
+        remoteEndpoint : 'https://dwn.example',
+        scope          : { kind: 'full' },
+        status         : 'live',
+        connectivity   : 'online',
+        isPullCurrent  : true,
+      }],
+    }));
     useAuthStore.setState({
       agent: {
         sync: {
-          getRemoteSyncStatus,
-          getReplicationLinks,
+          getIdentitySyncStatus,
           on: vi.fn((nextListener: (event: SyncEvent) => void) => {
             listener = nextListener;
             return unsubscribe;
@@ -60,8 +72,8 @@ describe('useLiveSyncStatus', () => {
     );
 
     await waitFor(() => {
-      expect(result.current.remotes.data).toHaveLength(1);
-      expect(result.current.links.data).toHaveLength(1);
+      expect(result.current.data?.remotes).toHaveLength(1);
+      expect(result.current.data?.links).toHaveLength(1);
     });
 
     act(() => {
@@ -87,17 +99,11 @@ describe('useLiveSyncStatus', () => {
       listener?.(event);
     });
 
-    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledTimes(2), { timeout: 1_500 });
+    await waitFor(() => expect(invalidateSpy).toHaveBeenCalledOnce(), { timeout: 1_500 });
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.syncRemotes('did:dht:alice'),
+      queryKey: queryKeys.identities.syncStatus('did:dht:alice'),
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.syncLinks('did:dht:alice'),
-    });
-    await waitFor(() => {
-      expect(getRemoteSyncStatus).toHaveBeenCalledTimes(2);
-      expect(getReplicationLinks).toHaveBeenCalledTimes(2);
-    });
+    await waitFor(() => expect(getIdentitySyncStatus).toHaveBeenCalledTimes(2));
 
     act(() => {
       listener?.({
@@ -111,10 +117,10 @@ describe('useLiveSyncStatus', () => {
     unmount();
     await new Promise((resolve) => setTimeout(resolve, 600));
     expect(unsubscribe).toHaveBeenCalledOnce();
-    expect(invalidateSpy).toHaveBeenCalledTimes(2);
+    expect(invalidateSpy).toHaveBeenCalledOnce();
   });
 
-  it('refreshes remote and link state after a targeted retry', async () => {
+  it('refreshes identity sync status after a targeted retry', async () => {
     const retryRemoteNow = vi.fn(async () => undefined);
     useAuthStore.setState({ agent: { sync: { retryRemoteNow } } });
     const queryClient = new QueryClient({
@@ -132,11 +138,9 @@ describe('useLiveSyncStatus', () => {
 
     expect(retryRemoteNow).toHaveBeenCalledWith('did:dht:alice', 'https://dwn.example');
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.syncRemotes('did:dht:alice'),
+      queryKey: queryKeys.identities.syncStatus('did:dht:alice'),
     });
-    expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.syncLinks('did:dht:alice'),
-    });
+    expect(invalidateSpy).toHaveBeenCalledOnce();
     unmount();
   });
 });

@@ -18,12 +18,11 @@ import { Effect } from 'effect';
 
 import {
   defineApplicationManifest,
-  Enbox,
   ServiceConfigProtocol,
-} from '@enbox/api';
+} from '@enbox/browser';
 import { ConnectProtocol, ProfileProtocol } from '@enbox/protocols';
 import { sdkError } from './effect/errors';
-import { CurrentAgent } from './effect/services';
+import { withEnboxEffect } from './effect/enbox-effect';
 
 const WALLET_APPLICATION = defineApplicationManifest({
   protocols: [
@@ -38,16 +37,13 @@ export const IDENTITY_SYNC_PROTOCOLS = WALLET_APPLICATION.protocols.map(
 ) as [string, ...string[]];
 
 export function installProtocolsEffect(did: string) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    const enbox = new Enbox({ agent, connectedDid: did });
-
-    yield* Effect.tryPromise({
+  return withEnboxEffect(did, (enbox) =>
+    Effect.tryPromise({
       try: () => enbox.protocols.ensureReady({
         application : WALLET_APPLICATION,
         publish     : false,
       }),
       catch: sdkError('protocols.ensureReady'),
-    });
-  });
+    })
+  );
 }

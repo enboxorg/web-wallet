@@ -101,10 +101,22 @@ vi.mock('@/enbox/hooks/use-agent', () => {
   const agent = {
     agentDid: { uri: 'did:dht:agent' },
     sync    : {
-      getRemoteSyncStatus: vi.fn(async () => []),
-      getReplicationLinks: vi.fn(async () => []),
-      on                 : vi.fn(() => () => {}),
-      retryRemoteNow     : vi.fn(async () => undefined),
+      getIdentitySyncStatus: vi.fn(async () => ({
+        registration : undefined,
+        health       : {
+          connectivity            : 'unknown',
+          failedMessageCount      : 0,
+          degradedLinkCount       : 0,
+          quotaBlockedMessageCount: 0,
+          syncHealthy             : true,
+        },
+        connectivity : 'unknown',
+        currentness  : 'syncing',
+        remotes      : [],
+        links        : [],
+      })),
+      on             : vi.fn(() => () => {}),
+      retryRemoteNow : vi.fn(async () => undefined),
     },
   };
 

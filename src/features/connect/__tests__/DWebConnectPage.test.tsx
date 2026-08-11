@@ -91,7 +91,16 @@ vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
   publishWalletEvent: mocks.publishWalletEvent,
 }));
 
-vi.mock('@enbox/browser', () => ({
+vi.mock('@enbox/browser', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@enbox/browser')>(),
+  createBlobUrlPool: () => ({
+    acquire : vi.fn(() => ({
+      url          : 'blob:test',
+      release      : vi.fn(),
+      releaseAfter : vi.fn(),
+    })),
+    dispose : vi.fn(),
+  }),
   WalletPostMessageTransport: {
     create: mocks.createTransport,
   },
@@ -176,7 +185,6 @@ describe('DWebConnectPage', () => {
     vi.clearAllMocks();
     useAuthStore.setState({
       initialized: true,
-      unlocked: true,
       firstTime: false,
       agent: mocks.agent as never,
     });
@@ -494,7 +502,6 @@ describe('DWebConnectPage', () => {
   it('fails closed instead of waiting forever when a refresh reaches a locked wallet', async () => {
     useAuthStore.setState({
       initialized : true,
-      unlocked    : false,
       firstTime   : true,
       agent       : null,
     });

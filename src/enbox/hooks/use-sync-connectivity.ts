@@ -1,6 +1,6 @@
 import type { SyncConnectivityState, SyncEvent } from '@enbox/agent';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useSyncExternalStore } from 'react';
 
 import { useAuthStore } from '@/stores/auth-store';
 
@@ -12,22 +12,17 @@ import { useAuthStore } from '@/stores/auth-store';
  */
 export function useSyncConnectivity(): SyncConnectivityState {
   const agent = useAuthStore((state) => state.agent);
-  const [connectivity, setConnectivity] = useState<SyncConnectivityState>('unknown');
-
-  useEffect(() => {
-    if (!agent) {
-      setConnectivity('unknown');
-      return;
-    }
-
-    setConnectivity(agent.sync.connectivityState);
-
-    return agent.sync.on((event: SyncEvent) => {
+  const subscribe = useCallback((listener: () => void): (() => void) => {
+    return agent?.sync.on((event: SyncEvent): void => {
       if (event.type === 'link:connectivity-change') {
-        setConnectivity(agent.sync.connectivityState);
+        listener();
       }
-    });
+    }) ?? (() => {});
   }, [agent]);
+  const getSnapshot = useCallback(
+    (): SyncConnectivityState => agent?.sync.connectivityState ?? 'unknown',
+    [agent],
+  );
 
-  return connectivity;
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }

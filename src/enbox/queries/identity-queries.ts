@@ -5,43 +5,33 @@
  * directly inside TanStack Query `queryFn` callbacks.
  */
 
+import type { MaterializedRecord } from '@enbox/browser';
+
 import { Effect } from 'effect';
-import { DwnApi } from '@enbox/api/advanced';
-import { Enbox } from '@enbox/api';
 import { ProfileProtocol } from '@enbox/protocols';
 import { DwnDateSort } from '@enbox/agent';
 
-import type { EnboxAgent, IdentityProfile } from '../types';
+import type { EnboxAgent, IdentityProfileData, IdentityProfileImage } from '../types';
 import { sdkError } from '../effect/errors';
+import { withEnboxEffect } from '../effect/enbox-effect';
 import { CurrentAgent, currentAgentLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
-import {
-  clearCachedProfileImageUrlEffect,
-  getCachedProfileImageUrlEffect,
-} from '../effect/profile-image-cache';
 
 const PROFILE_MATERIALIZATION = {
   children: ['profile/avatar', 'profile/hero'],
 } as const;
 
-function createEnboxEffect(did: string) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    return yield* Effect.try({
-      try: () => new Enbox({ agent, connectedDid: did }),
-      catch: sdkError('enbox.create'),
-    });
-  });
-}
+function profileImageData(
+  image: MaterializedRecord<Blob> | undefined,
+): IdentityProfileImage | undefined {
+  if (image === undefined) {
+    return undefined;
+  }
 
-function createDwnApiEffect(did: string) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    return yield* Effect.try({
-      try: () => new DwnApi({ agent, connectedDid: did }),
-      catch: sdkError('dwnApi.create'),
-    });
-  });
+  return {
+    blob : image.value,
+    key  : image.record.dataCid ?? `${image.record.id}|${image.record.timestamp}`,
+  };
 }
 
 // ── Identity list ──────────────────────────────────────────────────
@@ -67,17 +57,11 @@ export function fetchIdentitiesEffect() {
 
 // ── Profile ────────────────────────────────────────────────────────
 
-/**
- * Resolve the full profile for a DID: social data, avatar blob URL,
- * and hero blob URL.
- *
- * Profile image object URLs are cached by DID and image record so React can
- * safely render across query refetches without losing the underlying blob.
- */
+/** Resolve the full profile and raw image data for a DID. */
 export async function fetchProfile(
   agent: EnboxAgent,
   did: string,
-): Promise<IdentityProfile> {
+): Promise<IdentityProfileData> {
   return runEnboxPromise(
     fetchProfileEffect(did).pipe(
       Effect.provide(currentAgentLayer(agent)),
@@ -86,8 +70,7 @@ export async function fetchProfile(
 }
 
 export function fetchProfileEffect(did: string) {
-  return Effect.gen(function* () {
-    const enbox = yield* createEnboxEffect(did);
+  return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
     const profileApi = enbox.using(ProfileProtocol);
 
     const profile = yield* Effect.tryPromise({
@@ -99,36 +82,17 @@ export function fetchProfileEffect(did: string) {
     });
     const hasProfileRecord = profile !== undefined;
     const socialData = profile?.value ?? { displayName: '' };
-    let avatarUrl: string | undefined;
-    let heroUrl: string | undefined;
-
-    if (profile) {
-      if (profile.children.avatar) {
-        avatarUrl = yield* getCachedProfileImageUrlEffect(did, 'avatar', profile.children.avatar);
-      } else {
-        yield* clearCachedProfileImageUrlEffect(did, 'avatar');
-      }
-
-      if (profile.children.hero) {
-        heroUrl = yield* getCachedProfileImageUrlEffect(did, 'hero', profile.children.hero);
-      } else {
-        yield* clearCachedProfileImageUrlEffect(did, 'hero');
-      }
-    } else {
-      yield* clearCachedProfileImageUrlEffect(did, 'avatar');
-      yield* clearCachedProfileImageUrlEffect(did, 'hero');
-    }
 
     return {
       did,
       displayName: socialData.displayName,
       tagline: socialData.tagline,
       bio: socialData.bio,
-      avatarUrl,
-      heroUrl,
+      avatar: profileImageData(profile?.children.avatar),
+      hero: profileImageData(profile?.children.hero),
       hasProfileRecord,
     };
-  });
+  }));
 }
 
 // ── Protocols ──────────────────────────────────────────────────────
@@ -143,10 +107,9 @@ export async function fetchProtocols(agent: EnboxAgent, did: string) {
 }
 
 export function fetchProtocolsEffect(did: string) {
-  return Effect.gen(function* () {
-    const dwn = yield* createDwnApiEffect(did);
+  return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
     const { protocols } = yield* Effect.tryPromise({
-      try: async () => dwn.protocols.query({}),
+      try: async () => enbox.dwn.protocols.query({}),
       catch: sdkError('protocols.query'),
     });
     return protocols.map((p) => ({
@@ -154,7 +117,7 @@ export function fetchProtocolsEffect(did: string) {
       published: (p.definition.published ?? false) as boolean,
       definition: p.definition,
     }));
-  });
+  }));
 }
 
 // ── Permissions ────────────────────────────────────────────────────
@@ -233,12 +196,10 @@ export async function fetchActivity(
 }
 
 export function fetchActivityEffect(did: string, limit = 50) {
-  return Effect.gen(function* () {
-    const dwn = yield* createDwnApiEffect(did);
-
+  return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
     const { records } = yield* Effect.tryPromise({
       try: async () =>
-        dwn.records.query({
+        enbox.dwn.records.query({
           filter: {},
           dateSort: DwnDateSort.CreatedDescending,
           pagination: { limit },
@@ -256,5 +217,5 @@ export function fetchActivityEffect(did: string, limit = 50) {
       author: r.author,
       published: r.published,
     }));
-  });
+  }));
 }

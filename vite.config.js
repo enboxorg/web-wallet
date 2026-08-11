@@ -6,8 +6,8 @@ import svgr from 'vite-plugin-svgr';
 import tailwindcss from '@tailwindcss/vite';
 import nodePolyfills from 'vite-plugin-node-stdlib-browser';
 import { VitePWA } from 'vite-plugin-pwa';
-var authPkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'node_modules/@enbox/auth/package.json'), 'utf-8'));
-var authVersion = authPkg.version;
+var browserPkg = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'node_modules/@enbox/browser/package.json'), 'utf-8'));
+var browserVersion = browserPkg.version;
 /**
  * Replaces `__PRODUCT_BRAND__` in index.html with the product brand slug so
  * static brand assets (e.g. the Open Graph image) follow the product accent:
@@ -35,7 +35,7 @@ export default defineConfig(function (_a) {
         },
         define: {
             global: 'globalThis',
-            '__ENBOX_AUTH_SDK_VERSION__': JSON.stringify(authVersion),
+            '__ENBOX_BROWSER_SDK_VERSION__': JSON.stringify(browserVersion),
         },
         plugins: [
             tailwindcss(),
