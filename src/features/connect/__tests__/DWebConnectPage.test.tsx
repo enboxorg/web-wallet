@@ -91,7 +91,8 @@ vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
   publishWalletEvent: mocks.publishWalletEvent,
 }));
 
-vi.mock('@enbox/browser', () => ({
+vi.mock('@enbox/browser', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@enbox/browser')>(),
   createBlobUrlPool: () => ({
     acquire : vi.fn(() => ({
       url          : 'blob:test',
