@@ -195,6 +195,26 @@ describe('connect refresh detection', () => {
     }));
   });
 
+  it('reports changed permissions when only part of the latest bundle was revoked', () => {
+    const activeGrant = grant({ id: 'active-grant' });
+    const revokedGrant = grant({ id: 'revoked-grant' });
+    const detection = detectConnectRefresh(
+      { requestType: 'refresh', delegateDid: 'did:jwk:delegate' },
+      ownerPermissions(
+        'did:dht:alice',
+        [activeGrant, revokedGrant],
+        ['revoked-grant'],
+      ),
+      NOW,
+    );
+
+    expect(detection).toEqual(expect.objectContaining({
+      matchState     : 'matched',
+      pinnedOwnerDid : 'did:dht:alice',
+      status         : 'permissions-changed',
+    }));
+  });
+
   it('blocks renewal when the expected provider differs from the session owner', () => {
     const detection = detectConnectRefresh(
       {

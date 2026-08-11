@@ -89,6 +89,24 @@ describe('RenewSessionDisplay', () => {
     expect(screen.getByText('Previous access was revoked.')).toBeVisible();
   });
 
+  it('distinguishes a partially revoked permission bundle from a revoked session', () => {
+    render(
+      <RenewSessionDisplay
+        appName="Example App"
+        permissions={permissions}
+        detection={{ ...matchedDetection, status: 'permissions-changed' }}
+        lookupPending={false}
+        lookupError={false}
+        ownerLabel="Alice"
+        ownerSupported
+      />,
+    );
+
+    expect(screen.getByText('Permissions changed')).toBeVisible();
+    expect(screen.getByText('Some previous permissions were revoked.')).toBeVisible();
+    expect(screen.queryByText('Previous access was revoked.')).not.toBeInTheDocument();
+  });
+
   it('explains when a refresh names a different previous profile', () => {
     render(
       <RenewSessionDisplay

@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@/test-utils';
@@ -23,6 +24,7 @@ const mocks = vi.hoisted(() => ({
   connectVault: vi.fn(),
   autoCreateIdentity: vi.fn(),
   preparePasskeyVaultPassword: vi.fn(),
+  publishWalletEvent: vi.fn(),
   storePasskeyCredential: vi.fn(),
   allPermissions: [] as any[],
   allPermissionsPending: false,
@@ -92,6 +94,11 @@ vi.mock('@/enbox/hooks/use-permissions', () => ({
     isLoading : false,
     isError   : false,
   }),
+}));
+
+vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@/enbox/effect/wallet-events')>(),
+  publishWalletEvent: mocks.publishWalletEvent,
 }));
 
 vi.mock('../connect-kernel', async (importOriginal) => ({
@@ -202,6 +209,7 @@ describe('AppConnectPage', () => {
     mocks.scannerHasCamera.mockResolvedValue(false);
     mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
     mocks.queryProtocolSetupStatus.mockResolvedValue('install');
+    mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.waitForRelayCompletion.mockResolvedValue(false);
     mocks.allPermissions = [];
     mocks.allPermissionsPending = false;
@@ -287,11 +295,34 @@ describe('AppConnectPage', () => {
       60 * 60,
       mocks.agent,
     );
+    expect(mocks.publishWalletEvent).toHaveBeenCalledWith({
+      _tag         : 'connect.approved',
+      origin       : 'meshd-cli',
+      connectedDid : 'did:dht:alice',
+    });
 
     // PIN phase is shown after a successful submission.
     expect(await screen.findByText('1234')).toBeInTheDocument();
     expect(mocks.waitForRelayCompletion).toHaveBeenCalledWith(connectRequest);
     expect(screen.queryByText('Connected!')).not.toBeInTheDocument();
+  });
+
+  it('keeps a completed relay approval successful when freshness publication fails', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('event bus unavailable')));
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(mocks.publishWalletEvent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/event bus unavailable/i)).not.toBeInTheDocument();
   });
 
   it('shows the PIN before completion and flips to confirmed when the app acknowledges', async () => {

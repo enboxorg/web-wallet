@@ -58,6 +58,8 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
+import { runEnboxPromise } from '@/enbox/effect/runtime';
+import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
 import { PIN_LENGTH } from '@/lib/constants';
 import { autoCreateIdentity } from '@/lib/auto-identity';
@@ -469,6 +471,20 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         sessionDurationSeconds,
         liveAgent,
       );
+
+      // Permission-query freshness is secondary to a completed approval. The
+      // same event is emitted by the popup flow, while local DWN subscriptions
+      // remain an additional best-effort invalidation path.
+      try {
+        void runEnboxPromise(publishWalletEvent({
+          _tag         : 'connect.approved',
+          origin       : connectionRequest.clientMetadata?.origin ?? connectionRequest.appName,
+          connectedDid : approveAsDid,
+        })).catch((err: unknown) => console.warn('Relay connect approval event failed:', err));
+      } catch (err) {
+        console.warn('Relay connect approval event failed:', err);
+      }
+
       if (!mountedRef.current) return;
       setPhase('pin');
 

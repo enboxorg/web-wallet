@@ -42,6 +42,8 @@ function statusDisplay(status: ConnectRefreshDetection['status']): {
       return { label: 'Expiring soon', className: 'bg-warning/10 text-warning' };
     case 'expired':
       return { label: 'Expired', className: 'bg-surface-3 text-text-ghost' };
+    case 'permissions-changed':
+      return { label: 'Permissions changed', className: 'bg-warning/10 text-warning' };
     case 'revoked':
       return { label: 'Revoked', className: 'bg-error/10 text-error' };
     default:
@@ -143,6 +145,8 @@ export function RenewSessionDisplay({
               </span>
               {detection.status === 'revoked' ? (
                 <span>Previous access was revoked.</span>
+              ) : detection.status === 'permissions-changed' ? (
+                <span>Some previous permissions were revoked.</span>
               ) : detection.expiresAt && (
                 <span>
                   Previous access {detection.status === 'expired' ? 'expired' : 'expires'}{' '}

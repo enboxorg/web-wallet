@@ -10,7 +10,13 @@ import { getConnectRequestType } from './connect-request-type';
 export const CONNECT_REFRESH_MAX_EXPIRING_SOON_SECONDS = 60 * 60;
 export const CONNECT_REFRESH_EXPIRING_SOON_LIFETIME_RATIO = 0.1;
 
-export type ConnectRefreshSessionStatus = 'active' | 'expiring-soon' | 'expired' | 'revoked' | 'none';
+export type ConnectRefreshSessionStatus =
+  | 'active'
+  | 'expiring-soon'
+  | 'expired'
+  | 'permissions-changed'
+  | 'revoked'
+  | 'none';
 export type ConnectRefreshMatchState =
   | 'not-applicable'
   | 'matched'
@@ -156,19 +162,23 @@ export function detectConnectRefresh(
   const expiresAt = latestBundle.dateExpires;
   const owner = ownerPermissions.find(({ ownerDid }) => ownerDid === latest.ownerDid);
   const revokedGrantIds = new Set(owner?.revokedGrantIds ?? []);
-  const isRevoked = latestBundle.grants.some((grant) => revokedGrantIds.has(grant.id));
+  const revokedGrantCount = latestBundle.grants.filter((grant) => revokedGrantIds.has(grant.id)).length;
+  const isFullyRevoked = revokedGrantCount > 0 && revokedGrantCount === latestBundle.grants.length;
+  const hasChangedPermissions = revokedGrantCount > 0 && !isFullyRevoked;
 
   return {
     isRefresh     : true,
     matchState    : 'matched',
-    status        : isRevoked
+    status        : isFullyRevoked
       ? 'revoked'
-      : getSessionStatus(
-        expiresAt,
-        latestBundle.session.createdAt,
-        now,
-        expiringSoonThresholdSeconds,
-      ),
+      : hasChangedPermissions
+        ? 'permissions-changed'
+        : getSessionStatus(
+          expiresAt,
+          latestBundle.session.createdAt,
+          now,
+          expiringSoonThresholdSeconds,
+        ),
     matchedSession: latest.session,
     pinnedOwnerDid: latest.ownerDid,
     expiresAt,
