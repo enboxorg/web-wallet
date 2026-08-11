@@ -20,6 +20,7 @@ const subKeyFactories = [
   'profile',
   'protocols',
   'permissions',
+  'permissionHistory',
   'activity',
   'dwnEndpoints',
   'syncStatus',

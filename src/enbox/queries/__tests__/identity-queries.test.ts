@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   fetchActivity,
+  fetchPermissionHistory,
   fetchPermissions,
   fetchProfile,
   fetchProtocols,
@@ -199,6 +200,22 @@ describe('fetchPermissions', () => {
       author       : 'did:dht:alice',
       target       : 'did:dht:alice',
       checkRevoked : true,
+    });
+    expect(permissions).toEqual([grant]);
+  });
+
+  it('fetches isolated grant history without filtering revocations', async () => {
+    const grant = { id: 'revoked-grant-1' };
+    const fetchGrants = vi.fn(async () => [{ grant, message: {} }]);
+
+    const permissions = await fetchPermissionHistory({
+      permissions: { fetchGrants },
+    } as never, 'did:dht:alice');
+
+    expect(fetchGrants).toHaveBeenCalledWith({
+      author       : 'did:dht:alice',
+      target       : 'did:dht:alice',
+      checkRevoked : false,
     });
     expect(permissions).toEqual([grant]);
   });

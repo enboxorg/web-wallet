@@ -58,6 +58,7 @@ function invalidateWalletEventQueries(
 
     case 'connect.approved':
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(event.connectedDid) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(event.connectedDid) });
       break;
 
     case 'connect.denied':
@@ -174,6 +175,9 @@ export function useSyncQueryInvalidation(
       for (const [dids, queryKey] of invalidations) {
         for (const did of dids) {
           queryClient.invalidateQueries({ queryKey: queryKey(did) });
+          if (queryKey === queryKeys.identities.permissions) {
+            queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(did) });
+          }
         }
         dids.clear();
       }

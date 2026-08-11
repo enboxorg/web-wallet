@@ -26,6 +26,7 @@ interface RenewSessionDisplayProps {
   protocolSetupStatuses?: Record<string, ProtocolSetupStatus>;
   requesterLabel?: string;
   sessionDurationSeconds?: number;
+  onSessionDurationSecondsChange?: (seconds: number) => void;
   onRetryProtocolSetup?: () => void;
   now?: Date;
 }
@@ -41,6 +42,10 @@ function statusDisplay(status: ConnectRefreshDetection['status']): {
       return { label: 'Expiring soon', className: 'bg-warning/10 text-warning' };
     case 'expired':
       return { label: 'Expired', className: 'bg-surface-3 text-text-ghost' };
+    case 'permissions-changed':
+      return { label: 'Permissions changed', className: 'bg-warning/10 text-warning' };
+    case 'revoked':
+      return { label: 'Revoked', className: 'bg-error/10 text-error' };
     default:
       return { label: 'Not found', className: 'bg-error/10 text-error' };
   }
@@ -57,6 +62,7 @@ export function RenewSessionDisplay({
   protocolSetupStatuses,
   requesterLabel,
   sessionDurationSeconds,
+  onSessionDurationSecondsChange,
   onRetryProtocolSetup,
   now = new Date(),
 }: RenewSessionDisplayProps) {
@@ -106,6 +112,13 @@ export function RenewSessionDisplay({
           </div>
         )}
 
+        {!lookupPending && !lookupError && detection.matchState === 'profile-mismatch' && (
+          <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+            This request names a different profile than the previous session. Renewal is blocked.
+          </div>
+        )}
+
         {!lookupPending && !lookupError && matched && !ownerSupported && (
           <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -130,7 +143,11 @@ export function RenewSessionDisplay({
               <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${display.className}`}>
                 {display.label}
               </span>
-              {detection.expiresAt && (
+              {detection.status === 'revoked' ? (
+                <span>Previous access was revoked.</span>
+              ) : detection.status === 'permissions-changed' ? (
+                <span>Some previous permissions were revoked.</span>
+              ) : detection.expiresAt && (
                 <span>
                   Previous access {detection.status === 'expired' ? 'expired' : 'expires'}{' '}
                   {formatRelativeExpiry(detection.expiresAt, now)}
@@ -147,6 +164,7 @@ export function RenewSessionDisplay({
         existingSessionCount={0}
         requesterLabel={requesterLabel}
         sessionDurationSeconds={sessionDurationSeconds}
+        onSessionDurationSecondsChange={onSessionDurationSecondsChange}
         onRetryProtocolSetup={onRetryProtocolSetup}
         renewal
       />

@@ -49,7 +49,7 @@ describe('RenewSessionDisplay', () => {
     expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Alice');
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Previous access expires in 2 hours')).toBeInTheDocument();
-    expect(screen.getByText('New access period: 24 hours')).toBeInTheDocument();
+    expect(screen.getByText('New access period: 1 hour')).toBeInTheDocument();
     expect(screen.getByText('View a custom data type')).toBeVisible();
     expect(screen.queryByText(/separate session/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
@@ -70,5 +70,61 @@ describe('RenewSessionDisplay', () => {
     );
 
     expect(screen.getByText('Protocol setup conflict')).toBeVisible();
+  });
+
+  it('explains when the exact previous session was revoked', () => {
+    render(
+      <RenewSessionDisplay
+        appName="Example App"
+        permissions={permissions}
+        detection={{ ...matchedDetection, status: 'revoked' }}
+        lookupPending={false}
+        lookupError={false}
+        ownerLabel="Alice"
+        ownerSupported
+      />,
+    );
+
+    expect(screen.getByText('Revoked')).toBeVisible();
+    expect(screen.getByText('Previous access was revoked.')).toBeVisible();
+  });
+
+  it('distinguishes a partially revoked permission bundle from a revoked session', () => {
+    render(
+      <RenewSessionDisplay
+        appName="Example App"
+        permissions={permissions}
+        detection={{ ...matchedDetection, status: 'permissions-changed' }}
+        lookupPending={false}
+        lookupError={false}
+        ownerLabel="Alice"
+        ownerSupported
+      />,
+    );
+
+    expect(screen.getByText('Permissions changed')).toBeVisible();
+    expect(screen.getByText('Some previous permissions were revoked.')).toBeVisible();
+    expect(screen.queryByText('Previous access was revoked.')).not.toBeInTheDocument();
+  });
+
+  it('explains when a refresh names a different previous profile', () => {
+    render(
+      <RenewSessionDisplay
+        appName="Example App"
+        permissions={permissions}
+        detection={{
+          isRefresh : true,
+          matchState: 'profile-mismatch',
+          status    : 'none',
+        }}
+        lookupPending={false}
+        lookupError={false}
+        ownerSupported={false}
+      />,
+    );
+
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'This request names a different profile than the previous session. Renewal is blocked.',
+    );
   });
 });

@@ -252,6 +252,7 @@ describe('DWebConnectPage', () => {
       'did:dht:alice',
       expect.objectContaining({ clientDid: 'did:jwk:dapp-client', state: 'state-1' }),
       'https://app.example',
+      60 * 60,
       mocks.agent,
     );
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
@@ -260,6 +261,29 @@ describe('DWebConnectPage', () => {
       origin       : 'https://app.example',
       connectedDid : 'did:dht:alice',
     }));
+  });
+
+  it.each([
+    ['7 days', 7 * 24 * 60 * 60],
+    ['30 days', 30 * 24 * 60 * 60],
+  ])('passes the wallet-selected %s duration to popup approval', async (label, seconds) => {
+    render(<DWebConnectPage />);
+
+    fireEvent.change(await screen.findByLabelText('Access duration'), {
+      target: { value: String(seconds) },
+    });
+    expect(screen.getByText(`Access lasts ${label}`)).toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
+      'did:dht:alice',
+      expect.objectContaining({ clientDid: 'did:jwk:dapp-client', state: 'state-1' }),
+      'https://app.example',
+      seconds,
+      mocks.agent,
+    ));
   });
 
   it('replaces an overridable protocol only after opt-in and confirmation', async () => {
@@ -437,7 +461,7 @@ describe('DWebConnectPage', () => {
     expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
   });
 
-  it('renews through the popup with the exact delegate owner', async () => {
+  it('renews a fully revoked popup session with the exact delegate owner', async () => {
     const delegateDid = 'did:jwk:existing-delegate';
     const refreshRequest = {
       ...connectRequest(),
@@ -456,10 +480,11 @@ describe('DWebConnectPage', () => {
       { did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } },
     ];
     mocks.allPermissions = [
-      { ownerDid: 'did:dht:alice', permissions: [] },
+      { ownerDid: 'did:dht:alice', permissions: [], revokedGrantIds: [] },
       {
-        ownerDid    : 'did:dht:bob',
-        permissions : [existingSessionGrant('did:dht:bob', delegateDid)],
+        ownerDid        : 'did:dht:bob',
+        permissions     : [existingSessionGrant('did:dht:bob', delegateDid)],
+        revokedGrantIds : ['grant-did:dht:bob'],
       },
     ];
     mocks.transport.awaitRequest.mockResolvedValue(refreshRequest);
@@ -469,6 +494,8 @@ describe('DWebConnectPage', () => {
     const renew = await screen.findByRole('button', { name: 'Renew access' });
     expect(screen.getByText('Renewing connection')).toBeInTheDocument();
     expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Bob');
+    expect(screen.getByText('Revoked')).toBeVisible();
+    expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
     expect(screen.getByText('View a custom data type')).toBeVisible();
     await waitFor(() => expect(renew).toBeEnabled());
@@ -479,9 +506,32 @@ describe('DWebConnectPage', () => {
         'did:dht:bob',
         refreshRequest,
         'https://app.example',
+        60 * 60,
         mocks.agent,
       );
     });
+  });
+
+  it('blocks popup renewal when the request names a different previous profile', async () => {
+    const delegateDid = 'did:jwk:existing-delegate';
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:alice',
+      permissions     : [existingSessionGrant('did:dht:alice', delegateDid)],
+      revokedGrantIds : [],
+    }];
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      requestType         : 'refresh',
+      delegateDid,
+      expectedProviderDid : 'did:dht:bob',
+    });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText(/names a different profile than the previous session/i))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
   });
 
   it('blocks popup renewal when the delegate has no local session match', async () => {

@@ -7,14 +7,27 @@ import {
 
 import { getConnectRequestType } from './connect-request-type';
 
-export const CONNECT_REFRESH_EXPIRING_SOON_SECONDS = 60 * 60;
+export const CONNECT_REFRESH_MAX_EXPIRING_SOON_SECONDS = 60 * 60;
+export const CONNECT_REFRESH_EXPIRING_SOON_LIFETIME_RATIO = 0.1;
 
-export type ConnectRefreshSessionStatus = 'active' | 'expiring-soon' | 'expired' | 'none';
-export type ConnectRefreshMatchState = 'not-applicable' | 'matched' | 'not-found' | 'ambiguous';
+export type ConnectRefreshSessionStatus =
+  | 'active'
+  | 'expiring-soon'
+  | 'expired'
+  | 'permissions-changed'
+  | 'revoked'
+  | 'none';
+export type ConnectRefreshMatchState =
+  | 'not-applicable'
+  | 'matched'
+  | 'not-found'
+  | 'ambiguous'
+  | 'profile-mismatch';
 
 export interface OwnerPermissionGrants {
   ownerDid: string;
   permissions: DwnPermissionGrant[];
+  revokedGrantIds: string[];
 }
 
 export interface ConnectRefreshDetection {
@@ -32,6 +45,12 @@ function getDelegateDid(request: unknown): string | undefined {
   return typeof delegateDid === 'string' ? delegateDid : undefined;
 }
 
+function getExpectedProviderDid(request: unknown): string | undefined {
+  if (typeof request !== 'object' || request === null) return undefined;
+  const expectedProviderDid = (request as { expectedProviderDid?: unknown }).expectedProviderDid;
+  return typeof expectedProviderDid === 'string' ? expectedProviderDid : undefined;
+}
+
 function timestamp(value: string | undefined): number {
   if (value === undefined) return 0;
   const time = new Date(value).getTime();
@@ -40,12 +59,22 @@ function timestamp(value: string | undefined): number {
 
 function getSessionStatus(
   expiresAt: string,
+  createdAt: string,
   now: Date,
-  expiringSoonThresholdSeconds: number,
+  expiringSoonThresholdSeconds: number | undefined,
 ): ConnectRefreshSessionStatus {
-  const secondsUntilExpiry = (timestamp(expiresAt) - now.getTime()) / 1000;
+  const expiresAtMs = timestamp(expiresAt);
+  const createdAtMs = timestamp(createdAt);
+  const secondsUntilExpiry = (expiresAtMs - now.getTime()) / 1000;
+  const effectiveThreshold = expiringSoonThresholdSeconds ?? Math.min(
+    CONNECT_REFRESH_MAX_EXPIRING_SOON_SECONDS,
+    Math.max(
+      0,
+      (expiresAtMs - createdAtMs) / 1000 * CONNECT_REFRESH_EXPIRING_SOON_LIFETIME_RATIO,
+    ),
+  );
   if (secondsUntilExpiry <= 0) return 'expired';
-  if (secondsUntilExpiry <= expiringSoonThresholdSeconds) return 'expiring-soon';
+  if (secondsUntilExpiry <= effectiveThreshold) return 'expiring-soon';
   return 'active';
 }
 
@@ -60,7 +89,7 @@ export function detectConnectRefresh(
   request: unknown,
   ownerPermissions: OwnerPermissionGrants[],
   now: Date = new Date(),
-  expiringSoonThresholdSeconds = CONNECT_REFRESH_EXPIRING_SOON_SECONDS,
+  expiringSoonThresholdSeconds?: number,
 ): ConnectRefreshDetection {
   if (getConnectRequestType(request) !== 'refresh') {
     return {
@@ -71,6 +100,7 @@ export function detectConnectRefresh(
   }
 
   const delegateDid = getDelegateDid(request);
+  const expectedProviderDid = getExpectedProviderDid(request);
   if (delegateDid === undefined) {
     return {
       isRefresh : true,
@@ -105,7 +135,18 @@ export function detectConnectRefresh(
     };
   }
 
-  const owners = new Set(candidates.map((candidate) => candidate.ownerDid));
+  const matchingCandidates = expectedProviderDid === undefined
+    ? candidates
+    : candidates.filter((candidate) => candidate.ownerDid === expectedProviderDid);
+  if (expectedProviderDid !== undefined && matchingCandidates.length === 0) {
+    return {
+      isRefresh : true,
+      matchState: 'profile-mismatch',
+      status    : 'none',
+    };
+  }
+
+  const owners = new Set(matchingCandidates.map((candidate) => candidate.ownerDid));
   if (owners.size !== 1) {
     return {
       isRefresh : true,
@@ -114,15 +155,30 @@ export function detectConnectRefresh(
     };
   }
 
-  const latest = [...candidates].sort((left, right) =>
+  const latest = [...matchingCandidates].sort((left, right) =>
     timestamp(right.session.session.createdAt) - timestamp(left.session.session.createdAt)
   )[0];
-  const expiresAt = latest.session.dateExpires;
+  const latestBundle = latest.session.bundles[0];
+  const expiresAt = latestBundle.dateExpires;
+  const owner = ownerPermissions.find(({ ownerDid }) => ownerDid === latest.ownerDid);
+  const revokedGrantIds = new Set(owner?.revokedGrantIds ?? []);
+  const revokedGrantCount = latestBundle.grants.filter((grant) => revokedGrantIds.has(grant.id)).length;
+  const isFullyRevoked = revokedGrantCount > 0 && revokedGrantCount === latestBundle.grants.length;
+  const hasChangedPermissions = revokedGrantCount > 0 && !isFullyRevoked;
 
   return {
     isRefresh     : true,
     matchState    : 'matched',
-    status        : getSessionStatus(expiresAt, now, expiringSoonThresholdSeconds),
+    status        : isFullyRevoked
+      ? 'revoked'
+      : hasChangedPermissions
+        ? 'permissions-changed'
+        : getSessionStatus(
+          expiresAt,
+          latestBundle.session.createdAt,
+          now,
+          expiringSoonThresholdSeconds,
+        ),
     matchedSession: latest.session,
     pinnedOwnerDid: latest.ownerDid,
     expiresAt,

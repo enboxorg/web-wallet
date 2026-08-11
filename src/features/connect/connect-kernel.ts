@@ -15,6 +15,10 @@ import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
 
+type ConnectRequestWithApplicationId = ConnectRequest & {
+  applicationId?: string;
+};
+
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
 }
@@ -165,6 +169,7 @@ export function approveConnectRequestEffect(
   selectedDid: string,
   request: ConnectRequest,
   pin: string,
+  approvedSessionTtlSeconds: number,
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
@@ -173,6 +178,7 @@ export function approveConnectRequestEffect(
       try: async () => {
         const approval = await executeConnectApproval({
           agent,
+          approvedSessionTtlSeconds,
           providerDid : selectedDid,
           request,
           transport   : 'relay',
@@ -203,10 +209,11 @@ export function approveConnectRequest(
   selectedDid: string,
   request: ConnectRequest,
   pin: string,
+  approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
 ): Promise<void> {
   return runEnboxPromise(
-    approveConnectRequestEffect(selectedDid, request, pin).pipe(
+    approveConnectRequestEffect(selectedDid, request, pin, approvedSessionTtlSeconds).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
@@ -247,8 +254,9 @@ export function isTrustedDappOrigin(origin: string): boolean {
  * the sealed response JWE for the page to hand to
  * `WalletPostMessageTransport.sendResponse`. The request's claimed
  * `clientMetadata.origin` is overwritten with the transport-authenticated
- * dapp origin before it is stamped into the session metadata; popup responses
- * use no PIN — the sealed channel is origin-bound end to end.
+ * dapp origin and the wallet-approved lifetime is applied before session
+ * metadata is stamped. Popup responses remain sealed against the original
+ * verified request and use no PIN — the channel is origin-bound end to end.
  *
  * Like the relay path, the non-idempotent ceremony runs without the retrying
  * network policy (see `approveConnectRequestEffect`).
@@ -257,19 +265,23 @@ export function approvePopupConnectRequestEffect(
   selectedDid: string,
   request: ConnectRequest,
   dappOrigin: string,
+  approvedSessionTtlSeconds: number,
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
+    const approvalRequest: ConnectRequestWithApplicationId = {
+      ...request,
+      applicationId  : dappOrigin,
+      clientMetadata : { ...request.clientMetadata, origin: dappOrigin },
+    };
     return yield* Effect.tryPromise({
       try: async () => {
         const approval = await executeConnectApproval({
           agent,
+          approvedSessionTtlSeconds,
           providerDid : selectedDid,
-          request     : {
-            ...request,
-            clientMetadata: { ...request.clientMetadata, origin: dappOrigin },
-          },
-          transport: 'postMessage',
+          request     : approvalRequest,
+          transport   : 'postMessage',
         });
         return ConnectProvider.sealApprovedResponse({
           request,
@@ -287,10 +299,16 @@ export function approvePopupConnectRequest(
   selectedDid: string,
   request: ConnectRequest,
   dappOrigin: string,
+  approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
 ): Promise<string> {
   return runEnboxPromise(
-    approvePopupConnectRequestEffect(selectedDid, request, dappOrigin).pipe(
+    approvePopupConnectRequestEffect(
+      selectedDid,
+      request,
+      dappOrigin,
+      approvedSessionTtlSeconds,
+    ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
