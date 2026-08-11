@@ -6,10 +6,7 @@
       "name": "@enbox/dweb-wallet",
       "dependencies": {
         "@enbox/agent": "0.8.40",
-        "@enbox/api": "0.6.79",
-        "@enbox/auth": "0.6.86",
         "@enbox/browser": "0.3.71",
-        "@enbox/common": "0.1.6",
         "@enbox/connect": "0.1.20",
         "@enbox/crypto": "0.1.9",
         "@enbox/dids": "0.1.10",

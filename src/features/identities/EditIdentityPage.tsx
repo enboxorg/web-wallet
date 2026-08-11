@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useProfile } from '@/enbox/hooks/use-profile';
 import { useDwnEndpoints } from '@/enbox/hooks/use-dwn-endpoints';
+import { useBlobUrl } from '@/enbox/hooks/use-blob-url';
 import { useUpdateIdentityProfile, useUpdateDwnEndpoints } from '@/enbox/hooks/use-identity-mutations';
 
 import { Button } from '@/components/ui/Button';
@@ -46,14 +47,16 @@ export default function EditIdentityPage() {
   const [endpointsInitialized, setEndpointsInitialized] = useState(false);
 
   // Avatar state
-  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
   const [avatarChanged, setAvatarChanged] = useState(false);
 
   // Hero/banner state
-  const [heroPreview, setHeroPreview] = useState<string | null>(null);
   const [heroFile, setHeroFile] = useState<File | null>(null);
   const [heroChanged, setHeroChanged] = useState(false);
+  const avatarFileUrl = useBlobUrl(avatarFile);
+  const heroFileUrl = useBlobUrl(heroFile);
+  const avatarPreview = avatarChanged ? avatarFileUrl : profile?.avatarUrl;
+  const heroPreview = heroChanged ? heroFileUrl : profile?.heroUrl;
 
   // Populate form when profile data loads
   useEffect(() => {
@@ -61,8 +64,6 @@ export default function EditIdentityPage() {
       setDisplayName(profile.displayName ?? '');
       setTagline(profile.tagline ?? '');
       setBio(profile.bio ?? '');
-      setAvatarPreview(profile.avatarUrl ?? null);
-      setHeroPreview(profile.heroUrl ?? null);
     }
   }, [profile]);
 
@@ -107,19 +108,16 @@ export default function EditIdentityPage() {
   function handleAvatarUpload(file: File) {
     setAvatarFile(file);
     setAvatarChanged(true);
-    setAvatarPreview(URL.createObjectURL(file));
   }
 
   function handleHeroUpload(file: File) {
     setHeroFile(file);
     setHeroChanged(true);
-    setHeroPreview(URL.createObjectURL(file));
   }
 
   function handleHeroClear() {
     setHeroFile(null);
     setHeroChanged(true);
-    setHeroPreview(null);
   }
 
   async function handleSubmit(e: FormEvent) {

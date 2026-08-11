@@ -9,7 +9,7 @@ import {
 } from '@enbox/agent';
 import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Enbox } from '@enbox/api';
+import { Enbox } from '@enbox/browser';
 import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
 import { Effect, Stream } from 'effect';
 
@@ -48,8 +48,6 @@ function invalidateWalletEventQueries(
     case 'identity.created':
     case 'identity.imported':
     case 'identity.deleted':
-    case 'identity.connected':
-    case 'identity.disconnected':
       queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
       break;
 
@@ -152,6 +150,7 @@ export function useSyncQueryInvalidation(
     const pending = createPendingInvalidations();
     const dwnRefreshRequested = new Set<string>();
     const dwnRefreshes = new Map<string, Promise<void>>();
+    const enboxFacades: Enbox[] = [];
     const messageSubscriptions: Array<{ close: () => Promise<void> }> = [];
     const removeListeners: Array<() => void> = [];
     let cancelled = false;
@@ -325,7 +324,7 @@ export function useSyncQueryInvalidation(
 
     async function subscribeIdentity(did: string, delegateDid?: string): Promise<void> {
       const syncOptions = await currentAgent.sync.getIdentityOptions(did);
-      if (delegateDid !== undefined && syncOptions === undefined) {
+      if (cancelled || (delegateDid !== undefined && syncOptions === undefined)) {
         return;
       }
       const enbox = new Enbox({
@@ -333,6 +332,7 @@ export function useSyncQueryInvalidation(
         connectedDid: did,
         ...(syncOptions?.delegateDid && { delegateDid: syncOptions.delegateDid }),
       });
+      enboxFacades.push(enbox);
 
       if (!syncOptions?.delegateDid) {
         await openSubscription(enbox, did);
@@ -392,7 +392,9 @@ export function useSyncQueryInvalidation(
       ([did, delegateDid]) => subscribeIdentity(did, delegateDid ?? undefined),
     );
     if (typeof agentDid === 'string' && agentDid.length > 0) {
-      subscriptions.push(openSubscription(new Enbox({ agent, connectedDid: agentDid }), undefined));
+      const enbox = new Enbox({ agent, connectedDid: agentDid });
+      enboxFacades.push(enbox);
+      subscriptions.push(openSubscription(enbox, undefined));
     }
     void Promise.all(subscriptions).catch((error) => {
       if (!cancelled) {
@@ -409,6 +411,9 @@ export function useSyncQueryInvalidation(
         void subscription.close().catch((error) => {
           console.warn('Unable to close message subscription:', error);
         });
+      }
+      for (const enbox of enboxFacades) {
+        enbox.close();
       }
       if (flushTimer !== undefined) {
         clearTimeout(flushTimer);

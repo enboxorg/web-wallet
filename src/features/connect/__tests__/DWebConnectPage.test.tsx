@@ -184,7 +184,6 @@ describe('DWebConnectPage', () => {
     vi.clearAllMocks();
     useAuthStore.setState({
       initialized: true,
-      unlocked: true,
       firstTime: false,
       agent: mocks.agent as never,
     });
@@ -502,7 +501,6 @@ describe('DWebConnectPage', () => {
   it('fails closed instead of waiting forever when a refresh reaches a locked wallet', async () => {
     useAuthStore.setState({
       initialized : true,
-      unlocked    : false,
       firstTime   : true,
       agent       : null,
     });

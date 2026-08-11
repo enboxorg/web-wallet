@@ -1,8 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
-import { Convert } from '@enbox/common';
 
-import { STORAGE_KEYS } from '@/lib/constants';
-import { localStorageGetEffect, localStorageRemoveEffect } from '@/lib/browser-effects';
 import type { EnboxAgent, RegistrationTokenData } from '../types';
 import type { EnboxStorageError } from './errors';
 import { storageError } from './errors';
@@ -32,6 +29,8 @@ export class RegistrationTokenStore extends Context.Tag('enbox/RegistrationToken
 >() {}
 
 export const REGISTRATION_TOKENS_SECRET_KEY = 'enbox:auth:registrationTokens';
+const textDecoder = new TextDecoder();
+const textEncoder = new TextEncoder();
 
 export function currentAgentLayer(agent: EnboxAgent) {
   return Layer.succeed(CurrentAgent, agent);
@@ -43,74 +42,23 @@ export function registrationTokenStoreLayer(agent: EnboxAgent) {
     {
       get: Effect.gen(function* () {
         const encryptedBytes = yield* Effect.tryPromise({
-          try: async () => agent.secrets.get(REGISTRATION_TOKENS_SECRET_KEY),
+          try: () => agent.secrets.get(REGISTRATION_TOKENS_SECRET_KEY),
           catch: storageError('registrationTokens.secret.get'),
         });
-        if (encryptedBytes !== undefined) {
-          const encryptedTokens = yield* decodeRegistrationTokensJsonEffect(
-            Convert.uint8Array(encryptedBytes).toString(),
-          );
-          // Temporary compatibility migration; removal is tracked in
-          // enboxorg/web-wallet#158.
-          const legacySerialized = yield* localStorageGetEffect(
-            STORAGE_KEYS.REGISTRATION_TOKENS,
-          ).pipe(
-            Effect.catchAll(() => Effect.succeed(null)),
-          );
-          if (legacySerialized === null) {
-            return encryptedTokens;
-          }
-
-          const legacyTokens = yield* decodeRegistrationTokensJsonEffect(
-            legacySerialized,
-          ).pipe(
-            Effect.catchAll(() => Effect.succeed({})),
-          );
-          const tokens = { ...legacyTokens, ...encryptedTokens };
-          const serialized = yield* encodeRegistrationTokensJsonEffect(tokens);
-          yield* Effect.tryPromise({
-            try: async () => agent.secrets.put(
-              REGISTRATION_TOKENS_SECRET_KEY,
-              Convert.string(serialized).toUint8Array(),
-            ),
-            catch: storageError('registrationTokens.secret.migrate'),
-          });
-          yield* localStorageRemoveEffect(STORAGE_KEYS.REGISTRATION_TOKENS).pipe(
-            Effect.catchAll(() => Effect.void),
-          );
-          return tokens;
-        }
-
-        const legacySerialized = yield* localStorageGetEffect(STORAGE_KEYS.REGISTRATION_TOKENS);
-        const tokens = yield* decodeRegistrationTokensJsonEffect(legacySerialized);
-        if (legacySerialized !== null) {
-          const serialized = yield* encodeRegistrationTokensJsonEffect(tokens);
-          yield* Effect.tryPromise({
-            try: async () => agent.secrets.put(
-              REGISTRATION_TOKENS_SECRET_KEY,
-              Convert.string(serialized).toUint8Array(),
-            ),
-            catch: storageError('registrationTokens.secret.migrate'),
-          });
-          yield* localStorageRemoveEffect(STORAGE_KEYS.REGISTRATION_TOKENS).pipe(
-            Effect.catchAll(() => Effect.void),
-          );
-        }
-        return tokens;
+        return yield* decodeRegistrationTokensJsonEffect(
+          encryptedBytes === undefined ? undefined : textDecoder.decode(encryptedBytes),
+        );
       }),
 
       set: (tokens) =>
         encodeRegistrationTokensJsonEffect(tokens).pipe(
           Effect.flatMap((serialized) => Effect.tryPromise({
-            try: async () => agent.secrets.put(
+            try: () => agent.secrets.put(
               REGISTRATION_TOKENS_SECRET_KEY,
-              Convert.string(serialized).toUint8Array(),
+              textEncoder.encode(serialized),
             ),
             catch: storageError('registrationTokens.secret.set'),
           })),
-          Effect.tap(() =>
-            localStorageRemoveEffect(STORAGE_KEYS.REGISTRATION_TOKENS)
-          ),
         ),
     },
   );

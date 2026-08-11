@@ -5,7 +5,6 @@ describe('auth-store', () => {
   beforeEach(() => {
     useAuthStore.setState({
       initialized: false,
-      unlocked: false,
       firstTime: false,
       agent: null,
     });
@@ -15,7 +14,6 @@ describe('auth-store', () => {
     it('starts with all values at their defaults', () => {
       const state = useAuthStore.getState();
       expect(state.initialized).toBe(false);
-      expect(state.unlocked).toBe(false);
       expect(state.firstTime).toBe(false);
       expect(state.agent).toBeNull();
     });
@@ -38,24 +36,22 @@ describe('auth-store', () => {
 
     it('does not affect other state fields', () => {
       const fakeAgent = { id: 'agent-1' };
-      useAuthStore.setState({ agent: fakeAgent, unlocked: true });
+      useAuthStore.setState({ agent: fakeAgent });
       useAuthStore.getState().setInitialized(true, true);
 
       const state = useAuthStore.getState();
       expect(state.agent).toBe(fakeAgent);
-      expect(state.unlocked).toBe(true);
     });
   });
 
   describe('setUnlocked', () => {
-    it('sets initialized=true, unlocked=true, firstTime=false, and stores the agent', () => {
+    it('sets initialized=true, firstTime=false, and stores the agent', () => {
       const fakeAgent = { id: 'agent-1' };
       useAuthStore.getState().setInitialized(true, true);
       useAuthStore.getState().setUnlocked(fakeAgent);
 
       const state = useAuthStore.getState();
       expect(state.initialized).toBe(true);
-      expect(state.unlocked).toBe(true);
       expect(state.firstTime).toBe(false);
       expect(state.agent).toBe(fakeAgent);
     });
@@ -71,13 +67,11 @@ describe('auth-store', () => {
   });
 
   describe('lock', () => {
-    it('sets unlocked=false and agent=null', () => {
+    it('sets agent=null', () => {
       useAuthStore.getState().setUnlocked({ id: 'agent' });
-      expect(useAuthStore.getState().unlocked).toBe(true);
 
       useAuthStore.getState().lock();
       const state = useAuthStore.getState();
-      expect(state.unlocked).toBe(false);
       expect(state.agent).toBeNull();
     });
 
@@ -102,18 +96,16 @@ describe('auth-store', () => {
       let state = useAuthStore.getState();
       expect(state.initialized).toBe(true);
       expect(state.firstTime).toBe(false);
-      expect(state.unlocked).toBe(false);
+      expect(state.agent).toBeNull();
 
       // Unlock
       useAuthStore.getState().setUnlocked(agent);
       state = useAuthStore.getState();
-      expect(state.unlocked).toBe(true);
       expect(state.agent).toBe(agent);
 
       // Lock
       useAuthStore.getState().lock();
       state = useAuthStore.getState();
-      expect(state.unlocked).toBe(false);
       expect(state.agent).toBeNull();
       // Initialized persists
       expect(state.initialized).toBe(true);

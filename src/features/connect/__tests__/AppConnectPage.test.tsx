@@ -196,7 +196,6 @@ describe('AppConnectPage', () => {
     mocks.authState.firstTime = false;
     useAuthStore.setState({
       initialized: true,
-      unlocked: true,
       firstTime: false,
       agent: mocks.agent as never,
     });
@@ -447,7 +446,6 @@ describe('AppConnectPage', () => {
     mocks.authState.firstTime = true;
     useAuthStore.setState({
       initialized : true,
-      unlocked    : false,
       firstTime   : true,
       agent       : null,
     });
@@ -697,7 +695,6 @@ describe('AppConnectPage', () => {
       mocks.authState.firstTime = true;
       useAuthStore.setState({
         initialized: true,
-        unlocked: false,
         firstTime: true,
         agent: null,
       });
@@ -711,7 +708,7 @@ describe('AppConnectPage', () => {
       // connect() unlocks the vault: reflect that in the store so the
       // approve flow finds the live agent right after onboarding.
       mocks.connectVault.mockImplementation(async () => {
-        useAuthStore.setState({ agent: mocks.agent as never, unlocked: true, firstTime: false });
+        useAuthStore.setState({ agent: mocks.agent as never, firstTime: false });
         return 'recovery phrase words';
       });
       mocks.autoCreateIdentity.mockResolvedValue({ did: { uri: 'did:dht:fresh' } });

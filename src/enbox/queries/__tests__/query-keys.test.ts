@@ -1,8 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 
 import { queryKeys } from '../query-keys';
-
-// ── identities.all ──────────────────────────────────────────────────
 
 describe('queryKeys.identities.all', () => {
   it('is a readonly array', () => {
@@ -17,8 +15,6 @@ describe('queryKeys.identities.all', () => {
     expect(queryKeys.identities.all).toHaveLength(1);
   });
 });
-
-// ── identities sub-keys (profile, protocols, etc.) ──────────────────
 
 const subKeyFactories = [
   'profile',
@@ -60,37 +56,5 @@ describe.each(subKeyFactories)('queryKeys.identities.%s', (subKey) => {
       expect(subKeyResult[i]).toBe(segment);
     });
     expect(subKeyResult.length).toBeGreaterThan(all.length);
-  });
-});
-
-// ── didLookup ───────────────────────────────────────────────────────
-
-describe('queryKeys.didLookup', () => {
-  it('returns an array', () => {
-    expect(Array.isArray(queryKeys.didLookup('did:dht:lookup-test'))).toBe(
-      true,
-    );
-  });
-
-  it('has exactly two elements', () => {
-    expect(queryKeys.didLookup('did:dht:test')).toHaveLength(2);
-  });
-
-  it('starts with "didLookup" and includes the DID', () => {
-    const key = queryKeys.didLookup('did:dht:someuser');
-    expect(key[0]).toBe('didLookup');
-    expect(key[1]).toBe('did:dht:someuser');
-  });
-
-  it('produces different keys for different DIDs', () => {
-    const key1 = queryKeys.didLookup('did:dht:user1');
-    const key2 = queryKeys.didLookup('did:dht:user2');
-    expect(key1).not.toEqual(key2);
-  });
-
-  it('does not share a prefix with identities keys', () => {
-    const lookup = queryKeys.didLookup('did:dht:x');
-    const identitiesAll = queryKeys.identities.all;
-    expect(lookup[0]).not.toBe(identitiesAll[0]);
   });
 });

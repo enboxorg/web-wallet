@@ -7,8 +7,6 @@ import {
   getAutoLockTimeout,
   PIN_LENGTH,
   STORAGE_KEYS,
-  SESSION_PIN_KEY,
-  INACTIVITY_TIMEOUT_MS,
 } from '../constants';
 
 // ── AUTO_LOCK_OPTIONS shape ─────────────────────────────────────────
@@ -133,17 +131,9 @@ describe('DEFAULT_AUTO_LOCK_MS', () => {
   });
 });
 
-describe('INACTIVITY_TIMEOUT_MS (deprecated)', () => {
-  it('equals DEFAULT_AUTO_LOCK_MS', () => {
-    expect(INACTIVITY_TIMEOUT_MS).toBe(DEFAULT_AUTO_LOCK_MS);
-  });
-});
-
 describe('STORAGE_KEYS', () => {
   it('has expected keys', () => {
-    expect(STORAGE_KEYS).toHaveProperty('IDENTITIES');
-    expect(STORAGE_KEYS).toHaveProperty('REGISTRATION_TOKENS');
-    expect(STORAGE_KEYS).toHaveProperty('LOCAL_DWN_ENDPOINT');
+    expect(STORAGE_KEYS).toHaveProperty('WALLET_DWN_ENDPOINTS');
     expect(STORAGE_KEYS).toHaveProperty('THEME');
   });
 
@@ -152,12 +142,5 @@ describe('STORAGE_KEYS', () => {
       expect(typeof value).toBe('string');
       expect(value.length).toBeGreaterThan(0);
     }
-  });
-});
-
-describe('SESSION_PIN_KEY', () => {
-  it('is a non-empty string', () => {
-    expect(typeof SESSION_PIN_KEY).toBe('string');
-    expect(SESSION_PIN_KEY.length).toBeGreaterThan(0);
   });
 });

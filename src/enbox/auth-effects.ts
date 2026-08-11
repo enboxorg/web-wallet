@@ -1,7 +1,7 @@
-import type { ProviderAuthParams } from '@enbox/auth';
+import type { ProviderAuthParams } from '@enbox/browser';
 
 import { Effect } from 'effect';
-import { AuthManager } from '@enbox/auth';
+import { AuthManager } from '@enbox/browser';
 
 import { normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
 import { DwnRegistrationError, sdkError } from './effect/errors';

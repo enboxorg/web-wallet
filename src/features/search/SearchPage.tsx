@@ -1,9 +1,5 @@
-import type { BlobUrlLease } from '@enbox/browser';
-
-import { createBlobUrlPool } from '@enbox/browser';
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { useQuery } from '@tanstack/react-query';
 import { Search, AlertCircle, UserCheck } from 'lucide-react';
 
 import { Input } from '@/components/ui/Input';
@@ -11,33 +7,15 @@ import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PublicIdentityCard } from '@/components/identity/PublicIdentityCard';
-import { queryKeys } from '@/enbox/queries/query-keys';
+import { useBlobUrl } from '@/enbox/hooks/use-blob-url';
 import { truncateDid } from '@/lib/utils';
-import { fetchPublicProfile } from './public-profile';
+import { usePublicProfile } from './public-profile';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
 
 const SEARCH_HISTORY_KEY = 'enbox:searchHistory';
 const MAX_HISTORY = 5;
 const URL_RELEASE_DELAY_MS = 60_000;
-const profileImageUrls = createBlobUrlPool();
-
-function useProfileImageUrl(blob: Blob | undefined): string | undefined {
-  const [binding, setBinding] = useState<{ blob: Blob; lease: BlobUrlLease }>();
-
-  useEffect(() => {
-    if (blob === undefined) {
-      setBinding(undefined);
-      return;
-    }
-
-    const lease = profileImageUrls.acquire(blob);
-    setBinding({ blob, lease });
-    return () => lease.releaseAfter(URL_RELEASE_DELAY_MS);
-  }, [blob]);
-
-  return binding !== undefined && binding.blob === blob ? binding.lease.url : undefined;
-}
 
 function getSearchHistory(): string[] {
   try {
@@ -64,6 +42,7 @@ export default function SearchPage() {
   const [didInput, setDidInput] = useState(routeDid ?? '');
   const [searchDid, setSearchDid] = useState(routeDid ?? '');
   const [searchHistory, setSearchHistory] = useState<string[]>(() => getSearchHistory());
+  const canSearch = searchDid.startsWith('did:');
 
   // Pre-fill from route param changes
   useEffect(() => {
@@ -78,14 +57,9 @@ export default function SearchPage() {
     isLoading,
     isError,
     error,
-  } = useQuery({
-    queryKey: queryKeys.didLookup(searchDid),
-    queryFn: () => fetchPublicProfile(searchDid),
-    enabled: searchDid.startsWith('did:'),
-    retry: false,
-  });
-  const avatarUrl = useProfileImageUrl(profile?.avatar);
-  const heroUrl = useProfileImageUrl(profile?.hero);
+  } = usePublicProfile(searchDid, canSearch);
+  const avatarUrl = useBlobUrl(profile?.avatar, URL_RELEASE_DELAY_MS);
+  const heroUrl = useBlobUrl(profile?.hero, URL_RELEASE_DELAY_MS);
 
   // Track successful searches in history
   useEffect(() => {

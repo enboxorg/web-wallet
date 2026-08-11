@@ -20,12 +20,6 @@ export const IdentityProfileUpdatedEventSchema = Schema.TaggedStruct('identity.p
   timestamp : Schema.Number,
 });
 
-export const IdentityConnectedEventSchema = Schema.TaggedStruct('identity.connected', {
-  did: Schema.String,
-});
-
-export const IdentityDisconnectedEventSchema = Schema.TaggedStruct('identity.disconnected', {});
-
 export const ConnectApprovedEventSchema = Schema.TaggedStruct('connect.approved', {
   origin       : Schema.String,
   connectedDid : Schema.String,
@@ -40,8 +34,6 @@ export const WalletEventSchema = Schema.Union(
   IdentityImportedEventSchema,
   IdentityDeletedEventSchema,
   IdentityProfileUpdatedEventSchema,
-  IdentityConnectedEventSchema,
-  IdentityDisconnectedEventSchema,
   ConnectApprovedEventSchema,
   ConnectDeniedEventSchema,
 );

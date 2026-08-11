@@ -34,9 +34,6 @@ export function getAutoLockTimeoutEffect() {
   );
 }
 
-/** @deprecated Use `getAutoLockTimeout()` instead. */
-export const INACTIVITY_TIMEOUT_MS = DEFAULT_AUTO_LOCK_MS;
-
 /** PIN length for wallet lock/unlock. */
 export const PIN_LENGTH = 4;
 
@@ -48,9 +45,6 @@ export const PASSKEY_CREDENTIAL_STORAGE_KEY = 'enbox:auth:passkeyCredential';
 
 /** Local storage keys. */
 export const STORAGE_KEYS = {
-  IDENTITIES: 'identities',
-  REGISTRATION_TOKENS: 'enbox:registrationTokens',
-  LOCAL_DWN_ENDPOINT: 'enbox:enbox:auth:localDwnEndpoint',
   WALLET_DWN_ENDPOINTS: 'enbox:walletDwnEndpoints',
   THEME: 'enbox:theme',
 } as const;
@@ -64,6 +58,3 @@ export const STORAGE_KEYS = {
  * still requiring it for new tabs and after inactivity timeout.
  */
 export const SESSION_VAULT_PASSWORD_KEY = 'enbox:session:vaultPassword';
-
-/** @deprecated Use `SESSION_VAULT_PASSWORD_KEY` instead. */
-export const SESSION_PIN_KEY = 'enbox:session:pin';

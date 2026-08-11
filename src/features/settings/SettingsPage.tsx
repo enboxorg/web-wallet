@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/ui/PageHeader';
 import { cn } from '@/lib/utils';
 
 /** Injected at build time by Vite's `define` in vite.config.ts. */
-declare const __ENBOX_AUTH_SDK_VERSION__: string;
+declare const __ENBOX_BROWSER_SDK_VERSION__: string;
 
 const settingsLinks = [
   {
@@ -64,7 +64,7 @@ export default function SettingsPage() {
       </div>
 
       <p className="pt-6 text-center text-[10px] text-text-ghost">
-        SDK: @enbox/auth@{__ENBOX_AUTH_SDK_VERSION__}
+        SDK: @enbox/browser@{__ENBOX_BROWSER_SDK_VERSION__}
       </p>
     </div>
   );

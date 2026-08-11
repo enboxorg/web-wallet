@@ -6,8 +6,6 @@ type EnboxUserAgent = EnboxPlatformAgent;
 export interface AuthState {
   /** Whether AuthManager has been created. */
   initialized: boolean;
-  /** Whether the user has entered the correct PIN. */
-  unlocked: boolean;
   /** No previous setup exists (first launch). */
   firstTime: boolean;
   /** The SDK agent instance. */
@@ -24,7 +22,6 @@ export type AuthStore = AuthState & AuthActions;
 
 export const useAuthStore = create<AuthStore>()((set) => ({
   initialized: false,
-  unlocked: false,
   firstTime: false,
   agent: null,
 
@@ -32,8 +29,8 @@ export const useAuthStore = create<AuthStore>()((set) => ({
     set({ initialized: value, firstTime }),
 
   setUnlocked: (agent) =>
-    set({ initialized: true, unlocked: true, firstTime: false, agent }),
+    set({ initialized: true, firstTime: false, agent }),
 
   lock: () =>
-    set({ unlocked: false, agent: null }),
+    set({ agent: null }),
 }));

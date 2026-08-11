@@ -23,14 +23,16 @@ type TestSubscription = {
 };
 
 const sdkMocks = vi.hoisted(() => ({
+  closeFacade  : vi.fn(),
   subscriptions : [] as TestSubscription[],
   syncListeners : new Set<(event: SyncEvent) => void>(),
 }));
 
-vi.mock('@enbox/api', async (importOriginal) => ({
-  ...await importOriginal<typeof import('@enbox/api')>(),
+vi.mock('@enbox/browser', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@enbox/browser')>(),
   Enbox: function Enbox(options: { connectedDid: string; delegateDid?: string }) {
     return {
+      close: sdkMocks.closeFacade,
       dwn: {
         messages: {
           subscribe: vi.fn(async (request: TestSubscription['request'] = {}) => {
@@ -83,7 +85,6 @@ function createWrapper(queryClient: QueryClient) {
 function setAgent(optionsByDid: Record<string, Partial<SyncIdentityOptions>> = {}): void {
   useAuthStore.setState({
     initialized: true,
-    unlocked   : true,
     firstTime  : false,
     agent      : {
       agentDid: { uri: 'did:dht:agent' },
@@ -195,6 +196,7 @@ describe('useSyncQueryInvalidation', () => {
     });
 
     unmount();
+    expect(sdkMocks.closeFacade).toHaveBeenCalledOnce();
     expect(subscription?.close).toHaveBeenCalledOnce();
     expect(sdkMocks.syncListeners.size).toBe(0);
   });

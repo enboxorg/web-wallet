@@ -6,7 +6,7 @@
 
 import type { EnboxPlatformAgent } from '@enbox/agent';
 
-export type { RegistrationTokenData } from '@enbox/auth';
+export type { RegistrationTokenData } from '@enbox/browser';
 
 export type EnboxAgent = EnboxPlatformAgent;
 
@@ -20,3 +20,14 @@ export interface IdentityProfile {
   heroUrl?: string;
   hasProfileRecord?: boolean;
 }
+
+export type IdentityProfileImage = Readonly<{
+  blob: Blob;
+  key: string;
+}>;
+
+/** Profile query data before browser object-URL materialization. */
+export type IdentityProfileData = Omit<IdentityProfile, 'avatarUrl' | 'heroUrl'> & {
+  avatar?: IdentityProfileImage;
+  hero?: IdentityProfileImage;
+};
