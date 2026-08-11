@@ -55,8 +55,9 @@ function grant({
 function ownerPermissions(
   ownerDid = 'did:dht:alice',
   permissions: DwnPermissionGrant[] = [grant({ ownerDid })],
+  revokedGrantIds: string[] = [],
 ): OwnerPermissionGrants[] {
-  return [{ ownerDid, permissions }];
+  return [{ ownerDid, permissions, revokedGrantIds }];
 }
 
 describe('connect refresh detection', () => {
@@ -114,7 +115,8 @@ describe('connect refresh detection', () => {
   });
 
   it.each([
-    ['2026-07-13T13:00:00.000Z', 'expiring-soon'],
+    ['2026-07-13T13:00:00.000Z', 'active'],
+    ['2026-07-13T12:10:00.000Z', 'expiring-soon'],
     ['2026-07-13T12:00:00.000Z', 'expired'],
     ['2026-07-13T11:00:00.000Z', 'expired'],
   ] as const)('derives status from enforcing grant expiry %s', (expiresAt, status) => {
@@ -125,6 +127,30 @@ describe('connect refresh detection', () => {
     );
 
     expect(detection.status).toBe(status);
+  });
+
+  it('does not mark a fresh one-hour session as expiring soon', () => {
+    const detection = detectConnectRefresh(
+      { requestType: 'refresh', delegateDid: 'did:jwk:delegate' },
+      ownerPermissions('did:dht:alice', [grant({
+        createdAt : '2026-07-13T12:00:00.000Z',
+        expiresAt : '2026-07-13T13:00:00.000Z',
+      })]),
+      new Date('2026-07-13T12:00:01.000Z'),
+    );
+
+    expect(detection.status).toBe('active');
+  });
+
+  it('honors an explicit expiring-soon threshold override', () => {
+    const detection = detectConnectRefresh(
+      { requestType: 'refresh', delegateDid: 'did:jwk:delegate' },
+      ownerPermissions('did:dht:alice', [grant({ expiresAt: '2026-07-13T13:00:00.000Z' })]),
+      NOW,
+      60 * 60,
+    );
+
+    expect(detection.status).toBe('expiring-soon');
   });
 
   it('uses the newest session when the same owner refreshed the delegate before', () => {
@@ -149,8 +175,88 @@ describe('connect refresh detection', () => {
       NOW,
     );
 
-    expect(detection.matchedSession?.id).toBe('session-new');
+    expect(detection.matchedSession?.id).toBe('did:jwk:delegate');
+    expect(detection.matchedSession?.bundles[0].id).toBe('session-new');
     expect(detection.status).toBe('expired');
+  });
+
+  it('pins the exact owner and reports a fully revoked session from grant history', () => {
+    const revokedGrant = grant({ id: 'revoked-grant' });
+    const detection = detectConnectRefresh(
+      { requestType: 'refresh', delegateDid: 'did:jwk:delegate' },
+      ownerPermissions('did:dht:alice', [revokedGrant], ['revoked-grant']),
+      NOW,
+    );
+
+    expect(detection).toEqual(expect.objectContaining({
+      matchState     : 'matched',
+      pinnedOwnerDid : 'did:dht:alice',
+      status         : 'revoked',
+    }));
+  });
+
+  it('blocks renewal when the expected provider differs from the session owner', () => {
+    const detection = detectConnectRefresh(
+      {
+        requestType         : 'refresh',
+        delegateDid         : 'did:jwk:delegate',
+        expectedProviderDid : 'did:dht:bob',
+      },
+      ownerPermissions(),
+      NOW,
+    );
+
+    expect(detection).toEqual({
+      isRefresh : true,
+      matchState: 'profile-mismatch',
+      status    : 'none',
+    });
+  });
+
+  it('accepts renewal when the expected provider matches the session owner', () => {
+    const detection = detectConnectRefresh(
+      {
+        requestType         : 'refresh',
+        delegateDid         : 'did:jwk:delegate',
+        expectedProviderDid : 'did:dht:alice',
+      },
+      ownerPermissions(),
+      NOW,
+    );
+
+    expect(detection).toEqual(expect.objectContaining({
+      matchState     : 'matched',
+      pinnedOwnerDid : 'did:dht:alice',
+    }));
+  });
+
+  it('uses the expected provider to disambiguate a delegate shared by multiple owners', () => {
+    const detection = detectConnectRefresh(
+      {
+        requestType         : 'refresh',
+        delegateDid         : 'did:jwk:delegate',
+        expectedProviderDid : 'did:dht:bob',
+      },
+      [
+        ...ownerPermissions('did:dht:alice', [grant({
+          ownerDid  : 'did:dht:alice',
+          sessionId : 'session-alice',
+          createdAt : '2026-07-13T11:30:00.000Z',
+        })]),
+        ...ownerPermissions('did:dht:bob', [grant({
+          ownerDid  : 'did:dht:bob',
+          sessionId : 'session-bob',
+          createdAt : '2026-07-13T10:00:00.000Z',
+        })]),
+      ],
+      NOW,
+    );
+
+    expect(detection).toEqual(expect.objectContaining({
+      matchState     : 'matched',
+      pinnedOwnerDid : 'did:dht:bob',
+    }));
+    expect(detection.matchedSession?.bundles[0].id).toBe('session-bob');
   });
 
   it('blocks an ambiguous delegate that has sessions under multiple owners', () => {

@@ -8,10 +8,12 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useAllPermissions } from '../use-all-permissions';
 
 const mocks = vi.hoisted(() => ({
+  fetchPermissionHistory: vi.fn(),
   fetchPermissions: vi.fn(),
 }));
 
 vi.mock('../../queries/identity-queries', () => ({
+  fetchPermissionHistory: mocks.fetchPermissionHistory,
   fetchPermissions: mocks.fetchPermissions,
 }));
 
@@ -39,6 +41,11 @@ describe('useAllPermissions', () => {
     mocks.fetchPermissions.mockImplementation(async (_agent, ownerDid: string) => [{
       id: `grant-${ownerDid}`,
     }]);
+    mocks.fetchPermissionHistory.mockImplementation(async (_agent, ownerDid: string) => [{
+      id: `grant-${ownerDid}`,
+    }, {
+      id: `revoked-${ownerDid}`,
+    }]);
 
     const { result } = renderHook(
       () => useAllPermissions(['did:dht:alice', 'did:dht:bob'], true),
@@ -50,17 +57,26 @@ describe('useAllPermissions', () => {
     expect(result.current.data).toEqual([
       {
         ownerDid    : 'did:dht:alice',
-        permissions : [{ id: 'grant-did:dht:alice' }],
+        permissions : [
+          { id: 'grant-did:dht:alice' },
+          { id: 'revoked-did:dht:alice' },
+        ],
+        revokedGrantIds: ['revoked-did:dht:alice'],
       },
       {
         ownerDid    : 'did:dht:bob',
-        permissions : [{ id: 'grant-did:dht:bob' }],
+        permissions : [
+          { id: 'grant-did:dht:bob' },
+          { id: 'revoked-did:dht:bob' },
+        ],
+        revokedGrantIds: ['revoked-did:dht:bob'],
       },
     ]);
   });
 
   it('surfaces query failure so refresh approval can fail closed', async () => {
     mocks.fetchPermissions.mockRejectedValue(new Error('permission query failed'));
+    mocks.fetchPermissionHistory.mockResolvedValue([]);
 
     const { result } = renderHook(
       () => useAllPermissions(['did:dht:alice'], true),
@@ -78,5 +94,6 @@ describe('useAllPermissions', () => {
     );
 
     expect(mocks.fetchPermissions).not.toHaveBeenCalled();
+    expect(mocks.fetchPermissionHistory).not.toHaveBeenCalled();
   });
 });

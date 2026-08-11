@@ -1,11 +1,18 @@
 import {
-  CONNECT_SESSION_DEFAULT_TTL_SECONDS,
   CONNECT_SESSION_MAX_TTL_SECONDS,
 } from '@enbox/agent';
 
+export const CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS = 60 * 60;
+
+export const CONNECT_SESSION_DURATION_OPTIONS = [
+  { value: 60 * 60, label: '1 hour' },
+  { value: 7 * 24 * 60 * 60, label: '7 days' },
+  { value: 30 * 24 * 60 * 60, label: '30 days' },
+] as const;
+
 export function resolveConnectSessionDurationSeconds(requestedSeconds?: number): number {
   if (requestedSeconds === undefined) {
-    return CONNECT_SESSION_DEFAULT_TTL_SECONDS;
+    return CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS;
   }
 
   const requestedWholeSeconds = Math.floor(requestedSeconds);
@@ -18,7 +25,6 @@ export function resolveConnectSessionDurationSeconds(requestedSeconds?: number):
 
 export function formatConnectSessionDuration(requestedSeconds?: number): string {
   let remaining = resolveConnectSessionDurationSeconds(requestedSeconds);
-  if (remaining === CONNECT_SESSION_DEFAULT_TTL_SECONDS) return '24 hours';
 
   const parts: string[] = [];
   const units = [

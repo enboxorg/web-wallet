@@ -76,6 +76,7 @@ import {
 } from './connect-request-preflight';
 import { detectConnectRefresh } from './connect-refresh';
 import { getConnectRequestType } from './connect-request-type';
+import { CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS } from './connect-session-duration';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
 
@@ -119,6 +120,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const [flashOn, setFlashOn] = useState(false);
 
   const [connectionRequest, setConnectionRequest] = useState<ConnectRequest>();
+  const [sessionDurationSeconds, setSessionDurationSeconds] = useState(
+    CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
+  );
   const [selectedDid, setSelectedDid] = useState('');
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -351,6 +355,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       const preflight = preflightConnectRequest(request);
       await validateConnectPermissionSemantics(preflight);
       setConnectionRequest(request);
+      setSessionDurationSeconds(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS);
       setPhase('request');
     } catch (err) {
       console.error('Connect flow error:', err);
@@ -391,6 +396,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       if (cancelled) return;
       if ('request' in outcome) {
         setConnectionRequest(outcome.request);
+        setSessionDurationSeconds(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS);
         setPhase('request');
       } else {
         setErrorMessage(outcome.error);
@@ -456,7 +462,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // never leaves this device except by the user typing it into the app.
       const generatedPin = await generatePin(4);
       setPin(generatedPin);
-      await approveConnectRequest(approveAsDid, connectionRequest, generatedPin, liveAgent);
+      await approveConnectRequest(
+        approveAsDid,
+        connectionRequest,
+        generatedPin,
+        sessionDurationSeconds,
+        liveAgent,
+      );
       if (!mountedRef.current) return;
       setPhase('pin');
 
@@ -814,7 +826,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               ownerSupported={refreshOwnerOption !== undefined}
               protocolSetupStatuses={protocolSetupStatuses}
               requesterLabel={requesterLabel}
-              sessionDurationSeconds={connectionRequest.requestedSessionTtlSeconds}
+              sessionDurationSeconds={sessionDurationSeconds}
+              onSessionDurationSecondsChange={setSessionDurationSeconds}
               onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
             />
           ) : (
@@ -859,7 +872,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 permissions={connectionRequest.permissionRequests}
                 protocolSetupStatuses={protocolSetupStatuses}
                 requesterLabel={requesterLabel}
-                sessionDurationSeconds={connectionRequest.requestedSessionTtlSeconds}
+                sessionDurationSeconds={sessionDurationSeconds}
+                onSessionDurationSecondsChange={setSessionDurationSeconds}
                 onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
                 overrideAcknowledged={overrideAcknowledged}
                 onOverrideAcknowledgedChange={setOverrideAcknowledged}

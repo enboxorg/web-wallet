@@ -12,6 +12,7 @@ export const queryKeys = {
     profile: (did: string) => ['identities', did, 'profile'] as const,
     protocols: (did: string) => ['identities', did, 'protocols'] as const,
     permissions: (did: string) => ['identities', did, 'permissions'] as const,
+    permissionHistory: (did: string) => ['identities', did, 'permissionHistory'] as const,
     activity: (did: string) => ['identities', did, 'activity'] as const,
     dwnEndpoints: (did: string) => ['identities', did, 'dwnEndpoints'] as const,
     syncStatus: (did: string) => ['identities', did, 'syncStatus'] as const,

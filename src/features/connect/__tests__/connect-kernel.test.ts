@@ -173,15 +173,16 @@ describe('connect-kernel', () => {
   describe('approveConnectRequest', () => {
     it('runs the ceremony, seals with the PIN, and posts to the callback', async () => {
       const agent = { id: 'agent-1' } as any;
-      const request = connectRequest();
+      const request = connectRequest({ requestedSessionTtlSeconds: 86_400 });
 
-      await approveConnectRequest('did:dht:alice', request, '1234', agent);
+      await approveConnectRequest('did:dht:alice', request, '1234', 3_600, agent);
 
       expect(mocks.executeConnectApproval).toHaveBeenCalledWith({
         agent,
-        providerDid : 'did:dht:alice',
-        request,
-        transport   : 'relay',
+        approvedSessionTtlSeconds : 3_600,
+        providerDid               : 'did:dht:alice',
+        request                   : expect.objectContaining({ requestedSessionTtlSeconds: 3_600 }),
+        transport                 : 'relay',
       });
       expect(mocks.sealApprovedResponse).toHaveBeenCalledWith({
         request,
@@ -196,6 +197,9 @@ describe('connect-kernel', () => {
         idToken     : 'sealed-response-jwe',
       });
       // Seal happens before delivery, after the ceremony.
+      expect(mocks.executeConnectApproval.mock.calls[0][0].request).not.toBe(request);
+      expect(request.requestedSessionTtlSeconds).toBe(86_400);
+      expect(mocks.sealApprovedResponse.mock.calls[0][0].request).toBe(request);
       expect(mocks.executeConnectApproval.mock.invocationCallOrder[0])
         .toBeLessThan(mocks.sealApprovedResponse.mock.invocationCallOrder[0]);
       expect(mocks.sealApprovedResponse.mock.invocationCallOrder[0])
@@ -208,7 +212,13 @@ describe('connect-kernel', () => {
       );
 
       await expect(
-        approveConnectRequest('did:dht:alice', connectRequest(), '1234', { id: 'agent-1' } as any),
+        approveConnectRequest(
+          'did:dht:alice',
+          connectRequest(),
+          '1234',
+          3_600,
+          { id: 'agent-1' } as any,
+        ),
       ).rejects.toThrow('network timeout');
 
       // A retrying policy around the ceremony would invoke it more than once.
@@ -222,7 +232,13 @@ describe('connect-kernel', () => {
       });
 
       await expect(
-        approveConnectRequest('did:dht:alice', request, '1234', { id: 'agent-1' } as any),
+        approveConnectRequest(
+          'did:dht:alice',
+          request,
+          '1234',
+          3_600,
+          { id: 'agent-1' } as any,
+        ),
       ).rejects.toThrow('Connect callback URL must use HTTPS');
       expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
     });
@@ -247,20 +263,31 @@ describe('connect-kernel', () => {
       const request = connectRequest({ reply: { mode: 'post_message' } });
 
       await expect(
-        approvePopupConnectRequest('did:dht:alice', request, 'https://app.example', agent),
+        approvePopupConnectRequest(
+          'did:dht:alice',
+          request,
+          'https://app.example',
+          604_800,
+          agent,
+        ),
       ).resolves.toBe('sealed-response-jwe');
 
       expect(mocks.executeConnectApproval).toHaveBeenCalledWith({
         agent,
-        providerDid : 'did:dht:alice',
-        request     : expect.objectContaining({
-          clientMetadata: { origin: 'https://app.example' },
+        approvedSessionTtlSeconds : 604_800,
+        providerDid               : 'did:dht:alice',
+        request                   : expect.objectContaining({
+          applicationId              : 'https://app.example',
+          clientMetadata             : { origin: 'https://app.example' },
+          requestedSessionTtlSeconds : 604_800,
         }),
-        transport: 'postMessage',
+        transport                 : 'postMessage',
       });
       const sealArgs = mocks.sealApprovedResponse.mock.calls[0][0];
       expect(sealArgs.request).toBe(request);
       expect(sealArgs.pin).toBeUndefined();
+      expect(request).not.toHaveProperty('applicationId');
+      expect(request).not.toHaveProperty('requestedSessionTtlSeconds');
     });
 
     it('never retries the popup ceremony', async () => {
@@ -271,6 +298,7 @@ describe('connect-kernel', () => {
           'did:dht:alice',
           connectRequest({ reply: { mode: 'post_message' } }),
           'https://app.example',
+          3_600,
           { id: 'agent-1' } as any,
         ),
       ).rejects.toThrow('ECONNRESET');

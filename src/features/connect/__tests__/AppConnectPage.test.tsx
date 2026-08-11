@@ -284,6 +284,7 @@ describe('AppConnectPage', () => {
       'did:dht:alice',
       connectRequest,
       '1234',
+      60 * 60,
       mocks.agent,
     );
 
@@ -369,7 +370,7 @@ describe('AppConnectPage', () => {
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('shows the requested relay session lifetime', async () => {
+  it('defaults to one hour even when the requester asks for longer', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
@@ -378,10 +379,39 @@ describe('AppConnectPage', () => {
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
-    expect(await screen.findByText('Access lasts 90 days')).toBeInTheDocument();
+    expect(await screen.findByText('Access lasts 1 hour')).toBeInTheDocument();
+    expect(screen.getByLabelText('Access duration')).toHaveValue(String(60 * 60));
   });
 
-  it('renews with the exact delegate owner while keeping scopes visible', async () => {
+  it.each([
+    ['7 days', 7 * 24 * 60 * 60],
+    ['30 days', 30 * 24 * 60 * 60],
+  ])('passes the wallet-selected %s duration to relay approval', async (label, seconds) => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    fireEvent.change(await screen.findByLabelText('Access duration'), {
+      target: { value: String(seconds) },
+    });
+    expect(screen.getByText(`Access lasts ${label}`)).toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
+      'did:dht:alice',
+      connectRequest,
+      '1234',
+      seconds,
+      mocks.agent,
+    ));
+  });
+
+  it('renews a fully revoked session with the exact delegate owner', async () => {
     const refreshRequest = {
       ...connectRequest,
       requestType: 'refresh',
@@ -391,10 +421,11 @@ describe('AppConnectPage', () => {
       { did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } },
     ];
     mocks.allPermissions = [
-      { ownerDid: 'did:dht:alice', permissions: [] },
+      { ownerDid: 'did:dht:alice', permissions: [], revokedGrantIds: [] },
       {
-        ownerDid    : 'did:dht:bob',
-        permissions : [existingSessionGrant('did:dht:bob', connectRequest.delegateDid)],
+        ownerDid        : 'did:dht:bob',
+        permissions     : [existingSessionGrant('did:dht:bob', connectRequest.delegateDid)],
+        revokedGrantIds : ['grant-did:dht:bob'],
       },
     ];
     mocks.fetchConnectRequest.mockResolvedValue(refreshRequest);
@@ -406,6 +437,8 @@ describe('AppConnectPage', () => {
 
     const renew = await screen.findByRole('button', { name: 'Renew access' });
     expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Bob');
+    expect(screen.getByText('Revoked')).toBeVisible();
+    expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
     expect(screen.getByText('View a custom data type')).toBeVisible();
     await waitFor(() => expect(renew).toBeEnabled());
@@ -416,9 +449,32 @@ describe('AppConnectPage', () => {
         'did:dht:bob',
         refreshRequest,
         '1234',
+        60 * 60,
         mocks.agent,
       );
     });
+  });
+
+  it('blocks relay renewal when the request names a different previous profile', async () => {
+    const refreshRequest = {
+      ...connectRequest,
+      requestType         : 'refresh',
+      expectedProviderDid : 'did:dht:bob',
+    };
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:alice',
+      permissions     : [existingSessionGrant('did:dht:alice', connectRequest.delegateDid)],
+      revokedGrantIds : [],
+    }];
+    mocks.fetchConnectRequest.mockResolvedValue(refreshRequest);
+    setPageUrl(DEEP_LINK_FRAGMENT);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByText(/names a different profile than the previous session/i))
+      .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -730,6 +786,7 @@ describe('AppConnectPage', () => {
           'did:dht:fresh',
           connectRequest,
           '1234',
+          60 * 60,
           mocks.agent,
         );
       });

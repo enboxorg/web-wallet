@@ -49,7 +49,7 @@ describe('PermissionDisplay', () => {
     render(<PermissionDisplay permissions={permissions} />);
 
     expect(screen.getByText(/will be able to do/i)).toBeInTheDocument();
-    expect(screen.getByText('Access lasts 24 hours')).toBeInTheDocument();
+    expect(screen.getByText('Access lasts 1 hour')).toBeInTheDocument();
     expect(screen.getByText('View, add or edit, and delete a custom data type')).toBeInTheDocument();
     expect(screen.getByText(/Custom protocol:\s*example\.com\/protocols\/demo/i)).toBeInTheDocument();
     expect(screen.getByText('View')).toBeInTheDocument();
@@ -466,9 +466,9 @@ describe('PermissionDisplay', () => {
       />,
     );
 
-    expect(screen.getByText('Access lasts 24 hours')).toBeInTheDocument();
+    expect(screen.getByText('Access lasts 1 hour')).toBeInTheDocument();
     expect(screen.getByText(/already has 2 active sessions/i)).toBeInTheDocument();
-    expect(screen.getByText(/separate session with 24 hours of access/i)).toBeInTheDocument();
+    expect(screen.getByText(/separate session with 1 hour of access/i)).toBeInTheDocument();
     expect(screen.queryByText('Existing app access')).not.toBeInTheDocument();
   });
 });

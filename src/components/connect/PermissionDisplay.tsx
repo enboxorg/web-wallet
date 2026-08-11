@@ -24,8 +24,13 @@ import {
   protocolDefinitionsMatch,
   type ProtocolSetupStatus,
 } from '@/features/connect/protocol-install';
-import { formatConnectSessionDuration } from '@/features/connect/connect-session-duration';
+import {
+  CONNECT_SESSION_DURATION_OPTIONS,
+  formatConnectSessionDuration,
+  resolveConnectSessionDurationSeconds,
+} from '@/features/connect/connect-session-duration';
 import { getCanonicalProtocolDefinition, getProtocolInfo } from '@/lib/protocol-names';
+import { Select } from '@/components/ui/Select';
 import {
   formatActionPhrase,
   getDisplayScopes,
@@ -45,8 +50,10 @@ interface PermissionDisplayProps {
   existingSessionCount?: number;
   /** Trust anchor shown in section copy, usually the verified origin. */
   requesterLabel?: string;
-  /** Requested connect session lifetime. Defaults and caps match the SDK. */
+  /** Wallet-approved connect session lifetime. */
   sessionDurationSeconds?: number;
+  /** Change the wallet-approved connect session lifetime. */
+  onSessionDurationSecondsChange?: (seconds: number) => void;
   /** Retry a failed protocol setup check. */
   onRetryProtocolSetup?: () => void;
   /** Whether the owner has opted into replacing conflicting custom definitions. */
@@ -336,19 +343,22 @@ function AccessRows({
 function SessionTerms({
   existingSessionCount,
   sessionDurationSeconds,
+  onSessionDurationSecondsChange,
   renewal,
 }: {
   existingSessionCount: number;
   sessionDurationSeconds?: number;
+  onSessionDurationSecondsChange?: (seconds: number) => void;
   renewal?: boolean;
 }) {
-  const durationLabel = formatConnectSessionDuration(sessionDurationSeconds);
+  const durationSeconds = resolveConnectSessionDurationSeconds(sessionDurationSeconds);
+  const durationLabel = formatConnectSessionDuration(durationSeconds);
 
   return (
     <section className="rounded-xl border border-border-default bg-surface-2 p-4">
       <div className="flex items-start gap-3">
         <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-text-primary">
             {renewal ? `New access period: ${durationLabel}` : `Access lasts ${durationLabel}`}
           </p>
@@ -357,6 +367,21 @@ function SessionTerms({
           </p>
         </div>
       </div>
+
+      {onSessionDurationSecondsChange && (
+        <div className="mt-3">
+          <Select
+            id="connect-session-duration"
+            label="Access duration"
+            options={CONNECT_SESSION_DURATION_OPTIONS.map((option) => ({
+              value : String(option.value),
+              label : option.label,
+            }))}
+            value={String(durationSeconds)}
+            onChange={(event) => onSessionDurationSecondsChange(Number(event.target.value))}
+          />
+        </div>
+      )}
 
       {existingSessionCount > 0 && (
         <div className="mt-3 flex items-start gap-2 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2">
@@ -735,6 +760,7 @@ export function PermissionDisplay({
   existingSessionCount = 0,
   requesterLabel,
   sessionDurationSeconds,
+  onSessionDurationSecondsChange,
   onRetryProtocolSetup,
   overrideAcknowledged = false,
   onOverrideAcknowledgedChange,
@@ -757,6 +783,7 @@ export function PermissionDisplay({
       <SessionTerms
         existingSessionCount={existingSessionCount}
         sessionDurationSeconds={sessionDurationSeconds}
+        onSessionDurationSecondsChange={onSessionDurationSecondsChange}
         renewal={renewal}
       />
       <TechnicalDetails access={access} />

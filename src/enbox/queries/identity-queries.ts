@@ -148,6 +148,32 @@ export function fetchPermissionsEffect(did: string) {
   });
 }
 
+/** Permission grant history, including grants that have been revoked. */
+export async function fetchPermissionHistory(agent: EnboxAgent, did: string) {
+  return runEnboxPromise(
+    fetchPermissionHistoryEffect(did).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+export function fetchPermissionHistoryEffect(did: string) {
+  return Effect.gen(function* () {
+    const agent = yield* CurrentAgent;
+    return yield* Effect.tryPromise({
+      try: async () => {
+        const entries = await agent.permissions.fetchGrants({
+          author       : did,
+          target       : did,
+          checkRevoked : false,
+        });
+        return entries.map(({ grant }) => grant);
+      },
+      catch: sdkError('permissions.fetchGrantHistory'),
+    });
+  });
+}
+
 // ── DWN endpoints ──────────────────────────────────────────────────
 
 /** Resolve the DWN service endpoint URLs from the DID document. */
