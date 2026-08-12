@@ -538,6 +538,7 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
   const [copiedDid, setCopiedDid] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
   const [revoking, setRevoking] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
   const connectedAppsHeadingId = useId();
   const otherPermissionsHeadingId = useId();
 
@@ -545,6 +546,26 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     applications,
     standaloneGroups,
   } = useMemo(() => buildPermissionSections(permissions), [permissions]);
+
+  const inactiveSessionCount = applications.reduce(
+    (sum, application) =>
+      sum + application.sessions.filter((session) => !session.active).length,
+    0,
+  );
+
+  // By default only apps that currently hold access are shown, and only
+  // their active sessions — expired history stays behind the toggle.
+  const visibleApplications = useMemo(
+    () => showInactive
+      ? applications
+      : applications
+        .filter((application) => application.activeSessionCount > 0)
+        .map((application) => ({
+          ...application,
+          sessions: application.sessions.filter((session) => session.active),
+        })),
+    [applications, showInactive],
+  );
 
   if (isLoading) {
     return <Loader message="Loading permissions..." />;
@@ -634,14 +655,22 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
         />
       )}
 
-      {applications.length > 0 && (
+      {!isEmpty && visibleApplications.length === 0 && inactiveSessionCount > 0 && (
+        <p className="text-xs text-text-ghost">
+          No apps currently have access. Expired sessions are hidden below.
+        </p>
+      )}
+
+      {visibleApplications.length > 0 && (
         <section className="space-y-3" aria-labelledby={connectedAppsHeadingId}>
           <SectionHeader
             id={connectedAppsHeadingId}
             title="Connected Apps"
-            countLabel={applicationCountLabel(applications.length)}
+            countLabel={applicationCountLabel(
+              showInactive ? applications.length : visibleApplications.length,
+            )}
           />
-          {applications.map((application) => (
+          {visibleApplications.map((application) => (
             <ApplicationCard
               key={application.id}
               application={application}
@@ -652,6 +681,24 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
             />
           ))}
         </section>
+      )}
+
+      {inactiveSessionCount > 0 && (
+        <div>
+          <button
+            type="button"
+            onClick={() => setShowInactive((value) => !value)}
+            aria-expanded={showInactive}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-text-tertiary transition-colors hover:text-text-primary"
+          >
+            <ChevronDown
+              className={`h-4 w-4 text-text-ghost transition-transform ${showInactive ? 'rotate-180' : ''}`}
+            />
+            {showInactive
+              ? 'Hide inactive sessions'
+              : `Show inactive sessions (${inactiveSessionCount})`}
+          </button>
+        </div>
       )}
 
       {standaloneGroups.length > 0 && (

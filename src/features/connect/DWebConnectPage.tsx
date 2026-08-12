@@ -11,6 +11,7 @@ import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
+import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { PinInput } from '@/components/ui/PinInput';
@@ -137,6 +138,13 @@ export default function DWebConnectPage() {
     && !refreshLookupError
     && refreshDetection.matchState === 'matched'
     && refreshOwnerOption !== undefined;
+  // A refresh that cannot map to a renewable session in this wallet must not
+  // present as an approval screen — it is an error with a close affordance.
+  const refreshUnavailable = isRefresh
+    && !refreshLookupPending
+    && (refreshLookupError
+      || refreshDetection.matchState !== 'matched'
+      || refreshOwnerOption === undefined);
   const approvalDid = isRefresh
     ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
     : selectedDid;
@@ -565,7 +573,25 @@ export default function DWebConnectPage() {
       )}
 
       {/* Connect request UI */}
-      {phase === 'request' && (
+      {phase === 'request' && isRefresh && refreshLookupPending && (
+        <Loader message="Checking the previous connection..." className="flex-1" />
+      )}
+
+      {phase === 'request' && refreshUnavailable && (
+        <div className="flex flex-1 flex-col gap-6">
+          <RefreshUnavailableDisplay
+            appName={appName ?? origin ?? 'This app'}
+            detection={refreshDetection}
+            lookupError={refreshLookupError}
+            ownerSupported={refreshOwnerOption !== undefined}
+          />
+          <Button variant="secondary" onClick={handleDeny}>
+            Close
+          </Button>
+        </div>
+      )}
+
+      {phase === 'request' && !refreshUnavailable && !(isRefresh && refreshLookupPending) && (
         <div className="flex flex-1 flex-col gap-6">
           {/* Requester identity */}
           <div className="space-y-3">

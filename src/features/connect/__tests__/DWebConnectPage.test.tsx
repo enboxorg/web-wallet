@@ -552,9 +552,13 @@ describe('DWebConnectPage', () => {
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText(/names a different profile than the previous session/i))
-      .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(await screen.findByText('Connection cannot be renewed')).toBeInTheDocument();
+    expect(screen.getByText(/names a different profile than the one/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(mocks.transport.deny).toHaveBeenCalled();
     expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -567,9 +571,14 @@ describe('DWebConnectPage', () => {
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText(/No previous session for this delegate/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(await screen.findByText('Connection cannot be renewed')).toBeInTheDocument();
+    expect(screen.getByText(/does not exist in this wallet/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(mocks.transport.deny).toHaveBeenCalled();
     expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -592,7 +601,8 @@ describe('DWebConnectPage', () => {
 
     expect(await screen.findByText(/could not verify the previous connection/i)).toBeInTheDocument();
     expect(screen.queryByText(/Checking the previous connection/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(screen.queryByText(/we'll make one/i)).not.toBeInTheDocument();
   });
 

@@ -36,6 +36,7 @@ import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
+import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import {
@@ -186,6 +187,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     && !refreshLookupError
     && refreshDetection.matchState === 'matched'
     && refreshOwnerOption !== undefined;
+  // A refresh that cannot map to a renewable session in this wallet must not
+  // present as an approval screen — it is an error with a close affordance.
+  const refreshUnavailable = isRefresh
+    && !refreshLookupPending
+    && (refreshLookupError
+      || refreshDetection.matchState !== 'matched'
+      || refreshOwnerOption === undefined);
   const approvalDid = isRefresh
     ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
     : selectedDid;
@@ -797,10 +805,35 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         </div>
       )}
 
+      {/* ─── Refresh lookup / unavailable states ────────────────── */}
+      {phase === 'request' && connectionRequest && isRefresh && refreshLookupPending && (
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0 flex flex-col justify-center ${standalone ? 'flex-1 pb-24' : 'min-h-[55vh]'}`}>
+          <Loader message="Checking the previous connection..." />
+        </div>
+      )}
+
+      {phase === 'request' && connectionRequest && refreshUnavailable && (
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-8 lg:px-0 max-w-lg mx-auto w-full flex flex-col gap-6 ${standalone ? 'flex-1 justify-center pb-24' : ''}`}>
+          <RefreshUnavailableDisplay
+            appName={connectionRequest.appName ?? 'This app'}
+            detection={refreshDetection}
+            lookupError={refreshLookupError}
+            ownerSupported={refreshOwnerOption !== undefined}
+          />
+          <Button
+            variant="secondary"
+            className="w-full min-h-[44px]"
+            onClick={handleDeny}
+          >
+            Close
+          </Button>
+        </div>
+      )}
+
       {/* ─── Request phase ──────────────────────────────────────── */}
       {/* Standalone: the consent content scrolls; the decision stays in a
           sticky bar at the bottom so it is always one thumb-reach away. */}
-      {phase === 'request' && connectionRequest && (
+      {phase === 'request' && connectionRequest && !refreshUnavailable && !(isRefresh && refreshLookupPending) && (
         <div className={`animate-[fadeIn_0.3s_ease-out] ${standalone ? 'flex flex-1 flex-col' : ''}`}>
         <div className={`px-6 pt-6 lg:px-0 max-w-lg mx-auto w-full space-y-6 ${standalone ? 'flex-1 pb-4' : ''}`}>
           {/* Requester identity */}

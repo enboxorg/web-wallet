@@ -529,30 +529,47 @@ describe('AppConnectPage', () => {
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
-    expect(await screen.findByText(/names a different profile than the previous session/i))
-      .toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(await screen.findByText('Connection cannot be renewed')).toBeInTheDocument();
+    expect(screen.getByText(/names a different profile than the one/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ['pending', true, false, /Checking the previous connection/i],
-    ['error', false, true, /could not verify the previous connection/i],
-    ['not found', false, false, /No previous session for this delegate/i],
-  ])('fails closed when refresh session lookup is %s', async (_label, pending, error, message) => {
+  it('shows a lookup notice while the previous session is being checked', async () => {
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
       requestType: 'refresh',
     });
-    mocks.allPermissionsPending = pending;
+    mocks.allPermissionsPending = true;
+    setPageUrl(DEEP_LINK_FRAGMENT);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByText(/Checking the previous connection/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['error', true, /could not verify the previous connection/i],
+    ['not found', false, /does not exist in this wallet/i],
+  ])('fails closed when refresh session lookup is %s', async (_label, error, message) => {
+    mocks.fetchConnectRequest.mockResolvedValue({
+      ...connectRequest,
+      requestType: 'refresh',
+    });
     mocks.allPermissionsError = error;
     setPageUrl(DEEP_LINK_FRAGMENT);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
-    expect(await screen.findByText(message)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(await screen.findByText('Connection cannot be renewed')).toBeInTheDocument();
+    expect(screen.getByText(message)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
@@ -576,7 +593,8 @@ describe('AppConnectPage', () => {
 
     expect(await screen.findByText(/could not verify the previous connection/i)).toBeInTheDocument();
     expect(screen.queryByText(/Checking the previous connection/i)).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Renew access' })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
     expect(screen.queryByText(/we'll make one/i)).not.toBeInTheDocument();
   });
 
