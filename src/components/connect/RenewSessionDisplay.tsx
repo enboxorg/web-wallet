@@ -26,6 +26,7 @@ interface RenewSessionDisplayProps {
   protocolSetupStatuses?: Record<string, ProtocolSetupStatus>;
   requesterLabel?: string;
   sessionDurationSeconds?: number;
+  requestedSessionTtlSeconds?: number;
   onSessionDurationSecondsChange?: (seconds: number) => void;
   onRetryProtocolSetup?: () => void;
   now?: Date;
@@ -62,6 +63,7 @@ export function RenewSessionDisplay({
   protocolSetupStatuses,
   requesterLabel,
   sessionDurationSeconds,
+  requestedSessionTtlSeconds,
   onSessionDurationSecondsChange,
   onRetryProtocolSetup,
   now = new Date(),
@@ -164,6 +166,7 @@ export function RenewSessionDisplay({
         existingSessionCount={0}
         requesterLabel={requesterLabel}
         sessionDurationSeconds={sessionDurationSeconds}
+        requestedSessionTtlSeconds={requestedSessionTtlSeconds}
         onSessionDurationSecondsChange={onSessionDurationSecondsChange}
         onRetryProtocolSetup={onRetryProtocolSetup}
         renewal

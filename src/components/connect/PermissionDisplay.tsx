@@ -25,8 +25,8 @@ import {
   type ProtocolSetupStatus,
 } from '@/features/connect/protocol-install';
 import {
-  CONNECT_SESSION_DURATION_OPTIONS,
   formatConnectSessionDuration,
+  getConnectSessionDurationOptions,
   resolveConnectSessionDurationSeconds,
 } from '@/features/connect/connect-session-duration';
 import { getCanonicalProtocolDefinition, getProtocolInfo } from '@/lib/protocol-names';
@@ -52,6 +52,8 @@ interface PermissionDisplayProps {
   requesterLabel?: string;
   /** Wallet-approved connect session lifetime. */
   sessionDurationSeconds?: number;
+  /** Requester-proposed upper bound for the approved session. */
+  requestedSessionTtlSeconds?: number;
   /** Change the wallet-approved connect session lifetime. */
   onSessionDurationSecondsChange?: (seconds: number) => void;
   /** Retry a failed protocol setup check. */
@@ -343,16 +345,19 @@ function AccessRows({
 function SessionTerms({
   existingSessionCount,
   sessionDurationSeconds,
+  requestedSessionTtlSeconds,
   onSessionDurationSecondsChange,
   renewal,
 }: {
   existingSessionCount: number;
   sessionDurationSeconds?: number;
+  requestedSessionTtlSeconds?: number;
   onSessionDurationSecondsChange?: (seconds: number) => void;
   renewal?: boolean;
 }) {
   const durationSeconds = resolveConnectSessionDurationSeconds(sessionDurationSeconds);
   const durationLabel = formatConnectSessionDuration(durationSeconds);
+  const durationOptions = getConnectSessionDurationOptions(requestedSessionTtlSeconds);
 
   return (
     <section className="rounded-xl border border-border-default bg-surface-2 p-4">
@@ -368,12 +373,12 @@ function SessionTerms({
         </div>
       </div>
 
-      {onSessionDurationSecondsChange && (
+      {onSessionDurationSecondsChange && durationOptions.length > 1 && (
         <div className="mt-3">
           <Select
             id="connect-session-duration"
             label="Access duration"
-            options={CONNECT_SESSION_DURATION_OPTIONS.map((option) => ({
+            options={durationOptions.map((option) => ({
               value : String(option.value),
               label : option.label,
             }))}
@@ -760,6 +765,7 @@ export function PermissionDisplay({
   existingSessionCount = 0,
   requesterLabel,
   sessionDurationSeconds,
+  requestedSessionTtlSeconds,
   onSessionDurationSecondsChange,
   onRetryProtocolSetup,
   overrideAcknowledged = false,
@@ -783,6 +789,7 @@ export function PermissionDisplay({
       <SessionTerms
         existingSessionCount={existingSessionCount}
         sessionDurationSeconds={sessionDurationSeconds}
+        requestedSessionTtlSeconds={requestedSessionTtlSeconds}
         onSessionDurationSecondsChange={onSessionDurationSecondsChange}
         renewal={renewal}
       />

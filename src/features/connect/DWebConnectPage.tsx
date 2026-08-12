@@ -43,7 +43,10 @@ import {
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
 import { detectConnectRefresh } from './connect-refresh';
 import { getConnectRequestType } from './connect-request-type';
-import { CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS } from './connect-session-duration';
+import {
+  CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
+  resolveConnectSessionApprovalDurationSeconds,
+} from './connect-session-duration';
 import {
   getOverridableProtocols,
   getProtocolDefinitionsToOverride,
@@ -203,7 +206,9 @@ export default function DWebConnectPage() {
         await validateConnectPermissionSemantics(preflightConnectRequest(request));
 
         setConnectRequest(request);
-        setSessionDurationSeconds(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS);
+        setSessionDurationSeconds(
+          resolveConnectSessionApprovalDurationSeconds(request.requestedSessionTtlSeconds),
+        );
         setOrigin(transport.dappOrigin);
         setPhase('request');
       } catch (error) {
@@ -603,6 +608,7 @@ export default function DWebConnectPage() {
               protocolSetupStatuses={protocolSetupStatuses}
               requesterLabel={requesterLabel}
               sessionDurationSeconds={sessionDurationSeconds}
+              requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
               onSessionDurationSecondsChange={setSessionDurationSeconds}
               onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
             />
@@ -650,6 +656,7 @@ export default function DWebConnectPage() {
                 existingSessionCount={existingSessions.length}
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={sessionDurationSeconds}
+                requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
                 onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
                 overrideAcknowledged={overrideAcknowledged}
