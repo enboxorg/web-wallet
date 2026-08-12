@@ -78,7 +78,10 @@ import {
 } from './connect-request-preflight';
 import { detectConnectRefresh } from './connect-refresh';
 import { getConnectRequestType } from './connect-request-type';
-import { CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS } from './connect-session-duration';
+import {
+  CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
+  resolveConnectSessionApprovalDurationSeconds,
+} from './connect-session-duration';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
 
@@ -357,7 +360,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       const preflight = preflightConnectRequest(request);
       await validateConnectPermissionSemantics(preflight);
       setConnectionRequest(request);
-      setSessionDurationSeconds(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS);
+      setSessionDurationSeconds(
+        resolveConnectSessionApprovalDurationSeconds(request.requestedSessionTtlSeconds),
+      );
       setPhase('request');
     } catch (err) {
       console.error('Connect flow error:', err);
@@ -398,7 +403,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       if (cancelled) return;
       if ('request' in outcome) {
         setConnectionRequest(outcome.request);
-        setSessionDurationSeconds(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS);
+        setSessionDurationSeconds(
+          resolveConnectSessionApprovalDurationSeconds(outcome.request.requestedSessionTtlSeconds),
+        );
         setPhase('request');
       } else {
         setErrorMessage(outcome.error);
@@ -843,6 +850,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               protocolSetupStatuses={protocolSetupStatuses}
               requesterLabel={requesterLabel}
               sessionDurationSeconds={sessionDurationSeconds}
+              requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
               onSessionDurationSecondsChange={setSessionDurationSeconds}
               onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
             />
@@ -889,6 +897,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 protocolSetupStatuses={protocolSetupStatuses}
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={sessionDurationSeconds}
+                requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
                 onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
                 overrideAcknowledged={overrideAcknowledged}

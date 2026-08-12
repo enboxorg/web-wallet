@@ -263,6 +263,30 @@ describe('DWebConnectPage', () => {
     }));
   });
 
+  it('honors a shorter requested session lifetime during popup approval', async () => {
+    const shortRequest = {
+      ...connectRequest(),
+      requestedSessionTtlSeconds: 9 * 60,
+    };
+    mocks.transport.awaitRequest.mockResolvedValue(shortRequest);
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByText('Access lasts 9 minutes')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
+      'did:dht:alice',
+      shortRequest,
+      'https://app.example',
+      9 * 60,
+      mocks.agent,
+    ));
+  });
+
   it.each([
     ['7 days', 7 * 24 * 60 * 60],
     ['30 days', 30 * 24 * 60 * 60],

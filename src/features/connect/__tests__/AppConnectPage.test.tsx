@@ -414,6 +414,33 @@ describe('AppConnectPage', () => {
     expect(screen.getByLabelText('Access duration')).toHaveValue(String(60 * 60));
   });
 
+  it('honors a shorter requested session lifetime during relay approval', async () => {
+    const shortRequest = {
+      ...connectRequest,
+      requestedSessionTtlSeconds: 9 * 60,
+    };
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(shortRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByText('Access lasts 9 minutes')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
+      'did:dht:alice',
+      shortRequest,
+      '1234',
+      9 * 60,
+      mocks.agent,
+    ));
+  });
+
   it.each([
     ['7 days', 7 * 24 * 60 * 60],
     ['30 days', 30 * 24 * 60 * 60],

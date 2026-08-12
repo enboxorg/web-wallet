@@ -23,6 +23,31 @@ export function resolveConnectSessionDurationSeconds(requestedSeconds?: number):
   return Math.min(requestedWholeSeconds, CONNECT_SESSION_MAX_TTL_SECONDS);
 }
 
+export function resolveConnectSessionApprovalDurationSeconds(requestedSeconds?: number): number {
+  return Math.min(
+    CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
+    resolveConnectSessionDurationSeconds(requestedSeconds),
+  );
+}
+
+export function getConnectSessionDurationOptions(requestedSeconds?: number): Array<{
+  value: number;
+  label: string;
+}> {
+  const selected = resolveConnectSessionApprovalDurationSeconds(requestedSeconds);
+  const maximum = requestedSeconds === undefined
+    ? CONNECT_SESSION_MAX_TTL_SECONDS
+    : resolveConnectSessionDurationSeconds(requestedSeconds);
+  const options: Array<{ value: number; label: string }> = CONNECT_SESSION_DURATION_OPTIONS
+    .filter(({ value }) => value <= maximum)
+    .map((option) => ({ ...option }));
+
+  if (!options.some(({ value }) => value === selected)) {
+    options.push({ value: selected, label: formatConnectSessionDuration(selected) });
+  }
+  return options.sort((left, right) => left.value - right.value);
+}
+
 export function formatConnectSessionDuration(requestedSeconds?: number): string {
   let remaining = resolveConnectSessionDurationSeconds(requestedSeconds);
 
