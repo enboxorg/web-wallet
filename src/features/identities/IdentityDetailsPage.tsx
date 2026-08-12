@@ -27,8 +27,9 @@ import ProtocolsTab from './tabs/ProtocolsTab';
 import WalletsTab from './tabs/WalletsTab';
 import PermissionsTab from './tabs/PermissionsTab';
 import ActivityTab from './tabs/ActivityTab';
+import { countActivePermissionApps } from './tabs/permission-sessions';
 
-const TABS = ['Overview', 'Protocols', 'Wallets', 'Permissions', 'Activity'] as const;
+const TABS = ['Overview', 'Protocols', 'Wallets', 'Apps & Permissions', 'Activity'] as const;
 const tabId = (i: number) => `identity-tab-${i}`;
 const panelId = (i: number) => `identity-panel-${i}`;
 
@@ -46,12 +47,12 @@ export default function IdentityDetailsPage() {
 
   const tabLabels = useMemo(() => {
     const protocolCount = protocols?.length ?? 0;
-    const permissionCount = permissions?.length ?? 0;
+    const appCount = countActivePermissionApps(permissions);
     return [
       'Overview',
       protocolCount > 0 ? `Protocols (${protocolCount})` : 'Protocols',
       'Wallets',
-      permissionCount > 0 ? `Permissions (${permissionCount})` : 'Permissions',
+      appCount > 0 ? `Apps & Permissions (${appCount})` : 'Apps & Permissions',
       'Activity',
     ];
   }, [protocols, permissions]);

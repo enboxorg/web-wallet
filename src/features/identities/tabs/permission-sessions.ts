@@ -356,3 +356,30 @@ export function buildPermissionSections(
       .map(([grantee, grants]) => ({ grantee, grants })),
   };
 }
+
+/**
+ * Count the entries that currently hold access: applications with at least
+ * one active session, plus standalone grantee groups with at least one
+ * unexpired grant. Apps whose sessions all expired no longer have access
+ * and do not count.
+ */
+export function countActivePermissionApps(
+  permissions: DwnPermissionGrant[] | undefined,
+  now: Date = new Date(),
+): number {
+  const sections = buildPermissionSections(permissions, now);
+  const nowMs = now.getTime();
+
+  const activeApps = sections.applications.filter(
+    (application) => application.activeSessionCount > 0,
+  ).length;
+
+  const activeStandalone = sections.standaloneGroups.filter((group) =>
+    group.grants.some((grant) => {
+      const expiry = timestamp(grant.dateExpires);
+      return expiry === undefined || expiry > nowMs;
+    })
+  ).length;
+
+  return activeApps + activeStandalone;
+}

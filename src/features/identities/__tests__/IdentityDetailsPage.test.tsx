@@ -49,6 +49,24 @@ const mockPermissions = [
       transport : 'postMessage' as const,
     },
   },
+  // A second grant for the same app (new session, new delegate DID) must not
+  // increase the tab's app count.
+  {
+    ...createMockPermission({
+    id      : 'grant-456',
+    grantee : 'did:dht:delegate-two',
+    }),
+    dateGranted    : '2026-06-24T00:00:00.000Z',
+    dateExpires    : '2099-06-25T00:00:00.000Z',
+    connectSession : {
+      id        : 'session-2',
+      createdAt : '2026-06-24T00:00:00.000Z',
+      expiresAt : '2099-06-25T00:00:00.000Z',
+      appName   : 'Example App',
+      origin    : 'https://app.example',
+      transport : 'postMessage' as const,
+    },
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -183,10 +201,11 @@ describe('IdentityDetailsPage', () => {
     expect(screen.getByRole('tab', { name: /protocols \(2\)/i })).toBeInTheDocument();
   });
 
-  it('renders permission count in tab label', () => {
+  it('renders app count in tab label', () => {
     renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
-    // With 1 permission, the label should be "Permissions (1)"
-    expect(screen.getByRole('tab', { name: /permissions \(1\)/i })).toBeInTheDocument();
+    // 2 grants across 2 sessions, but both belong to the same app (same
+    // verified origin), so the label should be "Apps & Permissions (1)".
+    expect(screen.getByRole('tab', { name: /apps & permissions \(1\)/i })).toBeInTheDocument();
   });
 
   it('shows overview tab content by default', () => {

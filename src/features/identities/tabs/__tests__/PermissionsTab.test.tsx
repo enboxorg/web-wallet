@@ -114,6 +114,15 @@ describe('PermissionsTab', () => {
     const { user } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
 
     expect(screen.getByRole('heading', { name: 'Connected Apps' })).toBeInTheDocument();
+
+    // Only apps holding active access are shown by default — the reported
+    // relay app (expired session) stays hidden behind the inactive toggle.
+    expect(screen.getByText('1 app')).toBeInTheDocument();
+    expect(screen.getAllByRole('article', { name: 'Example Notes' })).toHaveLength(1);
+    expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /show inactive sessions \(1\)/i }));
+
     expect(screen.getByText('2 apps')).toBeInTheDocument();
 
     const applications = screen.getAllByRole('article', { name: 'Example Notes' });
@@ -170,6 +179,35 @@ describe('PermissionsTab', () => {
     expect(within(permissionBundle).getByRole('button', {
       name: 'Revoke Profile Read permission',
     })).toBeInTheDocument();
+  });
+
+  it('hides expired sessions again when the inactive toggle is switched off', async () => {
+    const { user } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    await user.click(screen.getByRole('button', { name: /show inactive sessions \(1\)/i }));
+    expect(screen.getByText('Firefox on Linux')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /hide inactive sessions/i }));
+    expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument();
+    expect(screen.getByText('Safari on macOS')).toBeInTheDocument();
+  });
+
+  it('offers the inactive toggle when no app currently has access', () => {
+    mocks.permissions = [
+      permissionGrant({
+        id      : 'grant-expired',
+        session : expiredSession,
+        grantee : 'did:dht:expired-delegate',
+      }),
+    ];
+
+    renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    expect(screen.queryByRole('heading', { name: 'Connected Apps' })).not.toBeInTheDocument();
+    expect(screen.getByText(/no apps currently have access/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /show inactive sessions \(1\)/i }),
+    ).toBeInTheDocument();
   });
 
   it('refreshes both permission views and reports a partial session revocation', async () => {

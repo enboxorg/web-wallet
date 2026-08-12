@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DwnPermissionGrant } from '@enbox/agent';
-import { buildPermissionSections } from '../permission-sessions';
+import { buildPermissionSections, countActivePermissionApps } from '../permission-sessions';
 
 function grant(overrides: Partial<DwnPermissionGrant> = {}): DwnPermissionGrant {
   return {
@@ -382,5 +382,67 @@ describe('permission session grouping', () => {
         grants  : [expect.objectContaining({ id: 'grant-3' })],
       },
     ]);
+  });
+});
+
+describe('countActivePermissionApps', () => {
+  const now = new Date('2026-06-23T12:00:00.000Z');
+
+  it('counts each app once across multiple active sessions and grants', () => {
+    const count = countActivePermissionApps([
+      grant({ id: 'grant-1', connectSession: session } as Partial<DwnPermissionGrant>),
+      grant({ id: 'grant-2', connectSession: session } as Partial<DwnPermissionGrant>),
+      grant({
+        id             : 'grant-3',
+        grantee        : 'did:dht:other-delegate',
+        connectSession : { ...session, id: 'session-2' },
+      } as Partial<DwnPermissionGrant>),
+    ], now);
+
+    expect(count).toBe(1);
+  });
+
+  it('counts distinct apps and standalone grantees separately', () => {
+    const count = countActivePermissionApps([
+      grant({ id: 'grant-1', connectSession: session } as Partial<DwnPermissionGrant>),
+      grant({
+        id             : 'grant-2',
+        connectSession : {
+          ...session,
+          id     : 'session-2',
+          appName: 'Another App',
+          origin : 'https://another.example',
+        },
+      } as Partial<DwnPermissionGrant>),
+      grant({ id: 'grant-3', grantee: 'did:dht:standalone' }),
+    ], now);
+
+    expect(count).toBe(3);
+  });
+
+  it('ignores apps whose sessions all expired and expired standalone grants', () => {
+    const count = countActivePermissionApps([
+      grant({
+        id             : 'grant-1',
+        dateExpires    : '2026-06-22T00:00:00.000Z',
+        connectSession : { ...session, expiresAt: '2026-06-22T00:00:00.000Z' },
+      } as Partial<DwnPermissionGrant>),
+      grant({
+        id          : 'grant-2',
+        grantee     : 'did:dht:standalone',
+        dateExpires : '2026-06-22T00:00:00.000Z',
+      }),
+      grant({
+        id             : 'grant-3',
+        connectSession : { ...session, id: 'session-live' },
+      } as Partial<DwnPermissionGrant>),
+    ], now);
+
+    expect(count).toBe(1);
+  });
+
+  it('returns zero for empty or undefined permissions', () => {
+    expect(countActivePermissionApps([], now)).toBe(0);
+    expect(countActivePermissionApps(undefined, now)).toBe(0);
   });
 });
