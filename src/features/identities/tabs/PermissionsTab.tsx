@@ -70,6 +70,9 @@ function grantCountLabel(count: number): string {
   return count === 1 ? '1 permission' : `${count} permissions`;
 }
 
+/** Expired sessions render inline per app, capped so heavy renewal history can't flood the card. */
+const MAX_VISIBLE_EXPIRED_SESSIONS = 3;
+
 function sessionCountLabel(count: number): string {
   return count === 1 ? '1 session' : `${count} sessions`;
 }
@@ -453,6 +456,7 @@ function ApplicationCard({
   onRenewSession: (session: PermissionSessionGroup) => void;
 }) {
   const headingId = useId();
+  const [showAllExpired, setShowAllExpired] = useState(false);
   const activeLabel = application.activeSessionCount === 1
     ? '1 active'
     : `${application.activeSessionCount} active`;
@@ -460,6 +464,9 @@ function ApplicationCard({
   // Most recently expired first, so the rows read as a rewind of usage.
   const expiredSessions = [...application.sessions.filter((session) => !session.active)]
     .sort((left, right) => right.dateExpires.localeCompare(left.dateExpires));
+  const visibleExpiredSessions = showAllExpired
+    ? expiredSessions
+    : expiredSessions.slice(0, MAX_VISIBLE_EXPIRED_SESSIONS);
 
   return (
     <article
@@ -524,19 +531,37 @@ function ApplicationCard({
         ))}
 
         {expiredSessions.length > 0 && (
-          <ul
-            className="space-y-1.5"
-            aria-label={`Expired sessions for ${application.name}`}
-          >
-            {expiredSessions.map((sessionGroup) => (
-              <ExpiredSessionRow
-                key={`${sessionGroup.grantee}:${sessionGroup.id}`}
-                sessionGroup={sessionGroup}
-                applicationName={application.name}
-                onRenew={onRenewSession}
-              />
-            ))}
-          </ul>
+          <div className="space-y-1.5">
+            <ul
+              className="space-y-1.5"
+              aria-label={`Expired sessions for ${application.name}`}
+            >
+              {visibleExpiredSessions.map((sessionGroup) => (
+                <ExpiredSessionRow
+                  key={`${sessionGroup.grantee}:${sessionGroup.id}`}
+                  sessionGroup={sessionGroup}
+                  applicationName={application.name}
+                  onRenew={onRenewSession}
+                />
+              ))}
+            </ul>
+
+            {expiredSessions.length > MAX_VISIBLE_EXPIRED_SESSIONS && (
+              <button
+                type="button"
+                onClick={() => setShowAllExpired((value) => !value)}
+                aria-expanded={showAllExpired}
+                className="inline-flex items-center gap-1 px-1 text-[11px] font-medium text-text-ghost transition-colors hover:text-text-secondary"
+              >
+                <ChevronDown
+                  className={`h-3 w-3 transition-transform ${showAllExpired ? 'rotate-180' : ''}`}
+                />
+                {showAllExpired
+                  ? 'Show fewer expired sessions'
+                  : `Show all ${expiredSessions.length} expired sessions`}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </article>

@@ -245,6 +245,31 @@ describe('PermissionsTab', () => {
     })).toBeInTheDocument();
   });
 
+  it('bounds expired session rows per app with an expander', async () => {
+    mocks.permissions = Array.from({ length: 5 }, (_, index) =>
+      permissionGrant({
+        id      : `grant-expired-${index}`,
+        session : {
+          ...expiredSession,
+          id        : `expired-session-${index}`,
+          createdAt : `2025-01-0${index + 2}T00:00:00.000Z`,
+          expiresAt : `2025-01-0${index + 3}T00:00:00.000Z`,
+        },
+        grantee: `did:dht:expired-delegate-${index}`,
+      }));
+
+    const { user } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    const expiredList = screen.getByRole('list', { name: 'Expired sessions for Example Notes' });
+    expect(within(expiredList).getAllByRole('listitem')).toHaveLength(3);
+
+    await user.click(screen.getByRole('button', { name: 'Show all 5 expired sessions' }));
+    expect(within(expiredList).getAllByRole('listitem')).toHaveLength(5);
+
+    await user.click(screen.getByRole('button', { name: 'Show fewer expired sessions' }));
+    expect(within(expiredList).getAllByRole('listitem')).toHaveLength(3);
+  });
+
   it('refreshes both permission views and reports a partial session revocation', async () => {
     mocks.createRevocation.mockImplementation(({ grant }: { grant: DwnPermissionGrant }) =>
       grant.id === 'grant-2'
