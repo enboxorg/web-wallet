@@ -8,6 +8,7 @@ import {
   Info,
   MonitorSmartphone,
   Power,
+  RefreshCw,
   Shield,
   ShieldCheck,
   Trash2,
@@ -34,6 +35,12 @@ import {
   type PermissionSessionGroup,
 } from './permission-sessions';
 import { describeConnectSession } from './permission-session-display';
+import { renewExpiredSession } from './renew-session';
+import {
+  CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
+  formatConnectSessionDuration,
+  formatRelativeExpiry,
+} from '@/features/connect/connect-session-duration';
 
 interface PermissionsTabProps {
   did: string;
@@ -42,6 +49,11 @@ interface PermissionsTabProps {
 type RevokeTarget =
   | { kind: 'grant'; grant: DwnPermissionGrant }
   | { kind: 'session'; session: PermissionSessionGroup };
+
+interface RenewTarget {
+  applicationName: string;
+  session: PermissionSessionGroup;
+}
 
 function formatDateTime(value: string | undefined): string {
   if (!value) return 'Unknown';
@@ -391,23 +403,63 @@ function SessionCard({
   );
 }
 
+function ExpiredSessionRow({
+  sessionGroup,
+  applicationName,
+  onRenew,
+}: {
+  sessionGroup: PermissionSessionGroup;
+  applicationName: string;
+  onRenew: (session: PermissionSessionGroup) => void;
+}) {
+  const summary = describeConnectSession(sessionGroup.session);
+
+  return (
+    <li className="flex items-center gap-2 rounded-[var(--radius-md)] bg-surface-2/60 px-3 py-1.5 text-xs opacity-70">
+      <MonitorSmartphone className="h-3 w-3 shrink-0 text-text-ghost" />
+      <span className="min-w-0 truncate text-text-tertiary" title={summary.title}>
+        {summary.title}
+      </span>
+      <span className="shrink-0 text-text-ghost">
+        Expired {formatRelativeExpiry(sessionGroup.dateExpires)}
+      </span>
+      <button
+        type="button"
+        onClick={() => onRenew(sessionGroup)}
+        className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-text-tertiary transition-colors hover:bg-accent/10 hover:text-accent"
+        aria-label={`Renew ${summary.title} session for ${applicationName}`}
+        title="Renew access"
+      >
+        <RefreshCw className="h-3 w-3" />
+        Renew
+      </button>
+    </li>
+  );
+}
+
 function ApplicationCard({
   application,
   copiedDid,
   onCopy,
   onRevokeGrant,
   onRevokeSession,
+  onRenewSession,
 }: {
   application: PermissionApplicationGroup;
   copiedDid: string | null;
   onCopy: (did: string) => void;
   onRevokeGrant: (grant: DwnPermissionGrant) => void;
   onRevokeSession: (session: PermissionSessionGroup) => void;
+  onRenewSession: (session: PermissionSessionGroup) => void;
 }) {
   const headingId = useId();
   const activeLabel = application.activeSessionCount === 1
     ? '1 active'
     : `${application.activeSessionCount} active`;
+  const activeSessions = application.sessions.filter((session) => session.active);
+  // Most recently expired first, so the rows read as a rewind of usage.
+  const expiredSessions = [...application.sessions.filter((session) => !session.active)]
+    .sort((left, right) => right.dateExpires.localeCompare(left.dateExpires));
 
   return (
     <article
@@ -459,7 +511,7 @@ function ApplicationCard({
       </div>
 
       <div className="space-y-3">
-        {application.sessions.map((sessionGroup) => (
+        {activeSessions.map((sessionGroup) => (
           <SessionCard
             key={`${sessionGroup.grantee}:${sessionGroup.id}`}
             sessionGroup={sessionGroup}
@@ -470,6 +522,22 @@ function ApplicationCard({
             onRevokeSession={onRevokeSession}
           />
         ))}
+
+        {expiredSessions.length > 0 && (
+          <ul
+            className="space-y-1.5"
+            aria-label={`Expired sessions for ${application.name}`}
+          >
+            {expiredSessions.map((sessionGroup) => (
+              <ExpiredSessionRow
+                key={`${sessionGroup.grantee}:${sessionGroup.id}`}
+                sessionGroup={sessionGroup}
+                applicationName={application.name}
+                onRenew={onRenewSession}
+              />
+            ))}
+          </ul>
+        )}
       </div>
     </article>
   );
@@ -538,7 +606,8 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
   const [copiedDid, setCopiedDid] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
   const [revoking, setRevoking] = useState(false);
-  const [showInactive, setShowInactive] = useState(false);
+  const [renewTarget, setRenewTarget] = useState<RenewTarget | null>(null);
+  const [renewing, setRenewing] = useState(false);
   const connectedAppsHeadingId = useId();
   const otherPermissionsHeadingId = useId();
 
@@ -546,26 +615,6 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     applications,
     standaloneGroups,
   } = useMemo(() => buildPermissionSections(permissions), [permissions]);
-
-  const inactiveSessionCount = applications.reduce(
-    (sum, application) =>
-      sum + application.sessions.filter((session) => !session.active).length,
-    0,
-  );
-
-  // By default only apps that currently hold access are shown, and only
-  // their active sessions — expired history stays behind the toggle.
-  const visibleApplications = useMemo(
-    () => showInactive
-      ? applications
-      : applications
-        .filter((application) => application.activeSessionCount > 0)
-        .map((application) => ({
-          ...application,
-          sessions: application.sessions.filter((session) => session.active),
-        })),
-    [applications, showInactive],
-  );
 
   if (isLoading) {
     return <Loader message="Loading permissions..." />;
@@ -639,6 +688,29 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     }
   };
 
+  const handleRenew = async (): Promise<void> => {
+    if (!renewTarget) return;
+    setRenewing(true);
+    try {
+      if (agent === null) {
+        throw new Error('Unlock the wallet before renewing access.');
+      }
+      await renewExpiredSession(agent, did, renewTarget.session);
+      await Promise.allSettled([
+        queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(did) }),
+        queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(did) }),
+      ]);
+      toast.success(
+        `${renewTarget.applicationName} access renewed — the app picks it up on its next sync.`,
+      );
+      setRenewTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to renew access');
+    } finally {
+      setRenewing(false);
+    }
+  };
+
   const dialogCopy = revokeDialogCopy(revokeTarget);
   const standaloneGrantCount = standaloneGroups.reduce(
     (sum, group) => sum + group.grants.length,
@@ -655,22 +727,14 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
         />
       )}
 
-      {!isEmpty && visibleApplications.length === 0 && inactiveSessionCount > 0 && (
-        <p className="text-xs text-text-ghost">
-          No apps currently have access. Expired sessions are hidden below.
-        </p>
-      )}
-
-      {visibleApplications.length > 0 && (
+      {applications.length > 0 && (
         <section className="space-y-3" aria-labelledby={connectedAppsHeadingId}>
           <SectionHeader
             id={connectedAppsHeadingId}
             title="Connected Apps"
-            countLabel={applicationCountLabel(
-              showInactive ? applications.length : visibleApplications.length,
-            )}
+            countLabel={applicationCountLabel(applications.length)}
           />
-          {visibleApplications.map((application) => (
+          {applications.map((application) => (
             <ApplicationCard
               key={application.id}
               application={application}
@@ -678,27 +742,11 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
               onCopy={handleCopy}
               onRevokeGrant={(grant) => setRevokeTarget({ kind: 'grant', grant })}
               onRevokeSession={(session) => setRevokeTarget({ kind: 'session', session })}
+              onRenewSession={(session) =>
+                setRenewTarget({ applicationName: application.name, session })}
             />
           ))}
         </section>
-      )}
-
-      {inactiveSessionCount > 0 && (
-        <div>
-          <button
-            type="button"
-            onClick={() => setShowInactive((value) => !value)}
-            aria-expanded={showInactive}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-text-tertiary transition-colors hover:text-text-primary"
-          >
-            <ChevronDown
-              className={`h-4 w-4 text-text-ghost transition-transform ${showInactive ? 'rotate-180' : ''}`}
-            />
-            {showInactive
-              ? 'Hide inactive sessions'
-              : `Show inactive sessions (${inactiveSessionCount})`}
-          </button>
-        </div>
       )}
 
       {standaloneGroups.length > 0 && (
@@ -719,6 +767,39 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
           ))}
         </section>
       )}
+
+      <Dialog
+        open={!!renewTarget}
+        onClose={() => !renewing && setRenewTarget(null)}
+        title="Renew access"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">
+            Give <strong className="text-text-primary">{renewTarget?.applicationName}</strong> a
+            fresh {formatConnectSessionDuration(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS)} session
+            on this device with the same permissions it had before? The app picks up its new
+            access on its next sync.
+          </p>
+          <div className="flex justify-end gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setRenewTarget(null)}
+              disabled={renewing}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleRenew}
+              loading={renewing}
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Renew access
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       <Dialog
         open={!!revokeTarget}
