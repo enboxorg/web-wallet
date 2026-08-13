@@ -219,4 +219,30 @@ describe('fetchPermissions', () => {
     });
     expect(permissions).toEqual([grant]);
   });
+
+  it('filters internal session revocation grants out of both permission views', async () => {
+    const sessionGrant = {
+      id    : 'grant-1',
+      scope : { interface: 'Records', method: 'Read', protocol: 'https://example.com/protocols/demo' },
+    };
+    const revocationGrant = {
+      id    : 'revocation-grant-1',
+      scope : {
+        interface : 'Records',
+        method    : 'Write',
+        protocol  : 'https://identity.foundation/dwn/permissions',
+        contextId : 'grant-1',
+      },
+    };
+    const fetchGrants = vi.fn(async () => [
+      { grant: sessionGrant, message: {} },
+      { grant: revocationGrant, message: {} },
+    ]);
+    const agent = { permissions: { fetchGrants } };
+
+    await expect(fetchPermissions(agent as never, 'did:dht:alice'))
+      .resolves.toEqual([sessionGrant]);
+    await expect(fetchPermissionHistory(agent as never, 'did:dht:alice'))
+      .resolves.toEqual([sessionGrant]);
+  });
 });
