@@ -10,6 +10,7 @@ import PermissionsTab from '../PermissionsTab';
 const mocks = vi.hoisted(() => ({
   permissions: [] as DwnPermissionGrant[],
   createRevocation: vi.fn(),
+  renewExpiredSession: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }));
@@ -29,6 +30,10 @@ vi.mock('@/stores/auth-store', () => ({
       permissions: { createRevocation: mocks.createRevocation },
     },
   }),
+}));
+
+vi.mock('../renew-session', () => ({
+  renewExpiredSession: mocks.renewExpiredSession,
 }));
 
 vi.mock('sonner', () => ({
@@ -108,21 +113,13 @@ describe('PermissionsTab', () => {
       }),
     ];
     mocks.createRevocation.mockResolvedValue(undefined);
+    mocks.renewExpiredSession.mockResolvedValue(undefined);
   });
 
   it('shows verified popup and reported relay identities as separate apps', async () => {
     const { user } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
 
     expect(screen.getByRole('heading', { name: 'Connected Apps' })).toBeInTheDocument();
-
-    // Only apps holding active access are shown by default — the reported
-    // relay app (expired session) stays hidden behind the inactive toggle.
-    expect(screen.getByText('1 app')).toBeInTheDocument();
-    expect(screen.getAllByRole('article', { name: 'Example Notes' })).toHaveLength(1);
-    expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /show inactive sessions \(1\)/i }));
-
     expect(screen.getByText('2 apps')).toBeInTheDocument();
 
     const applications = screen.getAllByRole('article', { name: 'Example Notes' });
@@ -148,18 +145,25 @@ describe('PermissionsTab', () => {
     expect(verified.getAllByText('Browser popup').length).toBeGreaterThanOrEqual(1);
     expect(verified.queryByText('Relay')).not.toBeInTheDocument();
 
+    // The expired relay session renders as a compact, subdued row inside the
+    // app card — not a full session card.
     const reported = within(reportedApplication!);
     expect(reported.getAllByText('https://app.example').length).toBeGreaterThanOrEqual(1);
     expect(reported.getByText('App ID: com.example.notes')).toBeInTheDocument();
     expect(reported.getByText('1 session · 0 active')).toBeInTheDocument();
-    expect(reported.getByRole('heading', { name: 'Firefox on Linux' })).toBeInTheDocument();
+    expect(reported.queryByRole('heading', { name: 'Firefox on Linux' })).not.toBeInTheDocument();
     expect(reported.queryByRole('heading', { name: 'Safari on macOS' })).not.toBeInTheDocument();
-    expect(reported.getAllByText('Expired').length).toBeGreaterThanOrEqual(1);
-    expect(reported.getByText('Access expired')).toBeInTheDocument();
-    expect(reported.getAllByText('Time zone')).toHaveLength(1);
-    expect(reported.getAllByText('Europe/London').length).toBeGreaterThanOrEqual(1);
-    expect(reported.getAllByText('Relay').length).toBeGreaterThanOrEqual(1);
-    expect(reported.queryByText(/IP location/i)).not.toBeInTheDocument();
+    expect(reported.queryByText('Access expired')).not.toBeInTheDocument();
+
+    const expiredList = reported.getByRole('list', {
+      name: 'Expired sessions for Example Notes',
+    });
+    const expiredRow = within(expiredList).getByRole('listitem');
+    expect(within(expiredRow).getByText('Firefox on Linux')).toBeInTheDocument();
+    expect(within(expiredRow).getByText(/^Expired /)).toBeInTheDocument();
+    expect(within(expiredRow).getByRole('button', {
+      name: 'Renew Firefox on Linux session for Example Notes',
+    })).toBeInTheDocument();
 
     expect(verified.getByRole('button', {
       name: 'Revoke Safari on macOS session for Example Notes',
@@ -168,7 +172,6 @@ describe('PermissionsTab', () => {
       name: 'Revoke Firefox on Linux session for Example Notes',
     })).not.toBeInTheDocument();
     expect(verified.getAllByText(/Permission bundle ·/)).toHaveLength(1);
-    expect(reported.getAllByText(/Permission bundle ·/)).toHaveLength(1);
 
     const permissionBundle = verified.getByRole('group', {
       name: /Permission bundle approved/,
@@ -181,18 +184,50 @@ describe('PermissionsTab', () => {
     })).toBeInTheDocument();
   });
 
-  it('hides expired sessions again when the inactive toggle is switched off', async () => {
-    const { user } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+  it('renews an expired session after confirmation', async () => {
+    const { user, queryClient } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries');
 
-    await user.click(screen.getByRole('button', { name: /show inactive sessions \(1\)/i }));
-    expect(screen.getByText('Firefox on Linux')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', {
+      name: 'Renew Firefox on Linux session for Example Notes',
+    }));
 
-    await user.click(screen.getByRole('button', { name: /hide inactive sessions/i }));
-    expect(screen.queryByText('Firefox on Linux')).not.toBeInTheDocument();
-    expect(screen.getByText('Safari on macOS')).toBeInTheDocument();
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/fresh 1 hour session/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Renew access' }));
+
+    await waitFor(() => {
+      expect(mocks.renewExpiredSession).toHaveBeenCalledTimes(1);
+    });
+    const [, ownerDid, session] = mocks.renewExpiredSession.mock.calls[0];
+    expect(ownerDid).toBe('did:dht:owner');
+    expect(session.grantee).toBe('did:dht:expired-delegate');
+    expect(session.grants.map((grant: DwnPermissionGrant) => grant.id)).toEqual(['grant-3']);
+    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+      expect.stringContaining('Example Notes access renewed'),
+    );
+    expect(invalidateQueries).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.permissions('did:dht:owner'),
+    });
   });
 
-  it('offers the inactive toggle when no app currently has access', () => {
+  it('reports a renewal failure without dismissing the dialog target', async () => {
+    mocks.renewExpiredSession.mockRejectedValue(new Error('renewal failed'));
+
+    const { user } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    await user.click(screen.getByRole('button', {
+      name: 'Renew Firefox on Linux session for Example Notes',
+    }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Renew access' }));
+
+    await waitFor(() => {
+      expect(mocks.toastError).toHaveBeenCalledWith('renewal failed');
+    });
+  });
+
+  it('renders apps whose sessions all expired with compact renewable rows', () => {
     mocks.permissions = [
       permissionGrant({
         id      : 'grant-expired',
@@ -203,11 +238,36 @@ describe('PermissionsTab', () => {
 
     renderWithProviders(<PermissionsTab did="did:dht:owner" />);
 
-    expect(screen.queryByRole('heading', { name: 'Connected Apps' })).not.toBeInTheDocument();
-    expect(screen.getByText(/no apps currently have access/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: /show inactive sessions \(1\)/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Connected Apps' })).toBeInTheDocument();
+    expect(screen.getByText('1 app')).toBeInTheDocument();
+    expect(screen.getByRole('button', {
+      name: 'Renew Firefox on Linux session for Example Notes',
+    })).toBeInTheDocument();
+  });
+
+  it('bounds expired session rows per app with an expander', async () => {
+    mocks.permissions = Array.from({ length: 5 }, (_, index) =>
+      permissionGrant({
+        id      : `grant-expired-${index}`,
+        session : {
+          ...expiredSession,
+          id        : `expired-session-${index}`,
+          createdAt : `2025-01-0${index + 2}T00:00:00.000Z`,
+          expiresAt : `2025-01-0${index + 3}T00:00:00.000Z`,
+        },
+        grantee: `did:dht:expired-delegate-${index}`,
+      }));
+
+    const { user } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    const expiredList = screen.getByRole('list', { name: 'Expired sessions for Example Notes' });
+    expect(within(expiredList).getAllByRole('listitem')).toHaveLength(3);
+
+    await user.click(screen.getByRole('button', { name: 'Show all 5 expired sessions' }));
+    expect(within(expiredList).getAllByRole('listitem')).toHaveLength(5);
+
+    await user.click(screen.getByRole('button', { name: 'Show fewer expired sessions' }));
+    expect(within(expiredList).getAllByRole('listitem')).toHaveLength(3);
   });
 
   it('refreshes both permission views and reports a partial session revocation', async () => {
