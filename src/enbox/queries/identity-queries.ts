@@ -16,6 +16,7 @@ import { sdkError } from '../effect/errors';
 import { withEnboxEffect } from '../effect/enbox-effect';
 import { CurrentAgent, currentAgentLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
+import { isSessionRevocationGrant } from '@/features/identities/tabs/permission-sessions';
 
 const PROFILE_MATERIALIZATION = {
   children: ['profile/avatar', 'profile/hero'],
@@ -141,7 +142,9 @@ export function fetchPermissionsEffect(did: string) {
           target       : did,
           checkRevoked : true,
         });
-        return entries.map(({ grant }) => grant);
+        return entries
+          .map(({ grant }) => grant)
+          .filter((grant) => !isSessionRevocationGrant(grant));
       },
       catch: sdkError('permissions.fetchGrants'),
     });
@@ -167,7 +170,9 @@ export function fetchPermissionHistoryEffect(did: string) {
           target       : did,
           checkRevoked : false,
         });
-        return entries.map(({ grant }) => grant);
+        return entries
+          .map(({ grant }) => grant)
+          .filter((grant) => !isSessionRevocationGrant(grant));
       },
       catch: sdkError('permissions.fetchGrantHistory'),
     });

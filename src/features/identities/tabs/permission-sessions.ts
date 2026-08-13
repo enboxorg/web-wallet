@@ -1,5 +1,20 @@
 import type { ConnectSessionMetadata, DwnPermissionGrant } from '@enbox/agent';
 
+/**
+ * The connect approval ceremony stores one contextId-scoped revocation grant
+ * per session grant so the delegate can self-revoke its own access. They are
+ * protocol machinery — deliberately stamped without `connectSession` display
+ * metadata — and are never user-facing, so permission display and grouping
+ * must exclude them rather than bucket them as session-less grants.
+ */
+const PERMISSIONS_PROTOCOL_URI = 'https://identity.foundation/dwn/permissions';
+
+export function isSessionRevocationGrant(grant: DwnPermissionGrant): boolean {
+  const scope = grant.scope as { protocol?: string; contextId?: unknown } | undefined;
+  return scope?.protocol === PERMISSIONS_PROTOCOL_URI
+    && typeof scope.contextId === 'string';
+}
+
 export interface PermissionApprovalBundle {
   id: string;
   session: ConnectSessionMetadata;
@@ -325,6 +340,10 @@ export function buildPermissionSections(
   const standaloneGroups = new Map<string, DwnPermissionGrant[]>();
 
   for (const grant of permissions ?? []) {
+    if (isSessionRevocationGrant(grant)) {
+      continue;
+    }
+
     const session = getConnectSession(grant);
     if (!session) {
       appendStandaloneGrant(standaloneGroups, grant);

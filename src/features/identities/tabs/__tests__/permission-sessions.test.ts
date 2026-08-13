@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { DwnPermissionGrant } from '@enbox/agent';
-import { buildPermissionSections, countActivePermissionApps } from '../permission-sessions';
+import {
+  buildPermissionSections,
+  countActivePermissionApps,
+  isSessionRevocationGrant,
+} from '../permission-sessions';
 
 function grant(overrides: Partial<DwnPermissionGrant> = {}): DwnPermissionGrant {
   return {
@@ -357,6 +361,36 @@ describe('permission session grouping', () => {
       [expect.objectContaining({ id: 'did:dht:delegate' })],
       [expect.objectContaining({ id: 'did:dht:other-delegate' })],
     ]);
+  });
+
+  it('excludes ceremony revocation grants from display grouping', () => {
+    const revocationGrant = grant({
+      id      : 'revocation-grant-1',
+      grantee : 'did:dht:delegate',
+      scope   : {
+        interface : 'Records',
+        method    : 'Write',
+        protocol  : 'https://identity.foundation/dwn/permissions',
+        contextId : 'grant-1',
+      } as DwnPermissionGrant['scope'],
+    });
+
+    expect(isSessionRevocationGrant(revocationGrant)).toBe(true);
+    expect(isSessionRevocationGrant(
+      grant({ id: 'grant-1', connectSession: session } as Partial<DwnPermissionGrant>),
+    )).toBe(false);
+
+    const sections = buildPermissionSections([
+      grant({ id: 'grant-1', connectSession: session } as Partial<DwnPermissionGrant>),
+      revocationGrant,
+    ], new Date('2026-06-23T12:00:00.000Z'));
+
+    expect(sections.applications).toHaveLength(1);
+    expect(sections.applications[0].permissionCount).toBe(1);
+    expect(sections.standaloneGroups).toHaveLength(0);
+    expect(
+      countActivePermissionApps([revocationGrant], new Date('2026-06-23T12:00:00.000Z')),
+    ).toBe(0);
   });
 
   it('keeps grants without session metadata grouped by grantee', () => {
