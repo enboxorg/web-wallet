@@ -94,7 +94,6 @@ export function createMockAgent(overrides?: { agentDid?: string }) {
       setDwnEndpoints: vi.fn(),
     },
     sync: {
-      ensureIdentityOptions  : vi.fn(),
       setIdentityOptions     : vi.fn(),
       refreshIdentityRouting: vi.fn(),
       removeIdentity         : vi.fn(),

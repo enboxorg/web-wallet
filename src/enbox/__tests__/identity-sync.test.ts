@@ -84,11 +84,11 @@ describe('reconcileIdentitySync', () => {
     const agent = createAgent();
 
     const result = await reconcileIdentitySync(agent, [
-      { did: { uri: 'did:dht:owner' } },
       {
         did: { uri: 'did:dht:delegate' },
         metadata: { connectedDid: 'did:dht:owner' },
       },
+      { did: { uri: 'did:dht:owner' } },
     ]);
 
     expect(mocks.installProtocols).toHaveBeenCalledOnce();

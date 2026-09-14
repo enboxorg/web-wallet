@@ -12,9 +12,8 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
 }));
 
-vi.mock('../../identity-sync', () => ({
-  getIdentityDid: (identity: any) =>
-    identity?.metadata?.connectedDid ?? identity?.did?.uri,
+vi.mock('../../identity-sync', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../../identity-sync')>(),
   reconcileIdentitySync: mocks.reconcileIdentitySync,
 }));
 
@@ -66,6 +65,31 @@ describe('useIdentitySyncReconciliation', () => {
         identities,
       );
     });
+  });
+
+  it('reconciles when an owner replaces a delegated view of the same DID', async () => {
+    const queryClient = createQueryClient();
+    const delegatedIdentity = {
+      did: { uri: 'did:dht:delegate' },
+      metadata: { connectedDid: 'did:dht:owner' },
+    };
+    const ownerIdentity = { did: { uri: 'did:dht:owner' } };
+    const { rerender } = renderHook(
+      ({ identities }) => useIdentitySyncReconciliation(identities),
+      {
+        initialProps: { identities: [delegatedIdentity] },
+        wrapper: createWrapper(queryClient),
+      },
+    );
+
+    expect(mocks.reconcileIdentitySync).not.toHaveBeenCalled();
+    rerender({ identities: [ownerIdentity] });
+
+    await waitFor(() => expect(mocks.reconcileIdentitySync).toHaveBeenCalledOnce());
+    expect(mocks.reconcileIdentitySync).toHaveBeenLastCalledWith(
+      { id: 'agent-1' },
+      [ownerIdentity],
+    );
   });
 
   it('invalidates identity and profile queries after registering a discovered identity', async () => {

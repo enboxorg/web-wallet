@@ -102,11 +102,12 @@ function setAgent(optionsByDid: Record<string, Partial<SyncIdentityOptions>> = {
             ? undefined
             : { protocols: [ProfileDefinition.protocol, ConnectDefinition.protocol], ...options };
         }),
-        setIdentityOptions: vi.fn(async ({ did, options }: {
+        ensureIdentityOptions: vi.fn(async ({ did, options }: {
           did: string;
           options: SyncIdentityOptions;
         }) => {
           optionsByDid[did] = options;
+          return true;
         }),
         refreshIdentityRouting: vi.fn(async () => {}),
         on: vi.fn((listener: (event: SyncEvent) => void) => {
@@ -242,6 +243,29 @@ describe('useSyncQueryInvalidation', () => {
     expect(sdkMocks.subscriptions).not.toContainEqual(
       expect.objectContaining({ connectedDid: 'did:dht:owner' }),
     );
+  });
+
+  it('prefers an owner over a later delegate for the same connected DID', async () => {
+    setAgent();
+    const queryClient = createQueryClient();
+    renderHook(
+      () => useSyncQueryInvalidation([
+        { did: { uri: 'did:dht:owner' } },
+        {
+          did      : { uri: 'did:dht:delegate' },
+          metadata : { connectedDid: 'did:dht:owner' },
+        },
+      ]),
+      { wrapper: createWrapper(queryClient) },
+    );
+
+    await settleSubscriptions();
+    const ownerSubscription = sdkMocks.subscriptions.find(
+      ({ connectedDid }) => connectedDid === 'did:dht:owner',
+    );
+    expect(ownerSubscription).toBeDefined();
+    expect(ownerSubscription?.delegateDid).toBeUndefined();
+    expect(ownerSubscription?.request.filters).toBeUndefined();
   });
 
   it('does not recreate subscriptions when a refetch returns the same identities', async () => {
@@ -458,7 +482,7 @@ describe('useSyncQueryInvalidation', () => {
     });
 
     await settleSubscriptions();
-    expect(agent.sync.setIdentityOptions).toHaveBeenCalledWith({
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did     : 'did:dht:agent',
       options : {
         protocols: normalizeSyncProtocols([
@@ -479,7 +503,7 @@ describe('useSyncQueryInvalidation', () => {
       },
     }));
     await settleSubscriptions();
-    expect(agent.sync.setIdentityOptions).toHaveBeenCalledOnce();
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledOnce();
   });
 
   it('preserves existing routing when a fresh endpoint resolution fails', async () => {
