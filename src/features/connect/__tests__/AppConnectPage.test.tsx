@@ -258,6 +258,22 @@ describe('AppConnectPage', () => {
     expect(mocks.scannerHasCamera).not.toHaveBeenCalled();
   });
 
+  it('keeps standalone approval actions above the mobile safe area', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+
+    renderWithProviders(<AppConnectPage standalone />, {
+      initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
+    });
+
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.getByTestId('connect-action-area')).toHaveClass(
+      'sticky',
+      'bottom-0',
+      'pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
+    );
+  });
+
   it('scrubs an incomplete secret-bearing fragment before showing an error', async () => {
     setPageUrl(`#encryption_key=${ENCRYPTION_KEY_B64U}`);
 

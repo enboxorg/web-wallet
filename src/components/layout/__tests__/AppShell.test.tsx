@@ -142,7 +142,9 @@ describe('AppShell', () => {
     it('adds extra bottom padding to main content for bottom nav', () => {
       renderShell();
       const main = screen.getByTestId('main-content');
-      expect(main.className).toContain('pb-[calc(6.5rem+env(safe-area-inset-bottom))]');
+      const bottomClearance = 'calc(6.5rem+max(env(safe-area-inset-bottom),1rem))';
+      expect(main.className).toContain(`pb-[${bottomClearance}]`);
+      expect(main.className).toContain(`scroll-pb-[${bottomClearance}]`);
     });
   });
 
@@ -152,5 +154,10 @@ describe('AppShell', () => {
     const container = main.firstElementChild as HTMLElement;
     expect(container.className).toContain('max-w-[var(--content-width)]');
     expect(container.className).toContain('mx-auto');
+  });
+
+  it('tracks the visible viewport when mobile browser chrome changes', () => {
+    renderShell();
+    expect(screen.getByTestId('app-shell')).toHaveClass('h-dvh');
   });
 });

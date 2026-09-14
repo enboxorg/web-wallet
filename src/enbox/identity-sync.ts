@@ -1,5 +1,4 @@
 import { Effect } from 'effect';
-import type { SyncIdentityOptions } from '@enbox/agent';
 
 import {
   IDENTITY_SYNC_PROTOCOLS,
@@ -7,7 +6,6 @@ import {
 } from './protocols';
 import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
-import { runIdentitySetupSingleFlight } from './effect/keyed-single-flight';
 import { CurrentAgent, enboxLiveLayer } from './effect/services';
 import { runEnboxPromise } from './effect/runtime';
 
@@ -47,59 +45,19 @@ export function getIdentityDid(identity: unknown): string | undefined {
   return getIdentityTarget(identity)?.connectedDid;
 }
 
-function sameProtocolScope(
-  existing: SyncIdentityOptions | undefined,
-  protocols: readonly [string, ...string[]],
-): boolean {
-  if (!existing || existing.protocols === 'all') {
-    return false;
-  }
-
-  if (existing.delegateDid !== undefined) {
-    return false;
-  }
-
-  if (existing.protocols.length !== protocols.length) {
-    return false;
-  }
-
-  return protocols.every((protocol) =>
-    existing.protocols.includes(protocol)
-  );
-}
-
-function getSyncOptionsEffect(did: string) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-
-    return yield* Effect.tryPromise({
-      try: async (): Promise<SyncIdentityOptions | undefined> =>
-        agent.sync.getIdentityOptions(did),
-      catch: sdkError('sync.getIdentityOptions'),
-    });
-  });
-}
-
-function applySyncOptionsEffect(
+function ensureSyncOptionsEffect(
   did: string,
   protocols: readonly [string, ...string[]],
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-    const options: SyncIdentityOptions = {
-      protocols: [...protocols],
-    };
-
-    yield* Effect.tryPromise({
-      try: () => runIdentitySetupSingleFlight(
-        agent,
+    return yield* Effect.tryPromise({
+      try: () => agent.sync.ensureIdentityOptions({
         did,
-        async () => agent.sync.setIdentityOptions({ did, options }),
-      ),
-      catch: sdkError('sync.setIdentityOptions'),
+        options: { protocols: [...protocols] },
+      }),
+      catch: sdkError('sync.ensureIdentityOptions'),
     });
-
-    return true;
   });
 }
 
@@ -140,12 +98,8 @@ export function reconcileIdentitySyncEffect(
         continue;
       }
       const changed = yield* Effect.gen(function* () {
-        const existing = yield* getSyncOptionsEffect(did);
         yield* installProtocolsEffect(did);
-        if (sameProtocolScope(existing, IDENTITY_SYNC_PROTOCOLS)) {
-          return false;
-        }
-        return yield* applySyncOptionsEffect(did, IDENTITY_SYNC_PROTOCOLS);
+        return yield* ensureSyncOptionsEffect(did, IDENTITY_SYNC_PROTOCOLS);
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {

@@ -1,6 +1,8 @@
 import { defineConfig } from 'vitest/config';
 import path from 'path';
 
+const nodeMajorVersion = Number.parseInt(process.versions.node.split('.')[0] ?? '0', 10);
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -13,6 +15,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'happy-dom',
+    // Node 25+ reserves web-storage globals but can leave localStorage
+    // undefined, preventing Vitest from installing Happy DOM's implementation.
+    execArgv: nodeMajorVersion >= 25 ? ['--no-webstorage'] : [],
     setupFiles: ['./src/vitest.setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['src/e2e/**', 'node_modules'],

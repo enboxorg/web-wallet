@@ -41,7 +41,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-0" data-testid="app-shell">
+    <div className="flex h-dvh overflow-hidden bg-surface-0" data-testid="app-shell">
       {/* Desktop: persistent sidebar */}
       {isDesktop && (
         <Sidebar
@@ -63,8 +63,14 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
         {/* Scrollable content area */}
         <main
           className={
-            'flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6'
-            + (!isDesktop ? ' pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : '') /* reserve the tab bar + safe area */
+            'min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6'
+            + (!isDesktop
+              // The fixed tab bar overlays this scrollport. Reserve its full
+              // footprint, a comfortable action-button buffer, and at least
+              // 1rem beyond any device safe area. `h-dvh` on the shell handles
+              // expanding/collapsing browser chrome separately.
+              ? ' pb-[calc(6.5rem+max(env(safe-area-inset-bottom),1rem))] scroll-pb-[calc(6.5rem+max(env(safe-area-inset-bottom),1rem))]'
+              : '')
           }
           data-testid="main-content"
         >

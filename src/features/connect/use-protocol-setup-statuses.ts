@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 
 import {
-  getProtocolSetupStatus,
+  getRequestedProtocolDefinitionsConflictMessage,
   protocolDefinitionsMatch,
   queryProtocolSetupStatus,
   type ProtocolSetupStatus,
@@ -27,7 +27,7 @@ function collectProtocolDefinitions(permissions: ConnectPermissionRequest[]) {
   }
 
   for (const definition of byProtocol.values()) {
-    if (getProtocolSetupStatus(undefined, definition) === 'conflict') {
+    if (getRequestedProtocolDefinitionsConflictMessage([definition]) !== undefined) {
       conflicts.add(definition.protocol);
     }
   }
