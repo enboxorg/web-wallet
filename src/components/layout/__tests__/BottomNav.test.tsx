@@ -54,6 +54,13 @@ describe('BottomNav', () => {
     expect(nav).toBeInTheDocument();
   });
 
+  it('reserves the device bottom safe area', () => {
+    render(<BottomNav items={makeItems()} currentPath="/" onNavigate={vi.fn()} />);
+    expect(screen.getByRole('navigation', { name: 'Main navigation' })).toHaveStyle({
+      paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+    });
+  });
+
   it('root path "/" only matches exact "/"', () => {
     const items = makeItems();
     render(<BottomNav items={items} currentPath="/wallet" onNavigate={vi.fn()} />);

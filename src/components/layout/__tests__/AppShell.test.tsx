@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { NavItem } from '../types';
 
@@ -141,9 +141,12 @@ describe('AppShell', () => {
 
     it('places the bottom nav outside the scrollport so it cannot cover content', () => {
       renderShell();
-      const content = within(screen.getByTestId('app-shell-content'));
-      expect(content.getByTestId('main-content')).toBeInTheDocument();
-      const bottomNav = content.getByTestId('bottom-nav');
+      const content = screen.getByTestId('app-shell-content');
+      const main = screen.getByTestId('main-content');
+      const bottomNav = screen.getByTestId('bottom-nav');
+      expect(content).toContainElement(main);
+      expect(content).toContainElement(bottomNav);
+      expect(main).not.toContainElement(bottomNav);
       expect(bottomNav).toHaveClass('shrink-0');
       expect(bottomNav).not.toHaveClass('fixed');
     });

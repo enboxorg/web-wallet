@@ -18,17 +18,15 @@ function collectProtocolDefinitions(permissions: ConnectPermissionRequest[]) {
 
   for (const permission of permissions) {
     const definition = permission.protocolDefinition;
+    if (getRequestedProtocolDefinitionsConflictMessage([definition]) !== undefined) {
+      conflicts.add(definition.protocol);
+    }
+
     const existing = byProtocol.get(definition.protocol);
     if (existing && !protocolDefinitionsMatch(existing, definition)) {
       conflicts.add(definition.protocol);
-    } else {
+    } else if (existing === undefined) {
       byProtocol.set(definition.protocol, definition);
-    }
-  }
-
-  for (const definition of byProtocol.values()) {
-    if (getRequestedProtocolDefinitionsConflictMessage([definition]) !== undefined) {
-      conflicts.add(definition.protocol);
     }
   }
 

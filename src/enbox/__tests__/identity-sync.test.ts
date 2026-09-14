@@ -52,21 +52,6 @@ describe('reconcileIdentitySync', () => {
     expect(result.changedDids).toEqual(['did:dht:new']);
   });
 
-  it('reports a sync scope change detected by the SDK', async () => {
-    const identity = { did: { uri: 'did:dht:existing' }, metadata: { name: 'Existing' } };
-    const agent = createAgent();
-
-    const result = await reconcileIdentitySync(agent, [identity]);
-
-    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
-      did: 'did:dht:existing',
-      options: { protocols: desiredProtocols },
-    });
-    expect(agent.sync.sync).not.toHaveBeenCalled();
-    expect(mocks.installProtocols).toHaveBeenCalledWith('did:dht:existing');
-    expect(result.changedDids).toEqual(['did:dht:existing']);
-  });
-
   it('reports no change when the SDK finds an equivalent sync scope', async () => {
     const identity = { did: { uri: 'did:dht:known' }, metadata: { name: 'Known' } };
     const agent = createAgent(false);
@@ -93,6 +78,23 @@ describe('reconcileIdentitySync', () => {
 
     expect(mocks.installProtocols).not.toHaveBeenCalled();
     expect(agent.sync.ensureIdentityOptions).not.toHaveBeenCalled();
+  });
+
+  it('reconciles an owner once when a delegated identity references the same DID', async () => {
+    const agent = createAgent();
+
+    const result = await reconcileIdentitySync(agent, [
+      { did: { uri: 'did:dht:owner' } },
+      {
+        did: { uri: 'did:dht:delegate' },
+        metadata: { connectedDid: 'did:dht:owner' },
+      },
+    ]);
+
+    expect(mocks.installProtocols).toHaveBeenCalledOnce();
+    expect(mocks.installProtocols).toHaveBeenCalledWith('did:dht:owner');
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledOnce();
+    expect(result.changedDids).toEqual(['did:dht:owner']);
   });
 
   it('continues reconciling later identities when one sync registration fails', async () => {

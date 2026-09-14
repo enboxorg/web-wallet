@@ -98,6 +98,21 @@ describe('protocol-install', () => {
     )).resolves.toBe('configured');
   });
 
+  it('reports an absent protocol as requiring installation', async () => {
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: {
+        status  : { code: 200, detail: 'OK' },
+        entries : [],
+      },
+    });
+
+    await expect(queryProtocolSetupStatus(
+      'did:example:owner',
+      { dwn: createDwn(), processDwnRequest },
+      notesProtocol,
+    )).resolves.toBe('install');
+  });
+
   it('verifies installed encryption keys against every complete owner derivation path', async () => {
     const processDwnRequest = vi.fn().mockResolvedValue({
       reply: {

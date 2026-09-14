@@ -3,7 +3,7 @@ import { authoredProtocolDefinitionsEqual } from '@enbox/dwn-sdk-js';
 import {
   inspectConnectProtocol,
   type DwnProtocolDefinition,
-  type EnboxPlatformAgent,
+  type InspectConnectProtocolParams,
 } from '@enbox/agent';
 
 import { getCanonicalProtocolDefinition } from '@/lib/protocol-names';
@@ -11,10 +11,7 @@ import { getCanonicalProtocolDefinition } from '@/lib/protocol-names';
 export type ResolvedProtocolSetupStatus = 'configured' | 'conflict' | 'override' | 'install' | 'upgrade';
 export type ProtocolSetupStatus = ResolvedProtocolSetupStatus | 'checking' | 'unavailable';
 
-type ProtocolInspectionAgent = Pick<
-  EnboxPlatformAgent,
-  'dwn' | 'processDwnRequest'
->;
+type ProtocolInspectionAgent = InspectConnectProtocolParams['agent'];
 
 function containsWalletManagedKeyAgreement(value: unknown): boolean {
   if (Array.isArray(value)) {
@@ -48,7 +45,7 @@ export const protocolDefinitionsMatch = authoredProtocolDefinitionsEqual;
 
 export function protocolHasEncryptedTypes(protocolDefinition: DwnProtocolDefinition): boolean {
   return Object.values(protocolDefinition.types ?? {}).some(
-    (type) => (type as { encryptionRequired?: boolean }).encryptionRequired === true,
+    (type) => type.encryptionRequired === true,
   );
 }
 

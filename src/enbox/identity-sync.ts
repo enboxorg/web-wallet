@@ -77,23 +77,20 @@ export function reconcileIdentitySyncEffect(
   identities: unknown[],
 ) {
   return Effect.gen(function* () {
-    const targets = new Map<string, IdentityTarget>();
+    const ownerDids = new Set<string>();
     for (const identity of identities) {
       const target = getIdentityTarget(identity);
-      if (target !== undefined) {
-        targets.set(target.connectedDid, target);
+      if (target !== undefined && target.delegateDid === undefined) {
+        ownerDids.add(target.connectedDid);
       }
     }
-    if (targets.size === 0) {
+    if (ownerDids.size === 0) {
       return { changedDids: [], failedDids: [] };
     }
 
     const changedDids: string[] = [];
     const failedDids: string[] = [];
-    for (const { connectedDid: did, delegateDid } of targets.values()) {
-      if (delegateDid !== undefined) {
-        continue;
-      }
+    for (const did of ownerDids) {
       const changed = yield* Effect.gen(function* () {
         yield* installProtocolsEffect(did);
         return yield* ensureIdentitySyncOptionsEffect(did);

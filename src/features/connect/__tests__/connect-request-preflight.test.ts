@@ -100,13 +100,22 @@ describe('connect request preflight', () => {
       },
     ])).toThrow('different definitions');
 
-    expect(() => preflightConnectPermissions([{
+    const requesterKeyPermission = {
       protocolDefinition: {
         ...definition,
         $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'requester-key' } },
       },
       permissionScopes: [{ interface: 'Records', method: 'Read', protocol }],
-    }])).toThrow('wallet-managed encryption keys');
+    } as ConnectPermissionRequest;
+    expect(() => preflightConnectPermissions([requesterKeyPermission]))
+      .toThrow('wallet-managed encryption keys');
+
+    // Authored comparison intentionally ignores generated key metadata. Every
+    // duplicate must still be inspected so a later clean copy cannot hide it.
+    expect(() => preflightConnectPermissions([
+      requesterKeyPermission,
+      ...permissions({ interface: 'Records', method: 'Write', protocol }),
+    ])).toThrow('wallet-managed encryption keys');
   });
 
   it('requires normalized protocol URIs', () => {
