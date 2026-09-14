@@ -233,7 +233,7 @@ describe('DWebConnectPage', () => {
 
     expect(screen.getByTestId('dweb-connect-page')).toHaveClass(
       'min-h-dvh',
-      'pb-[calc(1.5rem+env(safe-area-inset-bottom))]',
+      'pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]',
     );
   });
 

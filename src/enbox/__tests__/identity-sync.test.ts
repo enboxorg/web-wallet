@@ -4,19 +4,8 @@ import { Effect } from 'effect';
 import { reconcileIdentitySync } from '../identity-sync';
 
 const mocks = vi.hoisted(() => ({
-  ensureRegistration: vi.fn(),
   installProtocols: vi.fn(),
 }));
-
-vi.mock('../registration', async () => {
-  const { Effect } = await vi.importActual<typeof import('effect')>('effect');
-
-  mocks.ensureRegistration.mockImplementation(() => Effect.void);
-
-  return {
-    ensureRegistrationEffect: mocks.ensureRegistration,
-  };
-});
 
 vi.mock('../protocols', () => ({
   IDENTITY_SYNC_PROTOCOLS: [
@@ -33,20 +22,10 @@ const desiredProtocols = [
   'https://identity.foundation/protocols/service-config',
 ];
 
-function createAgent(existingOptions: Record<string, unknown> = {}) {
+function createAgent(optionsChanged = true) {
   return {
     sync: {
-      ensureIdentityOptions: vi.fn(async ({ did, options }: {
-        did: string;
-        options: { protocols: string[] };
-      }) => {
-        const existing = existingOptions[did] as { protocols?: string[] | 'all' } | undefined;
-        const unchanged = Array.isArray(existing?.protocols)
-          && existing.protocols.length === options.protocols.length
-          && options.protocols.every((protocol) => existing.protocols.includes(protocol));
-        existingOptions[did] = options;
-        return !unchanged;
-      }),
+      ensureIdentityOptions: vi.fn().mockResolvedValue(optionsChanged),
       sync: vi.fn(),
     },
   };
@@ -55,7 +34,6 @@ function createAgent(existingOptions: Record<string, unknown> = {}) {
 describe('reconcileIdentitySync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.ensureRegistration.mockImplementation(() => Effect.void);
     mocks.installProtocols.mockImplementation(() => Effect.void);
   });
 
@@ -65,7 +43,6 @@ describe('reconcileIdentitySync', () => {
 
     const result = await reconcileIdentitySync(agent, [identity]);
 
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:new',
       options: { protocols: desiredProtocols },
@@ -75,11 +52,9 @@ describe('reconcileIdentitySync', () => {
     expect(result.changedDids).toEqual(['did:dht:new']);
   });
 
-  it('updates broad all-protocol registrations to the wallet-scoped protocol set', async () => {
+  it('reports a sync scope change detected by the SDK', async () => {
     const identity = { did: { uri: 'did:dht:existing' }, metadata: { name: 'Existing' } };
-    const agent = createAgent({
-      'did:dht:existing': { protocols: 'all' },
-    });
+    const agent = createAgent();
 
     const result = await reconcileIdentitySync(agent, [identity]);
 
@@ -92,15 +67,12 @@ describe('reconcileIdentitySync', () => {
     expect(result.changedDids).toEqual(['did:dht:existing']);
   });
 
-  it('does not pull when all identities already have the wallet sync scope', async () => {
+  it('reports no change when the SDK finds an equivalent sync scope', async () => {
     const identity = { did: { uri: 'did:dht:known' }, metadata: { name: 'Known' } };
-    const agent = createAgent({
-      'did:dht:known': { protocols: desiredProtocols },
-    });
+    const agent = createAgent(false);
 
     const result = await reconcileIdentitySync(agent, [identity]);
 
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:known',
       options: { protocols: desiredProtocols },
@@ -119,7 +91,6 @@ describe('reconcileIdentitySync', () => {
 
     await reconcileIdentitySync(agent, [identity]);
 
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(mocks.installProtocols).not.toHaveBeenCalled();
     expect(agent.sync.ensureIdentityOptions).not.toHaveBeenCalled();
   });
@@ -147,7 +118,6 @@ describe('reconcileIdentitySync', () => {
       did: 'did:dht:good',
       options: { protocols: desiredProtocols },
     });
-    expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 });

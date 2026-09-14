@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { DwnProtocolDefinition } from '@enbox/agent';
 import { KeyDerivationScheme } from '@enbox/dwn-sdk-js';
 import { ProfileDefinition } from '@enbox/protocols';
@@ -75,10 +75,6 @@ const notesProtocol: DwnProtocolDefinition = {
 };
 
 describe('protocol-install', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('detects encrypted protocols', () => {
     expect(protocolHasEncryptedTypes(encryptedProtocol)).toBe(true);
   });

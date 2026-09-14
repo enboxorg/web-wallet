@@ -45,16 +45,13 @@ export function getIdentityDid(identity: unknown): string | undefined {
   return getIdentityTarget(identity)?.connectedDid;
 }
 
-function ensureSyncOptionsEffect(
-  did: string,
-  protocols: readonly [string, ...string[]],
-) {
+export function ensureIdentitySyncOptionsEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
       try: () => agent.sync.ensureIdentityOptions({
         did,
-        options: { protocols: [...protocols] },
+        options: { protocols: [...IDENTITY_SYNC_PROTOCOLS] },
       }),
       catch: sdkError('sync.ensureIdentityOptions'),
     });
@@ -99,7 +96,7 @@ export function reconcileIdentitySyncEffect(
       }
       const changed = yield* Effect.gen(function* () {
         yield* installProtocolsEffect(did);
-        return yield* ensureSyncOptionsEffect(did, IDENTITY_SYNC_PROTOCOLS);
+        return yield* ensureIdentitySyncOptionsEffect(did);
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {

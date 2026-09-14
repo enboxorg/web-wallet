@@ -514,7 +514,7 @@ export default function DWebConnectPage() {
 
   return (
     <div
-      className="mx-auto flex min-h-dvh max-w-md flex-col px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))]"
+      className="mx-auto flex min-h-dvh max-w-md flex-col px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]"
       data-testid="dweb-connect-page"
     >
       {/* Header */}

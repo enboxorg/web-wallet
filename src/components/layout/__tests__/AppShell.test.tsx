@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { NavItem } from '../types';
 
@@ -139,12 +139,13 @@ describe('AppShell', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/search');
     });
 
-    it('adds extra bottom padding to main content for bottom nav', () => {
+    it('places the bottom nav outside the scrollport so it cannot cover content', () => {
       renderShell();
-      const main = screen.getByTestId('main-content');
-      const bottomClearance = 'calc(6.5rem+max(env(safe-area-inset-bottom),1rem))';
-      expect(main.className).toContain(`pb-[${bottomClearance}]`);
-      expect(main.className).toContain(`scroll-pb-[${bottomClearance}]`);
+      const content = within(screen.getByTestId('app-shell-content'));
+      expect(content.getByTestId('main-content')).toBeInTheDocument();
+      const bottomNav = content.getByTestId('bottom-nav');
+      expect(bottomNav).toHaveClass('shrink-0');
+      expect(bottomNav).not.toHaveClass('fixed');
     });
   });
 

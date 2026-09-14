@@ -270,7 +270,7 @@ describe('AppConnectPage', () => {
     expect(screen.getByTestId('connect-action-area')).toHaveClass(
       'sticky',
       'bottom-0',
-      'pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
+      'pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]',
     );
   });
 

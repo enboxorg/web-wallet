@@ -1,6 +1,4 @@
-import {
-  authoredProtocolDefinitionsEqual,
-} from '@enbox/dwn-sdk-js';
+import { authoredProtocolDefinitionsEqual } from '@enbox/dwn-sdk-js';
 
 import {
   inspectConnectProtocol,
@@ -13,7 +11,7 @@ import { getCanonicalProtocolDefinition } from '@/lib/protocol-names';
 export type ResolvedProtocolSetupStatus = 'configured' | 'conflict' | 'override' | 'install' | 'upgrade';
 export type ProtocolSetupStatus = ResolvedProtocolSetupStatus | 'checking' | 'unavailable';
 
-type PrepareProtocolAgent = Pick<
+type ProtocolInspectionAgent = Pick<
   EnboxPlatformAgent,
   'dwn' | 'processDwnRequest'
 >;
@@ -49,7 +47,9 @@ function isNormalizedProtocolUri(protocol: string): boolean {
 export const protocolDefinitionsMatch = authoredProtocolDefinitionsEqual;
 
 export function protocolHasEncryptedTypes(protocolDefinition: DwnProtocolDefinition): boolean {
-  return Object.values(protocolDefinition.types ?? {}).some((type: any) => type?.encryptionRequired === true);
+  return Object.values(protocolDefinition.types ?? {}).some(
+    (type) => (type as { encryptionRequired?: boolean }).encryptionRequired === true,
+  );
 }
 
 function getRequestedProtocolDefinitionConflictMessage(
@@ -91,7 +91,7 @@ export function getRequestedProtocolDefinitionsConflictMessage(
 
 export async function queryProtocolSetupStatus(
   selectedDid: string,
-  agent: Pick<PrepareProtocolAgent, 'dwn' | 'processDwnRequest'>,
+  agent: ProtocolInspectionAgent,
   protocolDefinition: DwnProtocolDefinition,
 ): Promise<ResolvedProtocolSetupStatus> {
   if (getRequestedProtocolDefinitionConflictMessage(protocolDefinition) !== undefined) {

@@ -962,7 +962,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
           data-testid="connect-action-area"
           className={
             standalone && !(onboardingSupported && onboardStep !== 'idle')
-              ? 'sticky bottom-0 z-20 border-t border-border-subtle bg-surface-0/90 backdrop-blur-md px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]'
+              ? 'sticky bottom-0 z-20 border-t border-border-subtle bg-surface-0/90 backdrop-blur-md px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]'
               : 'px-6 pt-6 pb-6 lg:px-0'
           }
         >

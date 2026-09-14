@@ -235,6 +235,20 @@ describe('identity mutations', () => {
     expect(result.changedDids).toEqual([]);
   });
 
+  it('continues identity setup when initial sync registration is deferred', async () => {
+    const agent = createAgent();
+    agent.sync.ensureIdentityOptions.mockRejectedValueOnce(new Error('sync unavailable'));
+
+    await expect(createIdentity(agent, {
+      persona      : 'Personal',
+      displayName  : 'Alice',
+      dwnEndpoints : ['https://fly.example/dwn'],
+    })).resolves.toMatchObject({ did: { uri: 'did:dht:new' } });
+
+    expect(mocks.profileRepo.profile.set).toHaveBeenCalledOnce();
+    expect(mocks.connectApi.records.create).toHaveBeenCalledOnce();
+  });
+
   it('aborts and cleans up the local identity if the DHT publish failed', async () => {
     const did = 'did:dht:unpublished';
     const agent = createAgent(did, { published: false });

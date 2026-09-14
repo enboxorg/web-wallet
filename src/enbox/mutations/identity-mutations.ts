@@ -21,7 +21,8 @@ import {
 } from '@enbox/protocols';
 
 import type { EnboxAgent } from '../types';
-import { IDENTITY_SYNC_PROTOCOLS, installProtocolsEffect } from '../protocols';
+import { installProtocolsEffect } from '../protocols';
+import { ensureIdentitySyncOptionsEffect } from '../identity-sync';
 import { ensureRegistrationEffect } from '../registration';
 import { normalizeDwnEndpoints, WALLET_URL } from '@/lib/dwn-endpoints';
 import {
@@ -38,19 +39,6 @@ import {
   validatePortableOwnerIdentity,
 } from '@/features/connect/portable-owner-identity';
 import { publishWalletEvent } from '../effect/wallet-events';
-
-function ensureIdentitySyncOptionsEffect(did: string) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    yield* Effect.tryPromise({
-      try: () => agent.sync.ensureIdentityOptions({
-        did,
-        options: { protocols: IDENTITY_SYNC_PROTOCOLS },
-      }),
-      catch: sdkError('sync.ensureIdentityOptions'),
-    }).pipe(Effect.catchAll(() => Effect.void));
-  });
-}
 
 function assertDhtDidPublishedEffect(
   identity: any,
@@ -296,7 +284,9 @@ export function createIdentityEffect(params: CreateIdentityParams) {
       yield* installProtocolsEffect(did);
 
       // 4. Register identity DID for sync after protocol bootstrap is complete.
-      yield* ensureIdentitySyncOptionsEffect(did);
+      yield* ensureIdentitySyncOptionsEffect(did).pipe(
+        Effect.catchAll(() => Effect.void),
+      );
 
       // 5. Set profile social data
       return yield* withEnboxEffect(did, (enbox) => Effect.gen(function* () {
@@ -556,7 +546,9 @@ export function importIdentityEffect(
       );
 
       // Register for sync
-      yield* ensureIdentitySyncOptionsEffect(did);
+      yield* ensureIdentitySyncOptionsEffect(did).pipe(
+        Effect.catchAll(() => Effect.void),
+      );
 
       // Create wallet record
       yield* createWalletRecordBestEffortEffect(
