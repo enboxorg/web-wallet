@@ -226,6 +226,17 @@ describe('DWebConnectPage', () => {
     expect(mocks.createTransport).not.toHaveBeenCalled();
   });
 
+  it('reserves mobile safe-area clearance around the popup approval page', () => {
+    Object.defineProperty(window, 'opener', { configurable: true, value: null });
+
+    render(<DWebConnectPage />);
+
+    expect(screen.getByTestId('dweb-connect-page')).toHaveClass(
+      'min-h-dvh',
+      'pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]',
+    );
+  });
+
   it('shows the consent UI with the transport-pinned dapp origin', async () => {
     render(<DWebConnectPage />);
 

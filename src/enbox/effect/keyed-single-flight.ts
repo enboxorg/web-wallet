@@ -40,15 +40,6 @@ export function makeKeyedSingleFlight(): KeyedSingleFlight {
 
 const walletSetupFlights = makeKeyedSingleFlight();
 
-/** Join concurrent sync-scope setup for one DID in the current agent session. */
-export function runIdentitySetupSingleFlight<T>(
-  agent: object,
-  did: string,
-  operation: FlightOperation<T>,
-): Promise<T> {
-  return walletSetupFlights.run(agent, JSON.stringify(['identity-setup', did]), operation);
-}
-
 /** Join concurrent tenant registration for one DID and one remote endpoint. */
 export function runRegistrationSingleFlight<T>(
   agent: object,

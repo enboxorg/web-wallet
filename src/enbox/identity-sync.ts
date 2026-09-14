@@ -1,5 +1,4 @@
 import { Effect } from 'effect';
-import type { SyncIdentityOptions } from '@enbox/agent';
 
 import {
   IDENTITY_SYNC_PROTOCOLS,
@@ -7,7 +6,6 @@ import {
 } from './protocols';
 import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
-import { runIdentitySetupSingleFlight } from './effect/keyed-single-flight';
 import { CurrentAgent, enboxLiveLayer } from './effect/services';
 import { runEnboxPromise } from './effect/runtime';
 
@@ -26,7 +24,7 @@ export type IdentitySyncReconcileResult = {
   failedDids: string[];
 };
 
-function getIdentityTarget(identity: unknown): IdentityTarget | undefined {
+function getIdentitySyncTarget(identity: unknown): IdentityTarget | undefined {
   const candidate = identity as IdentityLike | undefined;
   const identityDid = candidate?.did?.uri;
   const connectedDid = candidate?.metadata?.connectedDid ?? identityDid;
@@ -43,63 +41,35 @@ function getIdentityTarget(identity: unknown): IdentityTarget | undefined {
   };
 }
 
-export function getIdentityDid(identity: unknown): string | undefined {
-  return getIdentityTarget(identity)?.connectedDid;
+export function getIdentitySyncTargets(identities: readonly unknown[]): IdentityTarget[] {
+  const targets = new Map<string, IdentityTarget>();
+  for (const identity of identities) {
+    const target = getIdentitySyncTarget(identity);
+    if (target === undefined) {
+      continue;
+    }
+
+    // Collapse duplicate views of one connected identity. Once an owner view
+    // is present, a delegated view must not replace its broader authority.
+    const existing = targets.get(target.connectedDid);
+    if (existing !== undefined && existing.delegateDid === undefined) {
+      continue;
+    }
+    targets.set(target.connectedDid, target);
+  }
+  return [...targets.values()];
 }
 
-function sameProtocolScope(
-  existing: SyncIdentityOptions | undefined,
-  protocols: readonly [string, ...string[]],
-): boolean {
-  if (!existing || existing.protocols === 'all') {
-    return false;
-  }
-
-  if (existing.delegateDid !== undefined) {
-    return false;
-  }
-
-  if (existing.protocols.length !== protocols.length) {
-    return false;
-  }
-
-  return protocols.every((protocol) =>
-    existing.protocols.includes(protocol)
-  );
-}
-
-function getSyncOptionsEffect(did: string) {
+export function ensureIdentitySyncOptionsEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
-
     return yield* Effect.tryPromise({
-      try: async (): Promise<SyncIdentityOptions | undefined> =>
-        agent.sync.getIdentityOptions(did),
-      catch: sdkError('sync.getIdentityOptions'),
-    });
-  });
-}
-
-function applySyncOptionsEffect(
-  did: string,
-  protocols: readonly [string, ...string[]],
-) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    const options: SyncIdentityOptions = {
-      protocols: [...protocols],
-    };
-
-    yield* Effect.tryPromise({
-      try: () => runIdentitySetupSingleFlight(
-        agent,
+      try: () => agent.sync.ensureIdentityOptions({
         did,
-        async () => agent.sync.setIdentityOptions({ did, options }),
-      ),
-      catch: sdkError('sync.setIdentityOptions'),
+        options: { protocols: [...IDENTITY_SYNC_PROTOCOLS] },
+      }),
+      catch: sdkError('sync.ensureIdentityOptions'),
     });
-
-    return true;
   });
 }
 
@@ -122,30 +92,19 @@ export function reconcileIdentitySyncEffect(
   identities: unknown[],
 ) {
   return Effect.gen(function* () {
-    const targets = new Map<string, IdentityTarget>();
-    for (const identity of identities) {
-      const target = getIdentityTarget(identity);
-      if (target !== undefined) {
-        targets.set(target.connectedDid, target);
-      }
-    }
-    if (targets.size === 0) {
+    const ownerDids = getIdentitySyncTargets(identities)
+      .filter((target) => target.delegateDid === undefined)
+      .map((target) => target.connectedDid);
+    if (ownerDids.length === 0) {
       return { changedDids: [], failedDids: [] };
     }
 
     const changedDids: string[] = [];
     const failedDids: string[] = [];
-    for (const { connectedDid: did, delegateDid } of targets.values()) {
-      if (delegateDid !== undefined) {
-        continue;
-      }
+    for (const did of ownerDids) {
       const changed = yield* Effect.gen(function* () {
-        const existing = yield* getSyncOptionsEffect(did);
         yield* installProtocolsEffect(did);
-        if (sameProtocolScope(existing, IDENTITY_SYNC_PROTOCOLS)) {
-          return false;
-        }
-        return yield* applySyncOptionsEffect(did, IDENTITY_SYNC_PROTOCOLS);
+        return yield* ensureIdentitySyncOptionsEffect(did);
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {

@@ -21,7 +21,8 @@ import {
 } from '@enbox/protocols';
 
 import type { EnboxAgent } from '../types';
-import { IDENTITY_SYNC_PROTOCOLS, installProtocolsEffect } from '../protocols';
+import { installProtocolsEffect } from '../protocols';
+import { ensureIdentitySyncOptionsEffect } from '../identity-sync';
 import { ensureRegistrationEffect } from '../registration';
 import { normalizeDwnEndpoints, WALLET_URL } from '@/lib/dwn-endpoints';
 import {
@@ -33,30 +34,11 @@ import {
 import { withEnboxEffect } from '../effect/enbox-effect';
 import { CurrentAgent, enboxLiveLayer } from '../effect/services';
 import { runEnboxPromise } from '../effect/runtime';
-import { runIdentitySetupSingleFlight } from '../effect/keyed-single-flight';
 import { normalizeProfileImageBlob } from '@/lib/profile-images';
 import {
   validatePortableOwnerIdentity,
 } from '@/features/connect/portable-owner-identity';
 import { publishWalletEvent } from '../effect/wallet-events';
-
-function setIdentitySyncOptionsEffect(did: string) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
-    yield* Effect.tryPromise({
-      try: () =>
-        runIdentitySetupSingleFlight(
-          agent,
-          did,
-          () => agent.sync.setIdentityOptions({
-            did,
-            options: { protocols: IDENTITY_SYNC_PROTOCOLS },
-          }),
-        ),
-      catch: sdkError('sync.setIdentityOptions'),
-    }).pipe(Effect.catchAll(() => Effect.void));
-  });
-}
 
 function assertDhtDidPublishedEffect(
   identity: any,
@@ -293,7 +275,7 @@ export function createIdentityEffect(params: CreateIdentityParams) {
     return yield* Effect.gen(function* () {
       // 2. Register identity as DWN tenant on remote endpoints.
       //    Must happen before sync registration — with live sync active,
-      //    setIdentityOptions hot-adds a subscription that requires the DID
+      //    sync option setup hot-adds a subscription that requires the DID
       //    to be a recognised tenant on the remote DWN.
       yield* ensureRegistrationEffect(dwnEndpoints, [did]);
 
@@ -302,7 +284,9 @@ export function createIdentityEffect(params: CreateIdentityParams) {
       yield* installProtocolsEffect(did);
 
       // 4. Register identity DID for sync after protocol bootstrap is complete.
-      yield* setIdentitySyncOptionsEffect(did);
+      yield* ensureIdentitySyncOptionsEffect(did).pipe(
+        Effect.catchAll(() => Effect.void),
+      );
 
       // 5. Set profile social data
       return yield* withEnboxEffect(did, (enbox) => Effect.gen(function* () {
@@ -562,7 +546,9 @@ export function importIdentityEffect(
       );
 
       // Register for sync
-      yield* setIdentitySyncOptionsEffect(did);
+      yield* ensureIdentitySyncOptionsEffect(did).pipe(
+        Effect.catchAll(() => Effect.void),
+      );
 
       // Create wallet record
       yield* createWalletRecordBestEffortEffect(

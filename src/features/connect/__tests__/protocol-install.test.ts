@@ -1,11 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { DwnProtocolDefinition } from '@enbox/agent';
 import { KeyDerivationScheme } from '@enbox/dwn-sdk-js';
 import { ProfileDefinition } from '@enbox/protocols';
 
 import {
-  getProtocolSetupStatus,
-  hasEncryptionConfiguredForEncryptedTypes,
+  getRequestedProtocolDefinitionsConflictMessage,
   protocolDefinitionsMatch,
   protocolHasEncryptedTypes,
   queryProtocolSetupStatus,
@@ -76,37 +75,12 @@ const notesProtocol: DwnProtocolDefinition = {
 };
 
 describe('protocol-install', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
   it('detects encrypted protocols', () => {
     expect(protocolHasEncryptedTypes(encryptedProtocol)).toBe(true);
   });
 
-  it('detects when an installed definition is missing $keyAgreement on encrypted paths', () => {
-    expect(hasEncryptionConfiguredForEncryptedTypes(undefined, encryptedProtocol)).toBe(false);
-
-    const installed: DwnProtocolDefinition = {
-      ...encryptedProtocol,
-      $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'protocol-key' } },
-      structure: {
-        mint: {
-          $actions: [],
-          $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'mint-key' } },
-          proof: {
-            $actions: [],
-            $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'proof-key' } },
-          },
-        },
-      },
-    };
-    expect(hasEncryptionConfiguredForEncryptedTypes(installed, encryptedProtocol)).toBe(true);
-  });
-
   it('treats generated encryption metadata as compatible with the requested definition', () => {
     expect(protocolDefinitionsMatch(installedEncryptedProtocol, encryptedProtocol)).toBe(true);
-    expect(getProtocolSetupStatus(installedEncryptedProtocol, encryptedProtocol)).toBe('configured');
   });
 
   it('reads installed definitions from ProtocolsConfigure query entries', async () => {
@@ -122,6 +96,21 @@ describe('protocol-install', () => {
       { dwn: createDwn(), processDwnRequest },
       encryptedProtocol,
     )).resolves.toBe('configured');
+  });
+
+  it('reports an absent protocol as requiring installation', async () => {
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: {
+        status  : { code: 200, detail: 'OK' },
+        entries : [],
+      },
+    });
+
+    await expect(queryProtocolSetupStatus(
+      'did:example:owner',
+      { dwn: createDwn(), processDwnRequest },
+      notesProtocol,
+    )).resolves.toBe('install');
   });
 
   it('verifies installed encryption keys against every complete owner derivation path', async () => {
@@ -147,20 +136,29 @@ describe('protocol-install', () => {
     ]);
   });
 
-  it('marks a custom protocol installed with a different definition as overridable', () => {
+  it('maps an SDK definition conflict for a custom protocol to an explicit override', async () => {
     const olderInstalledDefinition: DwnProtocolDefinition = {
       ...notesProtocol,
       types: {
         note: { schema: 'old-note' },
       },
     };
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: {
+        status  : { code: 200, detail: 'OK' },
+        entries : [{ descriptor: { definition: olderInstalledDefinition } }],
+      },
+    });
 
     expect(protocolDefinitionsMatch(olderInstalledDefinition, notesProtocol)).toBe(false);
-    // A non-canonical protocol may be replaced by the owner on explicit override.
-    expect(getProtocolSetupStatus(olderInstalledDefinition, notesProtocol)).toBe('override');
+    await expect(queryProtocolSetupStatus(
+      'did:example:owner',
+      { dwn: createDwn(), processDwnRequest },
+      notesProtocol,
+    )).resolves.toBe('override');
   });
 
-  it('keeps a canonical protocol installed with a different definition hard-blocked', () => {
+  it('keeps an SDK definition conflict for a canonical protocol hard-blocked', async () => {
     const legacyInstalledProfile = {
       ...ProfileDefinition,
       types: {
@@ -168,14 +166,24 @@ describe('protocol-install', () => {
         profile: { schema: 'https://legacy.example/profile' },
       },
     } as DwnProtocolDefinition;
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: {
+        status  : { code: 200, detail: 'OK' },
+        entries : [{ descriptor: { definition: legacyInstalledProfile } }],
+      },
+    });
 
     // The requested definition IS the canonical pin; only the installed one
     // differs. Canonical wallet protocols are never overridable via a connection.
     expect(protocolDefinitionsMatch(legacyInstalledProfile, ProfileDefinition as DwnProtocolDefinition)).toBe(false);
-    expect(getProtocolSetupStatus(legacyInstalledProfile, ProfileDefinition as DwnProtocolDefinition)).toBe('conflict');
+    await expect(queryProtocolSetupStatus(
+      'did:example:owner',
+      { dwn: createDwn(), processDwnRequest },
+      ProfileDefinition as DwnProtocolDefinition,
+    )).resolves.toBe('conflict');
   });
 
-  it('treats legacy $encryption metadata as a policy-identical upgrade', () => {
+  it('uses SDK inspection to classify legacy encryption metadata as an upgrade', async () => {
     const legacyInstalled = {
       ...encryptedProtocol,
       structure: {
@@ -188,76 +196,19 @@ describe('protocol-install', () => {
         },
       },
     } as DwnProtocolDefinition;
+    const processDwnRequest = vi.fn().mockResolvedValue({
+      reply: {
+        status  : { code: 200, detail: 'OK' },
+        entries : [{ descriptor: { definition: legacyInstalled } }],
+      },
+    });
 
     expect(protocolDefinitionsMatch(legacyInstalled, encryptedProtocol)).toBe(true);
-    expect(getProtocolSetupStatus(legacyInstalled, encryptedProtocol)).toBe('upgrade');
-  });
-
-  it('finds encrypted types nested below a differently named parent', () => {
-    const nestedProtocol: DwnProtocolDefinition = {
-      protocol: 'https://example.com/protocols/chat',
-      published: false,
-      types: {
-        thread: {},
-        chat: { encryptionRequired: true },
-      },
-      structure: {
-        thread: {
-          chat: {},
-        },
-      },
-    };
-    const nestedInstalled: DwnProtocolDefinition = {
-      ...nestedProtocol,
-      $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'protocol-key' } },
-      structure: {
-        thread: {
-          $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'thread-key' } },
-          chat: {
-            $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'chat-key' } },
-          },
-        },
-      },
-    };
-
-    expect(hasEncryptionConfiguredForEncryptedTypes(nestedInstalled, nestedProtocol)).toBe(true);
-    delete (nestedInstalled.structure.thread.chat as any).$keyAgreement;
-    expect(hasEncryptionConfiguredForEncryptedTypes(nestedInstalled, nestedProtocol)).toBe(false);
-  });
-
-  it('upgrades when an encrypted reader role is missing its derived path key', () => {
-    const roleProtocol: DwnProtocolDefinition = {
-      protocol: 'https://example.com/protocols/role-chat',
-      published: false,
-      types: {
-        participant: {},
-        message: { encryptionRequired: true },
-      },
-      structure: {
-        participant: {
-          $role: true,
-        },
-        message: {
-          $actions: [{ role: 'participant', can: ['read'] }],
-        },
-      },
-    };
-    const partialInstall: DwnProtocolDefinition = {
-      ...roleProtocol,
-      $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'protocol-key' } },
-      structure: {
-        participant: {
-          $role: true,
-        },
-        message: {
-          $actions: [{ role: 'participant', can: ['read'] }],
-          $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'message-key' } },
-        },
-      },
-    };
-
-    expect(hasEncryptionConfiguredForEncryptedTypes(partialInstall, roleProtocol)).toBe(false);
-    expect(getProtocolSetupStatus(partialInstall, roleProtocol)).toBe('upgrade');
+    await expect(queryProtocolSetupStatus(
+      'did:example:owner',
+      { dwn: createDwn(), processDwnRequest },
+      encryptedProtocol,
+    )).resolves.toBe('upgrade');
   });
 
   it('rejects a spoofed definition for a wallet-pinned protocol URI', () => {
@@ -269,14 +220,20 @@ describe('protocol-install', () => {
       },
     } as DwnProtocolDefinition;
 
-    expect(getProtocolSetupStatus(undefined, ProfileDefinition as DwnProtocolDefinition)).toBe('install');
-    expect(getProtocolSetupStatus(undefined, spoofedProfile)).toBe('conflict');
+    expect(getRequestedProtocolDefinitionsConflictMessage([
+      ProfileDefinition as DwnProtocolDefinition,
+    ])).toBeUndefined();
+    expect(getRequestedProtocolDefinitionsConflictMessage([spoofedProfile])).toMatch(
+      /does not match the wallet's pinned canonical definition/,
+    );
 
     const nonNormalizedSpoof = {
       ...spoofedProfile,
       protocol: 'HTTPS://identity.foundation/protocols/profile',
     } as DwnProtocolDefinition;
-    expect(getProtocolSetupStatus(undefined, nonNormalizedSpoof)).toBe('conflict');
+    expect(getRequestedProtocolDefinitionsConflictMessage([nonNormalizedSpoof])).toMatch(
+      /is not normalized/,
+    );
   });
 
   it('rejects installed encryption keys that are not derived from the wallet owner', async () => {

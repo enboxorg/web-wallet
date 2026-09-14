@@ -165,10 +165,10 @@ function createAgent(did = 'did:dht:new', didMetadata?: Record<string, unknown>)
       getRemoteDwnEndpointUrls: vi.fn(async () => ['https://imported.example/dwn']),
     },
     sync: {
-      getIdentityOptions: vi.fn(async () => ({
-        protocols: ['https://identity.foundation/protocols/profile'],
-      })),
-      setIdentityOptions: vi.fn(async () => { mocks.calls.push('sync:set-options'); }),
+      ensureIdentityOptions: vi.fn(async () => {
+        mocks.calls.push('sync:ensure-options');
+        return true;
+      }),
       removeIdentity: vi.fn(async () => { mocks.calls.push('sync:remove'); }),
     },
   };
@@ -197,7 +197,7 @@ describe('identity mutations', () => {
 
     expect(mocks.installProtocols).toHaveBeenCalledWith(did);
     expect(mocks.ensureRegistration).toHaveBeenCalledWith(dwnEndpoints, [did]);
-    expect(agent.sync.setIdentityOptions).toHaveBeenCalledWith({
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did,
       options: {
         protocols: [
@@ -210,43 +210,43 @@ describe('identity mutations', () => {
       'identity:create',
       'registration:ensure',
       'protocols:install',
-      'sync:set-options',
+      'sync:ensure-options',
       'profile:set',
       'wallet:create',
     ]);
     expect(mocks.close).toHaveBeenCalledTimes(2);
   });
 
-  it('joins sync setup when creation and reconciliation overlap for the same DID', async () => {
+  it('delegates repeated sync setup to the SDK atomic reconciliation primitive', async () => {
     const did = 'did:dht:new';
     const agent = createAgent(did);
-    let releaseSyncSetup!: () => void;
-    const syncSetupGate = new Promise<void>((resolve) => {
-      releaseSyncSetup = resolve;
-    });
-    agent.sync.setIdentityOptions.mockImplementation(async () => {
-      mocks.calls.push('sync:set-options');
-      await syncSetupGate;
-    });
+    agent.sync.ensureIdentityOptions
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
 
-    const creation = createIdentity(agent, {
+    await createIdentity(agent, {
       persona: 'Personal',
       displayName: 'Alice',
       dwnEndpoints: ['https://fly.example/dwn'],
     });
-    await vi.waitFor(() => {
-      expect(agent.sync.setIdentityOptions).toHaveBeenCalledTimes(1);
-    });
+    const result = await reconcileIdentitySync(agent, [{ did: { uri: did } }]);
 
-    const reconciliation = reconcileIdentitySync(agent, [{ did: { uri: did } }]);
-    await vi.waitFor(() => {
-      expect(agent.sync.getIdentityOptions).toHaveBeenCalledWith(did);
-    });
-    releaseSyncSetup();
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledTimes(2);
+    expect(result.changedDids).toEqual([]);
+  });
 
-    const [, result] = await Promise.all([creation, reconciliation]);
-    expect(agent.sync.setIdentityOptions).toHaveBeenCalledTimes(1);
-    expect(result.changedDids).toEqual([did]);
+  it('continues identity setup when initial sync registration is deferred', async () => {
+    const agent = createAgent();
+    agent.sync.ensureIdentityOptions.mockRejectedValueOnce(new Error('sync unavailable'));
+
+    await expect(createIdentity(agent, {
+      persona      : 'Personal',
+      displayName  : 'Alice',
+      dwnEndpoints : ['https://fly.example/dwn'],
+    })).resolves.toMatchObject({ did: { uri: 'did:dht:new' } });
+
+    expect(mocks.profileRepo.profile.set).toHaveBeenCalledOnce();
+    expect(mocks.connectApi.records.create).toHaveBeenCalledOnce();
   });
 
   it('aborts and cleans up the local identity if the DHT publish failed', async () => {
@@ -294,7 +294,7 @@ describe('identity mutations', () => {
       dwnEndpoints: ['https://fly.example/dwn'],
     })).rejects.toThrow('bootstrap failed');
 
-    expect(agent.sync.setIdentityOptions).not.toHaveBeenCalled();
+    expect(agent.sync.ensureIdentityOptions).not.toHaveBeenCalled();
     expect(mocks.profileRepo.profile.set).not.toHaveBeenCalled();
     expect(agent.identity.delete).not.toHaveBeenCalled();
     expect(agent.did.delete).not.toHaveBeenCalled();
@@ -316,7 +316,7 @@ describe('identity mutations', () => {
     expect(agent.identity.delete).not.toHaveBeenCalled();
     expect(agent.did.delete).not.toHaveBeenCalled();
     expect(mocks.installProtocols).not.toHaveBeenCalled();
-    expect(agent.sync.setIdentityOptions).not.toHaveBeenCalled();
+    expect(agent.sync.ensureIdentityOptions).not.toHaveBeenCalled();
 
     await updateDwnEndpoints(agent, {
       did,
@@ -345,7 +345,7 @@ describe('identity mutations', () => {
     });
     expect(agent.identity.delete).not.toHaveBeenCalled();
     expect(agent.did.delete).not.toHaveBeenCalled();
-    expect(agent.sync.setIdentityOptions).toHaveBeenCalled();
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalled();
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
@@ -357,7 +357,7 @@ describe('identity mutations', () => {
 
     expect(mocks.installProtocols).toHaveBeenCalledWith(did);
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
-    expect(agent.sync.setIdentityOptions).toHaveBeenCalledWith({
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did,
       options: {
         protocols: [
@@ -369,7 +369,7 @@ describe('identity mutations', () => {
     expect(mocks.calls).toEqual([
       'identity:import',
       'protocols:install',
-      'sync:set-options',
+      'sync:ensure-options',
       'wallet:create',
     ]);
     expect(mocks.close).toHaveBeenCalledOnce();

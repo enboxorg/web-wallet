@@ -11,7 +11,7 @@ export interface BottomNavProps {
 /**
  * Native-feeling bottom tab bar for mobile/tablet viewports.
  *
- * - Fixed to the bottom of the viewport
+ * - Pinned below the AppShell scrollport
  * - Safe area padding for notched devices (env(safe-area-inset-bottom))
  * - Icon + label layout, accent highlight on active tab
  * - Glass-blur background matching the AppBar aesthetic
@@ -25,7 +25,7 @@ export function BottomNav({
   return (
     <nav
       className={cn(
-        'fixed bottom-0 left-0 right-0 z-[var(--z-sticky)]',
+        'shrink-0',
         'flex items-center justify-around',
         'bg-surface-1/80 backdrop-blur-sm',
         'border-t border-border-subtle',

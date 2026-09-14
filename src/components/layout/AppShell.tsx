@@ -20,7 +20,7 @@ export interface AppShellProps {
  * Main layout shell for the unlocked wallet.
  *
  * - Desktop (>= 1024px): persistent sidebar + top AppBar + scrollable content
- * - Mobile / Tablet (< 1024px): minimal top AppBar + content + fixed bottom tab bar
+ * - Mobile / Tablet (< 1024px): minimal top AppBar + content + pinned bottom tab bar
  *
  * On mobile, the bottom tab bar replaces the sidebar/drawer pattern entirely,
  * giving a native app feel (like iOS/Android wallet apps).
@@ -41,7 +41,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
   );
 
   return (
-    <div className="flex h-screen overflow-hidden bg-surface-0" data-testid="app-shell">
+    <div className="flex h-dvh overflow-hidden bg-surface-0" data-testid="app-shell">
       {/* Desktop: persistent sidebar */}
       {isDesktop && (
         <Sidebar
@@ -55,17 +55,17 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
       )}
 
       {/* Main content column */}
-      <div className="flex flex-col flex-1 min-w-0">
+      <div
+        className="flex min-h-0 min-w-0 flex-1 flex-col"
+        data-testid="app-shell-content"
+      >
         <OfflineBanner />
         {/* Top bar: desktop shows full bar, mobile shows minimal bar */}
         <AppBar isDesktop={isDesktop} />
 
         {/* Scrollable content area */}
         <main
-          className={
-            'flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6'
-            + (!isDesktop ? ' pb-[calc(6.5rem+env(safe-area-inset-bottom))]' : '') /* reserve the tab bar + safe area */
-          }
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6"
           data-testid="main-content"
         >
           <div className="mx-auto max-w-[var(--content-width)]">
@@ -73,16 +73,16 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
             {children}
           </div>
         </main>
-      </div>
 
-      {/* Mobile / Tablet: fixed bottom tab bar */}
-      {!isDesktop && (
-        <BottomNav
-          items={bottomTabItems}
-          currentPath={location.pathname}
-          onNavigate={handleNavigate}
-        />
-      )}
+        {/* Mobile / Tablet: pinned below the scrollport, never over its content. */}
+        {!isDesktop && (
+          <BottomNav
+            items={bottomTabItems}
+            currentPath={location.pathname}
+            onNavigate={handleNavigate}
+          />
+        )}
+      </div>
     </div>
   );
 }

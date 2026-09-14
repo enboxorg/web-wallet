@@ -15,7 +15,7 @@ import { Effect, Stream } from 'effect';
 
 import { useAuthStore } from '@/stores/auth-store';
 
-import { getIdentityDid } from '../identity-sync';
+import { getIdentitySyncTargets } from '../identity-sync';
 import { queryKeys } from '../queries/query-keys';
 import { interruptEnboxFork, runEnboxFork } from '../effect/runtime';
 import { WalletEventBus, type WalletEvent } from '../effect/wallet-events';
@@ -109,22 +109,11 @@ export function useSyncQueryInvalidation(
   const agent = useAuthStore((state) => state.agent);
   const queryClient = useQueryClient();
   const identityTargetKey = useMemo(() => {
-    const targets = new Map<string, string | null>();
-    for (const identity of identities ?? []) {
-      const connectedDid = getIdentityDid(identity);
-      if (!connectedDid) {
-        continue;
-      }
-      const identityDid = (identity as { did?: { uri?: unknown } })?.did?.uri;
-      targets.set(
-        connectedDid,
-        typeof identityDid === 'string' && identityDid !== connectedDid
-          ? identityDid
-          : null,
-      );
-    }
+    const targets = getIdentitySyncTargets(identities ?? []).map(
+      ({ connectedDid, delegateDid }) => [connectedDid, delegateDid ?? null] as const,
+    );
     return JSON.stringify(
-      [...targets].sort(([left], [right]) => left.localeCompare(right)),
+      targets.sort(([left], [right]) => left.localeCompare(right)),
     );
   }, [identities]);
 
@@ -249,7 +238,7 @@ export function useSyncQueryInvalidation(
           || syncRegistrationCoversProtocol(options, ServiceConfigProtocolDefinition.protocol)) {
           return;
         }
-        await currentAgent.sync.setIdentityOptions({
+        await currentAgent.sync.ensureIdentityOptions({
           did,
           options: {
             ...options,

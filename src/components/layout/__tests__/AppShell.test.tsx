@@ -139,10 +139,16 @@ describe('AppShell', () => {
       expect(mockNavigate).toHaveBeenCalledWith('/search');
     });
 
-    it('adds extra bottom padding to main content for bottom nav', () => {
+    it('places the bottom nav outside the scrollport so it cannot cover content', () => {
       renderShell();
+      const content = screen.getByTestId('app-shell-content');
       const main = screen.getByTestId('main-content');
-      expect(main.className).toContain('pb-[calc(6.5rem+env(safe-area-inset-bottom))]');
+      const bottomNav = screen.getByTestId('bottom-nav');
+      expect(content).toContainElement(main);
+      expect(content).toContainElement(bottomNav);
+      expect(main).not.toContainElement(bottomNav);
+      expect(bottomNav).toHaveClass('shrink-0');
+      expect(bottomNav).not.toHaveClass('fixed');
     });
   });
 
@@ -152,5 +158,10 @@ describe('AppShell', () => {
     const container = main.firstElementChild as HTMLElement;
     expect(container.className).toContain('max-w-[var(--content-width)]');
     expect(container.className).toContain('mx-auto');
+  });
+
+  it('tracks the visible viewport when mobile browser chrome changes', () => {
+    renderShell();
+    expect(screen.getByTestId('app-shell')).toHaveClass('h-dvh');
   });
 });

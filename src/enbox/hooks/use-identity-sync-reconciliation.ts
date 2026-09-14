@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 
 import { useAuthStore } from '@/stores/auth-store';
 
-import { getIdentityDid, reconcileIdentitySync } from '../identity-sync';
+import { getIdentitySyncTargets, reconcileIdentitySync } from '../identity-sync';
 import { queryKeys } from '../queries/query-keys';
 
 export function useIdentitySyncReconciliation(identities: unknown[] | undefined): void {
@@ -16,15 +16,11 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
   latestRef.current = { agent, identities };
 
   const identityKey = useMemo(() => {
-    if (!identities?.length) {
-      return '';
-    }
-
-    return identities
-      .map(getIdentityDid)
-      .filter(Boolean)
-      .sort()
-      .join('|');
+    const ownerDids = getIdentitySyncTargets(identities ?? [])
+      .filter((target) => target.delegateDid === undefined)
+      .map((target) => target.connectedDid)
+      .sort();
+    return ownerDids.length === 0 ? '' : JSON.stringify(ownerDids);
   }, [identities]);
 
   useEffect(() => {

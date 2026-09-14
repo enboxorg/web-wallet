@@ -178,6 +178,7 @@ export function preflightConnectPermissions(value: unknown): ConnectPermissionPr
 
   const permissions: ConnectPermissionRequest[] = [];
   const scopes: DwnPermissionScope[] = [];
+  const requestedDefinitions: DwnProtocolDefinition[] = [];
   const byProtocol = new Map<string, DwnProtocolDefinition>();
 
   for (const permission of value) {
@@ -194,22 +195,20 @@ export function preflightConnectPermissions(value: unknown): ConnectPermissionPr
       validatedScopes.push(scope);
     }
 
-    const existing = byProtocol.get(definition.protocol);
-    if (existing !== undefined && !protocolDefinitionsMatch(existing, definition)) {
-      throw new Error(`The request includes different definitions for protocol '${definition.protocol}'.`);
+    requestedDefinitions.push(definition);
+    if (!byProtocol.has(definition.protocol)) {
+      byProtocol.set(definition.protocol, definition);
     }
-    byProtocol.set(definition.protocol, definition);
     scopes.push(...validatedScopes);
     permissions.push(permission as unknown as ConnectPermissionRequest);
   }
 
-  const definitions = [...byProtocol.values()];
-  const definitionConflict = getRequestedProtocolDefinitionsConflictMessage(definitions);
+  const definitionConflict = getRequestedProtocolDefinitionsConflictMessage(requestedDefinitions);
   if (definitionConflict !== undefined) throw new Error(definitionConflict);
 
   return {
     permissions,
-    definitions,
+    definitions: [...byProtocol.values()],
     scopes,
   };
 }
