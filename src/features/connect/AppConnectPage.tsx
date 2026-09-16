@@ -81,6 +81,7 @@ import {
   resolveConnectSessionApprovalDurationSeconds,
 } from './connect-session-duration';
 import { claimConnectDecision, resetConnectDecision } from './connect-decision';
+import { getConnectErrorMessage } from './connect-error';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
 
@@ -373,7 +374,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       setPhase('request');
     } catch (err) {
       console.error('Connect flow error:', err);
-      setErrorMessage((err as Error).message || 'Failed to process connection request.');
+      setErrorMessage(getConnectErrorMessage(err, 'Failed to process connection request.'));
       setPhase('error');
     }
   }
@@ -388,7 +389,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       await processConnectParams(parsed.requestUri, parsed.encryptionKey);
     } catch (err) {
       console.error('Connect flow error:', err);
-      setErrorMessage((err as Error).message || 'Failed to process connection request.');
+      setErrorMessage(getConnectErrorMessage(err, 'Failed to process connection request.'));
       setPhase('error');
     }
   }
@@ -525,7 +526,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       }
     } catch (err) {
       console.error('Authorization error:', err);
-      setErrorMessage((err as Error).message || 'Failed to authorize connection.');
+      setErrorMessage(getConnectErrorMessage(err, 'Failed to authorize connection.'));
       setPhase('error');
     }
   }
@@ -581,7 +582,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         setOnboardStep('pin-create');
         return;
       }
-      const message = err instanceof Error ? err.message : 'Failed to create wallet';
+      const message = getConnectErrorMessage(err, 'Failed to create wallet');
       setOnboardError(/cancelled/i.test(message) ? null : message);
     } finally {
       setOnboardBusy(false);
@@ -605,7 +606,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       await completeOnboardingAndConnect(onboardPin, false);
     } catch (err) {
       setPhase('request');
-      setOnboardError(err instanceof Error ? err.message : 'Failed to create wallet');
+      setOnboardError(getConnectErrorMessage(err, 'Failed to create wallet'));
       setOnboardStep('pin-create');
       setOnboardPin('');
     } finally {

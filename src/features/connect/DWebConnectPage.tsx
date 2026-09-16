@@ -51,18 +51,11 @@ import {
 } from './use-protocol-setup-statuses';
 import { reconfigureProtocolsForOverride } from './protocol-override';
 import { claimConnectDecision } from './connect-decision';
+import { getConnectErrorMessage } from './connect-error';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
 const EMPTY_PERMISSION_REQUESTS: ConnectPermissionRequest[] = [];
-
-function connectErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : 'Failed to create delegate.';
-  if (/Could not send permission grant to any DWN endpoint/i.test(message)) {
-    return 'Could not write the approved permission grants to any DWN endpoint for this identity. Check the identity DWN endpoints and try again.';
-  }
-  return message;
-}
 
 /** Inline onboarding sub-state while there is no wallet yet. */
 type OnboardStep = 'idle' | 'pin-create' | 'pin-confirm';
@@ -224,7 +217,7 @@ export default function DWebConnectPage() {
         } catch {
           // The transport may never have been created — nothing to signal.
         }
-        setErrorMessage(connectErrorMessage(error));
+        setErrorMessage(getConnectErrorMessage(error, 'Failed to process connection request.'));
         setPhase('error');
       }
     })();
@@ -322,7 +315,7 @@ export default function DWebConnectPage() {
       }
     } catch (err) {
       console.error('DWeb connect error:', err);
-      setErrorMessage(connectErrorMessage(err));
+      setErrorMessage(getConnectErrorMessage(err, 'Failed to authorize connection.'));
       const shouldDeny = !approvalCompletedRef.current;
       approvalCompletedRef.current = true;
       if (shouldDeny) {
@@ -390,7 +383,7 @@ export default function DWebConnectPage() {
         setOnboardStep('pin-create');
         return;
       }
-      const message = err instanceof Error ? err.message : 'Failed to create wallet';
+      const message = getConnectErrorMessage(err, 'Failed to create wallet');
       setOnboardError(/cancelled/i.test(message) ? null : message);
     } finally {
       setOnboardBusy(false);
@@ -415,7 +408,7 @@ export default function DWebConnectPage() {
     } catch (err) {
       setPhase('request');
       setStatusMessage('');
-      setOnboardError(err instanceof Error ? err.message : 'Failed to create wallet');
+      setOnboardError(getConnectErrorMessage(err, 'Failed to create wallet'));
       setOnboardStep('pin-create');
       setOnboardPin('');
     } finally {

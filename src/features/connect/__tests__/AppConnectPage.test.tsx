@@ -368,6 +368,22 @@ describe('AppConnectPage', () => {
     expect(screen.queryByText(/event bus unavailable/i)).not.toBeInTheDocument();
   });
 
+  it('leaves the authorizing phase when the ceremony rejects without an Error', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockRejectedValue(undefined);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    expect(await screen.findByText('Failed to authorize connection.')).toBeInTheDocument();
+    expect(screen.queryByText('Authorizing...')).not.toBeInTheDocument();
+  });
+
   it('shows the PIN before completion and flips to confirmed when the app acknowledges', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
