@@ -94,7 +94,7 @@ describe('UnlockScreen', () => {
     );
 
     expect(screen.getByText('Use your passkey to continue')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /unlock with passkey/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /unlock using passkey/i })).toBeInTheDocument();
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
   });
 
@@ -111,8 +111,42 @@ describe('UnlockScreen', () => {
       />,
     );
 
-    await user.click(screen.getByRole('button', { name: /unlock with passkey/i }));
+    await user.click(screen.getByRole('button', { name: /unlock using passkey/i }));
     expect(onUnlockWithPasskey).toHaveBeenCalledOnce();
+    expect(onUnlockWithPasskey).toHaveBeenCalledWith(expect.any(AbortSignal));
+  });
+
+  it('aborts a pending passkey request when the screen unmounts', async () => {
+    let requestSignal: AbortSignal | undefined;
+    const onUnlockWithPasskey = vi.fn((signal: AbortSignal) => {
+      requestSignal = signal;
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('The operation was aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    });
+    const user = userEvent.setup();
+
+    const { unmount } = render(
+      <UnlockScreen
+        {...defaults}
+        passkeyConfigured
+        passkeyAvailable
+        onUnlockWithPasskey={onUnlockWithPasskey}
+        onForgotPin={vi.fn()}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /unlock using passkey/i }));
+    expect(screen.getByText('Waiting for passkey approval...')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /restore from recovery phrase/i })).toBeDisabled();
+
+    unmount();
+
+    expect(requestSignal?.aborted).toBe(true);
   });
 
   it('does not show PIN input when a passkey wallet is unavailable on this device', () => {
@@ -121,7 +155,6 @@ describe('UnlockScreen', () => {
         {...defaults}
         passkeyConfigured
         passkeyAvailable={false}
-        passkeySupportChecked
       />,
     );
 
