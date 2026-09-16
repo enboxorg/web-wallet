@@ -20,6 +20,7 @@ describe('wallet auth effects', () => {
 
     expect(auth.connectVault).toHaveBeenCalledWith(expect.objectContaining({
       dwnEndpoints: ['https://dwn.example/path'],
+      sync: 'live',
     }));
   });
 
@@ -39,6 +40,7 @@ describe('wallet auth effects', () => {
     expect(options).toEqual(expect.objectContaining({
       password       : 'password',
       recoveryPhrase : 'recovery phrase',
+      sync           : 'live',
     }));
     expect(options).not.toHaveProperty('dwnEndpoints');
   });
