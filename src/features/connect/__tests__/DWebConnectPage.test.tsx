@@ -389,7 +389,7 @@ describe('DWebConnectPage', () => {
     expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
   });
 
-  it('locks out duplicate approvals: the consent actions unmount on first click', async () => {
+  it('claims approval before starting the non-idempotent ceremony', async () => {
     let releaseApproval: (value: string) => void = () => {};
     mocks.approvePopupConnectRequest.mockImplementation(
       () => new Promise<string>((resolve) => { releaseApproval = resolve; }),
@@ -399,12 +399,16 @@ describe('DWebConnectPage', () => {
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
+    // Re-enter the click handler before React can commit the phase change.
+    // A state-only guard would start the ceremony twice in this window.
+    let nestedClickSent = false;
+    approve.addEventListener('click', () => {
+      if (nestedClickSent) return;
+      nestedClickSent = true;
+      approve.click();
+    }, { capture: true });
     fireEvent.click(approve);
 
-    // The double-submit protection: the page leaves the 'request' phase
-    // synchronously on approve, so the Approve button is unmounted before a
-    // second click can reach it — the non-idempotent ceremony cannot be
-    // started twice from the UI.
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
     });
