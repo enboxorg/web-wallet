@@ -83,6 +83,7 @@ import {
   CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   resolveConnectSessionApprovalDurationSeconds,
 } from './connect-session-duration';
+import { claimConnectDecision, resetConnectDecision } from './connect-decision';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
 
@@ -110,6 +111,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const processConnectUriRef = useRef(processConnectUri);
   const mountedRef = useRef(true);
   const relayCompletionIdRef = useRef(0);
+  const decisionStartedRef = useRef(false);
   processConnectUriRef.current = processConnectUri;
 
   // Start in 'loading' when the URL carries deep-link connect parameters —
@@ -440,6 +442,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     const liveAgent = useAuthStore.getState().agent;
     const approveAsDid = overrideDid ?? approvalDid;
     if (!liveAgent || !connectionRequest || !approveAsDid) return;
+    if (!claimConnectDecision(decisionStartedRef)) return;
 
     setPhase('authorizing');
     try {
@@ -618,14 +621,22 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     }
   }
 
-  async function handleDeny() {
+  function handleDeny() {
+    if (!claimConnectDecision(decisionStartedRef)) return;
+
     // Submit a denial response to the relay so the dapp stops polling
-    // immediately instead of timing out after 5 minutes.
+    // instead of timing out after 5 minutes. Delivery is best-effort and must
+    // not hold the wallet on the consent screen when the relay is slow.
     if (connectionRequest) {
       try {
-        await denyConnectRequest(getRelayCallbackUrl(connectionRequest), connectionRequest.state);
+        void denyConnectRequest(
+          getRelayCallbackUrl(connectionRequest),
+          connectionRequest.state,
+        ).catch(() => {
+          // Best-effort — the dapp will eventually time out if delivery fails.
+        });
       } catch {
-        // Best-effort — navigate home regardless.
+        // A synchronous transport failure is also best-effort.
       }
     }
     relayCompletionIdRef.current += 1;
@@ -796,6 +807,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             onClick={() => {
               relayCompletionIdRef.current += 1;
               clearDeepLinkSession();
+              resetConnectDecision(decisionStartedRef);
               setPhase('scanning');
               setErrorMessage('');
             }}

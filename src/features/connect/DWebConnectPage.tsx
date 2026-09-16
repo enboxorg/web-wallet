@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Globe, Check, X, AlertCircle, Fingerprint, ShieldCheck, Sparkles } from 'lucide-react';
 import { WalletPostMessageTransport } from '@enbox/browser';
 import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
-import { Effect } from 'effect';
 
 import { Button } from '@/components/ui/Button';
 import { Select } from '@/components/ui/Select';
@@ -33,7 +32,6 @@ import {
   storePasskeyCredential,
 } from '@/lib/passkeys';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
-import { withWalletOperationLock } from '@/enbox/effect/keyed-mutex';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kernel';
 import {
@@ -55,6 +53,7 @@ import {
   useProtocolSetupStatuses,
 } from './use-protocol-setup-statuses';
 import { reconfigureProtocolsForOverride } from './protocol-override';
+import { claimConnectDecision } from './connect-decision';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
@@ -85,6 +84,7 @@ export default function DWebConnectPage() {
   const [phase, setPhase] = useState<Phase>('waiting');
   const transportRef = useRef<WalletPostMessageTransport>();
   const transportStartedRef = useRef(false);
+  const decisionStartedRef = useRef(false);
   const approvalCompletedRef = useRef(false);
   const [connectRequest, setConnectRequest] = useState<ConnectRequest>();
   const [sessionDurationSeconds, setSessionDurationSeconds] = useState(
@@ -235,7 +235,7 @@ export default function DWebConnectPage() {
 
   // ── Approve flow ──────────────────────────────────────────────
 
-  async function runApproveFlow(overrideDid?: string) {
+  async function handleApprove(overrideDid?: string) {
     // Read the agent from the store, not the render closure — the
     // create-wallet-and-connect path calls this right after onboarding,
     // before this component re-renders with the fresh agent.
@@ -244,6 +244,7 @@ export default function DWebConnectPage() {
     const transport = transportRef.current;
     if (!liveAgent || !approveAsDid || !connectRequest || !transport) { return; }
     if (approvalCompletedRef.current) { return; }
+    if (!claimConnectDecision(decisionStartedRef)) { return; }
 
     setPhase('connecting');
 
@@ -336,20 +337,6 @@ export default function DWebConnectPage() {
       }
       setPhase('error');
     }
-  }
-
-  async function handleApprove(overrideDid?: string) {
-    const lockKey = `dweb-connect:${origin}:${connectRequest?.state ?? selectedDid}`;
-
-    await runEnboxPromise(
-      withWalletOperationLock(
-        lockKey,
-        Effect.tryPromise({
-          try: () => runApproveFlow(overrideDid),
-          catch: (err) => err,
-        }),
-      ),
-    );
   }
 
   // ── Inline onboarding: create wallet, identity, then connect ──
@@ -445,6 +432,8 @@ export default function DWebConnectPage() {
   }
 
   function handleDeny() {
+    if (!claimConnectDecision(decisionStartedRef)) return;
+
     if (approvalCompletedRef.current) {
       window.close();
       return;

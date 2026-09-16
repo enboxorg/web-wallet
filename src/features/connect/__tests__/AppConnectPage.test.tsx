@@ -398,23 +398,27 @@ describe('AppConnectPage', () => {
     expect(screen.getByRole('button', { name: 'Try Again' })).toBeInTheDocument();
   });
 
-  it('sends a denial to the relay callback when the user denies', async () => {
+  it('leaves immediately while relay denial continues in the background', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.denyConnectRequest.mockResolvedValue(undefined);
+    mocks.denyConnectRequest.mockReturnValue(new Promise(() => {}));
 
-    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    const view = renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     const deny = await screen.findByRole('button', { name: 'Deny' });
     fireEvent.click(deny);
 
-    await waitFor(() => {
-      expect(mocks.denyConnectRequest).toHaveBeenCalledWith(
-        'https://relay.example/connect/callback',
-        'state-1',
-      );
-    });
+    expect(mocks.denyConnectRequest).toHaveBeenCalledWith(
+      'https://relay.example/connect/callback',
+      'state-1',
+    );
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+
+    // The consumed deep-link ceremony is released synchronously even though
+    // the relay never settles, so a later plain visit starts a fresh scan.
+    view.unmount();
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    expect(await screen.findByText(/No camera found/i)).toBeInTheDocument();
   });
 
   it('defaults to one hour even when the requester asks for longer', async () => {
