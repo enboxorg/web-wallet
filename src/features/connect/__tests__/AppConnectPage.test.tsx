@@ -323,6 +323,35 @@ describe('AppConnectPage', () => {
     expect(screen.queryByText('Connected!')).not.toBeInTheDocument();
   });
 
+  it('claims relay approval before starting the non-idempotent ceremony', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    let releasePin: (pin: string) => void = () => undefined;
+    mocks.generatePin.mockImplementation(
+      () => new Promise<string>((resolve) => { releasePin = resolve; }),
+    );
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    // Re-enter the click handler before React can commit the phase change.
+    // A state-only guard would generate two PINs and start two ceremonies.
+    let nestedClickSent = false;
+    approve.addEventListener('click', () => {
+      if (nestedClickSent) return;
+      nestedClickSent = true;
+      approve.click();
+    }, { capture: true });
+    fireEvent.click(approve);
+
+    expect(mocks.generatePin).toHaveBeenCalledTimes(1);
+    releasePin('1234');
+
+    await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
+  });
+
   it('keeps a completed relay approval successful when freshness publication fails', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
