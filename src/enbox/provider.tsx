@@ -99,6 +99,7 @@ export interface EnboxAuthContextValue {
     password: string,
     dwnEndpoints?: string[],
   ) => Promise<void>;
+  retryInitialization: () => void;
   lock: () => void;
   adoptDwnEndpoints: (endpoints: string[]) => void;
   dwnEndpoints: string[];
@@ -123,6 +124,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(getConfiguredDwnEndpoints);
 
   const { setInitialized, setUnlocked, lock: storeLock } = useAuthStore();
@@ -215,6 +217,12 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [restoreStoredSession, storeLock]);
 
+  const retryInitialization = useCallback(() => {
+    if (authManagerRef.current !== null) return;
+    setError(null);
+    setInitializationAttempt((attempt) => attempt + 1);
+  }, []);
+
   // ── Phase 1: Create AuthManager on mount ─────────────────────────
 
   useEffect(() => {
@@ -222,29 +230,52 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     let ownedAuth: WalletAuthManager | null = null;
 
     async function init() {
-      const auth = await runEnboxPromise(createWalletAuthManagerEffect());
-      ownedAuth = auth;
+      try {
+        const auth = await runEnboxPromise(createWalletAuthManagerEffect());
+        ownedAuth = auth;
 
-      if (cancelled) {
-        await shutdownOwnedAuthManager(auth);
-        return;
-      }
-      authManagerRef.current = auth;
+        if (cancelled) {
+          await shutdownOwnedAuthManager(auth);
+          return;
+        }
+        authManagerRef.current = auth;
 
-      const autoRestored = await tryAutoRestore(auth);
-      if (cancelled) return;
+        const autoRestored = await tryAutoRestore(auth);
+        if (cancelled) return;
 
-      if (!autoRestored) {
-        const firstTime = auth.state === 'uninitialized';
-        setInitialized(true, firstTime);
-      } else {
-        setInitialized(true, false);
+        if (!autoRestored) {
+          const firstTime = auth.state === 'uninitialized';
+          setInitialized(true, firstTime);
+        } else {
+          setInitialized(true, false);
+        }
+        setError(null);
+      } catch (err) {
+        if (cancelled) return;
+
+        console.error('EnboxAuthProvider: Initialization failed:', err);
+
+        // Do not expose retry until a partially initialized manager has been
+        // detached and shut down. A retry must always start with one owner.
+        const failedAuth = ownedAuth;
+        ownedAuth = null;
+        if (failedAuth !== null) {
+          if (authManagerRef.current === failedAuth) {
+            authManagerRef.current = null;
+          }
+          await shutdownOwnedAuthManager(failedAuth);
+        }
+
+        if (cancelled) return;
+        storeLock();
+        setInitialized(false, false);
+        setError(err instanceof Error && err.message
+          ? err.message
+          : 'Wallet initialization failed. Try again.');
       }
     }
 
-    init().catch((err) => {
-      console.error('EnboxAuthProvider: Initialization failed:', err);
-    });
+    void init();
 
     return () => {
       cancelled = true;
@@ -257,7 +288,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         void shutdownOwnedAuthManager(ownedAuth);
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initializationAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Connect (first-time setup) ───────────────────────────────────
 
@@ -355,6 +386,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     connect,
     unlock,
     restore,
+    retryInitialization,
     lock,
     adoptDwnEndpoints: applyAuthoritativeDwnEndpoints,
     dwnEndpoints,
