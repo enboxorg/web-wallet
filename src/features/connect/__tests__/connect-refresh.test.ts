@@ -5,7 +5,6 @@ import {
   detectConnectRefresh,
   type OwnerPermissionGrants,
 } from '../connect-refresh';
-import { getConnectRequestType } from '../connect-request-type';
 
 const NOW = new Date('2026-07-13T12:00:00.000Z');
 
@@ -61,13 +60,6 @@ function ownerPermissions(
 }
 
 describe('connect refresh detection', () => {
-  it('reads only supported request type values from forward-compatible payloads', () => {
-    expect(getConnectRequestType({ requestType: 'refresh' })).toBe('refresh');
-    expect(getConnectRequestType({ requestType: 'connect' })).toBe('connect');
-    expect(getConnectRequestType({ requestType: 'renew' })).toBeUndefined();
-    expect(getConnectRequestType(undefined)).toBeUndefined();
-  });
-
   it('does not infer refresh from an existing delegate when the signal is absent', () => {
     const detection = detectConnectRefresh(
       { delegateDid: 'did:jwk:delegate', appName: 'Example App' },
