@@ -10,7 +10,7 @@ import {
 import { CryptoUtils } from '@enbox/crypto';
 
 import { sdkError } from '@/enbox/effect/errors';
-import { withNetworkPolicy } from '@/enbox/effect/network-policy';
+import { fetchWithEffectSignal, withNetworkPolicy } from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
@@ -96,12 +96,13 @@ export function getRelayCallbackUrl(request: ConnectRequest): string {
  * opens the JWE (decrypt, JWT verification, signer/clientDid binding, shape
  * assertion) with the fragment-supplied 32-byte request key.
  */
-async function getBoundConnectRequest(requestUri: string, requestKey: Uint8Array): Promise<ConnectRequest> {
+async function getBoundConnectRequest(
+  requestUri: string,
+  requestKey: Uint8Array,
+  signal: AbortSignal,
+): Promise<ConnectRequest> {
   const requestUrl = parseConnectUrl(requestUri, 'Connect request URI');
-  const response = await fetch(requestUrl, {
-    redirect : 'error',
-    signal   : AbortSignal.timeout(30_000),
-  });
+  const response = await fetchWithEffectSignal(signal, requestUrl, { redirect: 'error' });
   if (response.status === 404 || response.status === 410) {
     // The relay pointer is single-use and expires server-side: a 404/410 is
     // definitive (already claimed, expired, or the relay lost it) — retrying
@@ -129,7 +130,7 @@ export function fetchConnectRequestEffect(requestUri: string, requestKey: Uint8A
   return withNetworkPolicy(
     'connect.getConnectRequest',
     Effect.tryPromise({
-      try: async () => getBoundConnectRequest(requestUri, requestKey),
+      try: (signal) => getBoundConnectRequest(requestUri, requestKey, signal),
       catch: sdkError('connect.getConnectRequest'),
     }),
     () => sdkTimeout('connect.getConnectRequest'),
@@ -197,7 +198,12 @@ export function approveConnectRequestEffect(
     return yield* withNetworkPolicy(
       'connect.submitConnectResponse',
       Effect.tryPromise({
-        try: async () => postRelayResponse({ callbackUrl, state: request.state, idToken }),
+        try: async (signal) => postRelayResponse({
+          callbackUrl,
+          state: request.state,
+          idToken,
+          fetchFn: (input, init) => fetchWithEffectSignal(signal, input, init),
+        }),
         catch: sdkError('connect.submitConnectResponse'),
       }),
       () => sdkTimeout('connect.submitConnectResponse'),
@@ -318,9 +324,14 @@ export function denyConnectRequestEffect(callbackUrl: string, state: string) {
   return withNetworkPolicy(
     'connect.deny',
     Effect.tryPromise({
-      try: async () => {
+      try: async (signal) => {
         parseConnectUrl(callbackUrl, 'Connect callback URL');
-        await postRelayResponse({ callbackUrl, state, idToken: CONNECT_DENIED_TOKEN });
+        await postRelayResponse({
+          callbackUrl,
+          state,
+          idToken: CONNECT_DENIED_TOKEN,
+          fetchFn: (input, init) => fetchWithEffectSignal(signal, input, init),
+        });
       },
       catch: sdkError('connect.deny'),
     }),

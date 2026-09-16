@@ -2,11 +2,34 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   connectVaultEffect,
+  resolveProviderAuthEffect,
   restoreFromPhraseEffect,
 } from '../auth-effects';
 import { runEnboxPromise } from '../effect/runtime';
 
 describe('wallet auth effects', () => {
+  it('binds provider authorization fetches to the Effect lifecycle', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      code: 'authorization-code',
+      state: 'expected-state',
+    })));
+
+    await expect(runEnboxPromise(resolveProviderAuthEffect({
+      authorizeUrl: 'https://provider.example/authorize',
+      dwnEndpoint: 'https://dwn.example',
+      state: 'expected-state',
+    }))).resolves.toEqual({
+      code: 'authorization-code',
+      state: 'expected-state',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://provider.example/authorize',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    fetchMock.mockRestore();
+  });
+
   it('normalizes setup endpoints at the SDK operation boundary', async () => {
     const auth = {
       connectVault: vi.fn(async () => ({ agent: {} })),
