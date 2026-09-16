@@ -96,24 +96,20 @@ export function canCheckPasskeySupport(): boolean {
 export function canCheckPasskeySupportEffect() {
   return Effect.sync(() => {
     if (globalThis.isSecureContext === false) return false;
-    return hasWebAuthnRuntime() && typeof indexedDB !== 'undefined';
+    return hasPasskeyCreationRuntime() && typeof indexedDB !== 'undefined';
   });
 }
 
-export async function isPasskeyUnlockAvailable(): Promise<boolean> {
-  return runEnboxPromise(isPasskeyUnlockAvailableEffect());
-}
-
-export function isPasskeyUnlockAvailableEffect() {
-  return Effect.gen(function* () {
-    if (!hasWebAuthnRuntime()) return false;
-    if (globalThis.isSecureContext === false) return false;
-
-    return yield* Effect.tryPromise({
-      try: async () => PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
-      catch: passkeyError('passkey.unlockSupportCheck'),
-    }).pipe(Effect.catchAll(() => Effect.succeed(false)));
-  });
+/**
+ * Synchronously checks whether this page can start a stored passkey request.
+ * Do not put the platform-authenticator capability probe in the unlock path:
+ * some browsers leave that probe pending even though credentials.get works.
+ */
+export function canUsePasskeyUnlock(): boolean {
+  return (
+    globalThis.isSecureContext !== false &&
+    hasPasskeyRequestRuntime()
+  );
 }
 
 export function isPasskeyVaultUnsupportedError(error: unknown): boolean {
@@ -229,32 +225,37 @@ export function preparePasskeyVaultPasswordEffect() {
   });
 }
 
-export async function unlockWithStoredPasskey(): Promise<string> {
-  return runEnboxPromise(unlockWithStoredPasskeyEffect());
+export async function unlockWithStoredPasskey(signal?: AbortSignal): Promise<string> {
+  return runEnboxPromise(unlockWithStoredPasskeyEffect(signal));
 }
 
-export function unlockWithStoredPasskeyEffect() {
+export function unlockWithStoredPasskeyEffect(signal?: AbortSignal) {
   return Effect.gen(function* () {
     const stored = yield* getStoredPasskeyCredentialEffect();
     if (!stored) {
       return yield* Effect.fail(new Error('No passkey is set up for this wallet.'));
     }
-    if (!(yield* isPasskeyUnlockAvailableEffect())) {
+    if (!canUsePasskeyUnlock()) {
       return yield* Effect.fail(new Error('Passkeys are not available on this device.'));
+    }
+    if (stored.wrapping === 'local' && typeof indexedDB === 'undefined') {
+      return yield* Effect.fail(
+        new Error('Passkey vault storage is unavailable. Restore from your recovery phrase to regain access.'),
+      );
     }
 
     if (stored.wrapping === 'local') {
-      yield* verifyStoredPasskeyAssertionEffect(stored);
+      yield* verifyStoredPasskeyAssertionEffect(stored, signal);
       const key = yield* getLocalWrappingKeyEffect(stored.keyId);
-    if (!key) {
+      if (!key) {
         return yield* Effect.fail(
           new Error('Passkey vault storage is missing. Restore from your recovery phrase to regain access.'),
         );
-    }
+      }
       return yield* decryptVaultPasswordWithKeyEffect(stored, key);
     }
 
-    const prfOutput = yield* getPrfOutputForStoredCredentialEffect(stored);
+    const prfOutput = yield* getPrfOutputForStoredCredentialEffect(stored, signal);
     return yield* decryptVaultPasswordEffect(stored, prfOutput);
   });
 }
@@ -310,17 +311,24 @@ function getStoredPasskeyCredentialEffect() {
   });
 }
 
-function hasWebAuthnRuntime(): boolean {
+function hasPasskeyRequestRuntime(): boolean {
   return (
     typeof PublicKeyCredential !== 'undefined' &&
-    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function' &&
     typeof navigator !== 'undefined' &&
     !!navigator.credentials &&
-    typeof navigator.credentials.create === 'function' &&
     typeof navigator.credentials.get === 'function' &&
+    typeof AbortController !== 'undefined' &&
     typeof crypto !== 'undefined' &&
     !!crypto.subtle &&
     typeof crypto.getRandomValues === 'function'
+  );
+}
+
+function hasPasskeyCreationRuntime(): boolean {
+  return (
+    hasPasskeyRequestRuntime() &&
+    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function' &&
+    typeof navigator.credentials.create === 'function'
   );
 }
 
@@ -387,16 +395,19 @@ function tryGetPrfOutputFromCredentialEffect(
 
 function getPrfOutputForStoredCredentialEffect(
   credential: StoredPrfPasskeyCredential,
+  signal?: AbortSignal,
 ): Effect.Effect<Uint8Array, Error, never> {
-  return getPrfOutputForCredentialId(
+  return getPrfOutputForCredentialIdEffect(
     toArrayBuffer(base64UrlToBytes(credential.credentialId)),
     base64UrlToBytes(credential.salt),
+    signal,
   );
 }
 
 function getPrfOutputForCredentialIdEffect(
   credentialId: ArrayBuffer,
   salt: Uint8Array,
+  signal?: AbortSignal,
 ) {
   return Effect.gen(function* () {
     const challenge = yield* randomBytesEffect(WEBAUTHN_CHALLENGE_BYTES);
@@ -419,11 +430,12 @@ function getPrfOutputForCredentialIdEffect(
       },
     };
 
-    const credential = yield* Effect.tryPromise({
-      try: async () => navigator.credentials.get({ publicKey }),
-      catch: passkeyError('passkey.getPrfOutput'),
-    });
-    const output = getPrfOutput(asPublicKeyCredential(credential));
+    const credential = yield* getPasskeyCredentialEffect(
+      publicKey,
+      signal,
+      'passkey.getPrfOutput',
+    );
+    const output = getPrfOutput(credential);
     if (!output) {
       return yield* Effect.fail(
         new PasskeyVaultUnsupportedError(
@@ -433,13 +445,6 @@ function getPrfOutputForCredentialIdEffect(
     }
     return output;
   });
-}
-
-function getPrfOutputForCredentialId(
-  credentialId: ArrayBuffer,
-  salt: Uint8Array,
-): Effect.Effect<Uint8Array, Error, never> {
-  return getPrfOutputForCredentialIdEffect(credentialId, salt);
 }
 
 function prepareLocalWrappedPasskeyVaultEffect(
@@ -489,6 +494,7 @@ function prepareLocalWrappedPasskeyVaultEffect(
 
 function verifyStoredPasskeyAssertionEffect(
   stored: StoredLocalPasskeyCredential,
+  signal?: AbortSignal,
 ): Effect.Effect<void, Error, never> {
   return Effect.gen(function* () {
     const challenge = yield* randomBytesEffect(WEBAUTHN_CHALLENGE_BYTES);
@@ -504,11 +510,10 @@ function verifyStoredPasskeyAssertionEffect(
       timeout: PASSKEY_TIMEOUT_MS,
     };
 
-    const credential = asPublicKeyCredential(
-      yield* Effect.tryPromise({
-        try: async () => navigator.credentials.get({ publicKey }),
-        catch: passkeyError('passkey.verifyAssertion'),
-      }),
+    const credential = yield* getPasskeyCredentialEffect(
+      publicKey,
+      signal,
+      'passkey.verifyAssertion',
     );
     const response = asAssertionResponse(credential.response);
     const clientData = parseClientData(response.clientDataJSON);
@@ -516,31 +521,93 @@ function verifyStoredPasskeyAssertionEffect(
       return yield* Effect.fail(new Error('Passkey verification failed.'));
     }
 
-  const authenticatorData = bufferSourceToBytes(response.authenticatorData);
-  const flags = authenticatorData[AUTHENTICATOR_DATA_FLAGS_OFFSET] ?? 0;
-  if (
-    (flags & AUTHENTICATOR_FLAG_USER_PRESENT) === 0 ||
-    (flags & AUTHENTICATOR_FLAG_USER_VERIFIED) === 0
-  ) {
+    const authenticatorData = bufferSourceToBytes(response.authenticatorData);
+    const flags = authenticatorData[AUTHENTICATOR_DATA_FLAGS_OFFSET] ?? 0;
+    if (
+      (flags & AUTHENTICATOR_FLAG_USER_PRESENT) === 0 ||
+      (flags & AUTHENTICATOR_FLAG_USER_VERIFIED) === 0
+    ) {
       return yield* Effect.fail(new Error('Passkey verification requires user verification.'));
-  }
+    }
 
     const clientDataHash = yield* Effect.tryPromise({
       try: async () => crypto.subtle.digest('SHA-256', response.clientDataJSON),
       catch: passkeyError('passkey.clientDataHash'),
     });
-  const signedData = concatBytes(authenticatorData, new Uint8Array(clientDataHash));
+    const signedData = concatBytes(authenticatorData, new Uint8Array(clientDataHash));
     const publicKeyCryptoKey = yield* importPasskeyPublicKeyEffect(stored);
     const verified = yield* verifyPasskeySignatureEffect(
-    publicKeyCryptoKey,
-    stored.publicKeyAlgorithm,
-    response.signature,
-    signedData,
-  );
-  if (!verified) {
+      publicKeyCryptoKey,
+      stored.publicKeyAlgorithm,
+      response.signature,
+      signedData,
+    );
+    if (!verified) {
       return yield* Effect.fail(new Error('Passkey verification failed.'));
-  }
+    }
   });
+}
+
+function getPasskeyCredentialEffect(
+  publicKey: PublicKeyCredentialRequestOptions,
+  signal: AbortSignal | undefined,
+  operation: string,
+): Effect.Effect<PublicKeyCredential, Error, never> {
+  return Effect.tryPromise({
+    try: async () => requestPasskeyCredential(publicKey, signal),
+    catch: passkeyError(operation),
+  }).pipe(Effect.map(asPublicKeyCredential));
+}
+
+async function requestPasskeyCredential(
+  publicKey: PublicKeyCredentialRequestOptions,
+  externalSignal?: AbortSignal,
+): Promise<Credential | null> {
+  if (externalSignal?.aborted) {
+    throw passkeyRequestError('AbortError', 'Passkey request was cancelled.');
+  }
+
+  const controller = new AbortController();
+  let rejectCancellation: (error: Error) => void = () => undefined;
+  const cancellation = new Promise<never>((_resolve, reject) => {
+    rejectCancellation = reject;
+  });
+
+  const cancel = (error: Error) => {
+    // Settle our own promise first so this works even when a browser ignores
+    // the WebAuthn signal or replaces its reason with a generic AbortError.
+    rejectCancellation(error);
+    if (!controller.signal.aborted) controller.abort();
+  };
+  const onExternalAbort = () => {
+    cancel(passkeyRequestError('AbortError', 'Passkey request was cancelled.'));
+  };
+  externalSignal?.addEventListener('abort', onExternalAbort, { once: true });
+
+  const timeout = globalThis.setTimeout(() => {
+    cancel(passkeyRequestError('TimeoutError', 'Passkey request timed out. Try again.'));
+  }, PASSKEY_TIMEOUT_MS);
+
+  try {
+    return await Promise.race([
+      navigator.credentials.get({ publicKey, signal: controller.signal }),
+      cancellation,
+    ]);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'NotAllowedError') {
+      throw new Error('Passkey approval was cancelled or timed out. Try again.');
+    }
+    throw error;
+  } finally {
+    globalThis.clearTimeout(timeout);
+    externalSignal?.removeEventListener('abort', onExternalAbort);
+  }
+}
+
+function passkeyRequestError(name: 'AbortError' | 'TimeoutError', message: string): Error {
+  const error = new Error(message);
+  error.name = name;
+  return error;
 }
 
 function asPublicKeyCredential(credential: Credential | null): PublicKeyCredential {

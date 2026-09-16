@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   canCheckPasskeySupport,
+  canUsePasskeyUnlock,
   clearPasskeyCredential,
   getStoredAuthMethod,
   hasStoredPasskeyCredential,
@@ -31,11 +32,13 @@ describe('passkeys', () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
   it('reports passkey checks unavailable when WebAuthn is missing', () => {
     expect(canCheckPasskeySupport()).toBe(false);
+    expect(canUsePasskeyUnlock()).toBe(false);
   });
 
   it('stores passkey metadata and marks passkey as the auth method', () => {
@@ -98,30 +101,76 @@ describe('passkeys', () => {
   });
 
   it('unlocks local passkey wrapping after verifying the passkey assertion', async () => {
-    const credentialId = new Uint8Array([1, 2, 3, 4]);
-    const publicKey = new Uint8Array([5, 6, 7, 8]);
-    const iv = new Uint8Array([9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
-    const wrappedVaultPassword = new Uint8Array([21, 22, 23]);
+    storeLocalPasskeyMetadata();
     const wrappingKey = { type: 'secret' };
-    localStorage.setItem(
-      PASSKEY_CREDENTIAL_STORAGE_KEY,
-      JSON.stringify({
-        version: 2,
-        wrapping: 'local',
-        credentialId: bytesToBase64Url(credentialId),
-        publicKey: bytesToBase64Url(publicKey),
-        publicKeyAlgorithm: -257,
-        keyId: 'local-key',
-        iv: bytesToBase64Url(iv),
-        wrappedVaultPassword: bytesToBase64Url(wrappedVaultPassword),
-        createdAt: '2026-06-20T00:00:00.000Z',
-      }),
-    );
-    stubLocalPasskeyUnlock(wrappingKey);
+    const { get, supportCheck } = stubLocalPasskeyUnlock(wrappingKey);
 
     await expect(unlockWithStoredPasskey()).resolves.toBe('vault-password');
+
+    expect(supportCheck).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+    }));
+  });
+
+  it('aborts a pending browser request when its caller is cancelled', async () => {
+    storeLocalPasskeyMetadata();
+    const get = stubPendingPasskeyUnlock();
+    const controller = new AbortController();
+
+    const unlockPromise = unlockWithStoredPasskey(controller.signal);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledOnce());
+
+    const browserSignal = get.mock.calls[0]?.[0].signal;
+    controller.abort();
+
+    await expect(unlockPromise).rejects.toMatchObject({
+      name: 'AbortError',
+      message: 'Passkey request was cancelled.',
+    });
+    expect(browserSignal?.aborted).toBe(true);
+  });
+
+  it('ends a passkey request at the hard deadline', async () => {
+    vi.useFakeTimers();
+    storeLocalPasskeyMetadata();
+    const get = stubPendingPasskeyUnlock();
+
+    const unlockPromise = unlockWithStoredPasskey();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledOnce());
+    const rejection = expect(unlockPromise).rejects.toMatchObject({
+      name: 'TimeoutError',
+      message: 'Passkey request timed out. Try again.',
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await rejection;
+    expect(get.mock.calls[0]?.[0].signal.aborted).toBe(true);
   });
 });
+
+function storeLocalPasskeyMetadata() {
+  const credentialId = new Uint8Array([1, 2, 3, 4]);
+  const publicKey = new Uint8Array([5, 6, 7, 8]);
+  const iv = new Uint8Array([9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+  const wrappedVaultPassword = new Uint8Array([21, 22, 23]);
+
+  localStorage.setItem(
+    PASSKEY_CREDENTIAL_STORAGE_KEY,
+    JSON.stringify({
+      version: 2,
+      wrapping: 'local',
+      credentialId: bytesToBase64Url(credentialId),
+      publicKey: bytesToBase64Url(publicKey),
+      publicKeyAlgorithm: -257,
+      keyId: 'local-key',
+      iv: bytesToBase64Url(iv),
+      wrappedVaultPassword: bytesToBase64Url(wrappedVaultPassword),
+      createdAt: '2026-06-20T00:00:00.000Z',
+    }),
+  );
+}
 
 function stubWebAuthnCapabilities(capabilities: Record<string, boolean>) {
   vi.stubGlobal('isSecureContext', true);
@@ -181,34 +230,36 @@ function stubPasskeyRegistrationWithoutPrf() {
 
 function stubLocalPasskeyUnlock(wrappingKey: unknown) {
   const plaintext = new TextEncoder().encode('vault-password');
+  const supportCheck = vi.fn().mockResolvedValue(false);
+  const get = vi.fn((request: CredentialRequestOptions) => {
+    const challenge = new Uint8Array(request.publicKey?.challenge as ArrayBuffer);
+    const authenticatorData = new Uint8Array(33);
+    authenticatorData[32] = 0x05;
+    return Promise.resolve({
+      type: 'public-key',
+      rawId: toArrayBuffer(new Uint8Array([1, 2, 3, 4])),
+      response: {
+        clientDataJSON: toArrayBuffer(
+          new TextEncoder().encode(JSON.stringify({
+            type: 'webauthn.get',
+            challenge: bytesToBase64Url(challenge),
+          })),
+        ),
+        authenticatorData: toArrayBuffer(authenticatorData),
+        signature: toArrayBuffer(new Uint8Array([24, 25, 26])),
+      },
+      getClientExtensionResults: vi.fn(() => ({})),
+    });
+  });
 
   vi.stubGlobal('isSecureContext', true);
   vi.stubGlobal('PublicKeyCredential', {
-    isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(true),
+    isUserVerifyingPlatformAuthenticatorAvailable: supportCheck,
   });
   vi.stubGlobal('navigator', {
     credentials: {
       create: vi.fn(),
-      get: vi.fn((request: CredentialRequestOptions) => {
-        const challenge = new Uint8Array(request.publicKey?.challenge as ArrayBuffer);
-        const authenticatorData = new Uint8Array(33);
-        authenticatorData[32] = 0x05;
-        return Promise.resolve({
-          type: 'public-key',
-          rawId: toArrayBuffer(new Uint8Array([1, 2, 3, 4])),
-          response: {
-            clientDataJSON: toArrayBuffer(
-              new TextEncoder().encode(JSON.stringify({
-                type: 'webauthn.get',
-                challenge: bytesToBase64Url(challenge),
-              })),
-            ),
-            authenticatorData: toArrayBuffer(authenticatorData),
-            signature: toArrayBuffer(new Uint8Array([24, 25, 26])),
-          },
-          getClientExtensionResults: vi.fn(() => ({})),
-        });
-      }),
+      get,
     },
   });
   vi.stubGlobal('crypto', {
@@ -224,6 +275,30 @@ function stubLocalPasskeyUnlock(wrappingKey: unknown) {
     }),
   });
   vi.stubGlobal('indexedDB', createFakeIndexedDb({ getResult: wrappingKey }));
+
+  return { get, supportCheck };
+}
+
+function stubPendingPasskeyUnlock() {
+  const get = vi.fn((request: CredentialRequestOptions) =>
+    new Promise<Credential | null>((_resolve, reject) => {
+      request.signal?.addEventListener(
+        'abort',
+        () => reject(new DOMException('The operation was aborted', 'AbortError')),
+        { once: true },
+      );
+    }));
+
+  vi.stubGlobal('isSecureContext', true);
+  vi.stubGlobal('PublicKeyCredential', {});
+  vi.stubGlobal('navigator', { credentials: { get } });
+  vi.stubGlobal('crypto', {
+    subtle: {},
+    getRandomValues: vi.fn((bytes: Uint8Array) => bytes.fill(7)),
+  });
+  vi.stubGlobal('indexedDB', createFakeIndexedDb());
+
+  return get;
 }
 
 function createFakeIndexedDb(options: { getResult?: unknown; putResult?: unknown } = {}) {

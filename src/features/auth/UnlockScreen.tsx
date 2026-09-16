@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyRound } from 'lucide-react';
 import { PinInput } from '@/components/ui/PinInput';
 import { Button } from '@/components/ui/Button';
@@ -9,13 +9,12 @@ import { cn } from '@/lib/utils';
 
 export interface UnlockScreenProps {
   onUnlock: (pin: string) => void;
-  onUnlockWithPasskey?: () => Promise<void>;
+  onUnlockWithPasskey?: (signal: AbortSignal) => Promise<void>;
   onForgotPin?: () => void;
   error: string | null;
   isLoading: boolean;
   passkeyConfigured?: boolean;
   passkeyAvailable?: boolean;
-  passkeySupportChecked?: boolean;
 }
 
 export function UnlockScreen({
@@ -26,10 +25,16 @@ export function UnlockScreen({
   isLoading,
   passkeyConfigured = false,
   passkeyAvailable = false,
-  passkeySupportChecked = true,
 }: UnlockScreenProps) {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const passkeyAbortRef = useRef<AbortController | null>(null);
   const busy = isLoading || passkeyLoading;
+
+  useEffect(() => () => {
+    const controller = passkeyAbortRef.current;
+    passkeyAbortRef.current = null;
+    controller?.abort();
+  }, []);
 
   const handleComplete = useCallback(
     (pin: string) => {
@@ -41,25 +46,34 @@ export function UnlockScreen({
   );
 
   const handlePasskeyUnlock = useCallback(async () => {
-    if (!onUnlockWithPasskey || busy) return;
+    if (!onUnlockWithPasskey || isLoading || passkeyAbortRef.current) return;
+
+    const controller = new AbortController();
+    passkeyAbortRef.current = controller;
     setPasskeyLoading(true);
     try {
-      await onUnlockWithPasskey();
+      await onUnlockWithPasskey(controller.signal);
+    } catch {
+      // The parent owns the user-facing error. Consume the event-handler
+      // rejection so cancellation cannot become an unhandled promise.
     } finally {
-      setPasskeyLoading(false);
+      if (passkeyAbortRef.current === controller) {
+        passkeyAbortRef.current = null;
+        setPasskeyLoading(false);
+      }
     }
-  }, [busy, onUnlockWithPasskey]);
+  }, [isLoading, onUnlockWithPasskey]);
 
   const showPasskey = passkeyConfigured;
   const canUsePasskey = showPasskey && passkeyAvailable && onUnlockWithPasskey;
 
   const renderUnlockControl = () => {
-    if (busy) {
-      return <Loader message="Unlocking..." />;
+    if (isLoading) {
+      return <Loader message={passkeyLoading ? 'Opening wallet...' : 'Unlocking...'} />;
     }
 
-    if (showPasskey && !passkeySupportChecked) {
-      return <Loader message="Checking passkey..." />;
+    if (passkeyLoading) {
+      return <Loader message="Waiting for passkey approval..." />;
     }
 
     if (canUsePasskey) {
@@ -67,7 +81,7 @@ export function UnlockScreen({
         <div className="flex w-full flex-col items-center gap-4">
           <Button onClick={handlePasskeyUnlock} className="w-full" size="lg" autoFocus>
             <KeyRound className="h-5 w-5" />
-            Unlock with passkey
+            Unlock using passkey
           </Button>
 
           {error && (
@@ -142,7 +156,8 @@ export function UnlockScreen({
           <button
             type="button"
             onClick={onForgotPin}
-            className="mt-2 text-sm text-text-tertiary hover:text-accent transition-colors"
+            disabled={busy}
+            className="mt-2 text-sm text-text-tertiary transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
           >
             {restoreLabel}
           </button>

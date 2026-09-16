@@ -18,8 +18,8 @@ import {
   consumeJustOnboarded,
 } from '@/lib/auto-identity';
 import {
+  canUsePasskeyUnlock,
   hasStoredPasskeyCredential,
-  isPasskeyUnlockAvailable,
   unlockWithStoredPasskey,
 } from '@/lib/passkeys';
 
@@ -175,9 +175,8 @@ function AuthGate() {
   // Allow user to skip identity creation and go straight to the app
   const [identitySkipped, setIdentitySkipped] = useState(false);
   const [authUiError, setAuthUiError] = useState<string | null>(null);
-  const [passkeyConfigured, setPasskeyConfigured] = useState(false);
-  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
-  const [passkeySupportChecked, setPasskeySupportChecked] = useState(true);
+  const passkeyConfigured = !unlocked && !firstTime && hasStoredPasskeyCredential();
+  const passkeyAvailable = passkeyConfigured && canUsePasskeyUnlock();
 
   // Only query identities when unlocked
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
@@ -216,15 +215,15 @@ function AuthGate() {
     [unlock],
   );
 
-  const handlePasskeyUnlock = useCallback(async () => {
+  const handlePasskeyUnlock = useCallback(async (signal: AbortSignal) => {
     setAuthUiError(null);
     try {
-      const password = await unlockWithStoredPasskey();
+      const password = await unlockWithStoredPasskey(signal);
       await unlock(password);
     } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
       const message = err instanceof Error ? err.message : 'Passkey unlock failed';
       setAuthUiError(message);
-      throw err;
     }
   }, [unlock]);
 
@@ -237,35 +236,6 @@ function AuthGate() {
     },
     [restore],
   );
-
-  useEffect(() => {
-    if (unlocked || firstTime) {
-      setPasskeyConfigured(false);
-      setPasskeyAvailable(false);
-      setPasskeySupportChecked(true);
-      return;
-    }
-
-    const configured = hasStoredPasskeyCredential();
-    setPasskeyConfigured(configured);
-    if (!configured) {
-      setPasskeyAvailable(false);
-      setPasskeySupportChecked(true);
-      return;
-    }
-
-    let cancelled = false;
-    setPasskeySupportChecked(false);
-    isPasskeyUnlockAvailable().then((supported) => {
-      if (cancelled) return;
-      setPasskeyAvailable(supported);
-      setPasskeySupportChecked(true);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [firstTime, unlocked]);
 
   // Still initialising the AuthManager
   if (!initialized) {
@@ -362,7 +332,6 @@ function AuthGate() {
         isLoading={isLoading}
         passkeyConfigured={passkeyConfigured}
         passkeyAvailable={passkeyAvailable}
-        passkeySupportChecked={passkeySupportChecked}
       />
     );
   }
