@@ -46,6 +46,7 @@ export class PasskeyVaultUnsupportedError extends Error {
 const PASSKEY_RP_NAME = 'Enbox Wallet';
 const PASSKEY_USER_NAME = 'wallet@enbox.local';
 const PASSKEY_USER_DISPLAY_NAME = 'Enbox Wallet';
+const PASSKEY_CAPABILITY_TIMEOUT_MS = 1_000;
 const PASSKEY_TIMEOUT_MS = 60_000;
 const PASSKEY_STORAGE_TIMEOUT_MS = 10_000;
 const AES_GCM_IV_BYTES = 12;
@@ -183,6 +184,10 @@ export function preparePasskeyVaultPasswordEffect(signal?: AbortSignal) {
         new PasskeyVaultUnsupportedError(),
       );
     }
+    const platformAuthenticatorAvailable = yield* checkPlatformAuthenticatorAvailabilityEffect();
+    if (platformAuthenticatorAvailable === false) {
+      return yield* Effect.fail(new PasskeyVaultUnsupportedError());
+    }
 
     const password = yield* randomBase64UrlEffect(VAULT_PASSWORD_BYTES);
     const salt = yield* randomBytesEffect(WEBAUTHN_SALT_BYTES);
@@ -314,6 +319,36 @@ function hasPasskeyCreationRuntime(): boolean {
     hasPasskeyRequestRuntime() &&
     typeof navigator.credentials.create === 'function'
   );
+}
+
+/**
+ * Uses the browser's capability hint when it settles promptly, but never lets
+ * that advisory check stand between a user gesture and the real ceremony.
+ * `undefined` means "unknown — try WebAuthn directly".
+ */
+function checkPlatformAuthenticatorAvailabilityEffect() {
+  return Effect.tryPromise({
+    try: checkPlatformAuthenticatorAvailability,
+    catch: passkeyError('passkey.supportCheck'),
+  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+}
+
+async function checkPlatformAuthenticatorAvailability(): Promise<boolean | undefined> {
+  if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') {
+    return undefined;
+  }
+
+  let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+      new Promise<undefined>((resolve) => {
+        timeout = globalThis.setTimeout(() => resolve(undefined), PASSKEY_CAPABILITY_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) globalThis.clearTimeout(timeout);
+  }
 }
 
 function createPasskeyCredentialEffect(salt: Uint8Array, signal?: AbortSignal) {

@@ -76,7 +76,8 @@ describe('passkeys', () => {
   });
 
   it('maps a provider without passkey creation to the PIN fallback error', async () => {
-    const { create } = stubWebAuthnCapabilities();
+    const { create, supportCheck } = stubWebAuthnCapabilities();
+    supportCheck.mockResolvedValue(true);
     create.mockRejectedValue(new DOMException('Not supported', 'NotSupportedError'));
 
     await expect(preparePasskeyVaultPassword()).rejects.toBeInstanceOf(
@@ -84,8 +85,35 @@ describe('passkeys', () => {
     );
   });
 
+  it('falls back before starting WebAuthn when no platform authenticator exists', async () => {
+    const { create, supportCheck } = stubWebAuthnCapabilities();
+    supportCheck.mockResolvedValue(false);
+
+    await expect(preparePasskeyVaultPassword()).rejects.toBeInstanceOf(
+      PasskeyVaultUnsupportedError,
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting for a hung capability hint and starts WebAuthn directly', async () => {
+    vi.useFakeTimers();
+    const { create, supportCheck } = stubPasskeyRegistrationWithoutPrf();
+    supportCheck.mockImplementation(() => new Promise<boolean>(() => undefined));
+
+    const preparation = preparePasskeyVaultPassword();
+    await vi.waitFor(() => expect(supportCheck).toHaveBeenCalledOnce());
+    expect(create).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(preparation).resolves.toEqual(expect.objectContaining({
+      password: expect.any(String),
+    }));
+    expect(create).toHaveBeenCalledOnce();
+  });
+
   it('falls back to local passkey wrapping when the authenticator does not process PRF', async () => {
-    const create = stubPasskeyRegistrationWithoutPrf();
+    const { create } = stubPasskeyRegistrationWithoutPrf();
 
     const prepared = await preparePasskeyVaultPassword();
 
@@ -239,10 +267,11 @@ function stubWebAuthnCapabilities() {
 function stubPasskeyRegistrationWithoutPrf() {
   const rawId = new Uint8Array([1, 2, 3, 4]).buffer;
   const publicKey = new Uint8Array([5, 6, 7, 8]).buffer;
+  const supportCheck = vi.fn().mockResolvedValue(true);
 
   vi.stubGlobal('isSecureContext', true);
   vi.stubGlobal('PublicKeyCredential', {
-    isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(true),
+    isUserVerifyingPlatformAuthenticatorAvailable: supportCheck,
   });
   const create = vi.fn().mockResolvedValue({
     type: 'public-key',
@@ -270,7 +299,7 @@ function stubPasskeyRegistrationWithoutPrf() {
     }),
   });
   vi.stubGlobal('indexedDB', createFakeIndexedDb());
-  return create;
+  return { create, supportCheck };
 }
 
 function stubPendingPasskeyRegistration() {
