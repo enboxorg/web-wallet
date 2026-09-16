@@ -58,6 +58,8 @@ function createAgent() {
       getServerInfo: vi.fn().mockRejectedValue(new Error('offline')),
     },
     sync: {
+      hasActiveSubscriptions: false,
+      startSync: vi.fn().mockResolvedValue(undefined),
       stopSync: vi.fn().mockResolvedValue(undefined),
       clear: vi.fn().mockResolvedValue(undefined),
     },
@@ -146,10 +148,13 @@ function ConcurrentAuthenticationButton() {
   );
 }
 
-function UnlockButton() {
+function UnlockButton({ onSettled }: { onSettled?: () => void }) {
   const { unlock } = useEnboxAuth();
   return (
-    <button type="button" onClick={() => void unlock('1234').catch(() => {})}>
+    <button
+      type="button"
+      onClick={() => void unlock('1234').catch(() => {}).finally(onSettled)}
+    >
       Unlock
     </button>
   );
@@ -207,6 +212,7 @@ describe('EnboxAuthProvider restore flow', () => {
       expect(auth.connectVault).toHaveBeenCalledWith({
         password     : '1234',
         dwnEndpoints : TEST_ENDPOINTS,
+        sync         : 'live',
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();
@@ -265,7 +271,10 @@ describe('EnboxAuthProvider restore flow', () => {
     auth.agent.identity.getDwnEndpoints.mockImplementation(
       async ({ didUri }: { didUri: string }) => endpointsByDid[didUri],
     );
-    auth.restoreSession.mockResolvedValue({ agent: auth.agent });
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
     authMocks.create.mockResolvedValue(auth);
 
     render(
@@ -285,7 +294,7 @@ describe('EnboxAuthProvider restore flow', () => {
     });
   });
 
-  it('configures scoped sync at the SDK default settle-check cadence', async () => {
+  it('defers stored-session sync while retaining the scoped sync configuration', async () => {
     const auth = createAuth();
     authMocks.create.mockResolvedValue(auth);
 
@@ -300,9 +309,72 @@ describe('EnboxAuthProvider restore flow', () => {
       expect(options).toEqual(expect.objectContaining({
         identitySyncProtocols: TEST_IDENTITY_SYNC_PROTOCOLS,
         registration: expect.objectContaining({ persistTokens: true }),
+        sync: 'off',
       }));
-      expect(options).not.toHaveProperty('sync');
     });
+  });
+
+  it('does not wait for initial sync catch-up before completing unlock', async () => {
+    const user = userEvent.setup();
+    const settled = vi.fn();
+    const auth = createAuth('locked');
+    let finishSync!: () => void;
+    auth.agent.sync.startSync.mockReturnValue(new Promise<void>((resolve) => {
+      finishSync = resolve;
+    }));
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton onSettled={settled} />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(useAuthStore.getState().agent).toBe(auth.agent);
+    expect(auth.agent.sync.startSync).toHaveBeenCalledWith();
+    expect(auth.agent.sync.stopSync).not.toHaveBeenCalled();
+
+    finishSync();
+  });
+
+  it('keeps a restored local session usable when background sync fails', async () => {
+    const user = userEvent.setup();
+    const settled = vi.fn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const auth = createAuth('locked');
+    auth.agent.sync.startSync.mockRejectedValue(new Error('offline'));
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton onSettled={settled} />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await waitFor(() => expect(warn).toHaveBeenCalledWith(
+      'EnboxAuthProvider: Background sync failed:',
+      expect.any(Error),
+    ));
+    expect(settled).toHaveBeenCalledOnce();
+    expect(useAuthStore.getState().agent).toBe(auth.agent);
+    expect(auth.lock).not.toHaveBeenCalled();
+
+    warn.mockRestore();
   });
 
   it('shuts down its AuthManager when unmounted', async () => {
@@ -517,6 +589,7 @@ describe('EnboxAuthProvider restore flow', () => {
       expect(auth.restoreFromPhrase).toHaveBeenCalledWith({
         password       : '1234',
         recoveryPhrase : TEST_PHRASE,
+        sync           : 'live',
       });
     });
     expect(auth.connect).not.toHaveBeenCalled();

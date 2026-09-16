@@ -64,8 +64,10 @@ export function createWalletAuthManagerEffect() {
     try: () =>
       AuthManager.create({
         identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
-        // Live subscriptions are the primary transport. Leave the interval
-        // unset so the SDK's default settle check remains the recovery net.
+        // restoreSession has no per-call sync override and otherwise waits for
+        // initial remote catch-up before returning a valid local session.
+        // Setup and phrase recovery opt back into live sync explicitly below.
+        sync: 'off',
         registration: {
           onSuccess: () => {},
           onFailure: (err: unknown) =>
@@ -89,6 +91,7 @@ export function connectVaultEffect(
       auth.connectVault({
         password,
         dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints),
+        sync: 'live',
       }),
     catch: sdkError('authManager.connectVault'),
   });
@@ -111,11 +114,24 @@ export function restoreFromPhraseEffect(
     try: () => auth.restoreFromPhrase({
       password,
       recoveryPhrase,
+      sync: 'live',
       ...(dwnEndpoints === undefined
         ? {}
         : { dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints) }),
     }),
     catch: sdkError('authManager.restoreFromPhrase'),
+  });
+}
+
+export function startWalletSyncEffect(auth: WalletAuthManager) {
+  return Effect.gen(function* () {
+    if (auth.agent.sync.hasActiveSubscriptions) return;
+
+    yield* Effect.tryPromise({
+      // Omit an interval so the engine keeps its default settle-check cadence.
+      try: () => auth.agent.sync.startSync(),
+      catch: sdkError('agent.sync.startSync'),
+    });
   });
 }
 

@@ -10,6 +10,7 @@
  * - DWN tenant registration when a DID is created or gains a new endpoint
  * - Inactivity auto-lock timer
  * - Session vault password caching for same-tab refresh persistence
+ * - Starting stored-session sync after the local session is ready
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
@@ -36,6 +37,7 @@ import {
   lockAuthManagerEffect,
   restoreFromPhraseEffect,
   restoreSessionEffect,
+  startWalletSyncEffect,
   type WalletAuthManager,
 } from './auth-effects';
 import { runEnboxPromise, runEnboxSync } from './effect/runtime';
@@ -167,6 +169,26 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [storeLock]);
 
+  const startRestoredSessionSync = useCallback((auth: WalletAuthManager): void => {
+    void runEnboxPromise(startWalletSyncEffect(auth)).catch((err: unknown) => {
+      if (authManagerRef.current === auth && !auth.isLocked) {
+        console.warn('EnboxAuthProvider: Background sync failed:', err);
+      }
+    });
+  }, []);
+
+  const restoreStoredSession = useCallback(async (
+    auth: WalletAuthManager,
+    password: string,
+  ): Promise<boolean> => {
+    const session = await runEnboxPromise(restoreSessionEffect(auth, password));
+    if (!session) return false;
+
+    await finishAuthentication(auth, session.agent, password);
+    startRestoredSessionSync(auth);
+    return true;
+  }, [finishAuthentication, startRestoredSessionSync]);
+
   // ── Auto-restore from cached session vault password ──────────────
 
   const tryAutoRestore = useCallback(async (auth: WalletAuthManager): Promise<boolean> => {
@@ -177,12 +199,11 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
     authenticationAttemptRef.current = true;
     try {
-      const session = await runEnboxPromise(restoreSessionEffect(auth, cachedPassword));
-      if (!session) {
+      const restored = await restoreStoredSession(auth, cachedPassword);
+      if (!restored) {
         await lockFailedAuthSession(auth, storeLock);
         return false;
       }
-      await finishAuthentication(auth, session.agent, cachedPassword);
       return true;
     } catch {
       if (authManagerRef.current === auth) {
@@ -192,7 +213,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       authenticationAttemptRef.current = false;
     }
-  }, [finishAuthentication, storeLock]);
+  }, [restoreStoredSession, storeLock]);
 
   // ── Phase 1: Create AuthManager on mount ─────────────────────────
 
@@ -263,12 +284,11 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!auth) throw new Error('AuthManager not ready');
 
     return runAuthentication(auth, 'Unlock failed', async () => {
-      const session = await runEnboxPromise(restoreSessionEffect(auth, password));
-      if (!session) throw new Error('Failed to restore session');
-
-      await finishAuthentication(auth, session.agent, password);
+      if (!await restoreStoredSession(auth, password)) {
+        throw new Error('Failed to restore session');
+      }
     });
-  }, [finishAuthentication, runAuthentication]);
+  }, [restoreStoredSession, runAuthentication]);
 
   // ── Restore (from recovery phrase) ───────────────────────────────
 
