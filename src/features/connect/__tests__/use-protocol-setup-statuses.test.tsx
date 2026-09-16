@@ -131,12 +131,20 @@ describe('useProtocolSetupStatuses', () => {
     let resolveInspection!: (value: unknown) => void;
     const agent = {
       dwn: { getEncryptionKeyDeriver: vi.fn() },
-      processDwnRequest: vi.fn(() => new Promise((resolve) => {
-        resolveInspection = resolve;
-      })),
+      processDwnRequest: vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => {
+          resolveInspection = resolve;
+        }))
+        .mockResolvedValueOnce({ reply: { status: { code: 200, detail: 'OK' }, entries: [] } }),
     };
-    const { result } = renderHook(() =>
-      useProtocolSetupStatuses('did:dht:owner', agent as any, permissions),
+    const { result, rerender } = renderHook(
+      ({ retryKey }) => useProtocolSetupStatuses(
+        'did:dht:owner',
+        agent as any,
+        permissions,
+        retryKey,
+      ),
+      { initialProps: { retryKey: 0 } },
     );
 
     expect(result.current[protocolDefinition.protocol]).toBe('checking');
@@ -145,10 +153,17 @@ describe('useProtocolSetupStatuses', () => {
     });
     expect(result.current[protocolDefinition.protocol]).toBe('unavailable');
 
+    rerender({ retryKey: 1 });
+    expect(result.current[protocolDefinition.protocol]).toBe('checking');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(result.current[protocolDefinition.protocol]).toBe('install');
+
     await act(async () => {
       resolveInspection({ reply: { status: { code: 200, detail: 'OK' }, entries: [] } });
       await Promise.resolve();
     });
-    expect(result.current[protocolDefinition.protocol]).toBe('unavailable');
+    expect(result.current[protocolDefinition.protocol]).toBe('install');
   });
 });
