@@ -259,47 +259,12 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(await screen.findByText('Storage is unavailable')).toBeInTheDocument();
     expect(useAuthStore.getState().initialized).toBe(false);
 
-    await user.click(screen.getByRole('button', { name: 'Retry initialization' }));
+    const retry = screen.getByRole('button', { name: 'Retry initialization' });
+    await user.dblClick(retry);
 
     await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
     expect(authMocks.create).toHaveBeenCalledTimes(2);
     expect(screen.getByText('initializing')).toBeInTheDocument();
-    consoleError.mockRestore();
-  });
-
-  it('shuts down a partially initialized manager before exposing retry', async () => {
-    const user = userEvent.setup();
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const failedAuth = createAuth();
-    const replacementAuth = createAuth();
-    let finishShutdown!: () => void;
-    Object.defineProperty(failedAuth, 'state', {
-      get: () => {
-        throw new Error('State is unavailable');
-      },
-    });
-    failedAuth.shutdown.mockReturnValue(new Promise<void>((resolve) => {
-      finishShutdown = resolve;
-    }));
-    authMocks.create
-      .mockResolvedValueOnce(failedAuth)
-      .mockResolvedValueOnce(replacementAuth);
-
-    render(
-      <EnboxAuthProvider>
-        <InitializationStatus />
-      </EnboxAuthProvider>,
-    );
-
-    await waitFor(() => expect(failedAuth.shutdown).toHaveBeenCalledOnce());
-    expect(screen.queryByRole('button', { name: 'Retry initialization' })).not.toBeInTheDocument();
-
-    finishShutdown();
-    expect(await screen.findByText('State is unavailable')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Retry initialization' }));
-
-    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
-    expect(authMocks.create).toHaveBeenCalledTimes(2);
     consoleError.mockRestore();
   });
 

@@ -121,6 +121,7 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const authManagerRef = useRef<WalletAuthManager | null>(null);
   const authenticationAttemptRef = useRef(false);
+  const initializationRetryReadyRef = useRef(false);
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -218,7 +219,8 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   }, [restoreStoredSession, storeLock]);
 
   const retryInitialization = useCallback(() => {
-    if (authManagerRef.current !== null) return;
+    if (!initializationRetryReadyRef.current) return;
+    initializationRetryReadyRef.current = false;
     setError(null);
     setInitializationAttempt((attempt) => attempt + 1);
   }, []);
@@ -228,57 +230,49 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   useEffect(() => {
     let cancelled = false;
     let ownedAuth: WalletAuthManager | null = null;
+    initializationRetryReadyRef.current = false;
 
     async function init() {
+      let auth: WalletAuthManager;
       try {
-        const auth = await runEnboxPromise(createWalletAuthManagerEffect());
-        ownedAuth = auth;
-
-        if (cancelled) {
-          await shutdownOwnedAuthManager(auth);
-          return;
-        }
-        authManagerRef.current = auth;
-
-        const autoRestored = await tryAutoRestore(auth);
-        if (cancelled) return;
-
-        if (!autoRestored) {
-          const firstTime = auth.state === 'uninitialized';
-          setInitialized(true, firstTime);
-        } else {
-          setInitialized(true, false);
-        }
-        setError(null);
+        auth = await runEnboxPromise(createWalletAuthManagerEffect());
       } catch (err) {
         if (cancelled) return;
 
         console.error('EnboxAuthProvider: Initialization failed:', err);
-
-        // Do not expose retry until a partially initialized manager has been
-        // detached and shut down. A retry must always start with one owner.
-        const failedAuth = ownedAuth;
-        ownedAuth = null;
-        if (failedAuth !== null) {
-          if (authManagerRef.current === failedAuth) {
-            authManagerRef.current = null;
-          }
-          await shutdownOwnedAuthManager(failedAuth);
-        }
-
-        if (cancelled) return;
         storeLock();
         setInitialized(false, false);
+        initializationRetryReadyRef.current = true;
         setError(err instanceof Error && err.message
           ? err.message
           : 'Wallet initialization failed. Try again.');
+        return;
       }
+
+      ownedAuth = auth;
+      if (cancelled) {
+        await shutdownOwnedAuthManager(auth);
+        return;
+      }
+      authManagerRef.current = auth;
+
+      const autoRestored = await tryAutoRestore(auth);
+      if (cancelled) return;
+
+      if (!autoRestored) {
+        const firstTime = auth.state === 'uninitialized';
+        setInitialized(true, firstTime);
+      } else {
+        setInitialized(true, false);
+      }
+      setError(null);
     }
 
     void init();
 
     return () => {
       cancelled = true;
+      initializationRetryReadyRef.current = false;
       if (ownedAuth !== null) {
         if (authManagerRef.current === ownedAuth) {
           authManagerRef.current = null;
