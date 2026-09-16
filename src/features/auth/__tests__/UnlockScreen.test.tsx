@@ -5,7 +5,7 @@ import { UnlockScreen } from '../UnlockScreen';
 
 describe('UnlockScreen', () => {
   const defaults = {
-    onUnlock: vi.fn(),
+    onUnlock: vi.fn().mockResolvedValue(undefined),
     error: null,
     isLoading: false,
   };
@@ -25,7 +25,7 @@ describe('UnlockScreen', () => {
   });
 
   it('calls onUnlock when a full PIN is entered', async () => {
-    const onUnlock = vi.fn();
+    const onUnlock = vi.fn().mockResolvedValue(undefined);
     render(<UnlockScreen {...defaults} onUnlock={onUnlock} />);
 
     // Drive each box's onChange directly instead of simulated typing:
@@ -44,7 +44,7 @@ describe('UnlockScreen', () => {
   });
 
   it('calls onUnlock when PIN is pasted', async () => {
-    const onUnlock = vi.fn();
+    const onUnlock = vi.fn().mockResolvedValue(undefined);
     render(<UnlockScreen {...defaults} onUnlock={onUnlock} />);
 
     const inputs = screen.getAllByRole('textbox');
@@ -70,12 +70,23 @@ describe('UnlockScreen', () => {
   });
 
   it('does not call onUnlock while loading', async () => {
-    const onUnlock = vi.fn();
+    const onUnlock = vi.fn().mockResolvedValue(undefined);
     // When loading, the PIN input is replaced by the loader,
     // so onUnlock can't be triggered via PIN entry.
     render(<UnlockScreen {...defaults} onUnlock={onUnlock} isLoading />);
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
     expect(onUnlock).not.toHaveBeenCalled();
+  });
+
+  it('settles a rejected PIN unlock attempt owned by the parent', async () => {
+    const onUnlock = vi.fn().mockRejectedValue(new Error('Incorrect PIN'));
+    render(<UnlockScreen {...defaults} onUnlock={onUnlock} />);
+
+    fireEvent.paste(screen.getAllByRole('textbox')[0], {
+      clipboardData: { getData: () => '1234' },
+    });
+
+    await waitFor(() => expect(onUnlock).toHaveBeenCalledOnce());
   });
 
   it('has no error message when error is null', () => {
