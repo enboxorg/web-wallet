@@ -45,7 +45,6 @@ import { runEnboxPromise, runEnboxSync } from './effect/runtime';
 import { queryKeys } from './queries/query-keys';
 
 const AUTH_FINALIZATION_TIMEOUT_MS = 10_000;
-const AUTH_CLEANUP_TIMEOUT_MS = 5_000;
 
 async function getAgentDwnEndpoints(agent: EnboxAgent): Promise<string[]> {
   // Auth refreshes the agent DID before returning a restored session. Read the
@@ -84,11 +83,7 @@ function shutdownOwnedAuthManager(auth: WalletAuthManager): Promise<void> {
 
 async function lockFailedAuthSession(auth: WalletAuthManager, storeLock: () => void): Promise<void> {
   if (!auth.isLocked) {
-    await withPromiseTimeout(
-      () => runEnboxPromise(lockAuthManagerEffect(auth)),
-      AUTH_CLEANUP_TIMEOUT_MS,
-      () => new Error('Timed out while rolling back the incomplete wallet session.'),
-    ).catch((err: unknown) => {
+    await runEnboxPromise(lockAuthManagerEffect(auth)).catch((err: unknown) => {
       console.warn('EnboxAuthProvider: Failed to roll back auth session:', err);
     });
   }

@@ -190,7 +190,6 @@ function EndpointProbe() {
 describe('EnboxAuthProvider restore flow', () => {
   afterEach(() => {
     vi.useRealTimers();
-    vi.restoreAllMocks();
   });
 
   beforeEach(() => {
@@ -310,7 +309,10 @@ describe('EnboxAuthProvider restore flow', () => {
       auth.setLocked(false);
       return { agent: auth.agent };
     });
-    auth.agent.identity.getDwnEndpoints.mockReturnValue(new Promise(() => {}));
+    let resolveEndpoints!: (endpoints: string[]) => void;
+    auth.agent.identity.getDwnEndpoints.mockReturnValue(new Promise((resolve) => {
+      resolveEndpoints = resolve;
+    }));
     authMocks.create.mockResolvedValue(auth);
 
     render(
@@ -333,36 +335,14 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(screen.getByText(
       'Wallet initialization timed out while loading network settings. Try again.',
     )).toBeInTheDocument();
-  });
-
-  it('finishes failure cleanup when the SDK lock never settles', async () => {
-    const auth = createAuth('locked');
-    auth.restoreSession.mockImplementation(async () => {
-      auth.setLocked(false);
-      throw new Error('Session restore failed.');
-    });
-    auth.lock.mockReturnValue(new Promise(() => {}));
-    authMocks.create.mockResolvedValue(auth);
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    render(
-      <EnboxAuthProvider>
-        <UnlockButton />
-        <AuthStatus />
-      </EnboxAuthProvider>,
-    );
-
-    await waitFor(() => expect(authMocks.create).toHaveBeenCalledOnce());
-    vi.useFakeTimers();
-    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(5_000);
+      resolveEndpoints(TEST_ENDPOINTS);
+      await Promise.resolve();
     });
 
-    expect(auth.lock).toHaveBeenCalledOnce();
     expect(useAuthStore.getState().agent).toBeNull();
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
-    expect(screen.getByText('Session restore failed.')).toBeInTheDocument();
+    expect(queryMocks.invalidateQueries).not.toHaveBeenCalled();
   });
 
   it('defers stored-session sync while retaining the scoped sync configuration', async () => {
