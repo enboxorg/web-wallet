@@ -5,7 +5,7 @@ import { AuthManager } from '@enbox/browser';
 
 import { normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
 import { DwnRegistrationError, sdkError } from './effect/errors';
-import { withNetworkPolicy } from './effect/network-policy';
+import { fetchWithEffectSignal, withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
 
@@ -17,33 +17,20 @@ function sdkTimeout(operation: string) {
 
 export function resolveProviderAuthEffect(request: ProviderAuthParams) {
   return Effect.gen(function* () {
-    const res = yield* withNetworkPolicy(
+    const { code, state: returnedState } = yield* withNetworkPolicy(
       'providerAuth.fetch',
       Effect.tryPromise({
-        try: async () => fetch(request.authorizeUrl, { signal: AbortSignal.timeout(30_000) }),
+        try: async (signal) => {
+          const res = await fetchWithEffectSignal(signal, request.authorizeUrl);
+          if (!res.ok) {
+            throw new Error(`Provider auth failed (${res.status}): ${await res.text()}`);
+          }
+          return res.json() as Promise<{ code: string; state: string }>;
+        },
         catch: sdkError('providerAuth.fetch'),
       }),
       () => sdkTimeout('providerAuth.fetch'),
     );
-
-    if (!res.ok) {
-      const responseText = yield* Effect.tryPromise({
-        try: async () => res.text(),
-        catch: sdkError('providerAuth.errorText'),
-      });
-      return yield* Effect.fail(
-        new DwnRegistrationError({
-          operation: 'providerAuth.fetch',
-          cause: res,
-          message: `Provider auth failed (${res.status}): ${responseText}`,
-        }),
-      );
-    }
-
-    const { code, state: returnedState } = yield* Effect.tryPromise({
-      try: async () => res.json() as Promise<{ code: string; state: string }>,
-      catch: sdkError('providerAuth.response.json'),
-    });
 
     if (returnedState !== request.state) {
       return yield* Effect.fail(

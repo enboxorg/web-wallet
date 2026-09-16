@@ -26,9 +26,22 @@ describe('NetworkPolicy', () => {
   });
 
   it('maps timeouts through the caller typed error boundary', async () => {
+    let operationSignal: AbortSignal | undefined;
     const effect = withNetworkPolicy(
       'test.timeout',
-      Effect.promise(() => new Promise((resolve) => setTimeout(() => resolve('late'), 50))),
+      Effect.tryPromise({
+        try: (signal) => {
+          operationSignal = signal;
+          return new Promise<string>((_resolve, reject) => {
+            signal.addEventListener(
+              'abort',
+              () => reject(new DOMException('The operation was aborted', 'AbortError')),
+              { once: true },
+            );
+          });
+        },
+        catch: (error) => error as Error,
+      }),
       () => new Error('custom timeout'),
     ).pipe(
       Effect.provideService(NetworkPolicy, NetworkPolicy.of(makeNetworkPolicy({
@@ -38,6 +51,7 @@ describe('NetworkPolicy', () => {
     );
 
     await expect(runEnboxPromise(effect)).rejects.toMatchObject({ message: 'custom timeout' });
+    expect(operationSignal?.aborted).toBe(true);
   });
 
   it('does not retry non-transient permission failures', async () => {

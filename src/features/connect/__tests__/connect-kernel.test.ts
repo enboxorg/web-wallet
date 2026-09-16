@@ -1,15 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { Effect } from 'effect';
 
 import {
   approveConnectRequest,
+  approveConnectRequestEffect,
   approvePopupConnectRequest,
   denyConnectRequest,
   fetchConnectRequest,
+  fetchConnectRequestEffect,
   generatePin,
   getRelayCallbackUrl,
   isTrustedDappOrigin,
   waitForRelayCompletion,
 } from '../connect-kernel';
+import { NetworkPolicy, makeNetworkPolicy } from '@/enbox/effect/network-policy';
+import { runEnboxPromise } from '@/enbox/effect/runtime';
+import { currentAgentLayer } from '@/enbox/effect/services';
 
 const mocks = vi.hoisted(() => ({
   executeConnectApproval: vi.fn(),
@@ -90,6 +96,33 @@ describe('connect-kernel', () => {
         jwe: 'sealed-request-jwe',
         decryption: { mode: 'dir', requestKey: REQUEST_KEY },
       });
+    });
+
+    it('aborts the single-use relay claim when its deadline expires', async () => {
+      let requestSignal: AbortSignal | undefined;
+      vi.mocked(fetch).mockImplementation((_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          requestSignal = init?.signal as AbortSignal;
+          requestSignal.addEventListener(
+            'abort',
+            () => reject(new DOMException('The operation was aborted', 'AbortError')),
+            { once: true },
+          );
+        }));
+
+      const effect = fetchConnectRequestEffect(
+        'https://relay.example/request',
+        REQUEST_KEY,
+      ).pipe(
+        Effect.provideService(NetworkPolicy, NetworkPolicy.of(makeNetworkPolicy({
+          retryTimes: 0,
+          timeout: '1 millis',
+        }))),
+      );
+
+      await expect(runEnboxPromise(effect)).rejects.toThrow('timed out');
+      expect(requestSignal?.aborted).toBe(true);
+      expect(fetch).toHaveBeenCalledOnce();
     });
 
     it('rejects unsafe request URLs before fetching', async () => {
@@ -192,11 +225,12 @@ describe('connect-kernel', () => {
         signer      : { uri: 'did:jwk:delegate' },
         pin         : '1234',
       });
-      expect(mocks.postRelayResponse).toHaveBeenCalledWith({
+      expect(mocks.postRelayResponse).toHaveBeenCalledWith(expect.objectContaining({
         callbackUrl : 'https://relay.example/connect/callback',
         state       : 'state-1',
         idToken     : 'sealed-response-jwe',
-      });
+        fetchFn     : expect.any(Function),
+      }));
       // Seal happens before delivery, after the ceremony.
       expect(request).toEqual(originalRequest);
       expect(mocks.sealApprovedResponse.mock.calls[0][0].request).toBe(request);
@@ -224,6 +258,41 @@ describe('connect-kernel', () => {
       // A retrying policy around the ceremony would invoke it more than once.
       expect(mocks.executeConnectApproval).toHaveBeenCalledTimes(1);
       expect(mocks.postRelayResponse).not.toHaveBeenCalled();
+    });
+
+    it('aborts callback delivery when its deadline expires', async () => {
+      let deliverySignal: AbortSignal | undefined;
+      vi.mocked(fetch).mockImplementation((_input, init) =>
+        new Promise<Response>((_resolve, reject) => {
+          deliverySignal = init?.signal as AbortSignal;
+          deliverySignal.addEventListener(
+            'abort',
+            () => reject(new DOMException('The operation was aborted', 'AbortError')),
+            { once: true },
+          );
+        }));
+      mocks.postRelayResponse.mockImplementation(async ({ callbackUrl, fetchFn }) => {
+        await fetchFn(callbackUrl, { method: 'POST' });
+      });
+      const agent = { id: 'agent-1' } as any;
+
+      const effect = approveConnectRequestEffect(
+        'did:dht:alice',
+        connectRequest(),
+        '1234',
+        3_600,
+      ).pipe(
+        Effect.provide(currentAgentLayer(agent)),
+        Effect.provideService(NetworkPolicy, NetworkPolicy.of(makeNetworkPolicy({
+          retryTimes: 0,
+          timeout: '1 millis',
+        }))),
+      );
+
+      await expect(runEnboxPromise(effect)).rejects.toThrow('timed out');
+      expect(deliverySignal?.aborted).toBe(true);
+      expect(mocks.executeConnectApproval).toHaveBeenCalledOnce();
+      expect(mocks.postRelayResponse).toHaveBeenCalledOnce();
     });
 
     it('validates the callback URL before running the ceremony', async () => {
@@ -311,11 +380,12 @@ describe('connect-kernel', () => {
     it('posts the deny token to a validated callback', async () => {
       await denyConnectRequest('https://relay.example/connect/callback', 'state-1');
 
-      expect(mocks.postRelayResponse).toHaveBeenCalledWith({
+      expect(mocks.postRelayResponse).toHaveBeenCalledWith(expect.objectContaining({
         callbackUrl : 'https://relay.example/connect/callback',
         state       : 'state-1',
         idToken     : 'DENIED',
-      });
+        fetchFn     : expect.any(Function),
+      }));
     });
 
     it('refuses unsafe callback URLs without posting', async () => {

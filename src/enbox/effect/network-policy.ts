@@ -88,6 +88,19 @@ export function makeNetworkPolicy(options: Partial<NetworkPolicyOptions> = {}): 
 
 export const NetworkPolicyLive = Layer.succeed(NetworkPolicy, makeNetworkPolicy());
 
+/**
+ * Binds a fetch to an Effect.tryPromise cancellation signal. This deliberately
+ * replaces any nested helper's independent signal so the policy timeout and
+ * the underlying request have one lifecycle.
+ */
+export function fetchWithEffectSignal(
+  signal: AbortSignal,
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+): Promise<Response> {
+  return globalThis.fetch(input, { ...init, signal });
+}
+
 export function withNetworkPolicy<A, E, R>(
   operation: string,
   effect: Effect.Effect<A, E, R>,

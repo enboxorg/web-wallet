@@ -24,7 +24,7 @@ import {
   DwnRegistrationError,
   registrationError,
 } from './effect/errors';
-import { withNetworkPolicy } from './effect/network-policy';
+import { fetchWithEffectSignal, withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
 import { runRegistrationSingleFlight } from './effect/keyed-single-flight';
 
@@ -54,8 +54,8 @@ function obtainProviderAuthTokenEffect(
     const authResponse = yield* withNetworkPolicy(
       'providerAuth.authorize',
       Effect.tryPromise({
-        try: async () => {
-          const res = await fetch(authorizeUrl, { signal: AbortSignal.timeout(30_000) });
+        try: async (signal) => {
+          const res = await fetchWithEffectSignal(signal, authorizeUrl);
           if (!res.ok) {
             throw new Error(`Provider auth authorize failed (${res.status}): ${await res.text()}`);
           }
