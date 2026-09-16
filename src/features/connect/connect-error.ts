@@ -5,9 +5,8 @@ const GRANT_DELIVERY_ERROR =
 
 /**
  * Normalizes errors crossing SDK, browser, and transport boundaries before
- * they reach connect UI state. JavaScript promises may reject with any value,
- * so error rendering must never assume an `Error` instance and throw while it
- * is trying to leave a loading phase.
+ * they reach connect UI state, then translates the one low-level delivery
+ * failure that needs wallet-specific guidance.
  */
 export function getConnectErrorMessage(error: unknown, fallback: string): string {
   const message = getUnknownErrorMessage(error, fallback);
