@@ -6,17 +6,15 @@ const RECOVERY_PHRASE =
   'abandon ability able about above absent absorb abstract absurd abuse access accident';
 
 const passkeyMocks = vi.hoisted(() => ({
-  canCheckPasskeySupport: vi.fn(() => false),
-  isPasskeySupported: vi.fn().mockResolvedValue(false),
-  isPasskeyVaultUnsupportedError: vi.fn(() => false),
+  canCreatePasskeyVault: vi.fn(() => false),
+  isPasskeyVaultUnsupportedError: vi.fn((_error: unknown) => false),
   markPinAuthMethod: vi.fn(),
   preparePasskeyVaultPassword: vi.fn(),
   storePasskeyCredential: vi.fn(),
 }));
 
 vi.mock('@/lib/passkeys', () => ({
-  canCheckPasskeySupport: passkeyMocks.canCheckPasskeySupport,
-  isPasskeySupported: passkeyMocks.isPasskeySupported,
+  canCreatePasskeyVault: passkeyMocks.canCreatePasskeyVault,
   isPasskeyVaultUnsupportedError: passkeyMocks.isPasskeyVaultUnsupportedError,
   markPinAuthMethod: passkeyMocks.markPinAuthMethod,
   preparePasskeyVaultPassword: passkeyMocks.preparePasskeyVaultPassword,
@@ -41,8 +39,7 @@ describe('RestoreWalletPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
-    passkeyMocks.canCheckPasskeySupport.mockReturnValue(false);
-    passkeyMocks.isPasskeySupported.mockResolvedValue(false);
+    passkeyMocks.canCreatePasskeyVault.mockReturnValue(false);
   });
 
   function enterPin(pin: string): void {
@@ -127,5 +124,61 @@ describe('RestoreWalletPage', () => {
 
     expect(screen.queryByText('Recovery DWN Endpoints')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Create PIN' })).toBeInTheDocument();
+  });
+
+  it('offers passkey restore from the synchronous runtime check', async () => {
+    passkeyMocks.canCreatePasskeyVault.mockReturnValue(true);
+    passkeyMocks.preparePasskeyVaultPassword.mockResolvedValue({
+      password: 'wrapped-vault-password',
+      credential: { credentialId: 'cred-1' },
+    });
+    const onRestore = vi.fn().mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(
+      <RestoreWalletPage
+        onRestore={onRestore}
+        isLoading={false}
+        error={null}
+        allowEndpointSelection={false}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
+    await user.click(screen.getByRole('button', { name: /Use passkey/i }));
+
+    await waitFor(() => {
+      expect(onRestore).toHaveBeenCalledWith(
+        RECOVERY_PHRASE,
+        'wrapped-vault-password',
+        undefined,
+      );
+    });
+    expect(passkeyMocks.storePasskeyCredential).toHaveBeenCalledWith({ credentialId: 'cred-1' });
+  });
+
+  it('falls back without offering an unsupported passkey again', async () => {
+    const unsupportedError = new Error('Passkey provider cannot wrap this vault.');
+    passkeyMocks.canCreatePasskeyVault.mockReturnValue(true);
+    passkeyMocks.preparePasskeyVaultPassword.mockRejectedValue(unsupportedError);
+    passkeyMocks.isPasskeyVaultUnsupportedError.mockImplementation(
+      (error) => error === unsupportedError,
+    );
+    const user = userEvent.setup();
+    render(
+      <RestoreWalletPage
+        onRestore={vi.fn()}
+        isLoading={false}
+        error={null}
+        allowEndpointSelection={false}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
+    await user.click(screen.getByRole('button', { name: /Use passkey/i }));
+
+    expect(await screen.findByRole('heading', { name: 'Create PIN' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(screen.getByRole('button', { name: 'Submit phrase' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Use passkey/i })).not.toBeInTheDocument();
   });
 });

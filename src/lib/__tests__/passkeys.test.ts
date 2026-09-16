@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
-  canCheckPasskeySupport,
+  canCreatePasskeyVault,
   canUsePasskeyUnlock,
   clearPasskeyCredential,
   getStoredAuthMethod,
   hasStoredPasskeyCredential,
-  isPasskeySupported,
   markPinAuthMethod,
+  PasskeyVaultUnsupportedError,
   preparePasskeyVaultPassword,
   storePasskeyCredential,
   unlockWithStoredPasskey,
@@ -36,8 +36,8 @@ describe('passkeys', () => {
     vi.unstubAllGlobals();
   });
 
-  it('reports passkey checks unavailable when WebAuthn is missing', () => {
-    expect(canCheckPasskeySupport()).toBe(false);
+  it('reports passkey creation unavailable when WebAuthn is missing', () => {
+    expect(canCreatePasskeyVault()).toBe(false);
     expect(canUsePasskeyUnlock()).toBe(false);
   });
 
@@ -68,21 +68,52 @@ describe('passkeys', () => {
     expect(getStoredAuthMethod()).toBe('pin');
   });
 
-  it('reports passkey support when PRF is unavailable because local wrapping can be used', async () => {
-    stubWebAuthnCapabilities({ 'extension:prf': false });
+  it('uses the synchronous runtime check without polling platform-authenticator support', () => {
+    const { supportCheck } = stubWebAuthnCapabilities();
 
-    expect(canCheckPasskeySupport()).toBe(true);
-    await expect(isPasskeySupported()).resolves.toBe(true);
+    expect(canCreatePasskeyVault()).toBe(true);
+    expect(supportCheck).not.toHaveBeenCalled();
   });
 
-  it('reports passkey support when a platform authenticator and PRF extension are available', async () => {
-    stubWebAuthnCapabilities({ 'extension:prf': true });
+  it('maps a provider without passkey creation to the PIN fallback error', async () => {
+    const { create, supportCheck } = stubWebAuthnCapabilities();
+    supportCheck.mockResolvedValue(true);
+    create.mockRejectedValue(new DOMException('Not supported', 'NotSupportedError'));
 
-    await expect(isPasskeySupported()).resolves.toBe(true);
+    await expect(preparePasskeyVaultPassword()).rejects.toBeInstanceOf(
+      PasskeyVaultUnsupportedError,
+    );
+  });
+
+  it('falls back before starting WebAuthn when no platform authenticator exists', async () => {
+    const { create, supportCheck } = stubWebAuthnCapabilities();
+    supportCheck.mockResolvedValue(false);
+
+    await expect(preparePasskeyVaultPassword()).rejects.toBeInstanceOf(
+      PasskeyVaultUnsupportedError,
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting for a hung capability hint and starts WebAuthn directly', async () => {
+    vi.useFakeTimers();
+    const { create, supportCheck } = stubPasskeyRegistrationWithoutPrf();
+    supportCheck.mockImplementation(() => new Promise<boolean>(() => undefined));
+
+    const preparation = preparePasskeyVaultPassword();
+    await vi.waitFor(() => expect(supportCheck).toHaveBeenCalledOnce());
+    expect(create).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(preparation).resolves.toEqual(expect.objectContaining({
+      password: expect.any(String),
+    }));
+    expect(create).toHaveBeenCalledOnce();
   });
 
   it('falls back to local passkey wrapping when the authenticator does not process PRF', async () => {
-    stubPasskeyRegistrationWithoutPrf();
+    const { create } = stubPasskeyRegistrationWithoutPrf();
 
     const prepared = await preparePasskeyVaultPassword();
 
@@ -98,6 +129,26 @@ describe('passkeys', () => {
       wrappedVaultPassword: expect.any(String),
       createdAt: expect.any(String),
     });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      signal: expect.any(AbortSignal),
+    }));
+  });
+
+  it('ends a pending passkey creation request at the hard deadline', async () => {
+    vi.useFakeTimers();
+    const create = stubPendingPasskeyRegistration();
+
+    const preparation = preparePasskeyVaultPassword();
+    await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
+    const rejection = expect(preparation).rejects.toMatchObject({
+      name: 'TimeoutError',
+      message: 'Passkey request timed out. Try again.',
+    });
+
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    await rejection;
+    expect(create.mock.calls[0]?.[0].signal.aborted).toBe(true);
   });
 
   it('unlocks local passkey wrapping after verifying the passkey assertion', async () => {
@@ -148,6 +199,24 @@ describe('passkeys', () => {
     await rejection;
     expect(get.mock.calls[0]?.[0].signal.aborted).toBe(true);
   });
+
+  it('fails instead of hanging when local passkey vault storage stalls', async () => {
+    vi.useFakeTimers();
+    storeLocalPasskeyMetadata();
+    const indexedDb = createPendingIndexedDb();
+    stubLocalPasskeyUnlock({ type: 'secret' }, indexedDb);
+
+    const unlockPromise = unlockWithStoredPasskey();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(indexedDb.open).toHaveBeenCalledOnce();
+    const rejection = expect(unlockPromise).rejects.toThrow(
+      'Passkey vault storage timed out. Try again.',
+    );
+
+    await vi.advanceTimersByTimeAsync(10_001);
+
+    await rejection;
+  });
 });
 
 function storeLocalPasskeyMetadata() {
@@ -172,15 +241,16 @@ function storeLocalPasskeyMetadata() {
   );
 }
 
-function stubWebAuthnCapabilities(capabilities: Record<string, boolean>) {
+function stubWebAuthnCapabilities() {
+  const supportCheck = vi.fn(() => new Promise<boolean>(() => undefined));
+  const create = vi.fn();
   vi.stubGlobal('isSecureContext', true);
   vi.stubGlobal('PublicKeyCredential', {
-    isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(true),
-    getClientCapabilities: vi.fn().mockResolvedValue(capabilities),
+    isUserVerifyingPlatformAuthenticatorAvailable: supportCheck,
   });
   vi.stubGlobal('navigator', {
     credentials: {
-      create: vi.fn(),
+      create,
       get: vi.fn(),
     },
   });
@@ -191,27 +261,30 @@ function stubWebAuthnCapabilities(capabilities: Record<string, boolean>) {
   vi.stubGlobal('indexedDB', {
     open: vi.fn(),
   });
+  return { create, supportCheck };
 }
 
 function stubPasskeyRegistrationWithoutPrf() {
   const rawId = new Uint8Array([1, 2, 3, 4]).buffer;
   const publicKey = new Uint8Array([5, 6, 7, 8]).buffer;
+  const supportCheck = vi.fn().mockResolvedValue(true);
 
   vi.stubGlobal('isSecureContext', true);
   vi.stubGlobal('PublicKeyCredential', {
-    isUserVerifyingPlatformAuthenticatorAvailable: vi.fn().mockResolvedValue(true),
+    isUserVerifyingPlatformAuthenticatorAvailable: supportCheck,
+  });
+  const create = vi.fn().mockResolvedValue({
+    type: 'public-key',
+    rawId,
+    response: {
+      getPublicKey: vi.fn(() => publicKey),
+      getPublicKeyAlgorithm: vi.fn(() => -7),
+    },
+    getClientExtensionResults: vi.fn(() => ({ prf: { enabled: false } })),
   });
   vi.stubGlobal('navigator', {
     credentials: {
-      create: vi.fn().mockResolvedValue({
-        type: 'public-key',
-        rawId,
-        response: {
-          getPublicKey: vi.fn(() => publicKey),
-          getPublicKeyAlgorithm: vi.fn(() => -7),
-        },
-        getClientExtensionResults: vi.fn(() => ({ prf: { enabled: false } })),
-      }),
+      create,
       get: vi.fn(),
     },
   });
@@ -226,9 +299,35 @@ function stubPasskeyRegistrationWithoutPrf() {
     }),
   });
   vi.stubGlobal('indexedDB', createFakeIndexedDb());
+  return { create, supportCheck };
 }
 
-function stubLocalPasskeyUnlock(wrappingKey: unknown) {
+function stubPendingPasskeyRegistration() {
+  const create = vi.fn((request: CredentialCreationOptions) =>
+    new Promise<Credential | null>((_resolve, reject) => {
+      request.signal?.addEventListener(
+        'abort',
+        () => reject(new DOMException('The operation was aborted', 'AbortError')),
+        { once: true },
+      );
+    }));
+
+  vi.stubGlobal('isSecureContext', true);
+  vi.stubGlobal('PublicKeyCredential', {});
+  vi.stubGlobal('navigator', { credentials: { create, get: vi.fn() } });
+  vi.stubGlobal('crypto', {
+    subtle: {},
+    getRandomValues: vi.fn((bytes: Uint8Array) => bytes.fill(7)),
+  });
+  vi.stubGlobal('indexedDB', createFakeIndexedDb());
+
+  return create;
+}
+
+function stubLocalPasskeyUnlock(
+  wrappingKey: unknown,
+  indexedDb: unknown = createFakeIndexedDb({ getResult: wrappingKey }),
+) {
   const plaintext = new TextEncoder().encode('vault-password');
   const supportCheck = vi.fn().mockResolvedValue(false);
   const get = vi.fn((request: CredentialRequestOptions) => {
@@ -274,7 +373,7 @@ function stubLocalPasskeyUnlock(wrappingKey: unknown) {
       return bytes;
     }),
   });
-  vi.stubGlobal('indexedDB', createFakeIndexedDb({ getResult: wrappingKey }));
+  vi.stubGlobal('indexedDB', indexedDb);
 
   return { get, supportCheck };
 }
@@ -299,6 +398,19 @@ function stubPendingPasskeyUnlock() {
   vi.stubGlobal('indexedDB', createFakeIndexedDb());
 
   return get;
+}
+
+function createPendingIndexedDb() {
+  return {
+    open: vi.fn(() => ({
+      result: undefined,
+      error: null,
+      onsuccess: null,
+      onerror: null,
+      onupgradeneeded: null,
+      onblocked: null,
+    })),
+  };
 }
 
 function createFakeIndexedDb(options: { getResult?: unknown; putResult?: unknown } = {}) {

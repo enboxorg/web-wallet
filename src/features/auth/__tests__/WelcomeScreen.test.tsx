@@ -3,17 +3,13 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const passkeyMocks = vi.hoisted(() => ({
-  canCheckPasskeySupport: vi.fn(() => false),
-  isPasskeySupported: vi.fn().mockResolvedValue(false),
-  isPasskeyVaultUnsupportedError: vi.fn(() => false),
+  isPasskeyVaultUnsupportedError: vi.fn((_error: unknown) => false),
   markPinAuthMethod: vi.fn(),
   preparePasskeyVaultPassword: vi.fn(),
   storePasskeyCredential: vi.fn(),
 }));
 
 vi.mock('@/lib/passkeys', () => ({
-  canCheckPasskeySupport: passkeyMocks.canCheckPasskeySupport,
-  isPasskeySupported: passkeyMocks.isPasskeySupported,
   isPasskeyVaultUnsupportedError: passkeyMocks.isPasskeyVaultUnsupportedError,
   markPinAuthMethod: passkeyMocks.markPinAuthMethod,
   preparePasskeyVaultPassword: passkeyMocks.preparePasskeyVaultPassword,
@@ -44,9 +40,10 @@ describe('WelcomeScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    passkeyMocks.canCheckPasskeySupport.mockReturnValue(false);
-    passkeyMocks.isPasskeySupported.mockResolvedValue(false);
-    passkeyMocks.isPasskeyVaultUnsupportedError.mockReturnValue(false);
+    passkeyMocks.preparePasskeyVaultPassword.mockRejectedValue(
+      new Error('Passkeys are not available on this device.'),
+    );
+    passkeyMocks.isPasskeyVaultUnsupportedError.mockReturnValue(true);
   });
 
   it('renders the one-tap create action', () => {
@@ -56,8 +53,7 @@ describe('WelcomeScreen', () => {
   });
 
   it('creates the vault with a passkey-wrapped password in one tap', async () => {
-    passkeyMocks.canCheckPasskeySupport.mockReturnValue(true);
-    passkeyMocks.isPasskeySupported.mockResolvedValue(true);
+    passkeyMocks.isPasskeyVaultUnsupportedError.mockReturnValue(false);
     passkeyMocks.preparePasskeyVaultPassword.mockResolvedValue({
       password: 'wrapped-vault-password',
       credential: { credentialId: 'cred-1' },

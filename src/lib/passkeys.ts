@@ -46,7 +46,9 @@ export class PasskeyVaultUnsupportedError extends Error {
 const PASSKEY_RP_NAME = 'Enbox Wallet';
 const PASSKEY_USER_NAME = 'wallet@enbox.local';
 const PASSKEY_USER_DISPLAY_NAME = 'Enbox Wallet';
+const PASSKEY_CAPABILITY_TIMEOUT_MS = 1_000;
 const PASSKEY_TIMEOUT_MS = 60_000;
+const PASSKEY_STORAGE_TIMEOUT_MS = 10_000;
 const AES_GCM_IV_BYTES = 12;
 const VAULT_PASSWORD_BYTES = 32;
 const WEBAUTHN_SALT_BYTES = 32;
@@ -69,31 +71,15 @@ function passkeyError(operation: string) {
 }
 
 /**
- * Returns true when platform passkeys can be created. The stronger PRF vault
- * wrapping path is used when the selected passkey provider supports it;
- * otherwise the wallet falls back to a passkey-gated local wrapper.
+ * Synchronously checks whether this page can start passkey vault creation.
+ * The platform-authenticator capability probe is deliberately not used as a
+ * gate: some browsers leave it pending even though credentials.create works.
  */
-export async function isPasskeySupported(): Promise<boolean> {
-  return runEnboxPromise(isPasskeySupportedEffect());
+export function canCreatePasskeyVault(): boolean {
+  return runEnboxSync(canCreatePasskeyVaultEffect());
 }
 
-export function isPasskeySupportedEffect() {
-  return Effect.gen(function* () {
-    const canCheck = yield* canCheckPasskeySupportEffect();
-    if (!canCheck) return false;
-
-    return yield* Effect.tryPromise({
-      try: async () => PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
-      catch: passkeyError('passkey.supportCheck'),
-    }).pipe(Effect.catchAll(() => Effect.succeed(false)));
-  });
-}
-
-export function canCheckPasskeySupport(): boolean {
-  return runEnboxSync(canCheckPasskeySupportEffect());
-}
-
-export function canCheckPasskeySupportEffect() {
+export function canCreatePasskeyVaultEffect() {
   return Effect.sync(() => {
     if (globalThis.isSecureContext === false) return false;
     return hasPasskeyCreationRuntime() && typeof indexedDB !== 'undefined';
@@ -187,22 +173,26 @@ export function markPinAuthMethodEffect() {
   });
 }
 
-export async function preparePasskeyVaultPassword(): Promise<PreparedPasskeyVault> {
-  return runEnboxPromise(preparePasskeyVaultPasswordEffect());
+export async function preparePasskeyVaultPassword(signal?: AbortSignal): Promise<PreparedPasskeyVault> {
+  return runEnboxPromise(preparePasskeyVaultPasswordEffect(signal));
 }
 
-export function preparePasskeyVaultPasswordEffect() {
+export function preparePasskeyVaultPasswordEffect(signal?: AbortSignal) {
   return Effect.gen(function* () {
-    if (!(yield* isPasskeySupportedEffect())) {
+    if (!(yield* canCreatePasskeyVaultEffect())) {
       return yield* Effect.fail(
-        new Error('Passkeys are not available on this device. Create a PIN instead.'),
+        new PasskeyVaultUnsupportedError(),
       );
+    }
+    const platformAuthenticatorAvailable = yield* checkPlatformAuthenticatorAvailabilityEffect();
+    if (platformAuthenticatorAvailable === false) {
+      return yield* Effect.fail(new PasskeyVaultUnsupportedError());
     }
 
     const password = yield* randomBase64UrlEffect(VAULT_PASSWORD_BYTES);
     const salt = yield* randomBytesEffect(WEBAUTHN_SALT_BYTES);
-    const credential = yield* createPasskeyCredentialEffect(salt);
-    const prfOutput = yield* tryGetPrfOutputFromCredentialEffect(credential, salt);
+    const credential = yield* createPasskeyCredentialEffect(salt, signal);
+    const prfOutput = yield* tryGetPrfOutputFromCredentialEffect(credential, salt, signal);
 
     if (prfOutput) {
       const wrapped = yield* wrapVaultPasswordEffect(password, prfOutput);
@@ -327,12 +317,41 @@ function hasPasskeyRequestRuntime(): boolean {
 function hasPasskeyCreationRuntime(): boolean {
   return (
     hasPasskeyRequestRuntime() &&
-    typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable === 'function' &&
     typeof navigator.credentials.create === 'function'
   );
 }
 
-function createPasskeyCredentialEffect(salt: Uint8Array) {
+/**
+ * Uses the browser's capability hint when it settles promptly, but never lets
+ * that advisory check stand between a user gesture and the real ceremony.
+ * `undefined` means "unknown — try WebAuthn directly".
+ */
+function checkPlatformAuthenticatorAvailabilityEffect() {
+  return Effect.tryPromise({
+    try: checkPlatformAuthenticatorAvailability,
+    catch: passkeyError('passkey.supportCheck'),
+  }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+}
+
+async function checkPlatformAuthenticatorAvailability(): Promise<boolean | undefined> {
+  if (typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable !== 'function') {
+    return undefined;
+  }
+
+  let timeout: ReturnType<typeof globalThis.setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+      new Promise<undefined>((resolve) => {
+        timeout = globalThis.setTimeout(() => resolve(undefined), PASSKEY_CAPABILITY_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) globalThis.clearTimeout(timeout);
+  }
+}
+
+function createPasskeyCredentialEffect(salt: Uint8Array, signal?: AbortSignal) {
   return Effect.gen(function* () {
     const existing = yield* getStoredPasskeyCredentialEffect();
     const challenge = yield* randomBytesEffect(WEBAUTHN_CHALLENGE_BYTES);
@@ -368,17 +387,24 @@ function createPasskeyCredentialEffect(salt: Uint8Array) {
         : undefined,
     };
 
-    const credential = yield* Effect.tryPromise({
-      try: async () => navigator.credentials.create({ publicKey }),
-      catch: passkeyError('passkey.createCredential'),
-    });
-    return asPublicKeyCredential(credential);
+    return yield* requestPasskeyCredentialEffect(
+      (requestSignal) => navigator.credentials.create({ publicKey, signal: requestSignal }),
+      signal,
+      'passkey.createCredential',
+    ).pipe(
+      Effect.catchAll((error) =>
+        error.name === 'NotSupportedError'
+          ? Effect.fail(new PasskeyVaultUnsupportedError())
+          : Effect.fail(error)
+      ),
+    );
   });
 }
 
 function tryGetPrfOutputFromCredentialEffect(
   credential: PublicKeyCredential,
   salt: Uint8Array,
+  signal?: AbortSignal,
 ): Effect.Effect<Uint8Array | null, never, never> {
   const output = getPrfOutput(credential);
   if (output) return Effect.succeed(output);
@@ -388,7 +414,7 @@ function tryGetPrfOutputFromCredentialEffect(
     return Effect.succeed(null);
   }
 
-  return getPrfOutputForCredentialIdEffect(credential.rawId, salt).pipe(
+  return getPrfOutputForCredentialIdEffect(credential.rawId, salt, signal).pipe(
     Effect.catchAll(() => Effect.succeed(null)),
   );
 }
@@ -430,8 +456,8 @@ function getPrfOutputForCredentialIdEffect(
       },
     };
 
-    const credential = yield* getPasskeyCredentialEffect(
-      publicKey,
+    const credential = yield* requestPasskeyCredentialEffect(
+      (requestSignal) => navigator.credentials.get({ publicKey, signal: requestSignal }),
       signal,
       'passkey.getPrfOutput',
     );
@@ -510,8 +536,8 @@ function verifyStoredPasskeyAssertionEffect(
       timeout: PASSKEY_TIMEOUT_MS,
     };
 
-    const credential = yield* getPasskeyCredentialEffect(
-      publicKey,
+    const credential = yield* requestPasskeyCredentialEffect(
+      (requestSignal) => navigator.credentials.get({ publicKey, signal: requestSignal }),
       signal,
       'passkey.verifyAssertion',
     );
@@ -548,19 +574,19 @@ function verifyStoredPasskeyAssertionEffect(
   });
 }
 
-function getPasskeyCredentialEffect(
-  publicKey: PublicKeyCredentialRequestOptions,
+function requestPasskeyCredentialEffect(
+  request: (signal: AbortSignal) => Promise<Credential | null>,
   signal: AbortSignal | undefined,
   operation: string,
 ): Effect.Effect<PublicKeyCredential, Error, never> {
   return Effect.tryPromise({
-    try: async () => requestPasskeyCredential(publicKey, signal),
+    try: async () => requestPasskeyCredential(request, signal),
     catch: passkeyError(operation),
   }).pipe(Effect.map(asPublicKeyCredential));
 }
 
 async function requestPasskeyCredential(
-  publicKey: PublicKeyCredentialRequestOptions,
+  request: (signal: AbortSignal) => Promise<Credential | null>,
   externalSignal?: AbortSignal,
 ): Promise<Credential | null> {
   if (externalSignal?.aborted) {
@@ -590,7 +616,7 @@ async function requestPasskeyCredential(
 
   try {
     return await Promise.race([
-      navigator.credentials.get({ publicKey, signal: controller.signal }),
+      request(controller.signal),
       cancellation,
     ]);
   } catch (error) {
@@ -795,52 +821,101 @@ function aesKeyFromPrfOutputEffect(
 }
 
 function storeLocalWrappingKeyEffect(keyId: string, key: CryptoKey) {
-  return Effect.gen(function* () {
-    const db = yield* openLocalWrappingDbEffect();
-    yield* idbRequestEffect<IDBValidKey>(
-      db.transaction(LOCAL_WRAPPING_STORE, 'readwrite')
+  return withLocalWrappingDbEffect((db) =>
+    idbRequestEffect<IDBValidKey>(
+      () => db.transaction(LOCAL_WRAPPING_STORE, 'readwrite')
         .objectStore(LOCAL_WRAPPING_STORE)
         .put(key, keyId),
-    );
-    db.close();
-  });
+    ).pipe(Effect.asVoid)
+  );
 }
 
 function getLocalWrappingKeyEffect(keyId: string): Effect.Effect<CryptoKey | null, Error, never> {
-  return Effect.gen(function* () {
-    const db = yield* openLocalWrappingDbEffect();
-    const key = yield* idbRequestEffect<CryptoKey | undefined>(
-      db.transaction(LOCAL_WRAPPING_STORE, 'readonly')
+  return withLocalWrappingDbEffect((db) =>
+    idbRequestEffect<CryptoKey | undefined>(
+      () => db.transaction(LOCAL_WRAPPING_STORE, 'readonly')
         .objectStore(LOCAL_WRAPPING_STORE)
         .get(keyId),
-    );
-    db.close();
-    return key ?? null;
-  });
+    ).pipe(Effect.map((key) => key ?? null))
+  );
+}
+
+function withLocalWrappingDbEffect<A>(
+  use: (db: IDBDatabase) => Effect.Effect<A, Error, never>,
+): Effect.Effect<A, Error, never> {
+  return Effect.acquireUseRelease(
+    openLocalWrappingDbEffect(),
+    use,
+    (db) => Effect.sync(() => db.close()),
+  );
 }
 
 function openLocalWrappingDbEffect(): Effect.Effect<IDBDatabase, Error, never> {
   return Effect.async<IDBDatabase, Error>((resume) => {
     const request = indexedDB.open(LOCAL_WRAPPING_DB_NAME, LOCAL_WRAPPING_DB_VERSION);
+    let settled = false;
+    const timeout = globalThis.setTimeout(() => {
+      finish(Effect.fail(new Error('Passkey vault storage timed out. Try again.')));
+    }, PASSKEY_STORAGE_TIMEOUT_MS);
+    const finish = (effect: Effect.Effect<IDBDatabase, Error>) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timeout);
+      resume(effect);
+    };
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(LOCAL_WRAPPING_STORE)) {
         db.createObjectStore(LOCAL_WRAPPING_STORE);
       }
     };
-    request.onsuccess = () => resume(Effect.succeed(request.result));
+    request.onsuccess = () => {
+      if (settled) {
+        request.result.close();
+        return;
+      }
+      finish(Effect.succeed(request.result));
+    };
     request.onerror = () =>
-      resume(Effect.fail(request.error ?? new Error('Failed to open passkey vault storage.')));
+      finish(Effect.fail(request.error ?? new Error('Failed to open passkey vault storage.')));
     request.onblocked = () =>
-      resume(Effect.fail(new Error('Passkey vault storage is blocked by another tab.')));
+      finish(Effect.fail(new Error('Passkey vault storage is blocked by another tab.')));
+    return Effect.sync(() => {
+      settled = true;
+      globalThis.clearTimeout(timeout);
+    });
   });
 }
 
-function idbRequestEffect<T>(request: IDBRequest<T>): Effect.Effect<T, Error, never> {
+function idbRequestEffect<T>(makeRequest: () => IDBRequest<T>): Effect.Effect<T, Error, never> {
   return Effect.async<T, Error>((resume) => {
-    request.onsuccess = () => resume(Effect.succeed(request.result));
-    request.onerror = () =>
-      resume(Effect.fail(request.error ?? new Error('Passkey vault storage failed.')));
+    let request: IDBRequest<T>;
+    try {
+      request = makeRequest();
+    } catch (error) {
+      resume(Effect.fail(passkeyError('passkey.vaultStorage')(error)));
+      return;
+    }
+    let settled = false;
+    const timeout = globalThis.setTimeout(() => {
+      finish(Effect.fail(new Error('Passkey vault storage timed out. Try again.')));
+    }, PASSKEY_STORAGE_TIMEOUT_MS);
+    const finish = (effect: Effect.Effect<T, Error>) => {
+      if (settled) return;
+      settled = true;
+      globalThis.clearTimeout(timeout);
+      resume(effect);
+    };
+    request.onsuccess = () => {
+      finish(Effect.succeed(request.result));
+    };
+    request.onerror = () => {
+      finish(Effect.fail(request.error ?? new Error('Passkey vault storage failed.')));
+    };
+    return Effect.sync(() => {
+      settled = true;
+      globalThis.clearTimeout(timeout);
+    });
   });
 }
 
