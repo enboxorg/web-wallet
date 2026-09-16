@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 
+import { withPromiseTimeout } from '@/lib/promise-timeout';
 import {
   getRequestedProtocolDefinitionsConflictMessage,
   protocolDefinitionsMatch,
@@ -9,6 +10,8 @@ import {
 } from './protocol-install';
 
 type ProtocolSetupAgent = Parameters<typeof queryProtocolSetupStatus>[1];
+
+const PROTOCOL_SETUP_CHECK_TIMEOUT_MS = 10_000;
 
 export type ProtocolSetupStatusMap = Record<string, ProtocolSetupStatus>;
 
@@ -119,13 +122,17 @@ export function useProtocolSetupStatuses(
       protocolDefinitions
         .filter((definition) => !conflicts.has(definition.protocol))
         .map(async (definition) => {
-        try {
-          const status = await queryProtocolSetupStatus(selectedDid, agent, definition);
-          return [definition.protocol, status] as const;
-        } catch (err) {
-          console.warn(`Could not check protocol setup for ${definition.protocol}:`, err);
-          return [definition.protocol, 'unavailable' as const] as const;
-        }
+          try {
+            const status = await withPromiseTimeout(
+              () => queryProtocolSetupStatus(selectedDid, agent, definition),
+              PROTOCOL_SETUP_CHECK_TIMEOUT_MS,
+              () => new Error('Protocol setup check timed out.'),
+            );
+            return [definition.protocol, status] as const;
+          } catch (err) {
+            console.warn(`Could not check protocol setup for ${definition.protocol}:`, err);
+            return [definition.protocol, 'unavailable' as const] as const;
+          }
         }),
     ).then((entries) => {
       if (!cancelled) {

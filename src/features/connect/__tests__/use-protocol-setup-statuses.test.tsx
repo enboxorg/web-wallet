@@ -1,5 +1,5 @@
-import { renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 
 import {
@@ -25,6 +25,11 @@ const permissions = [{
 }] as ConnectPermissionRequest[];
 
 describe('useProtocolSetupStatuses', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it.each(['checking', 'conflict', 'override', 'unavailable'] as const)(
     'blocks approval while protocol setup is %s',
     (status) => {
@@ -118,5 +123,32 @@ describe('useProtocolSetupStatuses', () => {
     rerender({ retryKey: 1 });
     expect(result.current[protocolDefinition.protocol]).toBe('checking');
     await waitFor(() => expect(result.current[protocolDefinition.protocol]).toBe('install'));
+  });
+
+  it('makes a stalled setup check retryable and ignores its late result', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    let resolveInspection!: (value: unknown) => void;
+    const agent = {
+      dwn: { getEncryptionKeyDeriver: vi.fn() },
+      processDwnRequest: vi.fn(() => new Promise((resolve) => {
+        resolveInspection = resolve;
+      })),
+    };
+    const { result } = renderHook(() =>
+      useProtocolSetupStatuses('did:dht:owner', agent as any, permissions),
+    );
+
+    expect(result.current[protocolDefinition.protocol]).toBe('checking');
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(result.current[protocolDefinition.protocol]).toBe('unavailable');
+
+    await act(async () => {
+      resolveInspection({ reply: { status: { code: 200, detail: 'OK' }, entries: [] } });
+      await Promise.resolve();
+    });
+    expect(result.current[protocolDefinition.protocol]).toBe('unavailable');
   });
 });
