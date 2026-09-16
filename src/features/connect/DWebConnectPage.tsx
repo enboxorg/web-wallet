@@ -25,8 +25,6 @@ import { truncateDid } from '@/lib/utils';
 import { PIN_LENGTH } from '@/lib/constants';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
-  canCheckPasskeySupport,
-  isPasskeySupported,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
   preparePasskeyVaultPassword,
@@ -393,11 +391,6 @@ export default function DWebConnectPage() {
     setOnboardError(null);
     setOnboardBusy(true);
     try {
-      const passkeyOk = canCheckPasskeySupport() && (await isPasskeySupported());
-      if (!passkeyOk) {
-        setOnboardStep('pin-create');
-        return;
-      }
       const prepared = await preparePasskeyVaultPassword();
       await completeOnboardingAndConnect(
         prepared.password,

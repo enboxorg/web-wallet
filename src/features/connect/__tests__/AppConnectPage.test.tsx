@@ -66,8 +66,6 @@ vi.mock('@/lib/auto-identity', async (importOriginal) => ({
 
 vi.mock('@/lib/passkeys', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/passkeys')>(),
-  canCheckPasskeySupport: () => true,
-  isPasskeySupported: async () => true,
   preparePasskeyVaultPassword: mocks.preparePasskeyVaultPassword,
   storePasskeyCredential: mocks.storePasskeyCredential,
 }));

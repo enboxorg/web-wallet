@@ -25,8 +25,6 @@ import {
 } from '@/lib/dwn-endpoints';
 import { markJustOnboarded } from '@/lib/auto-identity';
 import {
-  canCheckPasskeySupport,
-  isPasskeySupported,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
   preparePasskeyVaultPassword,
@@ -74,12 +72,6 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
     setLocalError(null);
     setBusy(true);
     try {
-      const passkeyOk = canCheckPasskeySupport() && (await isPasskeySupported());
-      if (!passkeyOk) {
-        setStep('pin-create');
-        return;
-      }
-
       const prepared = await preparePasskeyVaultPassword();
       await finishSetup(prepared.password, true);
       storePasskeyCredential(prepared.credential);

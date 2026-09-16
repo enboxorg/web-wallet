@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { KeyRound, ShieldCheck } from 'lucide-react';
 import { DwnEndpointEditor } from '@/components/ui/DwnEndpointEditor';
 import { PinInput } from '@/components/ui/PinInput';
@@ -12,8 +12,7 @@ import {
   getDwnEndpointValidationError,
 } from '@/lib/dwn-endpoints';
 import {
-  canCheckPasskeySupport,
-  isPasskeySupported,
+  canCreatePasskeyVault,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
   preparePasskeyVaultPassword,
@@ -32,7 +31,6 @@ export interface RestoreWalletPageProps {
 }
 
 type Step = 'phrase' | 'endpoints' | 'security-method' | 'create-pin' | 'confirm-pin';
-type PasskeySupport = 'checking' | 'supported' | 'unsupported';
 
 export function RestoreWalletPage({
   onRestore,
@@ -41,13 +39,10 @@ export function RestoreWalletPage({
   onBack,
   allowEndpointSelection = true,
 }: RestoreWalletPageProps) {
-  const canCheckPasskey = canCheckPasskeySupport();
+  const [passkeyAvailable, setPasskeyAvailable] = useState(canCreatePasskeyVault);
   const [step, setStep] = useState<Step>('phrase');
-  const [passkeySupport, setPasskeySupport] = useState<PasskeySupport>(
-    canCheckPasskey ? 'checking' : 'unsupported',
-  );
   const [authMethod, setAuthMethod] = useState<WalletAuthMethod>(
-    canCheckPasskey ? 'passkey' : 'pin',
+    passkeyAvailable ? 'passkey' : 'pin',
   );
   const [phrase, setPhrase] = useState('');
   const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(getConfiguredDwnEndpoints);
@@ -56,34 +51,18 @@ export function RestoreWalletPage({
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [localLoading, setLocalLoading] = useState(false);
-  const passkeySupported = passkeySupport === 'supported';
-
-  useEffect(() => {
-    if (passkeySupport !== 'checking') return;
-    let cancelled = false;
-    isPasskeySupported().then((supported) => {
-      if (cancelled) return;
-      setPasskeySupport(supported ? 'supported' : 'unsupported');
-      if (!supported) {
-        setAuthMethod('pin');
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [passkeySupport]);
 
   const handlePhraseSubmit = useCallback((value: string) => {
     setPhrase(value);
     setLocalError(null);
     setStep(allowEndpointSelection
       ? 'endpoints'
-      : passkeySupported ? 'security-method' : 'create-pin');
-  }, [allowEndpointSelection, passkeySupported]);
+      : passkeyAvailable ? 'security-method' : 'create-pin');
+  }, [allowEndpointSelection, passkeyAvailable]);
 
   const handleEndpointsContinue = useCallback(() => {
-    setStep(passkeySupported ? 'security-method' : 'create-pin');
-  }, [passkeySupported]);
+    setStep(passkeyAvailable ? 'security-method' : 'create-pin');
+  }, [passkeyAvailable]);
 
   const handlePinCreated = useCallback((value: string) => {
     setAuthMethod('pin');
@@ -131,7 +110,7 @@ export function RestoreWalletPage({
       const message = err instanceof Error ? err.message : 'Failed to restore wallet';
       setLocalError(message);
       if (isPasskeyVaultUnsupportedError(err)) {
-        setPasskeySupport('unsupported');
+        setPasskeyAvailable(false);
         setAuthMethod('pin');
         setPin('');
         setStep('create-pin');
@@ -160,20 +139,20 @@ export function RestoreWalletPage({
       setStep(allowEndpointSelection ? 'endpoints' : 'phrase');
     } else if (step === 'create-pin') {
       setPin('');
-      setStep(passkeySupported
+      setStep(passkeyAvailable
         ? 'security-method'
         : allowEndpointSelection ? 'endpoints' : 'phrase');
     } else if (step === 'confirm-pin') {
       setPin('');
       setStep('create-pin');
     }
-  }, [allowEndpointSelection, passkeySupported, step, onBack]);
+  }, [allowEndpointSelection, passkeyAvailable, step, onBack]);
 
   if (isLoading && !localLoading) {
     return <Loader message="Restoring your wallet..." />;
   }
 
-  const progress = getStepProgress(step, authMethod, passkeySupported, allowEndpointSelection);
+  const progress = getStepProgress(step, authMethod, passkeyAvailable, allowEndpointSelection);
   const displayedError = localError ?? error;
 
   return (
@@ -392,12 +371,12 @@ export function RestoreWalletPage({
 function getStepProgress(
   step: Step,
   authMethod: WalletAuthMethod,
-  passkeySupported: boolean,
+  passkeyAvailable: boolean,
   allowEndpointSelection: boolean,
 ): { current: number; total: number } {
   const prefix: Step[] = allowEndpointSelection ? ['phrase', 'endpoints'] : ['phrase'];
   let visibleSteps: Step[];
-  if (!passkeySupported) {
+  if (!passkeyAvailable) {
     visibleSteps = [...prefix, 'create-pin', 'confirm-pin'];
   } else if (authMethod === 'passkey') {
     visibleSteps = [...prefix, 'security-method'];
