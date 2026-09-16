@@ -125,6 +125,15 @@ describe('connect-kernel', () => {
       expect(fetch).toHaveBeenCalledOnce();
     });
 
+    it('does not retry a failed single-use relay claim', async () => {
+      vi.mocked(fetch).mockRejectedValue(new TypeError('Failed to fetch'));
+
+      await expect(fetchConnectRequest('https://relay.example/request', REQUEST_KEY))
+        .rejects.toThrow('Failed to fetch');
+
+      expect(fetch).toHaveBeenCalledOnce();
+    });
+
     it('rejects unsafe request URLs before fetching', async () => {
       await expect(fetchConnectRequest('http://remote.example/request', REQUEST_KEY))
         .rejects.toThrow('Connect request URI must use HTTPS');
