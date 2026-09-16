@@ -30,6 +30,7 @@ import {
   sessionStorageRemoveEffect,
   sessionStorageSetEffect,
 } from '@/lib/browser-effects';
+import { withPromiseTimeout } from '@/lib/promise-timeout';
 import type { EnboxAgent } from './types';
 import {
   connectVaultEffect,
@@ -43,13 +44,22 @@ import {
 import { runEnboxPromise, runEnboxSync } from './effect/runtime';
 import { queryKeys } from './queries/query-keys';
 
+const AUTH_FINALIZATION_TIMEOUT_MS = 10_000;
+const AUTH_CLEANUP_TIMEOUT_MS = 5_000;
+
 async function getAgentDwnEndpoints(agent: EnboxAgent): Promise<string[]> {
   // Auth refreshes the agent DID before returning a restored session. Read the
   // advertised endpoints through the agent resolver so that a portable vault's
   // older BearerDid snapshot cannot replace that authoritative result in the
-  // wallet's endpoint cache. This is an ordinary cache hit, not another forced
-  // network resolution.
-  return agent.identity.getDwnEndpoints({ didUri: agent.agentDid.uri });
+  // wallet's endpoint cache. This should be an ordinary cache hit, but it is
+  // still a promise-only SDK boundary, so fail closed if it never settles.
+  return withPromiseTimeout(
+    () => agent.identity.getDwnEndpoints({ didUri: agent.agentDid.uri }),
+    AUTH_FINALIZATION_TIMEOUT_MS,
+    () => new Error(
+      'Wallet initialization timed out while loading network settings. Try again.',
+    ),
+  );
 }
 
 // ── Session vault password helpers ─────────────────────────────────
@@ -74,7 +84,13 @@ function shutdownOwnedAuthManager(auth: WalletAuthManager): Promise<void> {
 
 async function lockFailedAuthSession(auth: WalletAuthManager, storeLock: () => void): Promise<void> {
   if (!auth.isLocked) {
-    await runEnboxPromise(lockAuthManagerEffect(auth)).catch(() => {});
+    await withPromiseTimeout(
+      () => runEnboxPromise(lockAuthManagerEffect(auth)),
+      AUTH_CLEANUP_TIMEOUT_MS,
+      () => new Error('Timed out while rolling back the incomplete wallet session.'),
+    ).catch((err: unknown) => {
+      console.warn('EnboxAuthProvider: Failed to roll back auth session:', err);
+    });
   }
   clearSessionPassword();
   storeLock();

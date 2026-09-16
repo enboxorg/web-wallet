@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { EnboxAuthProvider, useEnboxAuth } from '../provider';
@@ -160,6 +160,11 @@ function UnlockButton({ onSettled }: { onSettled?: () => void }) {
   );
 }
 
+function AuthStatus() {
+  const { error, isLoading } = useEnboxAuth();
+  return <span>{isLoading ? 'auth-loading' : error ?? 'auth-ready'}</span>;
+}
+
 function RestoreButton({ dwnEndpoints }: { dwnEndpoints?: string[] }) {
   const { restore } = useEnboxAuth();
 
@@ -183,6 +188,11 @@ function EndpointProbe() {
 }
 
 describe('EnboxAuthProvider restore flow', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -292,6 +302,67 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
       didUri: auth.agent.agentDid.uri,
     });
+  });
+
+  it('fails closed when post-unlock endpoint resolution never settles', async () => {
+    const auth = createAuth('locked');
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    auth.agent.identity.getDwnEndpoints.mockReturnValue(new Promise(() => {}));
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <AuthStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalledOnce());
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(auth.lock).toHaveBeenCalledOnce();
+    expect(useAuthStore.getState().agent).toBeNull();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+    expect(screen.getByText(
+      'Wallet initialization timed out while loading network settings. Try again.',
+    )).toBeInTheDocument();
+  });
+
+  it('finishes failure cleanup when the SDK lock never settles', async () => {
+    const auth = createAuth('locked');
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      throw new Error('Session restore failed.');
+    });
+    auth.lock.mockReturnValue(new Promise(() => {}));
+    authMocks.create.mockResolvedValue(auth);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <AuthStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalledOnce());
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+
+    expect(auth.lock).toHaveBeenCalledOnce();
+    expect(useAuthStore.getState().agent).toBeNull();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+    expect(screen.getByText('Session restore failed.')).toBeInTheDocument();
   });
 
   it('defers stored-session sync while retaining the scoped sync configuration', async () => {
