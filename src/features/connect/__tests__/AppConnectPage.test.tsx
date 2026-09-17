@@ -742,13 +742,8 @@ describe('AppConnectPage', () => {
     expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledWith(
       'did:dht:alice',
       mocks.agent,
-      ['https://dwn.example'],
       [connectRequest.permissionRequests[0].protocolDefinition],
     );
-    expect(mocks.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
-      didUri  : 'did:dht:alice',
-      refresh : true,
-    });
 
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('1234')).toBeInTheDocument();

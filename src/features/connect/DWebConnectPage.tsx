@@ -255,14 +255,9 @@ export default function DWebConnectPage() {
         );
         if (definitionsToOverride.length > 0) {
           setStatusMessage('Replacing protocol setup...');
-          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
-            didUri  : approveAsDid,
-            refresh : true,
-          });
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,
-            dwnEndpoints,
             definitionsToOverride,
           );
         }

@@ -458,14 +458,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
           protocolSetupStatuses,
         );
         if (definitionsToOverride.length > 0) {
-          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
-            didUri  : approveAsDid,
-            refresh : true,
-          });
           await reconfigureProtocolsForOverride(
             approveAsDid,
             liveAgent,
-            dwnEndpoints,
             definitionsToOverride,
           );
         }

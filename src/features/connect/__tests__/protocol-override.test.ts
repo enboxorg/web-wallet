@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { DwnProtocolDefinition } from '@enbox/agent';
 
 import { reconfigureProtocolsForOverride } from '../protocol-override';
@@ -19,7 +19,10 @@ const staleDefinition: DwnProtocolDefinition = {
  * Builds a mock agent whose local DWN accepts the configure and whose endpoints
  * echo `remoteDefinition` back on the verification re-query.
  */
-function makeAgent(remoteDefinition: DwnProtocolDefinition | undefined = definition) {
+function makeAgent(
+  remoteDefinition: DwnProtocolDefinition | undefined = definition,
+  dwnEndpoints: string[] = ['https://a.example', 'https://b.example'],
+) {
   const configureMessage = { descriptor: { method: 'Configure' } };
   const queryMessage = { descriptor: { method: 'Query' } };
 
@@ -40,19 +43,33 @@ function makeAgent(remoteDefinition: DwnProtocolDefinition | undefined = definit
       },
   );
 
-  return { processDwnRequest, rpc: { sendDwnRequest }, configureMessage, queryMessage };
+  return {
+    identity: { getDwnEndpoints: vi.fn().mockResolvedValue(dwnEndpoints) },
+    processDwnRequest,
+    rpc: { sendDwnRequest },
+    configureMessage,
+    queryMessage,
+  };
 }
 
 describe('reconfigureProtocolsForOverride', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('authors the replacement locally and fans it out to every endpoint', async () => {
     const agent = makeAgent();
 
     await reconfigureProtocolsForOverride(
       'did:example:owner',
       agent as never,
-      ['https://a.example', 'https://b.example'],
       [definition],
     );
+
+    expect(agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
+      didUri  : 'did:example:owner',
+      refresh : true,
+    });
 
     // The replacement is authored by the owner exactly once.
     const configureCalls = agent.processDwnRequest.mock.calls
@@ -69,9 +86,9 @@ describe('reconfigureProtocolsForOverride', () => {
   });
 
   it('configures locally only when there are no reachable endpoints', async () => {
-    const agent = makeAgent();
+    const agent = makeAgent(definition, []);
 
-    await reconfigureProtocolsForOverride('did:example:owner', agent as never, [], [definition]);
+    await reconfigureProtocolsForOverride('did:example:owner', agent as never, [definition]);
 
     expect(agent.processDwnRequest).toHaveBeenCalledTimes(1);
     expect(agent.rpc.sendDwnRequest).not.toHaveBeenCalled();
@@ -81,7 +98,7 @@ describe('reconfigureProtocolsForOverride', () => {
     const agent = makeAgent(staleDefinition);
 
     await expect(
-      reconfigureProtocolsForOverride('did:example:owner', agent as never, ['https://a.example'], [definition]),
+      reconfigureProtocolsForOverride('did:example:owner', agent as never, [definition]),
     ).rejects.toThrow(/did not converge/i);
   });
 
@@ -94,8 +111,29 @@ describe('reconfigureProtocolsForOverride', () => {
     );
 
     await expect(
-      reconfigureProtocolsForOverride('did:example:owner', agent as never, ['https://a.example'], [definition]),
+      reconfigureProtocolsForOverride('did:example:owner', agent as never, [definition]),
     ).rejects.toThrow(/could not replace protocol .* locally/i);
+    expect(agent.rpc.sendDwnRequest).not.toHaveBeenCalled();
+  });
+
+  it('stops waiting when refreshed endpoint discovery does not settle', async () => {
+    vi.useFakeTimers();
+    const agent = makeAgent();
+    agent.identity.getDwnEndpoints.mockReturnValue(new Promise<string[]>(() => undefined));
+
+    const reconfigure = reconfigureProtocolsForOverride(
+      'did:example:owner',
+      agent as never,
+      [definition],
+    );
+    const rejection = expect(reconfigure).rejects.toThrow(
+      "Loading this profile's network settings timed out. Try again.",
+    );
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    await rejection;
+    expect(agent.processDwnRequest).not.toHaveBeenCalled();
     expect(agent.rpc.sendDwnRequest).not.toHaveBeenCalled();
   });
 });

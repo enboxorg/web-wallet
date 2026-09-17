@@ -347,13 +347,8 @@ describe('DWebConnectPage', () => {
     expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledWith(
       'did:dht:alice',
       mocks.agent,
-      ['https://dwn.example'],
       [permissionRequest.protocolDefinition],
     );
-    expect(mocks.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
-      didUri  : 'did:dht:alice',
-      refresh : true,
-    });
 
     await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe'));
     expect(await screen.findByText('Connected!')).toBeInTheDocument();

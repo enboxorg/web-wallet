@@ -27,13 +27,16 @@ import {
 } from '@enbox/agent';
 import type { DwnRpcResponse } from '@enbox/dwn-clients';
 
+import { withPromiseTimeout } from '@/lib/promise-timeout';
 import { protocolDefinitionsMatch } from './protocol-install';
 
+/** Endpoint discovery is a network-backed refresh and must not hold approval forever. */
+const RECONFIGURE_ENDPOINT_LOOKUP_TIMEOUT_MS = 10_000;
 /** Per-request abort budget so one unhealthy endpoint can't stall approval. */
 const RECONFIGURE_REQUEST_TIMEOUT_MS = 10_000;
 
 /** The minimal agent surface the override reconfigure depends on. */
-export type ReconfigureAgent = Pick<EnboxPlatformAgent, 'processDwnRequest' | 'rpc'>;
+type ReconfigureAgent = Pick<EnboxPlatformAgent, 'identity' | 'processDwnRequest' | 'rpc'>;
 
 function definitionFromReply(reply: DwnRpcResponse): DwnProtocolDefinition | undefined {
   const entry = reply.entries?.[0];
@@ -55,9 +58,19 @@ function definitionFromReply(reply: DwnRpcResponse): DwnProtocolDefinition | und
 export async function reconfigureProtocolsForOverride(
   selectedDid: string,
   agent: ReconfigureAgent,
-  dwnEndpointUrls: string[],
   definitions: DwnProtocolDefinition[],
 ): Promise<void> {
+  if (definitions.length === 0) return;
+
+  const dwnEndpointUrls = await withPromiseTimeout(
+    () => agent.identity.getDwnEndpoints({
+      didUri  : selectedDid,
+      refresh : true,
+    }),
+    RECONFIGURE_ENDPOINT_LOOKUP_TIMEOUT_MS,
+    () => new Error("Loading this profile's network settings timed out. Try again."),
+  );
+
   for (const definition of definitions) {
     await reconfigureProtocolForOverride(selectedDid, agent, dwnEndpointUrls, definition);
   }
