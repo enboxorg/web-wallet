@@ -87,6 +87,7 @@ export function UnlockScreen({
         <div className="flex w-full flex-col items-center gap-4">
           <Loader message="Waiting for passkey approval..." />
           <Button
+            type="button"
             variant="secondary"
             size="sm"
             onClick={handleCancelPasskeyUnlock}
