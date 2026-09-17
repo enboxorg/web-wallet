@@ -119,7 +119,10 @@ describe('reconfigureProtocolsForOverride', () => {
   it('stops waiting when refreshed endpoint discovery does not settle', async () => {
     vi.useFakeTimers();
     const agent = makeAgent();
-    agent.identity.getDwnEndpoints.mockReturnValue(new Promise<string[]>(() => undefined));
+    let finishEndpointLookup!: (endpoints: string[]) => void;
+    agent.identity.getDwnEndpoints.mockReturnValue(new Promise<string[]>((resolve) => {
+      finishEndpointLookup = resolve;
+    }));
 
     const reconfigure = reconfigureProtocolsForOverride(
       'did:example:owner',
@@ -133,6 +136,8 @@ describe('reconfigureProtocolsForOverride', () => {
     await vi.advanceTimersByTimeAsync(10_000);
 
     await rejection;
+    finishEndpointLookup(['https://late.example']);
+    await Promise.resolve();
     expect(agent.processDwnRequest).not.toHaveBeenCalled();
     expect(agent.rpc.sendDwnRequest).not.toHaveBeenCalled();
   });
