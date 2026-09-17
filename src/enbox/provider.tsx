@@ -105,6 +105,7 @@ export interface EnboxAuthContextValue {
   dwnEndpoints: string[];
   error: string | null;
   isLoading: boolean;
+  isLocking: boolean;
 }
 
 const EnboxAuthContext = createContext<EnboxAuthContextValue | null>(null);
@@ -122,10 +123,12 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const authManagerRef = useRef<WalletAuthManager | null>(null);
   const authenticationAttemptRef = useRef(false);
   const initializationRetryReadyRef = useRef(false);
+  const lockCompletionRef = useRef<Promise<void> | null>(null);
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [initializationAttempt, setInitializationAttempt] = useState(0);
+  const [isLocking, setIsLocking] = useState(false);
   const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(getConfiguredDwnEndpoints);
 
   const { setInitialized, setUnlocked, lock: storeLock } = useAuthStore();
@@ -165,6 +168,13 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setIsLoading(true);
     setError(null);
     try {
+      // The locked UI is exposed immediately for privacy, while SDK teardown
+      // finishes asynchronously. Never let a new authentication overtake it.
+      const pendingLock = lockCompletionRef.current;
+      if (pendingLock !== null) await pendingLock;
+      if (authManagerRef.current !== auth) {
+        throw new Error('Authentication session ended before wallet initialization completed.');
+      }
       return await operation();
     } catch (err) {
       if (authManagerRef.current !== auth) {
@@ -339,12 +349,29 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const lock = useCallback(() => {
     clearSessionPassword();
     const auth = authManagerRef.current;
-    if (auth) {
-      runEnboxPromise(lockAuthManagerEffect(auth)).catch((err: unknown) => {
-        console.warn('EnboxAuthProvider: Lock failed:', err);
-      });
+    if (!auth || lockCompletionRef.current !== null) {
+      storeLock();
+      return;
     }
+
+    // Hide wallet data synchronously, but keep the unlock UI disabled until
+    // the SDK has stopped sync, cleared its session, and locked the vault.
+    setIsLocking(true);
     storeLock();
+
+    const completion = runEnboxPromise(lockAuthManagerEffect(auth))
+      .catch((err: unknown) => {
+        console.warn('EnboxAuthProvider: Lock failed:', err);
+      })
+      .finally(() => {
+        if (lockCompletionRef.current === completion) {
+          lockCompletionRef.current = null;
+        }
+        if (authManagerRef.current === auth) {
+          setIsLocking(false);
+        }
+      });
+    lockCompletionRef.current = completion;
   }, [storeLock]);
 
   // ── Inactivity auto-lock ─────────────────────────────────────────
@@ -386,6 +413,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     dwnEndpoints,
     error,
     isLoading,
+    isLocking,
   };
 
   return (

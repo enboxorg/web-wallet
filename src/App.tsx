@@ -157,6 +157,7 @@ function AuthGate() {
     adoptDwnEndpoints,
     error,
     isLoading,
+    isLocking,
   } = useAuth();
   const setPhrase = useBackupSeedStore((s) => s.setPhrase);
   const needsBackup = useBackupSeedStore((s) => !!s.phrase);
@@ -357,6 +358,7 @@ function AuthGate() {
         onForgotPin={() => setForgotPin(true)}
         error={authUiError ?? error}
         isLoading={isLoading}
+        isLocking={isLocking}
         passkeyConfigured={passkeyConfigured}
         passkeyAvailable={passkeyAvailable}
       />
