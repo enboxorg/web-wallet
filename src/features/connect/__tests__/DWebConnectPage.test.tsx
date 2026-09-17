@@ -221,6 +221,31 @@ describe('DWebConnectPage', () => {
     expect(mocks.createTransport).not.toHaveBeenCalled();
   });
 
+  it('leaves Connecting with an error when the live wallet disappears before approval', async () => {
+    render(<DWebConnectPage />);
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    const currentState = useAuthStore.getState();
+    const getState = vi.spyOn(useAuthStore, 'getState').mockReturnValue({
+      ...currentState,
+      agent: null,
+    });
+
+    try {
+      fireEvent.click(approve);
+
+      expect(await screen.findByText(
+        'The wallet locked before authorization could begin. Unlock it and try again.',
+      )).toBeInTheDocument();
+      expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
+      expect(mocks.transport.deny).toHaveBeenCalledOnce();
+      expect(screen.queryByText('Creating grants...')).not.toBeInTheDocument();
+    } finally {
+      getState.mockRestore();
+    }
+  });
+
   it('reserves mobile safe-area clearance around the popup approval page', () => {
     Object.defineProperty(window, 'opener', { configurable: true, value: null });
 
