@@ -141,6 +141,20 @@ export function storePasskeyCredentialEffect(credential: StoredPasskeyCredential
   });
 }
 
+/**
+ * Create the passkey metadata and persist its only recoverable copy before an
+ * SDK operation can commit the generated vault password. Keep the metadata if
+ * activation rejects: some SDK failures happen after the vault has mutated.
+ */
+export async function createPasskeyVault<T>(
+  activate: (password: string) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const prepared = await preparePasskeyVaultPassword(signal);
+  storePasskeyCredential(prepared.credential);
+  return activate(prepared.password);
+}
+
 export function clearPasskeyCredential(): void {
   runEnboxSync(clearPasskeyCredentialEffect());
 }

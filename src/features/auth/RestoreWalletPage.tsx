@@ -13,10 +13,9 @@ import {
 } from '@/lib/dwn-endpoints';
 import {
   canCreatePasskeyVault,
+  createPasskeyVault,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
-  preparePasskeyVaultPassword,
-  storePasskeyCredential,
   type WalletAuthMethod,
 } from '@/lib/passkeys';
 import { EnboxLogo } from './EnboxLogo';
@@ -99,13 +98,13 @@ export function RestoreWalletPage({
     setLocalError(null);
     setLocalLoading(true);
     try {
-      const prepared = await preparePasskeyVaultPassword();
-      await onRestore(
-        phrase,
-        prepared.password,
-        isEndpointOverrideEnabled ? dwnEndpoints : undefined,
+      await createPasskeyVault(
+        (password) => onRestore(
+          phrase,
+          password,
+          isEndpointOverrideEnabled ? dwnEndpoints : undefined,
+        ),
       );
-      storePasskeyCredential(prepared.credential);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Failed to restore wallet';
       setLocalError(message);

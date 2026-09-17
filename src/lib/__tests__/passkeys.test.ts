@@ -4,6 +4,7 @@ import {
   canCreatePasskeyVault,
   canUsePasskeyUnlock,
   clearPasskeyCredential,
+  createPasskeyVault,
   getStoredAuthMethod,
   hasStoredPasskeyCredential,
   markPinAuthMethod,
@@ -19,6 +20,7 @@ import {
 
 const credential = {
   version: 1 as const,
+  wrapping: 'prf' as const,
   credentialId: 'credential-id',
   salt: 'salt',
   iv: 'iv',
@@ -47,6 +49,47 @@ describe('passkeys', () => {
     expect(hasStoredPasskeyCredential()).toBe(true);
     expect(getStoredAuthMethod()).toBe('passkey');
     expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY)).toContain('credential-id');
+  });
+
+  it('stores passkey metadata before activating its vault password', async () => {
+    stubPasskeyRegistrationWithoutPrf();
+    const activate = vi.fn(async (password: string) => {
+      expect(hasStoredPasskeyCredential()).toBe(true);
+      expect(getStoredAuthMethod()).toBe('passkey');
+      expect(password).toEqual(expect.any(String));
+      return 'activated';
+    });
+
+    await expect(createPasskeyVault(activate)).resolves.toBe('activated');
+
+    expect(activate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps passkey metadata when vault activation fails after a possible commit', async () => {
+    stubPasskeyRegistrationWithoutPrf();
+    const activationError = new Error('session finalization failed');
+
+    await expect(createPasskeyVault(
+      async () => { throw activationError; },
+    )).rejects.toBe(activationError);
+
+    expect(hasStoredPasskeyCredential()).toBe(true);
+    expect(getStoredAuthMethod()).toBe('passkey');
+  });
+
+  it('does not activate the vault when passkey metadata cannot be stored', async () => {
+    stubPasskeyRegistrationWithoutPrf();
+    const storageError = new Error('storage unavailable');
+    const setItem = vi.spyOn(localStorage, 'setItem')
+      .mockImplementation(() => { throw storageError; });
+    const activate = vi.fn(async () => undefined);
+
+    try {
+      await expect(createPasskeyVault(activate)).rejects.toBe(storageError);
+      expect(activate).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
   });
 
   it('clears passkey metadata and passkey auth method', () => {

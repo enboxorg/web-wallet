@@ -3,17 +3,15 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 const passkeyMocks = vi.hoisted(() => ({
+  createPasskeyVault: vi.fn(),
   isPasskeyVaultUnsupportedError: vi.fn((_error: unknown) => false),
   markPinAuthMethod: vi.fn(),
-  preparePasskeyVaultPassword: vi.fn(),
-  storePasskeyCredential: vi.fn(),
 }));
 
 vi.mock('@/lib/passkeys', () => ({
+  createPasskeyVault: passkeyMocks.createPasskeyVault,
   isPasskeyVaultUnsupportedError: passkeyMocks.isPasskeyVaultUnsupportedError,
   markPinAuthMethod: passkeyMocks.markPinAuthMethod,
-  preparePasskeyVaultPassword: passkeyMocks.preparePasskeyVaultPassword,
-  storePasskeyCredential: passkeyMocks.storePasskeyCredential,
 }));
 
 vi.mock('@/components/ui/EndpointHealth', () => ({
@@ -40,7 +38,7 @@ describe('WelcomeScreen', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
-    passkeyMocks.preparePasskeyVaultPassword.mockRejectedValue(
+    passkeyMocks.createPasskeyVault.mockRejectedValue(
       new Error('Passkeys are not available on this device.'),
     );
     passkeyMocks.isPasskeyVaultUnsupportedError.mockReturnValue(true);
@@ -54,10 +52,9 @@ describe('WelcomeScreen', () => {
 
   it('creates the vault with a passkey-wrapped password in one tap', async () => {
     passkeyMocks.isPasskeyVaultUnsupportedError.mockReturnValue(false);
-    passkeyMocks.preparePasskeyVaultPassword.mockResolvedValue({
-      password: 'wrapped-vault-password',
-      credential: { credentialId: 'cred-1' },
-    });
+    passkeyMocks.createPasskeyVault.mockImplementation(
+      async (activate) => activate('wrapped-vault-password'),
+    );
     const onSetup = vi.fn().mockResolvedValue('seed phrase words');
     render(<WelcomeScreen {...defaults} onSetup={onSetup} />);
 
@@ -66,7 +63,7 @@ describe('WelcomeScreen', () => {
     await waitFor(() => {
       expect(onSetup).toHaveBeenCalledWith('wrapped-vault-password', expect.any(Array));
     });
-    expect(passkeyMocks.storePasskeyCredential).toHaveBeenCalledWith({ credentialId: 'cred-1' });
+    expect(passkeyMocks.createPasskeyVault).toHaveBeenCalledWith(expect.any(Function));
     // The just-onboarded flag drives automatic first-identity creation.
     expect(sessionStorage.getItem(JUST_ONBOARDED_KEY)).toBe('1');
   });

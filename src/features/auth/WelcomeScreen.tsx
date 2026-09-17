@@ -25,10 +25,9 @@ import {
 } from '@/lib/dwn-endpoints';
 import { markJustOnboarded } from '@/lib/auto-identity';
 import {
+  createPasskeyVault,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
-  preparePasskeyVaultPassword,
-  storePasskeyCredential,
 } from '@/lib/passkeys';
 import { EnboxLogo } from './EnboxLogo';
 import { cn } from '@/lib/utils';
@@ -72,9 +71,7 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
     setLocalError(null);
     setBusy(true);
     try {
-      const prepared = await preparePasskeyVaultPassword();
-      await finishSetup(prepared.password, true);
-      storePasskeyCredential(prepared.credential);
+      await createPasskeyVault((password) => finishSetup(password, true));
     } catch (err) {
       setStatusMessage(null);
       if (isPasskeyVaultUnsupportedError(err)) {

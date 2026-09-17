@@ -65,10 +65,9 @@ import { copyToClipboard, truncateDid } from '@/lib/utils';
 import { PIN_LENGTH } from '@/lib/constants';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
+  createPasskeyVault,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
-  preparePasskeyVaultPassword,
-  storePasskeyCredential,
 } from '@/lib/passkeys';
 import {
   isDidSupportedByRequest,
@@ -540,7 +539,6 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   async function completeOnboardingAndConnect(
     vaultPassword: string,
     viaPasskey: boolean,
-    afterVaultConnect?: () => void,
   ) {
     setPhase('authorizing');
 
@@ -556,7 +554,6 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     if (!liveAgent) {
       throw new Error('Wallet was created but could not be unlocked.');
     }
-    afterVaultConnect?.();
 
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
     const approvalDid = identity.did.uri;
@@ -570,11 +567,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     setOnboardError(null);
     setOnboardBusy(true);
     try {
-      const prepared = await preparePasskeyVaultPassword();
-      await completeOnboardingAndConnect(
-        prepared.password,
-        true,
-        () => storePasskeyCredential(prepared.credential),
+      await createPasskeyVault(
+        (password) => completeOnboardingAndConnect(password, true),
       );
     } catch (err) {
       setPhase('request');
