@@ -55,17 +55,23 @@ export default defineConfig(({ mode }) => {
         registerType: 'prompt',
         injectRegister: false,
 
-        pwaAssets: {
-          disabled: false,
-          image: `public/logo-${brand}.svg`,
-        },
-
+        // PWA icons are pre-generated per brand and committed under
+        // `public/pwa-icons/<brand>/` — the build-time pwaAssets integration
+        // (and its sharp/sharp-ico/@vite-pwa/assets-generator dependency
+        // chain) is intentionally not used. Regenerate via
+        // `scripts/generate-brand-assets.mjs` (see that file's header).
         manifest: {
           name: 'Enbox Wallet',
           short_name: 'Enbox',
           description: 'Your digital identity wallet — manage DIDs, protocols, and encrypted data',
           theme_color: '#0a0a0f',
           background_color: '#0a0a0f',
+          icons: [
+            { src: `pwa-icons/${brand}/pwa-64x64.png`, sizes: '64x64', type: 'image/png' },
+            { src: `pwa-icons/${brand}/pwa-192x192.png`, sizes: '192x192', type: 'image/png' },
+            { src: `pwa-icons/${brand}/pwa-512x512.png`, sizes: '512x512', type: 'image/png' },
+            { src: `pwa-icons/${brand}/maskable-icon-512x512.png`, sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          ],
         },
 
         injectManifest: {

@@ -12,9 +12,26 @@
  * the dark brand tile (#0a0a0f) full-bleed so generated apple-touch and
  * maskable icons never composite the bright front square onto white.
  *
- * Run from the repo root after changing palettes or geometry:
+ * `sharp` is intentionally NOT a pinned devDependency (supply-chain hygiene —
+ * it only ever processes these trusted, committed assets). Install it ad hoc
+ * before running, and remove it again afterwards:
  *
- *   bun scripts/generate-brand-assets.mjs
+ *   bun add -d sharp && bun scripts/generate-brand-assets.mjs && bun remove sharp
+ *
+ * The PWA icon sets under `public/pwa-icons/<brand>/` were produced by
+ * `@vite-pwa/assets-generator` (previously wired into `vite build` via
+ * vite-plugin-pwa's `pwaAssets` option, preset `minimal-2023`). To regenerate
+ * them after changing the mark, temporarily restore that toolchain and
+ * harvest the build output:
+ *
+ *   bun add -d sharp sharp-ico @vite-pwa/assets-generator
+ *   # re-add `pwaAssets: { image: 'public/logo-<brand>.svg' }` to the VitePWA
+ *   # config in vite.config.ts, then for each brand:
+ *   bun run build                                  # default (rose)
+ *   VITE_PRODUCT_THEME=blue bun run build          # blue
+ *   # copy dist/{pwa-64x64,pwa-192x192,pwa-512x512,maskable-icon-512x512,apple-touch-icon-180x180}.png
+ *   # and dist/favicon.ico into public/pwa-icons/<brand>/, then revert the
+ *   # package.json / vite.config.ts changes.
  */
 import { writeFile } from 'node:fs/promises';
 import path from 'node:path';
