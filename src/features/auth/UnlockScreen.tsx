@@ -69,6 +69,11 @@ export function UnlockScreen({
     }
   }, [isLoading, onUnlockWithPasskey]);
 
+  const handleCancelPasskeyUnlock = useCallback(() => {
+    if (isLoading) return;
+    passkeyAbortRef.current?.abort();
+  }, [isLoading]);
+
   const showPasskey = passkeyConfigured;
   const canUsePasskey = showPasskey && passkeyAvailable && onUnlockWithPasskey;
 
@@ -78,7 +83,18 @@ export function UnlockScreen({
     }
 
     if (passkeyLoading) {
-      return <Loader message="Waiting for passkey approval..." />;
+      return (
+        <div className="flex w-full flex-col items-center gap-4">
+          <Loader message="Waiting for passkey approval..." />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={handleCancelPasskeyUnlock}
+          >
+            Cancel passkey request
+          </Button>
+        </div>
+      );
     }
 
     if (canUsePasskey) {
