@@ -47,7 +47,7 @@ import {
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
 } from './use-protocol-setup-statuses';
-import { claimConnectDecision } from './connect-decision';
+import { claimConnectDecision, requireConnectApprovalContext } from './connect-decision';
 import { getConnectErrorMessage } from './connect-error';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
@@ -226,17 +226,25 @@ export default function DWebConnectPage() {
     // Read the agent from the store, not the render closure — the
     // create-wallet-and-connect path calls this right after onboarding,
     // before this component re-renders with the fresh agent.
-    const liveAgent = useAuthStore.getState().agent;
-    const approveAsDid = overrideDid ?? approvalDid;
+    const candidateAgent = useAuthStore.getState().agent;
+    const candidateDid = overrideDid ?? approvalDid;
     const transport = transportRef.current;
-    if (!liveAgent || !approveAsDid || !connectRequest || !transport) { return; }
     if (approvalCompletedRef.current) { return; }
     if (!claimConnectDecision(decisionStartedRef)) { return; }
 
     setPhase('connecting');
 
     try {
-      if (!isDidSupportedByRequest(approveAsDid, connectRequest.supportedDidMethods)) {
+      const {
+        agent: liveAgent,
+        request: activeRequest,
+        selectedDid: approveAsDid,
+      } = requireConnectApprovalContext(candidateAgent, connectRequest, candidateDid);
+      if (!transport) {
+        throw new Error('The app connection closed before authorization could begin. Start again from the app.');
+      }
+
+      if (!isDidSupportedByRequest(approveAsDid, activeRequest.supportedDidMethods)) {
         throw new Error('This profile uses an ID type the app does not support.');
       }
 
@@ -250,7 +258,7 @@ export default function DWebConnectPage() {
       setStatusMessage('Creating grants...');
       const idToken = await approvePopupConnectRequest(
         approveAsDid,
-        connectRequest,
+        activeRequest,
         transport.dappOrigin,
         sessionDurationSeconds,
         liveAgent,
@@ -293,7 +301,7 @@ export default function DWebConnectPage() {
       approvalCompletedRef.current = true;
       if (shouldDeny) {
         try {
-          transport.deny();
+          transport?.deny();
         } catch {
           // Best-effort — the dapp times out if the deny cannot be delivered.
         }

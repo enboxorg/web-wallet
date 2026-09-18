@@ -929,6 +929,23 @@ describe('AppConnectPage', () => {
       expect(await screen.findByText('1234')).toBeInTheDocument();
     });
 
+    it('leaves Authorizing with an error if the wallet locks before approval begins', async () => {
+      mocks.autoCreateIdentity.mockImplementation(async () => {
+        useAuthStore.setState({ agent: null });
+        return { did: { uri: 'did:dht:fresh' } };
+      });
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      renderWithProviders(<AppConnectPage />, { initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}` });
+
+      fireEvent.click(await screen.findByRole('button', { name: /create wallet & connect/i }));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'The wallet locked before authorization could begin. Unlock it and try again.',
+      );
+      expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+      expect(screen.queryByText('Authorizing...')).not.toBeInTheDocument();
+    });
+
     it('does not offer onboarding when the requester rejects did:dht', async () => {
       mocks.fetchConnectRequest.mockResolvedValue({
         ...connectRequest,

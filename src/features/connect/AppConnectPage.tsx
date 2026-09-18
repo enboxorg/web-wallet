@@ -77,7 +77,11 @@ import {
   CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   resolveConnectSessionApprovalDurationSeconds,
 } from './connect-session-duration';
-import { claimConnectDecision, resetConnectDecision } from './connect-decision';
+import {
+  claimConnectDecision,
+  requireConnectApprovalContext,
+  resetConnectDecision,
+} from './connect-decision';
 import { getConnectErrorMessage } from './connect-error';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
@@ -434,14 +438,19 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     // Read the agent from the store, not the render closure — the
     // create-wallet-and-connect path calls this right after onboarding,
     // before this component re-renders with the fresh agent.
-    const liveAgent = useAuthStore.getState().agent;
-    const approveAsDid = overrideDid ?? approvalDid;
-    if (!liveAgent || !connectionRequest || !approveAsDid) return;
+    const candidateAgent = useAuthStore.getState().agent;
+    const candidateDid = overrideDid ?? approvalDid;
     if (!claimConnectDecision(decisionStartedRef)) return;
 
     setPhase('authorizing');
     try {
-      if (!isDidSupportedByRequest(approveAsDid, connectionRequest.supportedDidMethods)) {
+      const {
+        agent: liveAgent,
+        request: activeRequest,
+        selectedDid: approveAsDid,
+      } = requireConnectApprovalContext(candidateAgent, connectionRequest, candidateDid);
+
+      if (!isDidSupportedByRequest(approveAsDid, activeRequest.supportedDidMethods)) {
         throw new Error('This profile uses an ID type the app does not support.');
       }
 
@@ -456,7 +465,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       setPin(generatedPin);
       await approveConnectRequest(
         approveAsDid,
-        connectionRequest,
+        activeRequest,
         generatedPin,
         sessionDurationSeconds,
         liveAgent,
@@ -469,7 +478,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       try {
         void runEnboxPromise(publishWalletEvent({
           _tag         : 'connect.approved',
-          origin       : connectionRequest.clientMetadata?.origin ?? connectionRequest.appName,
+          origin       : activeRequest.clientMetadata?.origin ?? activeRequest.appName,
           connectedDid : approveAsDid,
         })).catch((err: unknown) => console.warn('Relay connect approval event failed:', err));
       } catch (err) {
@@ -484,7 +493,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // background after scheduling the PIN screen rather than delaying it.
       const completionId = ++relayCompletionIdRef.current;
       try {
-        void waitForRelayCompletion(connectionRequest).then((completed) => {
+        void waitForRelayCompletion(activeRequest).then((completed) => {
           if (
             !completed
             || !mountedRef.current
