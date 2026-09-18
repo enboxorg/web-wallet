@@ -76,7 +76,6 @@ import {
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { detectConnectRefresh } from './connect-refresh';
-import { getConnectRequestType } from './connect-request-type';
 import {
   CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   resolveConnectSessionApprovalDurationSeconds,
@@ -159,7 +158,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const needsOnboarding = firstTime && !agent;
-  const isRefresh = getConnectRequestType(connectionRequest) === 'refresh';
+  const isRefresh = connectionRequest?.requestType === 'refresh';
 
   // Build identity options for the selector and validate that a matched
   // refresh owner still uses a DID method accepted by the requester.

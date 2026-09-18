@@ -1,11 +1,10 @@
 import type { DwnPermissionGrant } from '@enbox/agent';
+import type { ConnectRequest } from '@enbox/connect';
 
 import {
   buildPermissionSections,
   type PermissionSessionGroup,
 } from '@/features/identities/tabs/permission-sessions';
-
-import { getConnectRequestType } from './connect-request-type';
 
 export const CONNECT_REFRESH_MAX_EXPIRING_SOON_SECONDS = 60 * 60;
 export const CONNECT_REFRESH_EXPIRING_SOON_LIFETIME_RATIO = 0.1;
@@ -37,18 +36,6 @@ export interface ConnectRefreshDetection {
   matchedSession?: PermissionSessionGroup;
   pinnedOwnerDid?: string;
   expiresAt?: string;
-}
-
-function getDelegateDid(request: unknown): string | undefined {
-  if (typeof request !== 'object' || request === null) return undefined;
-  const delegateDid = (request as { delegateDid?: unknown }).delegateDid;
-  return typeof delegateDid === 'string' ? delegateDid : undefined;
-}
-
-function getExpectedProviderDid(request: unknown): string | undefined {
-  if (typeof request !== 'object' || request === null) return undefined;
-  const expectedProviderDid = (request as { expectedProviderDid?: unknown }).expectedProviderDid;
-  return typeof expectedProviderDid === 'string' ? expectedProviderDid : undefined;
 }
 
 function timestamp(value: string | undefined): number {
@@ -86,12 +73,12 @@ function getSessionStatus(
  * to select an identity.
  */
 export function detectConnectRefresh(
-  request: unknown,
+  request: Partial<ConnectRequest> | undefined,
   ownerPermissions: OwnerPermissionGrants[],
   now: Date = new Date(),
   expiringSoonThresholdSeconds?: number,
 ): ConnectRefreshDetection {
-  if (getConnectRequestType(request) !== 'refresh') {
+  if (request?.requestType !== 'refresh') {
     return {
       isRefresh : false,
       matchState: 'not-applicable',
@@ -99,8 +86,7 @@ export function detectConnectRefresh(
     };
   }
 
-  const delegateDid = getDelegateDid(request);
-  const expectedProviderDid = getExpectedProviderDid(request);
+  const { delegateDid, expectedProviderDid } = request;
   if (delegateDid === undefined) {
     return {
       isRefresh : true,

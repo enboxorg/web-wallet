@@ -39,7 +39,6 @@ import {
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
 import { detectConnectRefresh } from './connect-refresh';
-import { getConnectRequestType } from './connect-request-type';
 import {
   CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   resolveConnectSessionApprovalDurationSeconds,
@@ -109,7 +108,7 @@ export default function DWebConnectPage() {
   const isPopup = useMemo(() => !!window.opener, []);
   const permissions = connectRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const appName = connectRequest?.appName;
-  const isRefresh = getConnectRequestType(connectRequest) === 'refresh';
+  const isRefresh = connectRequest?.requestType === 'refresh';
 
   // Build identity options, limited to DID methods the requester supports.
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
