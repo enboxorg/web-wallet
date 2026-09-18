@@ -10,7 +10,11 @@ import {
 import { CryptoUtils } from '@enbox/crypto';
 
 import { sdkError } from '@/enbox/effect/errors';
-import { fetchWithEffectSignal, withNetworkPolicy } from '@/enbox/effect/network-policy';
+import {
+  fetchWithEffectSignal,
+  withNetworkDeadline,
+  withNetworkPolicy,
+} from '@/enbox/effect/network-policy';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
@@ -127,7 +131,7 @@ async function getBoundConnectRequest(
 }
 
 export function fetchConnectRequestEffect(requestUri: string, requestKey: Uint8Array) {
-  return withNetworkPolicy(
+  return withNetworkDeadline(
     'connect.getConnectRequest',
     Effect.tryPromise({
       try: (signal) => getBoundConnectRequest(requestUri, requestKey, signal),

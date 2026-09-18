@@ -2,7 +2,12 @@ import { Effect } from 'effect';
 import { describe, expect, it, vi } from 'vitest';
 
 import { runEnboxPromise } from '../runtime';
-import { NetworkPolicy, makeNetworkPolicy, withNetworkPolicy } from '../network-policy';
+import {
+  NetworkPolicy,
+  makeNetworkPolicy,
+  withNetworkDeadline,
+  withNetworkPolicy,
+} from '../network-policy';
 
 describe('NetworkPolicy', () => {
   it('retries operations through an injectable policy', async () => {
@@ -73,6 +78,24 @@ describe('NetworkPolicy', () => {
     await expect(runEnboxPromise(effect)).rejects.toMatchObject({
       message: 'CachedPermissions: No permissions found for ProtocolsConfigure',
     });
+    expect(run).toHaveBeenCalledOnce();
+  });
+
+  it('applies the shared deadline without retrying a single-use operation', async () => {
+    const run = vi.fn().mockRejectedValue(new Error('temporary network failure'));
+
+    const effect = withNetworkDeadline(
+      'test.single-use',
+      Effect.tryPromise({ try: () => run(), catch: (error) => error as Error }),
+      () => new Error('timed out'),
+    ).pipe(
+      Effect.provideService(NetworkPolicy, NetworkPolicy.of(makeNetworkPolicy({
+        retryTimes: 3,
+        timeout: '1 second',
+      }))),
+    );
+
+    await expect(runEnboxPromise(effect)).rejects.toThrow('temporary network failure');
     expect(run).toHaveBeenCalledOnce();
   });
 });

@@ -11,10 +11,10 @@ export interface NetworkPolicyOptions {
 export interface NetworkPolicyRunOptions<E> {
   readonly operation: string;
   readonly onTimeout: () => E;
+  readonly retry?: boolean;
 }
 
 export interface NetworkPolicy {
-  readonly options: NetworkPolicyOptions;
   readonly run: <A, E, R>(
     effect: Effect.Effect<A, E, R>,
     options: NetworkPolicyRunOptions<E>,
@@ -63,11 +63,10 @@ export function makeNetworkPolicy(options: Partial<NetworkPolicyOptions> = {}): 
   const resolved = { ...DEFAULT_NETWORK_POLICY_OPTIONS, ...options };
 
   return {
-    options: resolved,
-    run: (effect, runOptions) =>
-      annotateOperation(
-        runOptions.operation,
-        effect.pipe(
+    run: (effect, runOptions) => {
+      const attempted = runOptions.retry === false
+        ? effect
+        : effect.pipe(
           Effect.retry({
             times: resolved.retryTimes,
             while: (error) =>
@@ -77,12 +76,18 @@ export function makeNetworkPolicy(options: Partial<NetworkPolicyOptions> = {}): 
                 )
                 : false,
           }),
+        );
+
+      return annotateOperation(
+        runOptions.operation,
+        attempted.pipe(
           Effect.timeoutFail({
             duration: resolved.timeout,
             onTimeout: runOptions.onTimeout,
           }),
         ),
-      ),
+      );
+    },
   };
 }
 
@@ -108,5 +113,16 @@ export function withNetworkPolicy<A, E, R>(
 ) {
   return Effect.flatMap(NetworkPolicy, (policy) =>
     policy.run(effect, { operation, onTimeout })
+  );
+}
+
+/** Applies the shared network deadline without retrying a single-use operation. */
+export function withNetworkDeadline<A, E, R>(
+  operation: string,
+  effect: Effect.Effect<A, E, R>,
+  onTimeout: () => E,
+) {
+  return Effect.flatMap(NetworkPolicy, (policy) =>
+    policy.run(effect, { operation, onTimeout, retry: false })
   );
 }
