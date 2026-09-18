@@ -13,6 +13,7 @@ export interface UnlockScreenProps {
   onForgotPin?: () => void;
   error: string | null;
   isLoading: boolean;
+  isLocking?: boolean;
   passkeyConfigured?: boolean;
   passkeyAvailable?: boolean;
 }
@@ -32,12 +33,13 @@ export function UnlockScreen({
   onForgotPin,
   error,
   isLoading,
+  isLocking = false,
   passkeyConfigured = false,
   passkeyAvailable = false,
 }: UnlockScreenProps) {
   const [passkeyLoading, setPasskeyLoading] = useState(false);
   const passkeyAbortRef = useRef<AbortController | null>(null);
-  const busy = isLoading || passkeyLoading;
+  const busy = isLocking || isLoading || passkeyLoading;
 
   useEffect(() => () => {
     const controller = passkeyAbortRef.current;
@@ -54,7 +56,7 @@ export function UnlockScreen({
   );
 
   const handlePasskeyUnlock = useCallback(async () => {
-    if (!onUnlockWithPasskey || isLoading || passkeyAbortRef.current) return;
+    if (!onUnlockWithPasskey || busy || passkeyAbortRef.current) return;
 
     const controller = new AbortController();
     passkeyAbortRef.current = controller;
@@ -67,7 +69,7 @@ export function UnlockScreen({
         setPasskeyLoading(false);
       }
     }
-  }, [isLoading, onUnlockWithPasskey]);
+  }, [busy, onUnlockWithPasskey]);
 
   const handleCancelPasskeyUnlock = useCallback(() => {
     if (isLoading) return;
@@ -78,6 +80,10 @@ export function UnlockScreen({
   const canUsePasskey = showPasskey && passkeyAvailable && onUnlockWithPasskey;
 
   const renderUnlockControl = () => {
+    if (isLocking) {
+      return <Loader message="Locking wallet..." />;
+    }
+
     if (isLoading) {
       return <Loader message={passkeyLoading ? 'Opening wallet...' : 'Unlocking...'} />;
     }

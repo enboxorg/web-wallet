@@ -69,6 +69,22 @@ describe('UnlockScreen', () => {
     expect(screen.queryAllByRole('textbox')).toHaveLength(0);
   });
 
+  it('keeps unlock controls unavailable while the wallet is still locking', () => {
+    render(
+      <UnlockScreen
+        {...defaults}
+        isLocking
+        passkeyConfigured
+        passkeyAvailable
+        onUnlockWithPasskey={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Locking wallet...')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /unlock using passkey/i })).not.toBeInTheDocument();
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
+  });
+
   it('does not call onUnlock while loading', async () => {
     const onUnlock = vi.fn().mockResolvedValue(undefined);
     // When loading, the PIN input is replaced by the loader,

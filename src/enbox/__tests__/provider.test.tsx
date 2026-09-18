@@ -160,6 +160,26 @@ function UnlockButton({ onSettled }: { onSettled?: () => void }) {
   );
 }
 
+function LockThenUnlockButton() {
+  const { lock, unlock } = useEnboxAuth();
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        lock();
+        void unlock('1234').catch(() => {});
+      }}
+    >
+      Lock then unlock
+    </button>
+  );
+}
+
+function LockingStatus() {
+  const { isLocking } = useEnboxAuth();
+  return <span>{isLocking ? 'wallet-locking' : 'wallet-lock-settled'}</span>;
+}
+
 function AuthStatus() {
   const { error, isLoading } = useEnboxAuth();
   return <span>{isLoading ? 'auth-loading' : error ?? 'auth-ready'}</span>;
@@ -338,6 +358,47 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
       didUri: auth.agent.agentDid.uri,
     });
+  });
+
+  it('finishes SDK locking before a new authentication can start', async () => {
+    const user = userEvent.setup();
+    const auth = createAuth();
+    let finishLock!: () => void;
+    auth.lock.mockImplementation(() => new Promise<void>((resolve) => {
+      finishLock = () => {
+        auth.setLocked(true);
+        resolve();
+      };
+    }));
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    authMocks.create.mockResolvedValue(auth);
+    sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, '1234');
+
+    render(
+      <EnboxAuthProvider>
+        <LockThenUnlockButton />
+        <LockingStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    useAuthStore.getState().setUnlocked(auth.agent);
+    await user.click(screen.getByRole('button', { name: 'Lock then unlock' }));
+
+    await waitFor(() => expect(auth.lock).toHaveBeenCalledOnce());
+    expect(screen.getByText('wallet-locking')).toBeInTheDocument();
+    expect(useAuthStore.getState().agent).toBeNull();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+    expect(auth.restoreSession).not.toHaveBeenCalled();
+
+    finishLock();
+
+    await waitFor(() => expect(auth.restoreSession).toHaveBeenCalledOnce());
+    expect(screen.getByText('wallet-lock-settled')).toBeInTheDocument();
+    expect(useAuthStore.getState().agent).toBe(auth.agent);
   });
 
   it('fails closed when post-unlock endpoint resolution never settles', async () => {

@@ -17,6 +17,7 @@ export function useAuth() {
     dwnEndpoints,
     error,
     isLoading,
+    isLocking,
   } = useEnboxAuth();
 
   return {
@@ -33,5 +34,6 @@ export function useAuth() {
     dwnEndpoints,
     error,
     isLoading,
+    isLocking,
   };
 }
