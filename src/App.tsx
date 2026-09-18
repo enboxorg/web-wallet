@@ -24,6 +24,8 @@ import {
 } from '@/lib/passkeys';
 
 import { Loader } from '@/components/ui/Loader';
+import { Button } from '@/components/ui/Button';
+import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AppShell } from '@/components/layout/AppShell';
 import { DragDropOverlay } from '@/components/layout/DragDropOverlay';
@@ -151,6 +153,7 @@ function AuthGate() {
     unlock,
     lock,
     restore,
+    retryInitialization,
     adoptDwnEndpoints,
     error,
     isLoading,
@@ -239,6 +242,29 @@ function AuthGate() {
 
   // Still initialising the AuthManager
   if (!initialized) {
+    if (error) {
+      return (
+        <div className="flex min-h-dvh items-center justify-center bg-surface-0 px-4">
+          <div className="flex w-full max-w-sm flex-col gap-6">
+            <div className="flex flex-col items-center gap-4 text-center">
+              <EnboxLogo />
+              <div>
+                <h1 className="text-xl font-semibold text-text-primary">
+                  Could not initialise wallet
+                </h1>
+                <p className="mt-2 text-sm text-text-secondary">
+                  The wallet could not finish starting. You can safely try again.
+                </p>
+              </div>
+            </div>
+            <ErrorAlert message={error} />
+            <Button type="button" onClick={retryInitialization} className="w-full">
+              Try again
+            </Button>
+          </div>
+        </div>
+      );
+    }
     return <Loader message="Initialising wallet..." fullScreen />;
   }
 

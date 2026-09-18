@@ -99,6 +99,7 @@ export interface EnboxAuthContextValue {
     password: string,
     dwnEndpoints?: string[],
   ) => Promise<void>;
+  retryInitialization: () => void;
   lock: () => void;
   adoptDwnEndpoints: (endpoints: string[]) => void;
   dwnEndpoints: string[];
@@ -120,9 +121,11 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const authManagerRef = useRef<WalletAuthManager | null>(null);
   const authenticationAttemptRef = useRef(false);
+  const initializationRetryReadyRef = useRef(false);
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [initializationAttempt, setInitializationAttempt] = useState(0);
   const [dwnEndpoints, setDwnEndpoints] = useState<string[]>(getConfiguredDwnEndpoints);
 
   const { setInitialized, setUnlocked, lock: storeLock } = useAuthStore();
@@ -215,16 +218,38 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [restoreStoredSession, storeLock]);
 
+  const retryInitialization = useCallback(() => {
+    if (!initializationRetryReadyRef.current) return;
+    initializationRetryReadyRef.current = false;
+    setError(null);
+    setInitializationAttempt((attempt) => attempt + 1);
+  }, []);
+
   // ── Phase 1: Create AuthManager on mount ─────────────────────────
 
   useEffect(() => {
     let cancelled = false;
     let ownedAuth: WalletAuthManager | null = null;
+    initializationRetryReadyRef.current = false;
 
     async function init() {
-      const auth = await runEnboxPromise(createWalletAuthManagerEffect());
-      ownedAuth = auth;
+      let auth: WalletAuthManager;
+      try {
+        auth = await runEnboxPromise(createWalletAuthManagerEffect());
+      } catch (err) {
+        if (cancelled) return;
 
+        console.error('EnboxAuthProvider: Initialization failed:', err);
+        storeLock();
+        setInitialized(false, false);
+        initializationRetryReadyRef.current = true;
+        setError(err instanceof Error && err.message
+          ? err.message
+          : 'Wallet initialization failed. Try again.');
+        return;
+      }
+
+      ownedAuth = auth;
       if (cancelled) {
         await shutdownOwnedAuthManager(auth);
         return;
@@ -240,14 +265,14 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       } else {
         setInitialized(true, false);
       }
+      setError(null);
     }
 
-    init().catch((err) => {
-      console.error('EnboxAuthProvider: Initialization failed:', err);
-    });
+    void init();
 
     return () => {
       cancelled = true;
+      initializationRetryReadyRef.current = false;
       if (ownedAuth !== null) {
         if (authManagerRef.current === ownedAuth) {
           authManagerRef.current = null;
@@ -257,7 +282,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         void shutdownOwnedAuthManager(ownedAuth);
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [initializationAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Connect (first-time setup) ───────────────────────────────────
 
@@ -355,6 +380,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     connect,
     unlock,
     restore,
+    retryInitialization,
     lock,
     adoptDwnEndpoints: applyAuthoritativeDwnEndpoints,
     dwnEndpoints,

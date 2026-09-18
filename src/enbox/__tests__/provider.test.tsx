@@ -165,6 +165,18 @@ function AuthStatus() {
   return <span>{isLoading ? 'auth-loading' : error ?? 'auth-ready'}</span>;
 }
 
+function InitializationStatus() {
+  const { error, retryInitialization } = useEnboxAuth();
+  if (!error) return <span>initializing</span>;
+
+  return (
+    <div>
+      <span>{error}</span>
+      <button type="button" onClick={retryInitialization}>Retry initialization</button>
+    </div>
+  );
+}
+
 function RestoreButton({ dwnEndpoints }: { dwnEndpoints?: string[] }) {
   const { restore } = useEnboxAuth();
 
@@ -228,6 +240,32 @@ describe('EnboxAuthProvider restore flow', () => {
       version: 1,
       endpoints: TEST_ENDPOINTS,
     });
+  });
+
+  it('allows initialization to be retried after manager creation fails', async () => {
+    const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const auth = createAuth();
+    authMocks.create
+      .mockRejectedValueOnce(new Error('Storage is unavailable'))
+      .mockResolvedValueOnce(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <InitializationStatus />
+      </EnboxAuthProvider>,
+    );
+
+    expect(await screen.findByText('Storage is unavailable')).toBeInTheDocument();
+    expect(useAuthStore.getState().initialized).toBe(false);
+
+    const retry = screen.getByRole('button', { name: 'Retry initialization' });
+    await user.dblClick(retry);
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    expect(authMocks.create).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('initializing')).toBeInTheDocument();
+    consoleError.mockRestore();
   });
 
   it('rejects a concurrent auth action without tearing down the active attempt', async () => {

@@ -13,11 +13,13 @@ const mocks = vi.hoisted(() => ({
     firstTime   : false,
     agent       : null,
     dwnEndpoints: ['https://wallet-default.example/dwn'],
+    error       : null as string | null,
   },
   connect: vi.fn(),
   unlock: vi.fn(),
   restore: vi.fn(),
   lock: vi.fn(),
+  retryInitialization: vi.fn(),
   setPhrase: vi.fn(),
   createIdentity: vi.fn(),
 }));
@@ -33,7 +35,8 @@ vi.mock('@/enbox/hooks/use-auth', () => ({
     unlock    : mocks.unlock,
     restore   : mocks.restore,
     lock      : mocks.lock,
-    error     : null,
+    retryInitialization: mocks.retryInitialization,
+    error     : mocks.authState.error,
     isLoading : false,
   }),
 }));
@@ -145,8 +148,24 @@ describe('App auth restore flow', () => {
     mocks.authState.firstTime = false;
     mocks.authState.agent = null;
     mocks.authState.dwnEndpoints = ['https://wallet-default.example/dwn'];
+    mocks.authState.error = null;
     mocks.restore.mockResolvedValue(undefined);
     mocks.createIdentity.mockResolvedValue({ did: { uri: 'did:dht:alice' } });
+  });
+
+  it('offers a retry when wallet initialization fails', async () => {
+    const user = userEvent.setup();
+    mocks.authState.initialized = false;
+    mocks.authState.error = 'Storage is unavailable';
+
+    renderApp();
+
+    expect(screen.getByRole('heading', { name: 'Could not initialise wallet' })).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('Storage is unavailable');
+
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+
+    expect(mocks.retryInitialization).toHaveBeenCalledOnce();
   });
 
   it('clears forgot-PIN mode after successful phrase restore', async () => {
