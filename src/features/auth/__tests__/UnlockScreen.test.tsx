@@ -160,6 +160,43 @@ describe('UnlockScreen', () => {
     expect(requestSignal?.aborted).toBe(true);
   });
 
+  it('lets the user cancel a passkey request that never presents and retry', async () => {
+    let firstSignal: AbortSignal | undefined;
+    let attempt = 0;
+    const onUnlockWithPasskey = vi.fn((signal: AbortSignal) => {
+      attempt += 1;
+      if (attempt > 1) {
+        return Promise.resolve();
+      }
+      firstSignal = signal;
+      return new Promise<void>((_resolve, reject) => {
+        signal.addEventListener(
+          'abort',
+          () => reject(new DOMException('The operation was aborted', 'AbortError')),
+          { once: true },
+        );
+      });
+    });
+    const user = userEvent.setup();
+
+    render(
+      <UnlockScreen
+        {...defaults}
+        passkeyConfigured
+        passkeyAvailable
+        onUnlockWithPasskey={onUnlockWithPasskey}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /unlock using passkey/i }));
+    await user.click(screen.getByRole('button', { name: /cancel passkey request/i }));
+
+    expect(firstSignal?.aborted).toBe(true);
+    const retry = await screen.findByRole('button', { name: /unlock using passkey/i });
+    await user.click(retry);
+    expect(onUnlockWithPasskey).toHaveBeenCalledTimes(2);
+  });
+
   it('does not show PIN input when a passkey wallet is unavailable on this device', () => {
     render(
       <UnlockScreen

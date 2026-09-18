@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 
@@ -22,6 +22,9 @@ const mocks = vi.hoisted(() => ({
   retryInitialization: vi.fn(),
   setPhrase: vi.fn(),
   createIdentity: vi.fn(),
+  unlockWithStoredPasskey: vi.fn(),
+  passkeyConfigured: false,
+  passkeyController: null as AbortController | null,
 }));
 
 vi.mock('@/enbox/provider', () => ({
@@ -61,6 +64,12 @@ vi.mock('@/enbox/hooks/use-identity-mutations', () => ({
   useCreateIdentity: () => ({ mutateAsync: mocks.createIdentity }),
 }));
 
+vi.mock('@/lib/passkeys', () => ({
+  canUsePasskeyUnlock: () => true,
+  hasStoredPasskeyCredential: () => mocks.passkeyConfigured,
+  unlockWithStoredPasskey: mocks.unlockWithStoredPasskey,
+}));
+
 vi.mock('@/features/auth/SetupIdentityStep', () => ({
   SetupIdentityStep: ({
     onCreateIdentity,
@@ -86,12 +95,39 @@ vi.mock('@/stores/backup-seed-store', () => ({
 }));
 
 vi.mock('@/features/auth/UnlockScreen', () => ({
-  UnlockScreen: ({ onForgotPin }: { onForgotPin: () => void }) => (
+  UnlockScreen: ({
+    onForgotPin,
+    onUnlockWithPasskey,
+    passkeyConfigured,
+    passkeyAvailable,
+  }: {
+    onForgotPin: () => void;
+    onUnlockWithPasskey?: (signal: AbortSignal) => Promise<void>;
+    passkeyConfigured?: boolean;
+    passkeyAvailable?: boolean;
+  }) => (
     <section>
       <h1>Unlock Mock</h1>
       <button type="button" onClick={onForgotPin}>
         Forgot PIN
       </button>
+      {passkeyConfigured && passkeyAvailable && (
+        <>
+          <button
+            type="button"
+            onClick={() => {
+              const controller = new AbortController();
+              mocks.passkeyController = controller;
+              void onUnlockWithPasskey?.(controller.signal);
+            }}
+          >
+            Unlock using passkey
+          </button>
+          <button type="button" onClick={() => mocks.passkeyController?.abort()}>
+            Cancel passkey request
+          </button>
+        </>
+      )}
     </section>
   ),
 }));
@@ -149,7 +185,11 @@ describe('App auth restore flow', () => {
     mocks.authState.agent = null;
     mocks.authState.dwnEndpoints = ['https://wallet-default.example/dwn'];
     mocks.authState.error = null;
+    mocks.passkeyConfigured = false;
+    mocks.passkeyController = null;
     mocks.restore.mockResolvedValue(undefined);
+    mocks.unlock.mockResolvedValue(undefined);
+    mocks.unlockWithStoredPasskey.mockResolvedValue('vault-password');
     mocks.createIdentity.mockResolvedValue({ did: { uri: 'did:dht:alice' } });
   });
 
@@ -185,6 +225,25 @@ describe('App auth restore flow', () => {
       );
     });
     expect(screen.getByRole('heading', { name: 'Unlock Mock' })).toBeInTheDocument();
+  });
+
+  it('does not unlock after passkey cancellation while password retrieval is still pending', async () => {
+    let finishPasswordRetrieval!: (password: string) => void;
+    mocks.passkeyConfigured = true;
+    mocks.unlockWithStoredPasskey.mockImplementation(() => new Promise((resolve) => {
+      finishPasswordRetrieval = resolve;
+    }));
+    const user = userEvent.setup();
+    renderApp();
+
+    await user.click(screen.getByRole('button', { name: 'Unlock using passkey' }));
+    await waitFor(() => expect(mocks.unlockWithStoredPasskey).toHaveBeenCalledOnce());
+    await user.click(screen.getByRole('button', { name: 'Cancel passkey request' }));
+    expect(mocks.passkeyController?.signal.aborted).toBe(true);
+
+    await act(async () => finishPasswordRetrieval('vault-password'));
+
+    expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
   it('renders DWeb Connect before empty-wallet identity onboarding', async () => {
