@@ -43,8 +43,8 @@ describe('wallet auth effects', () => {
 
     expect(auth.connectVault).toHaveBeenCalledWith(expect.objectContaining({
       dwnEndpoints: ['https://dwn.example/path'],
-      sync: 'live',
     }));
+    expect(auth.connectVault.mock.calls[0][0]).not.toHaveProperty('sync');
   });
 
   it('omits an endpoint override during normal phrase recovery', async () => {
@@ -63,9 +63,9 @@ describe('wallet auth effects', () => {
     expect(options).toEqual(expect.objectContaining({
       password       : 'password',
       recoveryPhrase : 'recovery phrase',
-      sync           : 'live',
     }));
     expect(options).not.toHaveProperty('dwnEndpoints');
+    expect(options).not.toHaveProperty('sync');
   });
 
   it('normalizes recovery endpoints and rejects unsafe values before the SDK call', async () => {
