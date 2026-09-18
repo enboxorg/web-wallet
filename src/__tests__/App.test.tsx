@@ -5,6 +5,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 
 import App from '../App';
+import type { WalletRestoreOptions } from '@/enbox/types';
 
 const mocks = vi.hoisted(() => ({
   authState: {
@@ -97,7 +98,11 @@ vi.mock('@/features/auth/RestoreWalletPage', () => ({
   RestoreWalletPage: ({
     onRestore,
   }: {
-    onRestore: (phrase: string, pin: string, dwnEndpoints?: string[]) => Promise<void>;
+    onRestore: (
+      phrase: string,
+      pin: string,
+      options?: WalletRestoreOptions,
+    ) => Promise<void>;
   }) => (
     <section>
       <h1>Restore Mock</h1>

@@ -174,7 +174,7 @@ function RestoreButton({ dwnEndpoints }: { dwnEndpoints?: string[] }) {
       onClick={() => restore(
         TEST_PHRASE,
         '1234',
-        dwnEndpoints,
+        dwnEndpoints === undefined ? undefined : { dwnEndpoints },
       )}
     >
       Restore

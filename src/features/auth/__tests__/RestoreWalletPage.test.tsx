@@ -7,14 +7,14 @@ const RECOVERY_PHRASE =
 
 const passkeyMocks = vi.hoisted(() => ({
   canCreatePasskeyVault: vi.fn(() => false),
-  createPasskeyVault: vi.fn(),
+  replacePasskeyVault: vi.fn(),
   isPasskeyVaultUnsupportedError: vi.fn((_error: unknown) => false),
   markPinAuthMethod: vi.fn(),
 }));
 
 vi.mock('@/lib/passkeys', () => ({
   canCreatePasskeyVault: passkeyMocks.canCreatePasskeyVault,
-  createPasskeyVault: passkeyMocks.createPasskeyVault,
+  replacePasskeyVault: passkeyMocks.replacePasskeyVault,
   isPasskeyVaultUnsupportedError: passkeyMocks.isPasskeyVaultUnsupportedError,
   markPinAuthMethod: passkeyMocks.markPinAuthMethod,
 }));
@@ -88,7 +88,7 @@ describe('RestoreWalletPage', () => {
       expect(onRestore).toHaveBeenCalledWith(
         RECOVERY_PHRASE,
         '2468',
-        ['https://recovery.example/dwn/'],
+        { dwnEndpoints: ['https://recovery.example/dwn/'] },
       );
     });
     expect(passkeyMocks.markPinAuthMethod).toHaveBeenCalledOnce();
@@ -126,8 +126,9 @@ describe('RestoreWalletPage', () => {
 
   it('offers passkey restore from the synchronous runtime check', async () => {
     passkeyMocks.canCreatePasskeyVault.mockReturnValue(true);
-    passkeyMocks.createPasskeyVault.mockImplementation(
-      async (activate) => activate('wrapped-vault-password'),
+    const onVaultPasswordCommitted = vi.fn();
+    passkeyMocks.replacePasskeyVault.mockImplementation(
+      async (activate) => activate('wrapped-vault-password', onVaultPasswordCommitted),
     );
     const onRestore = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
@@ -147,16 +148,16 @@ describe('RestoreWalletPage', () => {
       expect(onRestore).toHaveBeenCalledWith(
         RECOVERY_PHRASE,
         'wrapped-vault-password',
-        undefined,
+        { onVaultPasswordCommitted },
       );
     });
-    expect(passkeyMocks.createPasskeyVault).toHaveBeenCalledWith(expect.any(Function));
+    expect(passkeyMocks.replacePasskeyVault).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('falls back without offering an unsupported passkey again', async () => {
     const unsupportedError = new Error('Passkey provider cannot wrap this vault.');
     passkeyMocks.canCreatePasskeyVault.mockReturnValue(true);
-    passkeyMocks.createPasskeyVault.mockRejectedValue(unsupportedError);
+    passkeyMocks.replacePasskeyVault.mockRejectedValue(unsupportedError);
     passkeyMocks.isPasskeyVaultUnsupportedError.mockImplementation(
       (error) => error === unsupportedError,
     );

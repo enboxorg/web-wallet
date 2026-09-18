@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster, toast } from 'sonner';
 
 import { EnboxAuthProvider } from '@/enbox/provider';
+import type { WalletRestoreOptions } from '@/enbox/types';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useIdentitySyncReconciliation } from '@/enbox/hooks/use-identity-sync-reconciliation';
@@ -228,9 +229,9 @@ function AuthGate() {
   }, [unlock]);
 
   const handleRestore = useCallback(
-    async (phrase: string, pin: string, dwnEndpoints?: string[]) => {
+    async (phrase: string, pin: string, options?: WalletRestoreOptions) => {
       setAuthUiError(null);
-      await restore(phrase, pin, dwnEndpoints);
+      await restore(phrase, pin, options);
       setForgotPin(false);
       setShowRestore(false);
     },

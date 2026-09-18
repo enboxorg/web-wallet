@@ -13,16 +13,21 @@ import {
 } from '@/lib/dwn-endpoints';
 import {
   canCreatePasskeyVault,
-  createPasskeyVault,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
+  replacePasskeyVault,
   type WalletAuthMethod,
 } from '@/lib/passkeys';
+import type { WalletRestoreOptions } from '@/enbox/types';
 import { EnboxLogo } from './EnboxLogo';
 import { cn } from '@/lib/utils';
 
 export interface RestoreWalletPageProps {
-  onRestore: (phrase: string, pin: string, dwnEndpoints?: string[]) => Promise<void>;
+  onRestore: (
+    phrase: string,
+    password: string,
+    options?: WalletRestoreOptions,
+  ) => Promise<void>;
   isLoading: boolean;
   error: string | null;
   onBack?: () => void;
@@ -81,7 +86,7 @@ export function RestoreWalletPage({
         await onRestore(
           phrase,
           pin,
-          isEndpointOverrideEnabled ? dwnEndpoints : undefined,
+          isEndpointOverrideEnabled ? { dwnEndpoints } : undefined,
         );
         markPinAuthMethod();
       } catch (err) {
@@ -98,11 +103,14 @@ export function RestoreWalletPage({
     setLocalError(null);
     setLocalLoading(true);
     try {
-      await createPasskeyVault(
-        (password) => onRestore(
+      await replacePasskeyVault(
+        (password, onVaultPasswordCommitted) => onRestore(
           phrase,
           password,
-          isEndpointOverrideEnabled ? dwnEndpoints : undefined,
+          {
+            ...(isEndpointOverrideEnabled ? { dwnEndpoints } : {}),
+            onVaultPasswordCommitted,
+          },
         ),
       );
     } catch (err) {

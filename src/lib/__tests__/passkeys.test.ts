@@ -10,6 +10,7 @@ import {
   markPinAuthMethod,
   PasskeyVaultUnsupportedError,
   preparePasskeyVaultPassword,
+  replacePasskeyVault,
   storePasskeyCredential,
   unlockWithStoredPasskey,
 } from '../passkeys';
@@ -75,6 +76,40 @@ describe('passkeys', () => {
 
     expect(hasStoredPasskeyCredential()).toBe(true);
     expect(getStoredAuthMethod()).toBe('passkey');
+  });
+
+  it('restores the working PIN when recovery rejects before changing the vault password', async () => {
+    markPinAuthMethod();
+    stubPasskeyRegistrationWithoutPrf();
+    const recoveryError = new Error('Recovery phrase does not match');
+
+    await expect(replacePasskeyVault(
+      async () => { throw recoveryError; },
+    )).rejects.toBe(recoveryError);
+
+    expect(hasStoredPasskeyCredential()).toBe(false);
+    expect(getStoredAuthMethod()).toBe('pin');
+  });
+
+  it('keeps the replacement passkey after the recovered vault changes its password', async () => {
+    storePasskeyCredential({ ...credential, credentialId: 'CQk' });
+    const previousCredential = localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+    stubPasskeyRegistrationWithoutPrf();
+    const finalizationError = new Error('Remote recovery failed');
+
+    await expect(replacePasskeyVault(
+      async (_password, onVaultPasswordCommitted) => {
+        expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY))
+          .not.toBe(previousCredential);
+        onVaultPasswordCommitted();
+        throw finalizationError;
+      },
+    )).rejects.toBe(finalizationError);
+
+    expect(hasStoredPasskeyCredential()).toBe(true);
+    expect(getStoredAuthMethod()).toBe('passkey');
+    expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY))
+      .not.toBe(previousCredential);
   });
 
   it('does not activate the vault when passkey metadata cannot be stored', async () => {

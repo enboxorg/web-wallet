@@ -30,7 +30,7 @@ import {
   sessionStorageSetEffect,
 } from '@/lib/browser-effects';
 import { withPromiseTimeout } from '@/lib/promise-timeout';
-import type { EnboxAgent } from './types';
+import type { EnboxAgent, WalletRestoreOptions } from './types';
 import {
   connectVaultEffect,
   createWalletAuthManagerEffect,
@@ -97,7 +97,7 @@ export interface EnboxAuthContextValue {
   restore: (
     recoveryPhrase: string,
     password: string,
-    dwnEndpoints?: string[],
+    options?: WalletRestoreOptions,
   ) => Promise<void>;
   lock: () => void;
   adoptDwnEndpoints: (endpoints: string[]) => void;
@@ -295,14 +295,14 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const restore = useCallback(async (
     recoveryPhrase: string,
     password: string,
-    dwnEndpoints?: string[],
+    options?: WalletRestoreOptions,
   ): Promise<void> => {
     const auth = authManagerRef.current;
     if (!auth) throw new Error('AuthManager not ready');
 
     return runAuthentication(auth, 'Restore failed', async () => {
       const session = await runEnboxPromise(
-        restoreFromPhraseEffect(auth, recoveryPhrase, password, dwnEndpoints),
+        restoreFromPhraseEffect(auth, recoveryPhrase, password, options),
       );
 
       await finishAuthentication(auth, session.agent, password);

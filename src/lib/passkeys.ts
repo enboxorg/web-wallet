@@ -155,6 +155,60 @@ export async function createPasskeyVault<T>(
   return activate(prepared.password);
 }
 
+interface StoredAuthSnapshot {
+  credential: string | null;
+  method: string | null;
+}
+
+function getStoredAuthSnapshot(): StoredAuthSnapshot {
+  return {
+    credential: localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY),
+    method: localStorage.getItem(AUTH_METHOD_STORAGE_KEY),
+  };
+}
+
+function restoreStoredAuthSnapshot(snapshot: StoredAuthSnapshot): void {
+  if (snapshot.credential === null) {
+    localStorage.removeItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+  } else {
+    localStorage.setItem(PASSKEY_CREDENTIAL_STORAGE_KEY, snapshot.credential);
+  }
+
+  if (snapshot.method === null) {
+    localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
+  } else {
+    localStorage.setItem(AUTH_METHOD_STORAGE_KEY, snapshot.method);
+  }
+}
+
+/**
+ * Stage a replacement passkey before recovery can change the vault password,
+ * but restore the working credential if recovery fails before that change is
+ * durable.
+ */
+export async function replacePasskeyVault<T>(
+  activate: (
+    password: string,
+    onVaultPasswordCommitted: () => void,
+  ) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const previous = getStoredAuthSnapshot();
+  let passwordCommitted = false;
+
+  try {
+    return await createPasskeyVault(
+      (password) => activate(password, () => { passwordCommitted = true; }),
+      signal,
+    );
+  } catch (error) {
+    if (!passwordCommitted) {
+      restoreStoredAuthSnapshot(previous);
+    }
+    throw error;
+  }
+}
+
 export function clearPasskeyCredential(): void {
   runEnboxSync(clearPasskeyCredentialEffect());
 }
