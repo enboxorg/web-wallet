@@ -24,6 +24,7 @@ import {
   preflightConnectRequest,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
+import { getConnectErrorMessage } from './connect-error';
 
 /** Outcome of fetching the sealed deep-link request. */
 export type DeepLinkOutcome = { request: ConnectRequest } | { error: string };
@@ -99,7 +100,7 @@ export function primeConnectDeepLink(): DeepLinkSession | undefined {
       return { request };
     } catch (err) {
       console.error('Connect flow error:', err);
-      return { error: (err as Error).message || 'Failed to process connection request.' };
+      return { error: getConnectErrorMessage(err, 'Failed to process connection request.') };
     }
   })();
 
