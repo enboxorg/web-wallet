@@ -222,6 +222,7 @@ function AuthGate() {
     setAuthUiError(null);
     try {
       const password = await unlockWithStoredPasskey(signal);
+      if (signal.aborted) return;
       await unlock(password);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
