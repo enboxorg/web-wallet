@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   generatePin: vi.fn(),
   waitForRelayCompletion: vi.fn(),
   queryProtocolSetupStatus: vi.fn(),
-  reconfigureProtocolsForOverride: vi.fn(),
   scannerHasCamera: vi.fn(),
   authState: { firstTime: false as boolean },
   connectVault: vi.fn(),
@@ -109,10 +108,6 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
-}));
-
-vi.mock('../protocol-override', () => ({
-  reconfigureProtocolsForOverride: mocks.reconfigureProtocolsForOverride,
 }));
 
 vi.mock('qr-scanner', () => ({
@@ -298,14 +293,15 @@ describe('AppConnectPage', () => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
     });
     expect(mocks.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
-    // Protocol preparation is owned by the approval ceremony itself
-    // (agent >=0.8.17) — the wallet no longer runs a pre-approval step.
+    // Protocol preparation is owned by the approval ceremony itself — the
+    // wallet no longer runs a pre-approval step.
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       connectRequest,
       '1234',
       60 * 60,
       mocks.agent,
+      [],
     );
     expect(mocks.publishWalletEvent).toHaveBeenCalledWith({
       _tag         : 'connect.approved',
@@ -499,6 +495,7 @@ describe('AppConnectPage', () => {
       '1234',
       9 * 60,
       mocks.agent,
+      [],
     ));
   });
 
@@ -527,6 +524,7 @@ describe('AppConnectPage', () => {
       '1234',
       seconds,
       mocks.agent,
+      [],
     ));
   });
 
@@ -570,6 +568,7 @@ describe('AppConnectPage', () => {
         '1234',
         60 * 60,
         mocks.agent,
+        [],
       );
     });
   });
@@ -718,7 +717,6 @@ describe('AppConnectPage', () => {
     mocks.queryProtocolSetupStatus.mockResolvedValue('override');
     mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockResolvedValue(undefined);
-    mocks.reconfigureProtocolsForOverride.mockResolvedValue(undefined);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
@@ -733,24 +731,18 @@ describe('AppConnectPage', () => {
     // Approving opens the confirmation dialog rather than connecting immediately.
     fireEvent.click(approve);
     const confirm = await screen.findByRole('button', { name: /replace & connect/i });
-    expect(mocks.reconfigureProtocolsForOverride).not.toHaveBeenCalled();
-
     fireEvent.click(confirm);
 
-    // The owner reconfigure runs (with the requested definition) before the ceremony.
-    await waitFor(() => expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledTimes(1));
-    expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledWith(
-      'did:dht:alice',
-      mocks.agent,
-      ['https://dwn.example'],
-      [connectRequest.permissionRequests[0].protocolDefinition],
-    );
-    expect(mocks.agent.identity.getDwnEndpoints).toHaveBeenCalledWith({
-      didUri  : 'did:dht:alice',
-      refresh : true,
-    });
-
+    // Confirmation hands only the approved protocol URI to the agent ceremony.
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
+    expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
+      'did:dht:alice',
+      connectRequest,
+      '1234',
+      expect.any(Number),
+      mocks.agent,
+      [connectRequest.permissionRequests[0].protocolDefinition.protocol],
+    );
     expect(await screen.findByText('1234')).toBeInTheDocument();
   });
 
@@ -924,6 +916,7 @@ describe('AppConnectPage', () => {
           '1234',
           60 * 60,
           mocks.agent,
+          [],
         );
       });
       expect(mocks.connectVault).toHaveBeenCalledWith('wrapped-vault-password', ['https://dwn.example']);

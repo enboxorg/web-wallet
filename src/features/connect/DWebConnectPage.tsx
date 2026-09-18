@@ -44,11 +44,9 @@ import {
 } from './connect-session-duration';
 import {
   getOverridableProtocols,
-  getProtocolDefinitionsToOverride,
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
 } from './use-protocol-setup-statuses';
-import { reconfigureProtocolsForOverride } from './protocol-override';
 import { claimConnectDecision } from './connect-decision';
 import { getConnectErrorMessage } from './connect-error';
 
@@ -243,36 +241,11 @@ export default function DWebConnectPage() {
       }
 
       setStatusMessage('Getting your profile ready...');
-      // If the owner opted into replacing a custom protocol installed with a
-      // different definition, author the replacement (locally + across owner
-      // endpoints) BEFORE the ceremony — it fails closed on a definition
-      // mismatch and offers no override flag. Once local + remote state matches
-      // the requested definition, the ceremony proceeds normally.
-      if (overrideAcknowledged) {
-        const definitionsToOverride = getProtocolDefinitionsToOverride(
-          connectRequest.permissionRequests,
-          protocolSetupStatuses,
-        );
-        if (definitionsToOverride.length > 0) {
-          setStatusMessage('Replacing protocol setup...');
-          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
-            didUri  : approveAsDid,
-            refresh : true,
-          });
-          await reconfigureProtocolsForOverride(
-            approveAsDid,
-            liveAgent,
-            dwnEndpoints,
-            definitionsToOverride,
-          );
-        }
-      }
-
-      // The ceremony owns protocol preparation end to end (agent >=0.8.17):
-      // install, encryption upgrades of policy-identical definitions, and
-      // fail-closed remote verification across reachable owner endpoints.
-      // It then creates and delivers the grants, grant keys, and session
-      // revocation grants, and returns the sealed response for the
+      // The agent ceremony owns protocol preparation end to end:
+      // install, explicitly approved definition replacement, encryption
+      // upgrades, and fail-closed remote verification across reachable owner
+      // endpoints. It then creates and delivers the grants, grant keys, and
+      // session revocation grants, and returns the sealed response for the
       // transport to post back.
       setStatusMessage('Creating grants...');
       const idToken = await approvePopupConnectRequest(
@@ -281,6 +254,7 @@ export default function DWebConnectPage() {
         transport.dappOrigin,
         sessionDurationSeconds,
         liveAgent,
+        overrideAcknowledged ? overridableProtocols : [],
       );
 
       setStatusMessage('Returning grants...');

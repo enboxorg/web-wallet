@@ -218,10 +218,18 @@ describe('connect-kernel', () => {
       const request = connectRequest({ requestedSessionTtlSeconds: 86_400 });
       const originalRequest = structuredClone(request);
 
-      await approveConnectRequest('did:dht:alice', request, '1234', 3_600, agent);
+      await approveConnectRequest(
+        'did:dht:alice',
+        request,
+        '1234',
+        3_600,
+        agent,
+        ['https://example.com/protocols/tasks'],
+      );
 
       expect(mocks.executeConnectApproval).toHaveBeenCalledWith({
         agent,
+        approvedProtocolOverrides : ['https://example.com/protocols/tasks'],
         approvedSessionTtlSeconds : 3_600,
         providerDid               : 'did:dht:alice',
         request,
@@ -348,11 +356,13 @@ describe('connect-kernel', () => {
           'https://app.example',
           604_800,
           agent,
+          ['https://example.com/protocols/tasks'],
         ),
       ).resolves.toBe('sealed-response-jwe');
 
       expect(mocks.executeConnectApproval).toHaveBeenCalledWith({
         agent,
+        approvedProtocolOverrides : ['https://example.com/protocols/tasks'],
         approvedSessionTtlSeconds : 604_800,
         providerDid               : 'did:dht:alice',
         request                   : expect.objectContaining({

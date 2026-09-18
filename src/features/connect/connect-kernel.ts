@@ -175,6 +175,7 @@ export function approveConnectRequestEffect(
   request: ConnectRequest,
   pin: string,
   approvedSessionTtlSeconds: number,
+  approvedProtocolOverrides: readonly string[] = [],
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
@@ -183,6 +184,7 @@ export function approveConnectRequestEffect(
       try: async () => {
         const approval = await executeConnectApproval({
           agent,
+          approvedProtocolOverrides,
           approvedSessionTtlSeconds,
           providerDid : selectedDid,
           request,
@@ -221,9 +223,16 @@ export function approveConnectRequest(
   pin: string,
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
+  approvedProtocolOverrides: readonly string[] = [],
 ): Promise<void> {
   return runEnboxPromise(
-    approveConnectRequestEffect(selectedDid, request, pin, approvedSessionTtlSeconds).pipe(
+    approveConnectRequestEffect(
+      selectedDid,
+      request,
+      pin,
+      approvedSessionTtlSeconds,
+      approvedProtocolOverrides,
+    ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
@@ -276,6 +285,7 @@ export function approvePopupConnectRequestEffect(
   request: ConnectRequest,
   dappOrigin: string,
   approvedSessionTtlSeconds: number,
+  approvedProtocolOverrides: readonly string[] = [],
 ) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
@@ -288,6 +298,7 @@ export function approvePopupConnectRequestEffect(
       try: async () => {
         const approval = await executeConnectApproval({
           agent,
+          approvedProtocolOverrides,
           approvedSessionTtlSeconds,
           providerDid : selectedDid,
           request     : approvalRequest,
@@ -311,6 +322,7 @@ export function approvePopupConnectRequest(
   dappOrigin: string,
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
+  approvedProtocolOverrides: readonly string[] = [],
 ): Promise<string> {
   return runEnboxPromise(
     approvePopupConnectRequestEffect(
@@ -318,6 +330,7 @@ export function approvePopupConnectRequest(
       request,
       dappOrigin,
       approvedSessionTtlSeconds,
+      approvedProtocolOverrides,
     ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),

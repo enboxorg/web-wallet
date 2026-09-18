@@ -41,11 +41,9 @@ import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOver
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import {
   getOverridableProtocols,
-  getProtocolDefinitionsToOverride,
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
 } from './use-protocol-setup-statuses';
-import { reconfigureProtocolsForOverride } from './protocol-override';
 import {
   approveConnectRequest,
   denyConnectRequest,
@@ -447,35 +445,12 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         throw new Error('This profile uses an ID type the app does not support.');
       }
 
-      // If the owner opted into replacing a custom protocol installed with a
-      // different definition, author the replacement (locally + across owner
-      // endpoints) BEFORE the ceremony. The connect ceremony fails closed on a
-      // definition mismatch and offers no override flag; once local + remote
-      // state matches the requested definition, it proceeds normally.
-      if (overrideAcknowledged) {
-        const definitionsToOverride = getProtocolDefinitionsToOverride(
-          connectionRequest.permissionRequests,
-          protocolSetupStatuses,
-        );
-        if (definitionsToOverride.length > 0) {
-          const dwnEndpoints = await liveAgent.identity.getDwnEndpoints({
-            didUri  : approveAsDid,
-            refresh : true,
-          });
-          await reconfigureProtocolsForOverride(
-            approveAsDid,
-            liveAgent,
-            dwnEndpoints,
-            definitionsToOverride,
-          );
-        }
-      }
-
-      // The ceremony owns protocol preparation end to end (agent >=0.8.17):
-      // install, encryption upgrades, and fail-closed remote verification
-      // across reachable owner endpoints. It then creates and delivers the
-      // grants, grant keys, and session revocation grants, and the sealed
-      // response is posted to the relay callback. The PIN strengthens the response encryption key and
+      // The agent ceremony owns protocol preparation end to end:
+      // install, explicitly approved definition replacement, encryption
+      // upgrades, and fail-closed remote verification across reachable owner
+      // endpoints. It then creates and delivers the grants, grant keys, and
+      // session revocation grants, and the sealed response is posted to the
+      // relay callback. The PIN strengthens the response encryption key and
       // never leaves this device except by the user typing it into the app.
       const generatedPin = await generatePin(4);
       setPin(generatedPin);
@@ -485,6 +460,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         generatedPin,
         sessionDurationSeconds,
         liveAgent,
+        overrideAcknowledged ? overridableProtocols : [],
       );
 
       // Permission-query freshness is secondary to a completed approval. The

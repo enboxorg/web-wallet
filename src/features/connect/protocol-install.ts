@@ -105,14 +105,12 @@ export async function queryProtocolSetupStatus(
     return inspection.status;
   }
 
-  // Enbox treats every authored-definition mismatch as a conflict. The wallet
-  // may offer an explicit owner override for a safe, non-canonical protocol;
-  // canonical definitions and owner-key conflicts remain hard-blocked.
-  const canonicalDefinition = getCanonicalProtocolDefinition(protocolDefinition.protocol);
+  // The agent owns the safety classification for authored-definition
+  // replacement. The wallet additionally pins its canonical protocols, which
+  // a connection request may never replace.
   if (
-    canonicalDefinition === undefined
-    && inspection.installedDefinition !== undefined
-    && !protocolDefinitionsMatch(inspection.installedDefinition, protocolDefinition)
+    inspection.definitionOverrideEligible === true
+    && getCanonicalProtocolDefinition(protocolDefinition.protocol) === undefined
   ) {
     return 'override';
   }

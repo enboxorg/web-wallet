@@ -63,26 +63,6 @@ export function getOverridableProtocols(statuses: ProtocolSetupStatusMap): strin
     .map(([protocol]) => protocol);
 }
 
-/**
- * The requested definitions to hand to the owner reconfigure: one per overridable
- * protocol (deduplicated — preflight guarantees a request carries a single
- * definition per protocol). Empty when nothing is overridable.
- */
-export function getProtocolDefinitionsToOverride(
-  permissions: ConnectPermissionRequest[],
-  statuses: ProtocolSetupStatusMap,
-): ConnectPermissionRequest['protocolDefinition'][] {
-  const overridable = new Set(getOverridableProtocols(statuses));
-  const byProtocol = new Map<string, ConnectPermissionRequest['protocolDefinition']>();
-  for (const permission of permissions) {
-    const definition = permission.protocolDefinition;
-    if (overridable.has(definition.protocol) && !byProtocol.has(definition.protocol)) {
-      byProtocol.set(definition.protocol, definition);
-    }
-  }
-  return [...byProtocol.values()];
-}
-
 export function useProtocolSetupStatuses(
   selectedDid: string,
   agent: ProtocolSetupAgent,
