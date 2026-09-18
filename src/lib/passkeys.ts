@@ -141,18 +141,26 @@ export function storePasskeyCredentialEffect(credential: StoredPasskeyCredential
   });
 }
 
+async function prepareAndStorePasskeyVaultPassword(signal?: AbortSignal): Promise<string> {
+  const prepared = await preparePasskeyVaultPassword(signal);
+  storePasskeyCredential(prepared.credential);
+  return prepared.password;
+}
+
 /**
  * Create the passkey metadata and persist its only recoverable copy before an
- * SDK operation can commit the generated vault password. Keep the metadata if
- * activation rejects: some SDK failures happen after the vault has mutated.
+ * SDK operation can commit the generated vault password. If activation is
+ * retried, reuse that staged credential: the vault may already require its
+ * password even though later setup work failed.
  */
 export async function createPasskeyVault<T>(
   activate: (password: string) => Promise<T>,
   signal?: AbortSignal,
 ): Promise<T> {
-  const prepared = await preparePasskeyVaultPassword(signal);
-  storePasskeyCredential(prepared.credential);
-  return activate(prepared.password);
+  const password = hasStoredPasskeyCredential()
+    ? await unlockWithStoredPasskey(signal)
+    : await prepareAndStorePasskeyVaultPassword(signal);
+  return activate(password);
 }
 
 interface StoredAuthSnapshot {
@@ -197,9 +205,10 @@ export async function replacePasskeyVault<T>(
   let passwordCommitted = false;
 
   try {
-    return await createPasskeyVault(
-      (password) => activate(password, () => { passwordCommitted = true; }),
-      signal,
+    const password = await prepareAndStorePasskeyVaultPassword(signal);
+    return await activate(
+      password,
+      () => { passwordCommitted = true; },
     );
   } catch (error) {
     if (!passwordCommitted) {

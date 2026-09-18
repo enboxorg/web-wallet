@@ -78,6 +78,22 @@ describe('passkeys', () => {
     expect(getStoredAuthMethod()).toBe('passkey');
   });
 
+  it('reuses the working passkey password when wallet setup is retried', async () => {
+    storeLocalPasskeyMetadata();
+    localStorage.setItem(AUTH_METHOD_STORAGE_KEY, 'passkey');
+    const storedCredential = localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+    const wrappingKey = { type: 'secret' };
+    const { create, get } = stubLocalPasskeyUnlock(wrappingKey);
+    const activate = vi.fn(async (password: string) => password);
+
+    await expect(createPasskeyVault(activate)).resolves.toBe('vault-password');
+
+    expect(activate).toHaveBeenCalledWith('vault-password');
+    expect(get).toHaveBeenCalledOnce();
+    expect(create).not.toHaveBeenCalled();
+    expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY)).toBe(storedCredential);
+  });
+
   it('restores the working PIN when recovery rejects before changing the vault password', async () => {
     markPinAuthMethod();
     stubPasskeyRegistrationWithoutPrf();
@@ -406,8 +422,19 @@ function stubLocalPasskeyUnlock(
   wrappingKey: unknown,
   indexedDb: unknown = createFakeIndexedDb({ getResult: wrappingKey }),
 ) {
+  const rawId = new Uint8Array([31, 32, 33, 34]).buffer;
+  const publicKey = new Uint8Array([35, 36, 37, 38]).buffer;
   const plaintext = new TextEncoder().encode('vault-password');
-  const supportCheck = vi.fn().mockResolvedValue(false);
+  const supportCheck = vi.fn().mockResolvedValue(true);
+  const create = vi.fn().mockResolvedValue({
+    type: 'public-key',
+    rawId,
+    response: {
+      getPublicKey: vi.fn(() => publicKey),
+      getPublicKeyAlgorithm: vi.fn(() => -7),
+    },
+    getClientExtensionResults: vi.fn(() => ({ prf: { enabled: false } })),
+  });
   const get = vi.fn((request: CredentialRequestOptions) => {
     const challenge = new Uint8Array(request.publicKey?.challenge as ArrayBuffer);
     const authenticatorData = new Uint8Array(33);
@@ -435,12 +462,14 @@ function stubLocalPasskeyUnlock(
   });
   vi.stubGlobal('navigator', {
     credentials: {
-      create: vi.fn(),
+      create,
       get,
     },
   });
   vi.stubGlobal('crypto', {
     subtle: {
+      generateKey: vi.fn().mockResolvedValue({ type: 'secret' }),
+      encrypt: vi.fn().mockResolvedValue(new Uint8Array([9, 10, 11]).buffer),
       digest: vi.fn().mockResolvedValue(toArrayBuffer(new Uint8Array([27, 28, 29]))),
       importKey: vi.fn().mockResolvedValue({ type: 'public' }),
       verify: vi.fn().mockResolvedValue(true),
@@ -453,7 +482,7 @@ function stubLocalPasskeyUnlock(
   });
   vi.stubGlobal('indexedDB', indexedDb);
 
-  return { get, supportCheck };
+  return { create, get, supportCheck };
 }
 
 function stubPendingPasskeyUnlock() {
