@@ -10,6 +10,11 @@ export type { RegistrationTokenData } from '@enbox/browser';
 
 export type EnboxAgent = EnboxPlatformAgent;
 
+export interface WalletRestoreOptions {
+  dwnEndpoints?: string[];
+  onVaultPasswordCommitted?: () => void;
+}
+
 /** A resolved identity profile (read model). */
 export interface IdentityProfile {
   did: string;

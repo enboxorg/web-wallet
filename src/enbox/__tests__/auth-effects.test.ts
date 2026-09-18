@@ -77,7 +77,7 @@ describe('wallet auth effects', () => {
       auth as any,
       'recovery phrase',
       'password',
-      ['https://DWN.Example/path/'],
+      { dwnEndpoints: ['https://DWN.Example/path/'] },
     ));
     expect(auth.restoreFromPhrase).toHaveBeenCalledWith(expect.objectContaining({
       dwnEndpoints: ['https://dwn.example/path'],
@@ -88,8 +88,26 @@ describe('wallet auth effects', () => {
       auth as any,
       'recovery phrase',
       'password',
-      ['http://remote.example/dwn'],
+      { dwnEndpoints: ['http://remote.example/dwn'] },
     ))).rejects.toThrow('HTTPS');
     expect(auth.restoreFromPhrase).not.toHaveBeenCalled();
+  });
+
+  it('forwards the vault password commit boundary to phrase recovery', async () => {
+    const onVaultPasswordCommitted = vi.fn();
+    const auth = {
+      restoreFromPhrase: vi.fn(async () => ({ agent: {} })),
+    };
+
+    await runEnboxPromise(restoreFromPhraseEffect(
+      auth as any,
+      'recovery phrase',
+      'password',
+      { onVaultPasswordCommitted },
+    ));
+
+    expect(auth.restoreFromPhrase).toHaveBeenCalledWith(expect.objectContaining({
+      onVaultPasswordCommitted,
+    }));
   });
 });

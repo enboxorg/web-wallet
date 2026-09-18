@@ -24,10 +24,9 @@ import { truncateDid } from '@/lib/utils';
 import { PIN_LENGTH } from '@/lib/constants';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
+  createPasskeyVault,
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
-  preparePasskeyVaultPassword,
-  storePasskeyCredential,
 } from '@/lib/passkeys';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
@@ -338,7 +337,6 @@ export default function DWebConnectPage() {
   async function completeOnboardingAndConnect(
     vaultPassword: string,
     viaPasskey: boolean,
-    afterVaultConnect?: () => void,
   ) {
     setPhase('connecting');
     setStatusMessage('Creating your wallet...');
@@ -355,7 +353,6 @@ export default function DWebConnectPage() {
     if (!liveAgent) {
       throw new Error('Wallet was created but could not be unlocked.');
     }
-    afterVaultConnect?.();
 
     setStatusMessage('Setting up your profile...');
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
@@ -370,11 +367,8 @@ export default function DWebConnectPage() {
     setOnboardError(null);
     setOnboardBusy(true);
     try {
-      const prepared = await preparePasskeyVaultPassword();
-      await completeOnboardingAndConnect(
-        prepared.password,
-        true,
-        () => storePasskeyCredential(prepared.credential),
+      await createPasskeyVault(
+        (password) => completeOnboardingAndConnect(password, true),
       );
     } catch (err) {
       setPhase('request');

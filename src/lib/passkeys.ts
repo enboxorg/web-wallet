@@ -141,6 +141,83 @@ export function storePasskeyCredentialEffect(credential: StoredPasskeyCredential
   });
 }
 
+async function prepareAndStorePasskeyVaultPassword(signal?: AbortSignal): Promise<string> {
+  const prepared = await preparePasskeyVaultPassword(signal);
+  storePasskeyCredential(prepared.credential);
+  return prepared.password;
+}
+
+/**
+ * Create the passkey metadata and persist its only recoverable copy before an
+ * SDK operation can commit the generated vault password. If activation is
+ * retried, reuse that staged credential: the vault may already require its
+ * password even though later setup work failed.
+ */
+export async function createPasskeyVault<T>(
+  activate: (password: string) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const password = hasStoredPasskeyCredential()
+    ? await unlockWithStoredPasskey(signal)
+    : await prepareAndStorePasskeyVaultPassword(signal);
+  return activate(password);
+}
+
+interface StoredAuthSnapshot {
+  credential: string | null;
+  method: string | null;
+}
+
+function getStoredAuthSnapshot(): StoredAuthSnapshot {
+  return {
+    credential: localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY),
+    method: localStorage.getItem(AUTH_METHOD_STORAGE_KEY),
+  };
+}
+
+function restoreStoredAuthSnapshot(snapshot: StoredAuthSnapshot): void {
+  if (snapshot.credential === null) {
+    localStorage.removeItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+  } else {
+    localStorage.setItem(PASSKEY_CREDENTIAL_STORAGE_KEY, snapshot.credential);
+  }
+
+  if (snapshot.method === null) {
+    localStorage.removeItem(AUTH_METHOD_STORAGE_KEY);
+  } else {
+    localStorage.setItem(AUTH_METHOD_STORAGE_KEY, snapshot.method);
+  }
+}
+
+/**
+ * Stage a replacement passkey before recovery can change the vault password,
+ * but restore the working credential if recovery fails before that change is
+ * durable.
+ */
+export async function replacePasskeyVault<T>(
+  activate: (
+    password: string,
+    onVaultPasswordCommitted: () => void,
+  ) => Promise<T>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const previous = getStoredAuthSnapshot();
+  let passwordCommitted = false;
+
+  try {
+    const password = await prepareAndStorePasskeyVaultPassword(signal);
+    return await activate(
+      password,
+      () => { passwordCommitted = true; },
+    );
+  } catch (error) {
+    if (!passwordCommitted) {
+      restoreStoredAuthSnapshot(previous);
+    }
+    throw error;
+  }
+}
+
 export function clearPasskeyCredential(): void {
   runEnboxSync(clearPasskeyCredentialEffect());
 }

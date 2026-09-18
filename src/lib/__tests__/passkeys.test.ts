@@ -4,11 +4,13 @@ import {
   canCreatePasskeyVault,
   canUsePasskeyUnlock,
   clearPasskeyCredential,
+  createPasskeyVault,
   getStoredAuthMethod,
   hasStoredPasskeyCredential,
   markPinAuthMethod,
   PasskeyVaultUnsupportedError,
   preparePasskeyVaultPassword,
+  replacePasskeyVault,
   storePasskeyCredential,
   unlockWithStoredPasskey,
 } from '../passkeys';
@@ -19,6 +21,7 @@ import {
 
 const credential = {
   version: 1 as const,
+  wrapping: 'prf' as const,
   credentialId: 'credential-id',
   salt: 'salt',
   iv: 'iv',
@@ -47,6 +50,97 @@ describe('passkeys', () => {
     expect(hasStoredPasskeyCredential()).toBe(true);
     expect(getStoredAuthMethod()).toBe('passkey');
     expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY)).toContain('credential-id');
+  });
+
+  it('stores passkey metadata before activating its vault password', async () => {
+    stubPasskeyRegistrationWithoutPrf();
+    const activate = vi.fn(async (password: string) => {
+      expect(hasStoredPasskeyCredential()).toBe(true);
+      expect(getStoredAuthMethod()).toBe('passkey');
+      expect(password).toEqual(expect.any(String));
+      return 'activated';
+    });
+
+    await expect(createPasskeyVault(activate)).resolves.toBe('activated');
+
+    expect(activate).toHaveBeenCalledOnce();
+  });
+
+  it('keeps passkey metadata when vault activation fails after a possible commit', async () => {
+    stubPasskeyRegistrationWithoutPrf();
+    const activationError = new Error('session finalization failed');
+
+    await expect(createPasskeyVault(
+      async () => { throw activationError; },
+    )).rejects.toBe(activationError);
+
+    expect(hasStoredPasskeyCredential()).toBe(true);
+    expect(getStoredAuthMethod()).toBe('passkey');
+  });
+
+  it('reuses the working passkey password when wallet setup is retried', async () => {
+    storeLocalPasskeyMetadata();
+    localStorage.setItem(AUTH_METHOD_STORAGE_KEY, 'passkey');
+    const storedCredential = localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+    const wrappingKey = { type: 'secret' };
+    const { create, get } = stubLocalPasskeyUnlock(wrappingKey);
+    const activate = vi.fn(async (password: string) => password);
+
+    await expect(createPasskeyVault(activate)).resolves.toBe('vault-password');
+
+    expect(activate).toHaveBeenCalledWith('vault-password');
+    expect(get).toHaveBeenCalledOnce();
+    expect(create).not.toHaveBeenCalled();
+    expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY)).toBe(storedCredential);
+  });
+
+  it('restores the working PIN when recovery rejects before changing the vault password', async () => {
+    markPinAuthMethod();
+    stubPasskeyRegistrationWithoutPrf();
+    const recoveryError = new Error('Recovery phrase does not match');
+
+    await expect(replacePasskeyVault(
+      async () => { throw recoveryError; },
+    )).rejects.toBe(recoveryError);
+
+    expect(hasStoredPasskeyCredential()).toBe(false);
+    expect(getStoredAuthMethod()).toBe('pin');
+  });
+
+  it('keeps the replacement passkey after the recovered vault changes its password', async () => {
+    storePasskeyCredential({ ...credential, credentialId: 'CQk' });
+    const previousCredential = localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY);
+    stubPasskeyRegistrationWithoutPrf();
+    const finalizationError = new Error('Remote recovery failed');
+
+    await expect(replacePasskeyVault(
+      async (_password, onVaultPasswordCommitted) => {
+        expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY))
+          .not.toBe(previousCredential);
+        onVaultPasswordCommitted();
+        throw finalizationError;
+      },
+    )).rejects.toBe(finalizationError);
+
+    expect(hasStoredPasskeyCredential()).toBe(true);
+    expect(getStoredAuthMethod()).toBe('passkey');
+    expect(localStorage.getItem(PASSKEY_CREDENTIAL_STORAGE_KEY))
+      .not.toBe(previousCredential);
+  });
+
+  it('does not activate the vault when passkey metadata cannot be stored', async () => {
+    stubPasskeyRegistrationWithoutPrf();
+    const storageError = new Error('storage unavailable');
+    const setItem = vi.spyOn(localStorage, 'setItem')
+      .mockImplementation(() => { throw storageError; });
+    const activate = vi.fn(async () => undefined);
+
+    try {
+      await expect(createPasskeyVault(activate)).rejects.toBe(storageError);
+      expect(activate).not.toHaveBeenCalled();
+    } finally {
+      setItem.mockRestore();
+    }
   });
 
   it('clears passkey metadata and passkey auth method', () => {
@@ -328,8 +422,19 @@ function stubLocalPasskeyUnlock(
   wrappingKey: unknown,
   indexedDb: unknown = createFakeIndexedDb({ getResult: wrappingKey }),
 ) {
+  const rawId = new Uint8Array([31, 32, 33, 34]).buffer;
+  const publicKey = new Uint8Array([35, 36, 37, 38]).buffer;
   const plaintext = new TextEncoder().encode('vault-password');
-  const supportCheck = vi.fn().mockResolvedValue(false);
+  const supportCheck = vi.fn().mockResolvedValue(true);
+  const create = vi.fn().mockResolvedValue({
+    type: 'public-key',
+    rawId,
+    response: {
+      getPublicKey: vi.fn(() => publicKey),
+      getPublicKeyAlgorithm: vi.fn(() => -7),
+    },
+    getClientExtensionResults: vi.fn(() => ({ prf: { enabled: false } })),
+  });
   const get = vi.fn((request: CredentialRequestOptions) => {
     const challenge = new Uint8Array(request.publicKey?.challenge as ArrayBuffer);
     const authenticatorData = new Uint8Array(33);
@@ -357,12 +462,14 @@ function stubLocalPasskeyUnlock(
   });
   vi.stubGlobal('navigator', {
     credentials: {
-      create: vi.fn(),
+      create,
       get,
     },
   });
   vi.stubGlobal('crypto', {
     subtle: {
+      generateKey: vi.fn().mockResolvedValue({ type: 'secret' }),
+      encrypt: vi.fn().mockResolvedValue(new Uint8Array([9, 10, 11]).buffer),
       digest: vi.fn().mockResolvedValue(toArrayBuffer(new Uint8Array([27, 28, 29]))),
       importKey: vi.fn().mockResolvedValue({ type: 'public' }),
       verify: vi.fn().mockResolvedValue(true),
@@ -375,7 +482,7 @@ function stubLocalPasskeyUnlock(
   });
   vi.stubGlobal('indexedDB', indexedDb);
 
-  return { get, supportCheck };
+  return { create, get, supportCheck };
 }
 
 function stubPendingPasskeyUnlock() {

@@ -23,9 +23,8 @@ const mocks = vi.hoisted(() => ({
   authState: { firstTime: false as boolean },
   connectVault: vi.fn(),
   autoCreateIdentity: vi.fn(),
-  preparePasskeyVaultPassword: vi.fn(),
+  createPasskeyVault: vi.fn(),
   publishWalletEvent: vi.fn(),
-  storePasskeyCredential: vi.fn(),
   allPermissions: [] as any[],
   allPermissionsPending: false,
   allPermissionsError: false,
@@ -66,8 +65,7 @@ vi.mock('@/lib/auto-identity', async (importOriginal) => ({
 
 vi.mock('@/lib/passkeys', async (importOriginal) => ({
   ...await importOriginal<typeof import('@/lib/passkeys')>(),
-  preparePasskeyVaultPassword: mocks.preparePasskeyVaultPassword,
-  storePasskeyCredential: mocks.storePasskeyCredential,
+  createPasskeyVault: mocks.createPasskeyVault,
 }));
 
 vi.mock('@/enbox/hooks/use-identities', () => ({
@@ -887,6 +885,9 @@ describe('AppConnectPage', () => {
 
   describe('deep-link arrival with no wallet (relay-path onboarding)', () => {
     beforeEach(() => {
+      mocks.createPasskeyVault.mockImplementation(
+        async (activate) => activate('wrapped-vault-password'),
+      );
       mocks.authState.firstTime = true;
       useAuthStore.setState({
         initialized: true,
@@ -896,10 +897,6 @@ describe('AppConnectPage', () => {
       mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
       mocks.generatePin.mockResolvedValue('1234');
       mocks.approveConnectRequest.mockResolvedValue(undefined);
-      mocks.preparePasskeyVaultPassword.mockResolvedValue({
-        password: 'wrapped-vault-password',
-        credential: { credentialId: 'cred-1' },
-      });
       // connect() unlocks the vault: reflect that in the store so the
       // approve flow finds the live agent right after onboarding.
       mocks.connectVault.mockImplementation(async () => {
@@ -931,8 +928,8 @@ describe('AppConnectPage', () => {
       });
       expect(mocks.connectVault).toHaveBeenCalledWith('wrapped-vault-password', ['https://dwn.example']);
       expect(mocks.autoCreateIdentity).toHaveBeenCalledWith(mocks.agent, ['https://dwn.example']);
-      expect(mocks.storePasskeyCredential).toHaveBeenCalledWith({ credentialId: 'cred-1' });
-      expect(mocks.storePasskeyCredential.mock.invocationCallOrder[0])
+      expect(mocks.createPasskeyVault).toHaveBeenCalledWith(expect.any(Function));
+      expect(mocks.createPasskeyVault.mock.invocationCallOrder[0])
         .toBeLessThan(mocks.approveConnectRequest.mock.invocationCallOrder[0]);
 
       // The pairing code screen closes the loop.

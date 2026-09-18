@@ -8,6 +8,7 @@ import { DwnRegistrationError, sdkError } from './effect/errors';
 import { fetchWithEffectSignal, withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
 import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
+import type { WalletRestoreOptions } from './types';
 
 export type WalletAuthManager = Awaited<ReturnType<typeof AuthManager.create>>;
 
@@ -92,15 +93,18 @@ export function restoreFromPhraseEffect(
   auth: WalletAuthManager,
   recoveryPhrase: string,
   password: string,
-  dwnEndpoints?: string[],
+  options: WalletRestoreOptions = {},
 ) {
   return Effect.tryPromise({
     try: () => auth.restoreFromPhrase({
       password,
       recoveryPhrase,
-      ...(dwnEndpoints === undefined
+      ...(options.dwnEndpoints === undefined
         ? {}
-        : { dwnEndpoints: normalizeDwnEndpoints(dwnEndpoints) }),
+        : { dwnEndpoints: normalizeDwnEndpoints(options.dwnEndpoints) }),
+      ...(options.onVaultPasswordCommitted === undefined
+        ? {}
+        : { onVaultPasswordCommitted: options.onVaultPasswordCommitted }),
     }),
     catch: sdkError('authManager.restoreFromPhrase'),
   });

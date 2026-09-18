@@ -7,18 +7,16 @@ const RECOVERY_PHRASE =
 
 const passkeyMocks = vi.hoisted(() => ({
   canCreatePasskeyVault: vi.fn(() => false),
+  replacePasskeyVault: vi.fn(),
   isPasskeyVaultUnsupportedError: vi.fn((_error: unknown) => false),
   markPinAuthMethod: vi.fn(),
-  preparePasskeyVaultPassword: vi.fn(),
-  storePasskeyCredential: vi.fn(),
 }));
 
 vi.mock('@/lib/passkeys', () => ({
   canCreatePasskeyVault: passkeyMocks.canCreatePasskeyVault,
+  replacePasskeyVault: passkeyMocks.replacePasskeyVault,
   isPasskeyVaultUnsupportedError: passkeyMocks.isPasskeyVaultUnsupportedError,
   markPinAuthMethod: passkeyMocks.markPinAuthMethod,
-  preparePasskeyVaultPassword: passkeyMocks.preparePasskeyVaultPassword,
-  storePasskeyCredential: passkeyMocks.storePasskeyCredential,
 }));
 
 vi.mock('@/components/ui/SeedPhraseInput', () => ({
@@ -90,7 +88,7 @@ describe('RestoreWalletPage', () => {
       expect(onRestore).toHaveBeenCalledWith(
         RECOVERY_PHRASE,
         '2468',
-        ['https://recovery.example/dwn/'],
+        { dwnEndpoints: ['https://recovery.example/dwn/'] },
       );
     });
     expect(passkeyMocks.markPinAuthMethod).toHaveBeenCalledOnce();
@@ -128,10 +126,10 @@ describe('RestoreWalletPage', () => {
 
   it('offers passkey restore from the synchronous runtime check', async () => {
     passkeyMocks.canCreatePasskeyVault.mockReturnValue(true);
-    passkeyMocks.preparePasskeyVaultPassword.mockResolvedValue({
-      password: 'wrapped-vault-password',
-      credential: { credentialId: 'cred-1' },
-    });
+    const onVaultPasswordCommitted = vi.fn();
+    passkeyMocks.replacePasskeyVault.mockImplementation(
+      async (activate) => activate('wrapped-vault-password', onVaultPasswordCommitted),
+    );
     const onRestore = vi.fn().mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(
@@ -150,16 +148,16 @@ describe('RestoreWalletPage', () => {
       expect(onRestore).toHaveBeenCalledWith(
         RECOVERY_PHRASE,
         'wrapped-vault-password',
-        undefined,
+        { onVaultPasswordCommitted },
       );
     });
-    expect(passkeyMocks.storePasskeyCredential).toHaveBeenCalledWith({ credentialId: 'cred-1' });
+    expect(passkeyMocks.replacePasskeyVault).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('falls back without offering an unsupported passkey again', async () => {
     const unsupportedError = new Error('Passkey provider cannot wrap this vault.');
     passkeyMocks.canCreatePasskeyVault.mockReturnValue(true);
-    passkeyMocks.preparePasskeyVaultPassword.mockRejectedValue(unsupportedError);
+    passkeyMocks.replacePasskeyVault.mockRejectedValue(unsupportedError);
     passkeyMocks.isPasskeyVaultUnsupportedError.mockImplementation(
       (error) => error === unsupportedError,
     );
