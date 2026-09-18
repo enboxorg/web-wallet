@@ -10,7 +10,6 @@
  * - DWN tenant registration when a DID is created or gains a new endpoint
  * - Inactivity auto-lock timer
  * - Session vault password caching for same-tab refresh persistence
- * - Starting stored-session sync after the local session is ready
  */
 
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
@@ -38,7 +37,6 @@ import {
   lockAuthManagerEffect,
   restoreFromPhraseEffect,
   restoreSessionEffect,
-  startWalletSyncEffect,
   type WalletAuthManager,
 } from './auth-effects';
 import { runEnboxPromise, runEnboxSync } from './effect/runtime';
@@ -180,14 +178,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
   }, [storeLock]);
 
-  const startRestoredSessionSync = useCallback((auth: WalletAuthManager): void => {
-    void runEnboxPromise(startWalletSyncEffect(auth)).catch((err: unknown) => {
-      if (authManagerRef.current === auth && !auth.isLocked) {
-        console.warn('EnboxAuthProvider: Background sync failed:', err);
-      }
-    });
-  }, []);
-
   const restoreStoredSession = useCallback(async (
     auth: WalletAuthManager,
     password: string,
@@ -196,9 +186,8 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     if (!session) return false;
 
     await finishAuthentication(auth, session.agent, password);
-    startRestoredSessionSync(auth);
     return true;
-  }, [finishAuthentication, startRestoredSessionSync]);
+  }, [finishAuthentication]);
 
   // ── Auto-restore from cached session vault password ──────────────
 
