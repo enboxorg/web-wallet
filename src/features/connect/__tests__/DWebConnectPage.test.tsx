@@ -24,7 +24,6 @@ const mocks = vi.hoisted(() => {
     approvePopupConnectRequest: vi.fn(),
     createTransport: vi.fn(),
     queryProtocolSetupStatus: vi.fn(),
-    reconfigureProtocolsForOverride: vi.fn(),
     publishWalletEvent: vi.fn(),
     transport,
     permissions: [] as any[],
@@ -114,10 +113,6 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
 vi.mock('../protocol-install', async (importOriginal) => ({
   ...await importOriginal<typeof import('../protocol-install')>(),
   queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
-}));
-
-vi.mock('../protocol-override', () => ({
-  reconfigureProtocolsForOverride: mocks.reconfigureProtocolsForOverride,
 }));
 
 const permissionRequest = {
@@ -265,6 +260,7 @@ describe('DWebConnectPage', () => {
       'https://app.example',
       60 * 60,
       mocks.agent,
+      [],
     );
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
     expect(mocks.publishWalletEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -295,6 +291,7 @@ describe('DWebConnectPage', () => {
       'https://app.example',
       9 * 60,
       mocks.agent,
+      [],
     ));
   });
 
@@ -318,12 +315,12 @@ describe('DWebConnectPage', () => {
       'https://app.example',
       seconds,
       mocks.agent,
+      [],
     ));
   });
 
   it('replaces an overridable protocol only after opt-in and confirmation', async () => {
     mocks.queryProtocolSetupStatus.mockResolvedValue('override');
-    mocks.reconfigureProtocolsForOverride.mockResolvedValue(undefined);
 
     render(<DWebConnectPage />);
 
@@ -338,17 +335,17 @@ describe('DWebConnectPage', () => {
     // Approving opens the confirmation dialog rather than connecting immediately.
     fireEvent.click(approve);
     const confirm = await screen.findByRole('button', { name: /replace & connect/i });
-    expect(mocks.reconfigureProtocolsForOverride).not.toHaveBeenCalled();
-
     fireEvent.click(confirm);
 
-    // The owner reconfigure runs (with the requested definition) before the ceremony.
-    await waitFor(() => expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledTimes(1));
-    expect(mocks.reconfigureProtocolsForOverride).toHaveBeenCalledWith(
+    // Confirmation hands only the approved protocol URI to the agent ceremony.
+    await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
+      expect.objectContaining({ permissionRequests: [permissionRequest] }),
+      'https://app.example',
+      expect.any(Number),
       mocks.agent,
-      [permissionRequest.protocolDefinition],
-    );
+      [permissionRequest.protocolDefinition.protocol],
+    ));
 
     await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe'));
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
@@ -542,6 +539,7 @@ describe('DWebConnectPage', () => {
         'https://app.example',
         60 * 60,
         mocks.agent,
+        [],
       );
     });
   });

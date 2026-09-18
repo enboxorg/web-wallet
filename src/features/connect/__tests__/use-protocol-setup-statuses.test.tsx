@@ -4,7 +4,6 @@ import type { ConnectPermissionRequest } from '@enbox/connect';
 
 import {
   getOverridableProtocols,
-  getProtocolDefinitionsToOverride,
   protocolSetupAllowsApproval,
   useProtocolSetupStatuses,
 } from '../use-protocol-setup-statuses';
@@ -60,17 +59,15 @@ describe('useProtocolSetupStatuses', () => {
     ).toBe(false);
   });
 
-  it('lists overridable protocols and the definitions to replace', () => {
+  it('lists only protocols with an overridable conflict', () => {
     const statuses = {
       [protocolDefinition.protocol]: 'override' as const,
       'https://example.com/protocols/ready': 'configured' as const,
     };
     expect(getOverridableProtocols(statuses)).toEqual([protocolDefinition.protocol]);
-    expect(getProtocolDefinitionsToOverride(permissions, statuses)).toEqual([protocolDefinition]);
-    // Nothing overridable → no definitions to replace.
-    expect(
-      getProtocolDefinitionsToOverride(permissions, { [protocolDefinition.protocol]: 'configured' }),
-    ).toEqual([]);
+    expect(getOverridableProtocols({
+      [protocolDefinition.protocol]: 'configured',
+    })).toEqual([]);
   });
 
   it('returns checking synchronously when the selected identity changes', async () => {
