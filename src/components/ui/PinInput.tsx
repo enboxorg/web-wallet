@@ -21,8 +21,15 @@ export function PinInput({
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  const updatePinCompletion = useCallback((next: string[]) => {
+    const isComplete = next.every((digit) => digit !== '');
+    setComplete(isComplete);
+    if (isComplete) onComplete(next.join(''));
+  }, [onComplete]);
+
   // Reset values when length changes
   useEffect(() => {
+    setComplete(false);
     setValues(Array(length).fill(''));
   }, [length]);
 
@@ -106,15 +113,12 @@ export function PinInput({
         inputRefs.current[target + 1]?.focus();
       }
 
-      if (next.every((v) => v !== '')) {
-        setComplete(true);
-        setTimeout(() => onComplete(next.join('')), 200);
-      }
+      updatePinCompletion(next);
     };
 
     document.addEventListener('keydown', handleGlobalKeyDown);
     return () => document.removeEventListener('keydown', handleGlobalKeyDown);
-  }, [autoFocus, disabled, values, length, onComplete]);
+  }, [autoFocus, disabled, values, length, updatePinCompletion]);
 
   // Click anywhere on the container to focus the first empty input
   const handleContainerClick = useCallback(() => {
@@ -139,12 +143,9 @@ export function PinInput({
         focusInput(index + 1);
       }
 
-      if (digit && next.every((v) => v !== '')) {
-        setComplete(true);
-        setTimeout(() => onComplete(next.join('')), 200);
-      }
+      updatePinCompletion(next);
     },
-    [values, length, onComplete, focusInput],
+    [values, length, focusInput, updatePinCompletion],
   );
 
   const handleKeyDown = useCallback(
@@ -154,16 +155,18 @@ export function PinInput({
           const next = [...values];
           next[index] = '';
           setValues(next);
+          updatePinCompletion(next);
         } else if (index > 0) {
           focusInput(index - 1);
           const next = [...values];
           next[index - 1] = '';
           setValues(next);
+          updatePinCompletion(next);
         }
         e.preventDefault();
       }
     },
-    [values, focusInput],
+    [values, focusInput, updatePinCompletion],
   );
 
   const handlePaste = useCallback(
@@ -177,15 +180,13 @@ export function PinInput({
         next[i] = pasted[i];
       }
       setValues(next);
+      updatePinCompletion(next);
 
-      if (pasted.length === length) {
-        setComplete(true);
-        setTimeout(() => onComplete(next.join('')), 200);
-      } else {
+      if (pasted.length < length) {
         focusInput(Math.min(pasted.length, length - 1));
       }
     },
-    [length, onComplete, focusInput],
+    [length, focusInput, updatePinCompletion],
   );
 
   return (

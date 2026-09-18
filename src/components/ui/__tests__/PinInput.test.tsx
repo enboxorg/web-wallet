@@ -73,6 +73,22 @@ describe('PinInput', () => {
     });
   });
 
+  it('submits a corrected PIN again after the user edits it', () => {
+    const onComplete = vi.fn();
+    render(<PinInput onComplete={onComplete} />);
+    const inputs = screen.getAllByRole('textbox');
+    fireEvent.paste(inputs[0], {
+      clipboardData: { getData: () => '5678' },
+    });
+
+    fireEvent.keyDown(inputs[3], { key: 'Backspace' });
+    fireEvent.change(inputs[3], { target: { value: '9' } });
+
+    expect(onComplete).toHaveBeenCalledTimes(2);
+    expect(onComplete).toHaveBeenNthCalledWith(1, '5678');
+    expect(onComplete).toHaveBeenNthCalledWith(2, '5679');
+  });
+
   it('ignores non-digit characters in paste', () => {
     const onComplete = vi.fn();
     render(<PinInput onComplete={onComplete} />);

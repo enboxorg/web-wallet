@@ -8,13 +8,22 @@ import { EnboxLogo } from './EnboxLogo';
 import { cn } from '@/lib/utils';
 
 export interface UnlockScreenProps {
-  onUnlock: (pin: string) => void;
+  onUnlock: (pin: string) => Promise<void>;
   onUnlockWithPasskey?: (signal: AbortSignal) => Promise<void>;
   onForgotPin?: () => void;
   error: string | null;
   isLoading: boolean;
   passkeyConfigured?: boolean;
   passkeyAvailable?: boolean;
+}
+
+async function settleParentHandledUnlock(attempt: () => Promise<void>): Promise<void> {
+  try {
+    await attempt();
+  } catch {
+    // The parent owns the user-facing error. Event handlers still need to
+    // settle rejected attempts so they never become unhandled promises.
+  }
 }
 
 export function UnlockScreen({
@@ -38,9 +47,8 @@ export function UnlockScreen({
 
   const handleComplete = useCallback(
     (pin: string) => {
-      if (!busy) {
-        onUnlock(pin);
-      }
+      if (busy) return;
+      void settleParentHandledUnlock(() => onUnlock(pin));
     },
     [onUnlock, busy],
   );
@@ -52,10 +60,7 @@ export function UnlockScreen({
     passkeyAbortRef.current = controller;
     setPasskeyLoading(true);
     try {
-      await onUnlockWithPasskey(controller.signal);
-    } catch {
-      // The parent owns the user-facing error. Consume the event-handler
-      // rejection so cancellation cannot become an unhandled promise.
+      await settleParentHandledUnlock(() => onUnlockWithPasskey(controller.signal));
     } finally {
       if (passkeyAbortRef.current === controller) {
         passkeyAbortRef.current = null;
