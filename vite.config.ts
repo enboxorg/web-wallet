@@ -4,7 +4,6 @@ import path from 'path';
 import react from '@vitejs/plugin-react';
 import svgr from 'vite-plugin-svgr';
 import tailwindcss from '@tailwindcss/vite';
-import nodePolyfills from 'vite-plugin-node-stdlib-browser';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const browserPkg = JSON.parse(fs.readFileSync(
@@ -46,7 +45,6 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       svgr(),
       react(),
-      nodePolyfills(),
       productBrandPlugin(brand),
       VitePWA({
         strategies: 'injectManifest',
@@ -110,8 +108,7 @@ export default defineConfig(({ mode }) => {
                 id.includes('qrcode')
               )
                 return 'vendor-ui';
-              // Everything else (including @enbox/* and its transitive deps
-              // like node-stdlib-browser, multiformats, etc.) stays in one
+              // Everything else (including @enbox/* and its transitive deps) stays in one
               // chunk to avoid circular-dependency initialisation errors.
             }
           },

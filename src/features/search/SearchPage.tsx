@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { PublicIdentityCard } from '@/components/identity/PublicIdentityCard';
-import { useBlobUrl } from '@/enbox/hooks/use-blob-url';
 import { truncateDid } from '@/lib/utils';
 import { usePublicProfile } from './public-profile';
 import { runEnboxSync } from '@/enbox/effect/runtime';
@@ -15,7 +14,6 @@ import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effe
 
 const SEARCH_HISTORY_KEY = 'enbox:searchHistory';
 const MAX_HISTORY = 5;
-const URL_RELEASE_DELAY_MS = 60_000;
 
 function getSearchHistory(): string[] {
   try {
@@ -52,18 +50,13 @@ export default function SearchPage() {
     }
   }, [routeDid]);
 
-  const {
-    data: profile,
-    isLoading,
-    isError,
-    error,
-  } = usePublicProfile(searchDid, canSearch);
-  const avatarUrl = useBlobUrl(profile?.avatar, URL_RELEASE_DELAY_MS);
-  const heroUrl = useBlobUrl(profile?.hero, URL_RELEASE_DELAY_MS);
+  const profile = usePublicProfile(searchDid, canSearch);
+  const isLoading = canSearch && (profile.status === 'idle' || profile.status === 'loading');
+  const isError = profile.status === 'error';
 
   // Track successful searches in history
   useEffect(() => {
-    if (profile && searchDid) {
+    if (profile.status === 'settled' && searchDid) {
       addToSearchHistory(searchDid);
       setSearchHistory(getSearchHistory());
     }
@@ -129,23 +122,23 @@ export default function SearchPage() {
         <div className="flex flex-col items-center gap-3 rounded-lg border border-error/30 bg-error/5 p-8 text-center">
           <AlertCircle className="h-10 w-10 text-error" />
           <p className="text-sm text-error">
-            {(error as Error)?.message ?? "We couldn't find that ID. It may be mistyped or unreachable."}
+            {profile.fields.profile.failure?.message ?? "We couldn't find that ID. It may be mistyped or unreachable."}
           </p>
         </div>
       )}
 
       {/* Result */}
-      {profile && !isLoading && !isError && (
+      {profile.status === 'settled' && !isLoading && !isError && (
         <div>
           <h2 className="mb-3 text-sm font-medium text-text-secondary">Result</h2>
           {profile.displayName ? (
             <PublicIdentityCard
-              did={profile.did}
+              did={searchDid}
               displayName={profile.displayName}
               tagline={profile.tagline}
               bio={profile.bio}
-              avatarUrl={avatarUrl}
-              heroUrl={heroUrl}
+              avatarUrl={profile.avatarUrl}
+              heroUrl={profile.heroUrl}
             />
           ) : (
             <div className="flex flex-col items-center gap-3 rounded-lg border border-border-default bg-surface-1 p-8 text-center">
@@ -156,7 +149,7 @@ export default function SearchPage() {
                   This DID exists but has no public profile.
                 </p>
                 <p className="mt-2 font-mono text-xs text-text-ghost break-all">
-                  {profile.did}
+                  {searchDid}
                 </p>
               </div>
             </div>

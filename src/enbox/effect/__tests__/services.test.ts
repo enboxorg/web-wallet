@@ -13,7 +13,6 @@ const tokens = {
     registrationToken : 'registration-token',
     refreshToken      : 'refresh-token',
     expiresAt         : 123,
-    tokenUrl          : 'https://provider.example/token',
     refreshUrl        : 'https://provider.example/refresh',
   },
 };
@@ -37,6 +36,16 @@ function writeTokens(agent: any) {
 }
 
 describe('registrationTokenStoreLayer', () => {
+  it('drops obsolete token URL metadata from saved credentials', async () => {
+    const legacy = { 'https://dwn.example': {
+      ...tokens['https://dwn.example'], tokenUrl: 'https://provider.example/token',
+    } };
+    const agent = { secrets: {
+      get: vi.fn(async () => new TextEncoder().encode(JSON.stringify(legacy))),
+    } };
+    await expect(readTokens(agent)).resolves.toEqual(tokens);
+  });
+
   it('reads and writes tokens through the vault-backed secret store', async () => {
     let encryptedTokens: Uint8Array | undefined;
     const agent = {

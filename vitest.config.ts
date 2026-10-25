@@ -19,6 +19,7 @@ export default defineConfig({
     // undefined, preventing Vitest from installing Happy DOM's implementation.
     execArgv: nodeMajorVersion >= 25 ? ['--no-webstorage'] : [],
     setupFiles: ['./src/vitest.setup.ts'],
+    server: { deps: { inline: ['@enbox/react'] } },
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['src/e2e/**', 'node_modules'],
     css: false,

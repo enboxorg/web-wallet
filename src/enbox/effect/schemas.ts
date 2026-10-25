@@ -26,7 +26,6 @@ export const RegistrationTokenDataSchema = Schema.Struct({
   registrationToken : Schema.String,
   refreshToken      : Schema.optional(Schema.String),
   expiresAt         : Schema.optional(Schema.Number),
-  tokenUrl          : UrlStringSchema,
   refreshUrl        : Schema.optional(UrlStringSchema),
 });
 

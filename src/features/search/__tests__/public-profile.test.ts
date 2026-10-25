@@ -1,133 +1,91 @@
 import type { ProfileSnapshot } from '@enbox/browser';
 
 import { renderHook, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import {
-  resetPublicProfileClientForTests,
-  usePublicProfile,
-} from '../public-profile';
+import { usePublicProfile } from '../public-profile';
 
-const mocks = vi.hoisted(() => {
-  const reader = {
-    dispose     : vi.fn(),
-    getSnapshot : vi.fn(),
-    watch       : vi.fn(),
-  };
+const mocks = vi.hoisted(() => ({
+  anonymous: vi.fn(() => ({ dwn: { records: {} } })),
+  reader: { dispose: vi.fn(), getSnapshot: vi.fn(), watch: vi.fn() },
+  unsubscribe: vi.fn(),
+  releaseAfter: vi.fn(),
+}));
 
-  return {
-    anonymous          : vi.fn(() => ({ dwn: { records: {} } })),
-    createProfileReader: vi.fn(() => reader),
-    reader,
-    unsubscribe        : vi.fn(),
-  };
-});
-
-vi.mock('@enbox/browser', () => ({
-  createProfileReader: mocks.createProfileReader,
-  Enbox              : { anonymous: mocks.anonymous },
+vi.mock('@enbox/browser', async (importOriginal) => ({
+  ...await importOriginal<typeof import('@enbox/browser')>(),
+  Enbox: { anonymous: mocks.anonymous },
+  createProfileReader: () => mocks.reader,
+  createBlobUrlPool: () => ({
+    acquire: () => ({ url: 'blob:profile-image', releaseAfter: mocks.releaseAfter }),
+  }),
 }));
 
 function settledSnapshot(did: string): ProfileSnapshot {
   return {
-    did,
-    status  : 'settled',
-    profile : {
-      status : 'settled',
-      value  : {
-        displayName : 'Alice',
-        tagline     : 'Builder',
-        bio         : 'Public bio',
-      },
-    },
-    avatar : { status: 'settled', value: new Blob(['avatar']) },
-    hero   : { status: 'settled', value: new Blob(['hero']) },
+    did, status: 'settled',
+    profile: { status: 'settled', value: { displayName: 'Alice', tagline: 'Builder', bio: 'Public bio' } },
+    avatar: { status: 'settled', value: new Blob(['avatar']) },
+    hero: { status: 'settled', value: new Blob(['hero']) },
   };
 }
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.reader.watch.mockImplementation((_dids, notify: () => void) => {
+    notify();
+    return mocks.unsubscribe;
+  });
+});
+
 describe('usePublicProfile', () => {
-  beforeEach(() => {
-    resetPublicProfileClientForTests();
-    vi.clearAllMocks();
-    mocks.reader.watch.mockImplementation((_, listener: () => void) => {
-      listener();
-      return mocks.unsubscribe;
+  it('uses the SDK profile projection and releases its watch and image leases', async () => {
+    mocks.reader.getSnapshot.mockReturnValue(settledSnapshot('did:dht:alice'));
+    const { result, unmount } = renderHook(() => usePublicProfile('did:dht:alice', true));
+    await waitFor(() => expect(result.current.status).toBe('settled'));
+    expect(result.current).toMatchObject({
+      did: 'did:dht:alice', displayName: 'Alice', tagline: 'Builder', bio: 'Public bio',
+      avatarUrl: 'blob:profile-image', heroUrl: 'blob:profile-image',
     });
-  });
-
-  afterEach(() => {
-    resetPublicProfileClientForTests();
-  });
-
-  it('binds a DID to the eager profile-reader snapshot', async () => {
-    const snapshot = settledSnapshot('did:dht:alice');
-    mocks.reader.getSnapshot.mockReturnValue(snapshot);
-
-    const { result, unmount } = renderHook(() => (
-      usePublicProfile('did:dht:alice', true)
-    ));
-
-    expect(result.current.data).toEqual({
-      did         : 'did:dht:alice',
-      displayName : 'Alice',
-      tagline     : 'Builder',
-      bio         : 'Public bio',
-      avatar      : snapshot.avatar.value,
-      hero        : snapshot.hero.value,
-    });
-    expect(result.current.isLoading).toBe(false);
     expect(mocks.anonymous).toHaveBeenCalledOnce();
-    expect(mocks.createProfileReader).toHaveBeenCalledWith(
-      expect.anything(),
-      { images: 'eager' },
-    );
-    await waitFor(() => {
-      expect(mocks.reader.watch).toHaveBeenCalledWith(
-        ['did:dht:alice'],
-        expect.any(Function),
-      );
-    });
-
+    expect(mocks.reader.watch).toHaveBeenCalledWith(['did:dht:alice'], expect.any(Function));
     unmount();
     expect(mocks.unsubscribe).toHaveBeenCalledOnce();
+    expect(mocks.releaseAfter).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(mocks.reader.dispose).toHaveBeenCalledOnce());
   });
 
-  it('does not create or subscribe the reader while disabled', () => {
+  it('creates no source or watch while disabled', () => {
     const { result } = renderHook(() => usePublicProfile('', false));
-
-    expect(result.current).toMatchObject({
-      data      : undefined,
-      error     : undefined,
-      isError   : false,
-      isLoading : false,
-    });
-    expect(mocks.createProfileReader).not.toHaveBeenCalled();
+    expect(result.current.status).toBe('idle');
+    expect(mocks.anonymous).not.toHaveBeenCalled();
     expect(mocks.reader.watch).not.toHaveBeenCalled();
   });
 
-  it('surfaces a terminal profile-reader failure', () => {
-    const snapshot: ProfileSnapshot = {
-      did     : 'did:dht:alice',
-      status  : 'error',
-      profile : {
-        status  : 'error',
-        failure : {
-          retryable : false,
-          message   : 'Profile lookup failed',
-        },
-      },
-      avatar : { status: 'idle' },
-      hero   : { status: 'idle' },
-    };
-    mocks.reader.getSnapshot.mockReturnValue(snapshot);
+  it('preserves native field failures', async () => {
+    const failure = { retryable: false, message: 'Profile lookup failed' };
+    mocks.reader.getSnapshot.mockReturnValue({
+      did: 'did:dht:alice', status: 'error',
+      profile: { status: 'error', failure },
+      avatar: { status: 'idle' }, hero: { status: 'idle' },
+    } satisfies ProfileSnapshot);
+    const { result } = renderHook(() => usePublicProfile('did:dht:alice', true));
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.fields.profile.failure).toBe(failure);
+    expect(result.current.displayName).toBeUndefined();
+  });
 
-    const { result } = renderHook(() => (
-      usePublicProfile('did:dht:alice', true)
-    ));
-
-    expect(result.current.data).toBeUndefined();
-    expect(result.current.error?.message).toBe('Profile lookup failed');
-    expect(result.current.isError).toBe(true);
-    expect(result.current.isLoading).toBe(false);
+  it('retires the previous DID while reusing the anonymous source', async () => {
+    const alice = settledSnapshot('did:dht:alice');
+    mocks.reader.getSnapshot.mockImplementation((did) => did === alice.did ? alice : undefined);
+    const { result, rerender } = renderHook(({ did }) => usePublicProfile(did, true), {
+      initialProps: { did: alice.did },
+    });
+    await waitFor(() => expect(result.current.displayName).toBe('Alice'));
+    rerender({ did: 'did:dht:bob' });
+    expect(result.current.did).toBe('did:dht:bob');
+    expect(result.current.displayName).toBeUndefined();
+    expect(mocks.anonymous).toHaveBeenCalledOnce();
+    expect(mocks.unsubscribe).toHaveBeenCalledOnce();
   });
 });
