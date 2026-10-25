@@ -7,7 +7,6 @@ import { useWallets } from '../use-wallets';
 const mocks = vi.hoisted(() => {
   const connectProtocol = Symbol('ConnectProtocol');
   const closeView = vi.fn(async () => undefined);
-  const closeEnbox = vi.fn();
   const snapshot = {
     records: [{
       record : { id: 'wallet-record' },
@@ -24,13 +23,11 @@ const mocks = vi.hoisted(() => {
   }));
 
   return {
-    closeEnbox,
     closeView,
     connectProtocol,
     observe,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
-        close: closeEnbox,
         using: vi.fn((protocol) => {
           if (protocol !== connectProtocol) {
             throw new Error('Unexpected protocol');
@@ -56,6 +53,13 @@ afterEach(() => {
 });
 
 describe('useWallets', () => {
+  it('stays idle without an unlocked agent or selected identity', () => {
+    const { result } = renderHook(() => useWallets(undefined));
+    expect(result.current).toMatchObject({ wallets: [], loading: false, empty: false });
+    expect(mocks.observe).not.toHaveBeenCalled();
+    expect(mocks.Enbox).not.toHaveBeenCalled();
+  });
+
   it('renders decoded values from the SDK materialized view', async () => {
     useAuthStore.setState({ agent: {} });
 
@@ -72,11 +76,12 @@ describe('useWallets', () => {
     });
 
     unmount();
-    expect(mocks.closeEnbox).toHaveBeenCalledOnce();
+    const signal = mocks.Enbox.mock.calls[0][0].signal;
+    expect(signal.aborted).toBe(true);
     expect(mocks.closeView).toHaveBeenCalledOnce();
   });
 
-  it('releases its abort listener when opening the view fails', async () => {
+  it('retires the native facade lifetime when opening the view fails', async () => {
     useAuthStore.setState({ agent: {} });
     const failure = new Error('Unable to open view');
     let signal: AbortSignal | undefined;
@@ -88,10 +93,6 @@ describe('useWallets', () => {
     const { result } = renderHook(() => useWallets('did:dht:alice'));
 
     await waitFor(() => expect(result.current.error).toBe(failure));
-    expect(mocks.closeEnbox).toHaveBeenCalledOnce();
-
-    mocks.closeEnbox.mockClear();
-    signal?.dispatchEvent(new Event('abort'));
-    expect(mocks.closeEnbox).not.toHaveBeenCalled();
+    expect(signal?.aborted).toBe(true);
   });
 });

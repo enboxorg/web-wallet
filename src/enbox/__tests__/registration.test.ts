@@ -254,7 +254,7 @@ describe('ensureRegistrationEffect', () => {
     );
   });
 
-  it('refreshes expired provider-auth tokens through the injected token store', async () => {
+  it('refreshes expired provider-auth tokens using current provider metadata', async () => {
     vi.spyOn(Date, 'now').mockReturnValue(10_000);
     const endpoint = 'https://provider.example/dwn';
     const agent = createAgent();
@@ -277,8 +277,7 @@ describe('ensureRegistrationEffect', () => {
         registrationToken: 'token-old',
         refreshToken: 'refresh-old',
         expiresAt: 1,
-        tokenUrl: 'https://provider.example/token',
-        refreshUrl: 'https://provider.example/refresh',
+        refreshUrl: 'https://old-provider.example/refresh',
       },
     });
 

@@ -97,7 +97,6 @@ function obtainProviderAuthTokenEffect(
       expiresAt: tokenResponse.expiresIn != null
         ? Date.now() + tokenResponse.expiresIn * 1000
         : undefined,
-      tokenUrl: providerAuth.tokenUrl,
       refreshUrl: providerAuth.refreshUrl,
     } satisfies RegistrationTokenData;
   });
@@ -112,13 +111,13 @@ function ensureValidTokenEffect(
     let tokenData = tokens[dwnEndpoint];
 
     if (tokenData) {
-      if (isTokenExpired(tokenData) && tokenData.refreshUrl && tokenData.refreshToken) {
+      if (isTokenExpired(tokenData) && providerAuth.refreshUrl && tokenData.refreshToken) {
         const refreshed = yield* withNetworkPolicy(
           'providerAuth.refreshToken',
           Effect.tryPromise({
             try: () =>
               DwnRegistrar.refreshRegistrationToken(
-                tokenData.refreshUrl!,
+                providerAuth.refreshUrl!,
                 tokenData.refreshToken!,
               ),
             catch: registrationError('providerAuth.refreshToken', dwnEndpoint),
@@ -127,6 +126,7 @@ function ensureValidTokenEffect(
         );
         tokenData = {
           ...tokenData,
+          refreshUrl: providerAuth.refreshUrl,
           registrationToken: refreshed.registrationToken,
           refreshToken: refreshed.refreshToken ?? tokenData.refreshToken,
           expiresAt: refreshed.expiresIn

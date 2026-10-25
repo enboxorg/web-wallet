@@ -55,9 +55,6 @@ export function createWalletAuthManagerEffect() {
         // AuthManager owns background sync startup and session-bound cleanup.
         sync: 'live',
         registration: {
-          onSuccess: () => {},
-          onFailure: (err: unknown) =>
-            console.warn('EnboxAuthProvider: DWN registration failed:', err),
           onProviderAuthRequired: (request: ProviderAuthParams) =>
             runEnboxPromise(resolveProviderAuthEffect(request)),
           persistTokens: true,
