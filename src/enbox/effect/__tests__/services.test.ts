@@ -13,7 +13,6 @@ const tokens = {
     registrationToken : 'registration-token',
     refreshToken      : 'refresh-token',
     expiresAt         : 123,
-    tokenUrl          : 'https://provider.example/token',
     refreshUrl        : 'https://provider.example/refresh',
   },
 };

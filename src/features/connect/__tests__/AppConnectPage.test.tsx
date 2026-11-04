@@ -224,6 +224,26 @@ describe('AppConnectPage', () => {
     expect(mocks.fetchConnectRequest).not.toHaveBeenCalled();
   });
 
+  it('offers sign-in without grant duration or protocol setup and does not publish a delegation event', async () => {
+    const request = {
+      ...connectRequest,
+      requestType: 'authenticate', delegateDid: undefined,
+      permissionRequests: [], nonce: 'n'.repeat(32), state: 's'.repeat(32),
+      responseKey: { kty: 'OKP', crv: 'X25519', x: 'A'.repeat(43) },
+      authentication: { version: 1, audience: 'https://relay.example/', challenge: 'c'.repeat(32) },
+    };
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(request);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in', exact: true }));
+    await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledOnce());
+    expect(mocks.queryProtocolSetupStatus).not.toHaveBeenCalled();
+    expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
+  });
+
   it('fetches the connect request from request_uri + encryption_key in the URI fragment', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);

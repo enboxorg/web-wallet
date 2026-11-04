@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { executeConnectApproval } from '@enbox/agent';
+import { executeConnectApproval, executeConnectAuthentication } from '@enbox/agent';
 import {
   CONNECT_DENIED_TOKEN,
   ConnectProvider,
@@ -29,6 +29,26 @@ function sdkTimeout(operation: string) {
 
 const LOCAL_RELAY_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MAX_CONNECT_RESPONSE_BYTES = 2_000_000;
+const relayRequestOrigins = new WeakMap<ConnectRequest, string>();
+
+/** The request's HTTPS origin is established by its non-redirecting fetch. */
+export function getRelayAuthenticationOrigin(request: ConnectRequest): string | undefined {
+  if (request.authentication === undefined) return undefined;
+  const origin = relayRequestOrigins.get(request);
+  if (origin === undefined) {
+    throw new Error('Sign-in requires a fresh request from the authentication service.');
+  }
+  assertConnectAuthenticationOrigin(request, origin);
+  return origin;
+}
+
+/** Authentication claims must agree with the origin established by the transport. */
+export function assertConnectAuthenticationOrigin(request: ConnectRequest, origin: string): void {
+  if (request.authentication !== undefined &&
+      (!isTrustedDappOrigin(origin) || new URL(request.authentication.audience).origin !== origin)) {
+    throw new Error('The sign-in service does not match the requesting origin.');
+  }
+}
 
 /**
  * Wallet policy: connect relay URLs must be HTTPS (or a local development
@@ -126,6 +146,8 @@ async function getBoundConnectRequest(
     decryption: { mode: 'dir', requestKey },
   });
   getRelayCallbackUrl(request);
+  relayRequestOrigins.set(request, requestUrl.origin);
+  getRelayAuthenticationOrigin(request);
 
   return request;
 }
@@ -182,6 +204,18 @@ export function approveConnectRequestEffect(
     const callbackUrl = getRelayCallbackUrl(request);
     const idToken = yield* Effect.tryPromise({
       try: async () => {
+        const verifiedRequesterOrigin = getRelayAuthenticationOrigin(request);
+        if (request.requestType === 'authenticate') {
+          if (verifiedRequesterOrigin === undefined) {
+            throw new Error('Sign-in request origin is unavailable.');
+          }
+          const approval = await executeConnectAuthentication({
+            agent, providerDid: selectedDid, request, verifiedRequesterOrigin,
+          });
+          return ConnectProvider.sealAuthenticationResponse({
+            request, providerDid: selectedDid, approval, signer: approval.responseSigner, pin,
+          });
+        }
         const approval = await executeConnectApproval({
           agent,
           approvedProtocolOverrides,
@@ -189,6 +223,7 @@ export function approveConnectRequestEffect(
           providerDid : selectedDid,
           request,
           transport   : 'relay',
+          ...(verifiedRequesterOrigin === undefined ? {} : { verifiedRequesterOrigin }),
         });
         return ConnectProvider.sealApprovedResponse({
           request,
@@ -296,13 +331,26 @@ export function approvePopupConnectRequestEffect(
     };
     return yield* Effect.tryPromise({
       try: async () => {
+        if (!isTrustedDappOrigin(dappOrigin)) {
+          throw new Error('The requesting application origin is unavailable.');
+        }
+        assertConnectAuthenticationOrigin(request, dappOrigin);
+        if (request.requestType === 'authenticate') {
+          const approval = await executeConnectAuthentication({
+            agent, providerDid: selectedDid, request, verifiedRequesterOrigin: dappOrigin,
+          });
+          return ConnectProvider.sealAuthenticationResponse({
+            request, providerDid: selectedDid, approval, signer: approval.responseSigner,
+          });
+        }
         const approval = await executeConnectApproval({
           agent,
           approvedProtocolOverrides,
           approvedSessionTtlSeconds,
           providerDid : selectedDid,
-          request     : approvalRequest,
+          request     : request.authentication === undefined ? approvalRequest : request,
           transport   : 'postMessage',
+          ...(request.authentication === undefined ? {} : { verifiedRequesterOrigin: dappOrigin }),
         });
         return ConnectProvider.sealApprovedResponse({
           request,

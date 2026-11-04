@@ -212,6 +212,33 @@ describe('DWebConnectPage', () => {
     }];
   });
 
+  it('signs in through the existing approval UI without protocol setup or delegation events', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(), requestType: 'authenticate', permissionRequests: [],
+      delegateDid: undefined, nonce: 'n'.repeat(32), state: 's'.repeat(32),
+      responseKey: { kty: 'OKP', crv: 'X25519', x: 'A'.repeat(43) },
+      authentication: { version: 1, audience: 'https://app.example/', challenge: 'c'.repeat(32) },
+    });
+    render(<DWebConnectPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in', exact: true }));
+    await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledOnce());
+    expect(mocks.queryProtocolSetupStatus).not.toHaveBeenCalled();
+    expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
+  });
+
+  it('rejects a sign-in service that differs from the transport origin before presenting consent', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(), requestType: 'authenticate', permissionRequests: [],
+      authentication: { version: 1, audience: 'https://different.example/', challenge: 'c'.repeat(32) },
+    });
+    render(<DWebConnectPage />);
+    expect(await screen.findByText(/sign-in service does not match/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign in', exact: true })).not.toBeInTheDocument();
+    expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
+  });
+
   it('shows guidance when not opened as a popup', async () => {
     Object.defineProperty(window, 'opener', { configurable: true, value: null });
 

@@ -9,6 +9,7 @@ import { Loader } from '@/components/ui/Loader';
 import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
+import { AuthenticationDisplay } from '@/components/connect/AuthenticationDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
@@ -30,7 +31,7 @@ import {
 } from '@/lib/passkeys';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
-import { approvePopupConnectRequest, isTrustedDappOrigin } from './connect-kernel';
+import { approvePopupConnectRequest, assertConnectAuthenticationOrigin, isTrustedDappOrigin } from './connect-kernel';
 import {
   isDidSupportedByRequest,
   preflightConnectRequest,
@@ -99,6 +100,8 @@ export default function DWebConnectPage() {
   const permissions = connectRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const appName = connectRequest?.appName;
   const isRefresh = connectRequest?.requestType === 'refresh';
+  const authenticationOnly = connectRequest?.requestType === 'authenticate';
+  const authentication = connectRequest?.authentication;
 
   // Build identity options, limited to DID methods the requester supports.
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
@@ -135,7 +138,7 @@ export default function DWebConnectPage() {
   const approvalDid = isRefresh
     ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
     : selectedDid;
-  const { data: selectedPermissions } = usePermissions(isRefresh ? '' : selectedDid);
+  const { data: selectedPermissions } = usePermissions(isRefresh || authenticationOnly ? '' : selectedDid);
 
   // Auto-select first identity
   useEffect(() => {
@@ -195,6 +198,7 @@ export default function DWebConnectPage() {
         }
 
         const request = await transport.awaitRequest();
+        assertConnectAuthenticationOrigin(request, transport.dappOrigin);
         // Full request preflight — the same wallet policy the relay path
         // applies: scope allow-list and dry-run validators, session TTL
         // bounds, delegate DID canonicality, and supported DID methods.
@@ -255,7 +259,7 @@ export default function DWebConnectPage() {
       // endpoints. It then creates and delivers the grants, grant keys, and
       // session revocation grants, and returns the sealed response for the
       // transport to post back.
-      setStatusMessage('Creating grants...');
+      setStatusMessage(activeRequest.requestType === 'authenticate' ? 'Confirming sign-in...' : 'Creating grants...');
       const idToken = await approvePopupConnectRequest(
         approveAsDid,
         activeRequest,
@@ -265,7 +269,7 @@ export default function DWebConnectPage() {
         overrideAcknowledged ? overridableProtocols : [],
       );
 
-      setStatusMessage('Returning grants...');
+      setStatusMessage(activeRequest.requestType === 'authenticate' ? 'Returning sign-in confirmation...' : 'Returning grants...');
       // Sending the approved response is the point of no return: an absent
       // acknowledgement is an unconfirmed delivery, never a denial. Keep the
       // channel open briefly so updated dapps can confirm they opened it.
@@ -280,7 +284,7 @@ export default function DWebConnectPage() {
       // Event publication is secondary to delivery and must never replace a
       // delivered success with an error screen.
       try {
-        void runEnboxPromise(publishWalletEvent({
+        if (activeRequest.requestType !== 'authenticate') void runEnboxPromise(publishWalletEvent({
           _tag         : 'connect.approved',
           origin,
           connectedDid : approveAsDid,
@@ -455,8 +459,8 @@ export default function DWebConnectPage() {
     overrideAcknowledged ? new Set(overridableProtocols) : new Set(),
   );
   const requestSummary = useMemo(
-    () => getConnectPermissionAskSummary(permissions),
-    [permissions],
+    () => authenticationOnly ? 'Confirm your identity to sign in.' : getConnectPermissionAskSummary(permissions),
+    [authenticationOnly, permissions],
   );
   const requesterLabel = origin || 'Unknown origin';
 
@@ -499,7 +503,7 @@ export default function DWebConnectPage() {
             <Check className="h-8 w-8 text-success" />
           </div>
           <p className="text-sm font-medium text-text-primary">
-            {connectionConfirmed ? 'Connected!' : 'Connection response sent'}
+            {connectionConfirmed ? (authenticationOnly ? 'Signed in!' : 'Connected!') : 'Connection response sent'}
           </p>
           <p className="text-xs text-text-ghost">
             {connectionConfirmed
@@ -575,6 +579,13 @@ export default function DWebConnectPage() {
             </p>
           </div>
 
+          {authentication && (
+            <AuthenticationDisplay
+              audience={authentication.audience}
+              authenticationOnly={authenticationOnly}
+            />
+          )}
+
           {isRefresh ? (
             <RenewSessionDisplay
               appName={appName ?? 'this app'}
@@ -629,6 +640,7 @@ export default function DWebConnectPage() {
                 </div>
               )}
 
+              {!authenticationOnly && (
               <PermissionDisplay
                 permissions={permissions}
                 protocolSetupStatuses={protocolSetupStatuses}
@@ -641,6 +653,7 @@ export default function DWebConnectPage() {
                 overrideAcknowledged={overrideAcknowledged}
                 onOverrideAcknowledgedChange={setOverrideAcknowledged}
               />
+              )}
 
               <ProtocolOverrideConfirmDialog
                 open={showOverrideConfirm}
@@ -720,7 +733,7 @@ export default function DWebConnectPage() {
                     disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />
-                    {isRefresh ? 'Renew access' : 'Approve'}
+                    {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
                   </Button>
                 )}
               </div>

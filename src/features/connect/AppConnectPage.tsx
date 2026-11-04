@@ -35,6 +35,7 @@ import { PinInput } from '@/components/ui/PinInput';
 import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
+import { AuthenticationDisplay } from '@/components/connect/AuthenticationDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
@@ -161,6 +162,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const needsOnboarding = firstTime && !agent;
   const isRefresh = connectionRequest?.requestType === 'refresh';
+  const authenticationOnly = connectionRequest?.requestType === 'authenticate';
+  const authentication = connectionRequest?.authentication;
 
   // Build identity options for the selector and validate that a matched
   // refresh owner still uses a DID method accepted by the requester.
@@ -476,7 +479,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // same event is emitted by the popup flow, while local DWN subscriptions
       // remain an additional best-effort invalidation path.
       try {
-        void runEnboxPromise(publishWalletEvent({
+        if (activeRequest.requestType !== 'authenticate') void runEnboxPromise(publishWalletEvent({
           _tag         : 'connect.approved',
           origin       : activeRequest.clientMetadata?.origin ?? activeRequest.appName,
           connectedDid : approveAsDid,
@@ -640,7 +643,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     ? truncateDid(connectionRequest.clientDid)
     : 'Unknown requester';
   const requestSummary = connectionRequest
-    ? getConnectPermissionAskSummary(permissionRequests)
+    ? authenticationOnly ? 'Confirm your identity to sign in.' : getConnectPermissionAskSummary(permissionRequests)
     : '';
 
   async function handleCopyPin() {
@@ -855,6 +858,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             </p>
           </div>
 
+          {authentication && (
+            <AuthenticationDisplay
+              audience={authentication.audience}
+              authenticationOnly={authenticationOnly}
+            />
+          )}
+
           {isRefresh ? (
             <RenewSessionDisplay
               appName={connectionRequest.appName}
@@ -909,6 +919,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 </div>
               )}
 
+              {!authenticationOnly && (
               <PermissionDisplay
                 permissions={connectionRequest.permissionRequests}
                 protocolSetupStatuses={protocolSetupStatuses}
@@ -920,6 +931,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 overrideAcknowledged={overrideAcknowledged}
                 onOverrideAcknowledgedChange={setOverrideAcknowledged}
               />
+              )}
 
               <ProtocolOverrideConfirmDialog
                 open={showOverrideConfirm}
@@ -1016,7 +1028,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                     disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />
-                    {isRefresh ? 'Renew access' : 'Approve'}
+                    {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
                   </Button>
                 )}
               </div>
@@ -1076,7 +1088,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
               <Check className="h-8 w-8 text-success" />
             </div>
-            <p className="text-base font-semibold text-text-primary">Connected!</p>
+            <p className="text-base font-semibold text-text-primary">{authenticationOnly ? 'Signed in!' : 'Connected!'}</p>
             <p className="text-sm text-text-secondary">
               The requesting application confirmed the connection.
             </p>
