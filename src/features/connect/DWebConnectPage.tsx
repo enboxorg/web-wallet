@@ -102,9 +102,13 @@ export default function DWebConnectPage() {
   const isRefresh = connectRequest?.requestType === 'refresh';
   const authenticationOnly = connectRequest?.requestType === 'authenticate';
   const authentication = connectRequest?.authentication;
+  const expectedAuthenticationDid = authentication !== undefined && !isRefresh
+    ? connectRequest?.expectedProviderDid : undefined;
 
   // Build identity options, limited to DID methods the requester supports.
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
+    .filter((identity: any) => expectedAuthenticationDid === undefined
+      || (identity.did.uri === expectedAuthenticationDid && identity.metadata?.connectedDid === undefined))
     .filter((id: any) =>
       connectRequest === undefined
       || isDidSupportedByRequest(id.did.uri, connectRequest.supportedDidMethods)
@@ -135,14 +139,18 @@ export default function DWebConnectPage() {
     && (refreshLookupError
       || refreshDetection.matchState !== 'matched'
       || refreshOwnerOption === undefined);
+  const authenticationOwnerOption = agent !== null && !identitiesPending && !identitiesError
+    ? identityOptions.find((option) => option.value === expectedAuthenticationDid) : undefined;
+  const nonRefreshApprovalDid = expectedAuthenticationDid === undefined
+    ? selectedDid : authenticationOwnerOption?.value ?? '';
   const approvalDid = isRefresh
     ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
-    : selectedDid;
-  const { data: selectedPermissions } = usePermissions(isRefresh || authenticationOnly ? '' : selectedDid);
+    : nonRefreshApprovalDid;
+  const { data: selectedPermissions } = usePermissions(isRefresh || authenticationOnly ? '' : nonRefreshApprovalDid);
 
   // Auto-select first identity
   useEffect(() => {
-    if (isRefresh) return;
+    if (isRefresh || expectedAuthenticationDid !== undefined) return;
     if (identityOptions.length === 0) {
       if (selectedDid !== '') setSelectedDid('');
       return;
@@ -152,7 +160,7 @@ export default function DWebConnectPage() {
     if (!selectedDid || !selectedExists) {
       setSelectedDid(identityOptions[0].value);
     }
-  }, [identityOptions, isRefresh, selectedDid]);
+  }, [expectedAuthenticationDid, identityOptions, isRefresh, selectedDid]);
 
   // A definition-override opt-in is profile-specific: clear it whenever the
   // approving profile changes so the choice is made against the profile whose
@@ -433,6 +441,7 @@ export default function DWebConnectPage() {
   // Auto-created identities are did:dht — only offer inline onboarding
   // when the requester accepts that method.
   const onboardingSupported = !isRefresh
+    && expectedAuthenticationDid === undefined
     && needsOnboarding
     && (connectRequest === undefined
       || connectRequest.supportedDidMethods.includes('did:dht'));
@@ -605,7 +614,15 @@ export default function DWebConnectPage() {
           ) : (
             <>
               {/* Identity section */}
-              {onboardingSupported ? (
+              {expectedAuthenticationDid !== undefined && authenticationOwnerOption === undefined ? (
+                <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center" role="status">
+                  <p className="text-xs text-warning">
+                    {identitiesPending && !needsOnboarding
+                      ? 'Checking for the profile required by this sign-in…'
+                      : 'This sign-in requires an existing profile. Restore the wallet that owns it, or open the correct wallet, then try again.'}
+                  </p>
+                </div>
+              ) : onboardingSupported ? (
                 <section className="rounded-xl border border-border-default bg-surface-2 p-4">
                   <div className="flex items-center gap-2 text-accent">
                     <Sparkles size={16} />
@@ -628,7 +645,8 @@ export default function DWebConnectPage() {
                     id="dweb-connect-identity"
                     aria-label="Approve as profile"
                     options={identityOptions}
-                    value={selectedDid}
+                    value={nonRefreshApprovalDid}
+                    disabled={expectedAuthenticationDid !== undefined}
                     onChange={(e) => setSelectedDid(e.target.value)}
                   />
                 </section>

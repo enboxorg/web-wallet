@@ -230,6 +230,54 @@ describe('connect-kernel', () => {
   });
 
   describe('approveConnectRequest', () => {
+    it.each(['authenticate', 'connect'] as const)('keeps one relay consent snapshot through asynchronous %s approval, sealing and completion', async (requestType) => {
+      const request = connectRequest({ requestType,
+        authentication: { version: 1, audience: 'https://auth.example/', challenge: 'c'.repeat(32) },
+      });
+      mocks.openRequest.mockResolvedValue(request);
+      const fetched = await fetchConnectRequest('https://auth.example/request/one', REQUEST_KEY);
+      const original = structuredClone(fetched);
+      const overrides = ['https://example.test/original-protocol'];
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      let entered!: () => void;
+      const started = new Promise<void>(resolve => { entered = resolve; });
+      const execute = requestType === 'authenticate' ? mocks.executeConnectAuthentication : mocks.executeConnectApproval;
+      execute.mockImplementationOnce(async () => {
+        entered(); await pending;
+        return { authenticationProof: 'proof-for-original-request', responseSigner: {} };
+      });
+      const result = approveConnectRequest('did:dht:owner', fetched, '1234', 3600, {} as any, overrides);
+      await started;
+      fetched.state = 'mutated-state'; fetched.nonce = 'mutated-nonce';
+      fetched.authentication!.challenge = 'z'.repeat(32);
+      fetched.reply = { mode: 'direct_post', callbackUrl: 'https://other.example/callback' };
+      fetched.responseKey.x = 'mutated-public-key'; overrides.push('https://other.example/protocol');
+      release();
+      const completed = await result;
+      expect(completed).toEqual(original);
+      expect(completed).not.toBe(fetched);
+      const seal = requestType === 'authenticate' ? mocks.sealAuthenticationResponse : mocks.sealApprovedResponse;
+      expect(seal).toHaveBeenCalledWith(expect.objectContaining({ request: original }));
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ request: original, verifiedRequesterOrigin: 'https://auth.example' }));
+      if (requestType === 'connect') {
+        expect(execute).toHaveBeenCalledWith(expect.objectContaining({ approvedProtocolOverrides: ['https://example.test/original-protocol'] }));
+      }
+      expect(mocks.postRelayResponse).toHaveBeenCalledWith(expect.objectContaining({ state: original.state, callbackUrl: original.reply.callbackUrl }));
+      await waitForRelayCompletion(completed);
+      expect(mocks.pollRelayComplete).toHaveBeenCalledWith({ callbackUrl: original.reply.callbackUrl, state: original.state });
+    });
+
+    it('keeps invalid relay context in the Effect and Promise failure channels', async () => {
+      const request = connectRequest({ requestType: 'authenticate',
+        authentication: { version: 1, audience: 'https://auth.example/', challenge: 'c'.repeat(32) } });
+      expect(() => approveConnectRequestEffect('did:dht:owner', request, '1234', 3600)).not.toThrow();
+      let rejected!: Promise<unknown>;
+      expect(() => { rejected = approveConnectRequest('did:dht:owner', request, '1234', 3600, {} as any); }).not.toThrow();
+      await expect(rejected).rejects.toThrow('fresh request from the authentication service');
+      expect(mocks.executeConnectAuthentication).not.toHaveBeenCalled();
+    });
+
     it('authenticates a fetched request without running the DWN grant ceremony', async () => {
       mocks.openRequest.mockResolvedValue(connectRequest({
         requestType: 'authenticate',
@@ -298,7 +346,8 @@ describe('connect-kernel', () => {
       }));
       // Seal happens before delivery, after the ceremony.
       expect(request).toEqual(originalRequest);
-      expect(mocks.sealApprovedResponse.mock.calls[0][0].request).toBe(request);
+      expect(mocks.sealApprovedResponse.mock.calls[0][0].request).toEqual(request);
+      expect(mocks.sealApprovedResponse.mock.calls[0][0].request).not.toBe(request);
       expect(mocks.executeConnectApproval.mock.invocationCallOrder[0])
         .toBeLessThan(mocks.sealApprovedResponse.mock.invocationCallOrder[0]);
       expect(mocks.sealApprovedResponse.mock.invocationCallOrder[0])
@@ -392,6 +441,33 @@ describe('connect-kernel', () => {
   });
 
   describe('approvePopupConnectRequest', () => {
+    it.each(['authenticate', 'connect'] as const)('keeps the original popup request and approval options across asynchronous %s approval', async (requestType) => {
+      const request = connectRequest({ requestType, reply: { mode: 'post_message' },
+        authentication: { version: 1, audience: 'https://app.example/', challenge: 'c'.repeat(32) } });
+      const original = structuredClone(request);
+      const overrides = ['https://example.test/original-protocol'];
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      let entered!: () => void;
+      const started = new Promise<void>(resolve => { entered = resolve; });
+      const execute = requestType === 'authenticate' ? mocks.executeConnectAuthentication : mocks.executeConnectApproval;
+      execute.mockImplementationOnce(async () => {
+        entered(); await pending;
+        return { authenticationProof: 'proof-for-original-request', responseSigner: {} };
+      });
+      const result = approvePopupConnectRequest('did:dht:owner', request, 'https://app.example', 3600, {} as any, overrides);
+      await started;
+      request.state = 'mutated-state'; request.authentication.audience = 'https://other.example/';
+      request.responseKey.x = 'mutated-public-key'; overrides.push('https://other.example/protocol');
+      release(); await result;
+      const seal = requestType === 'authenticate' ? mocks.sealAuthenticationResponse : mocks.sealApprovedResponse;
+      expect(seal).toHaveBeenCalledWith(expect.objectContaining({ request: original }));
+      expect(execute).toHaveBeenCalledWith(expect.objectContaining({ request: original, verifiedRequesterOrigin: 'https://app.example' }));
+      if (requestType === 'connect') {
+        expect(execute).toHaveBeenCalledWith(expect.objectContaining({ approvedProtocolOverrides: ['https://example.test/original-protocol'] }));
+      }
+    });
+
     it('uses the verified popup origin and signs only an authentication response', async () => {
       const request = connectRequest({
         requestType: 'authenticate', reply: { mode: 'post_message' },
@@ -459,7 +535,8 @@ describe('connect-kernel', () => {
       expect(mocks.executeConnectApproval.mock.calls[0][0].request)
         .not.toHaveProperty('requestedSessionTtlSeconds');
       const sealArgs = mocks.sealApprovedResponse.mock.calls[0][0];
-      expect(sealArgs.request).toBe(request);
+      expect(sealArgs.request).toEqual(request);
+      expect(sealArgs.request).not.toBe(request);
       expect(sealArgs.pin).toBeUndefined();
       expect(request).toEqual(originalRequest);
     });

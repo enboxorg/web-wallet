@@ -31,6 +31,15 @@ const LOCAL_RELAY_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MAX_CONNECT_RESPONSE_BYTES = 2_000_000;
 const relayRequestOrigins = new WeakMap<ConnectRequest, string>();
 
+/** Snapshot at API entry, but keep invalid input in the Effect/Promise error channel. */
+function captureApprovalInput<T>(operation: string, capture: () => T) {
+  try {
+    return Effect.succeed(capture());
+  } catch (error) {
+    return Effect.fail(sdkError(operation)(error));
+  }
+}
+
 /** The request's HTTPS origin is established by its non-redirecting fetch. */
 export function getRelayAuthenticationOrigin(request: ConnectRequest): string | undefined {
   if (request.authentication === undefined) return undefined;
@@ -199,12 +208,30 @@ export function approveConnectRequestEffect(
   approvedSessionTtlSeconds: number,
   approvedProtocolOverrides: readonly string[] = [],
 ) {
+  const prepared = captureApprovalInput('connect.submitConnectResponse', () => {
+    // Only the original fetched object carries the verified relay origin.
+    // Do not grant origin authority to arbitrary cloned requests.
+    const verifiedRequesterOrigin = getRelayAuthenticationOrigin(request);
+    const capturedRequest = structuredClone(request);
+    if (verifiedRequesterOrigin !== undefined) {
+      assertConnectAuthenticationOrigin(capturedRequest, verifiedRequesterOrigin);
+    }
+    return {
+      request: capturedRequest,
+      verifiedRequesterOrigin,
+      callbackUrl: getRelayCallbackUrl(capturedRequest),
+      approvedProtocolOverrides: [...approvedProtocolOverrides],
+      selectedDid,
+      approvedSessionTtlSeconds,
+    };
+  });
   return Effect.gen(function* () {
+    const captured = yield* prepared;
+    const request = captured.request;
+    const { callbackUrl, verifiedRequesterOrigin, selectedDid, approvedSessionTtlSeconds } = captured;
     const agent = yield* CurrentAgent;
-    const callbackUrl = getRelayCallbackUrl(request);
     const idToken = yield* Effect.tryPromise({
       try: async () => {
-        const verifiedRequesterOrigin = getRelayAuthenticationOrigin(request);
         if (request.requestType === 'authenticate') {
           if (verifiedRequesterOrigin === undefined) {
             throw new Error('Sign-in request origin is unavailable.');
@@ -218,7 +245,7 @@ export function approveConnectRequestEffect(
         }
         const approval = await executeConnectApproval({
           agent,
-          approvedProtocolOverrides,
+          approvedProtocolOverrides: captured.approvedProtocolOverrides,
           approvedSessionTtlSeconds,
           providerDid : selectedDid,
           request,
@@ -236,7 +263,7 @@ export function approveConnectRequestEffect(
       catch: sdkError('connect.submitConnectResponse'),
     });
 
-    return yield* withNetworkPolicy(
+    yield* withNetworkPolicy(
       'connect.submitConnectResponse',
       Effect.tryPromise({
         try: async (signal) => postRelayResponse({
@@ -249,6 +276,7 @@ export function approveConnectRequestEffect(
       }),
       () => sdkTimeout('connect.submitConnectResponse'),
     );
+    return request;
   });
 }
 
@@ -259,7 +287,7 @@ export function approveConnectRequest(
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
   approvedProtocolOverrides: readonly string[] = [],
-): Promise<void> {
+): Promise<ConnectRequest> {
   return runEnboxPromise(
     approveConnectRequestEffect(
       selectedDid,
@@ -322,19 +350,27 @@ export function approvePopupConnectRequestEffect(
   approvedSessionTtlSeconds: number,
   approvedProtocolOverrides: readonly string[] = [],
 ) {
-  return Effect.gen(function* () {
-    const agent = yield* CurrentAgent;
+  const prepared = captureApprovalInput('dwebConnect.submitConnectResponse', () => {
+    if (!isTrustedDappOrigin(dappOrigin)) {
+      throw new Error('The requesting application origin is unavailable.');
+    }
+    assertConnectAuthenticationOrigin(request, dappOrigin);
+    const capturedRequest = structuredClone(request);
+    assertConnectAuthenticationOrigin(capturedRequest, dappOrigin);
     const approvalRequest: ConnectRequestWithApplicationId = {
-      ...request,
-      applicationId  : dappOrigin,
-      clientMetadata : { ...request.clientMetadata, origin: dappOrigin },
+      ...capturedRequest,
+      applicationId: dappOrigin,
+      clientMetadata: { ...capturedRequest.clientMetadata, origin: dappOrigin },
     };
+    return { request: capturedRequest, approvalRequest, approvedProtocolOverrides: [...approvedProtocolOverrides], selectedDid,
+      approvedSessionTtlSeconds, dappOrigin };
+  });
+  return Effect.gen(function* () {
+    const captured = yield* prepared;
+    const { request, approvalRequest, selectedDid, approvedSessionTtlSeconds, dappOrigin } = captured;
+    const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
       try: async () => {
-        if (!isTrustedDappOrigin(dappOrigin)) {
-          throw new Error('The requesting application origin is unavailable.');
-        }
-        assertConnectAuthenticationOrigin(request, dappOrigin);
         if (request.requestType === 'authenticate') {
           const approval = await executeConnectAuthentication({
             agent, providerDid: selectedDid, request, verifiedRequesterOrigin: dappOrigin,
@@ -345,7 +381,7 @@ export function approvePopupConnectRequestEffect(
         }
         const approval = await executeConnectApproval({
           agent,
-          approvedProtocolOverrides,
+          approvedProtocolOverrides: captured.approvedProtocolOverrides,
           approvedSessionTtlSeconds,
           providerDid : selectedDid,
           request     : request.authentication === undefined ? approvalRequest : request,

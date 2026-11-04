@@ -37,6 +37,10 @@ const mocks = vi.hoisted(() => ({
   ] as any[],
 }));
 
+function returnApprovedRequest<T extends object>(_selectedDid: string, request: T): Promise<T> {
+  return Promise.resolve(structuredClone(request));
+}
+
 vi.mock('@/enbox/hooks/use-agent', () => ({
   useAgent: () => mocks.agent,
 }));
@@ -235,13 +239,62 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(request);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in', exact: true }));
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledOnce());
     expect(mocks.queryProtocolSetupStatus).not.toHaveBeenCalled();
     expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
+  });
+
+  it.each(['authenticate', 'connect'] as const)('pins an authentication-bearing %s request to its second owned profile', async (requestType) => {
+    mocks.identities.push({ did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } });
+    const request = {
+      ...connectRequest, requestType, expectedProviderDid: 'did:dht:bob',
+      ...(requestType === 'authenticate' ? { permissionRequests: [], delegateDid: undefined } : {}),
+      nonce: 'n'.repeat(32), state: 's'.repeat(32),
+      responseKey: { kty: 'OKP', crv: 'X25519', x: 'A'.repeat(43) },
+      authentication: { version: 1, audience: 'https://relay.example/', challenge: 'c'.repeat(32) },
+    };
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(request);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    const approve = await screen.findByRole('button', { name: requestType === 'authenticate' ? 'Sign in' : 'Approve', exact: true });
+    await waitFor(() => expect(approve).toBeEnabled());
+    expect(screen.getByLabelText('Approve as profile')).toHaveValue('did:dht:bob');
+    expect(screen.getByLabelText('Approve as profile')).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'Alice' })).not.toBeInTheDocument();
+    fireEvent.click(approve);
+    await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
+      'did:dht:bob', request, '1234', expect.any(Number), mocks.agent, [],
+    ));
+  });
+
+  it.each([false, true])('blocks missing expected identity and never offers a new wallet (firstTime=%s)', async (firstTime) => {
+    mocks.authState.firstTime = firstTime;
+    if (firstTime) {
+      mocks.identities = [];
+      useAuthStore.setState({ firstTime: true, agent: null });
+    }
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue({
+      ...connectRequest, requestType: 'authenticate', expectedProviderDid: 'did:dht:bob',
+      permissionRequests: [], delegateDid: undefined, nonce: 'n'.repeat(32), state: 's'.repeat(32),
+      responseKey: { kty: 'OKP', crv: 'X25519', x: 'A'.repeat(43) },
+      authentication: { version: 1, audience: 'https://relay.example/', challenge: 'c'.repeat(32) },
+    });
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    expect(await screen.findByText(/Restore the wallet that owns it/)).toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: 'Sign in', exact: true });
+    expect(approve).toBeDisabled();
+    fireEvent.click(approve);
+    expect(screen.queryByRole('button', { name: 'Create wallet & connect' })).not.toBeInTheDocument();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+    expect(mocks.connectVault).not.toHaveBeenCalled();
+    expect(mocks.autoCreateIdentity).not.toHaveBeenCalled();
   });
 
   it('fetches the connect request from request_uri + encryption_key in the URI fragment', async () => {
@@ -301,7 +354,7 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
@@ -342,7 +395,7 @@ describe('AppConnectPage', () => {
     mocks.generatePin.mockImplementation(
       () => new Promise<string>((resolve) => { releasePin = resolve; }),
     );
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
@@ -368,7 +421,7 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('event bus unavailable')));
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -402,7 +455,7 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     let resolveCompletion: (completed: boolean) => void = () => undefined;
     mocks.waitForRelayCompletion.mockImplementation(
       () => new Promise<boolean>((resolve) => { resolveCompletion = resolve; }),
@@ -428,9 +481,9 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.generatePin.mockResolvedValue('1234');
-    let resolveApproval: () => void = () => undefined;
+    let resolveApproval: (request: typeof connectRequest) => void = () => undefined;
     mocks.approveConnectRequest.mockImplementation(
-      () => new Promise<void>((resolve) => { resolveApproval = resolve; }),
+      () => new Promise<typeof connectRequest>((resolve) => { resolveApproval = resolve; }),
     );
 
     const view = renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -440,9 +493,29 @@ describe('AppConnectPage', () => {
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
 
     view.unmount();
-    await act(async () => { resolveApproval(); });
+    await act(async () => { resolveApproval(connectRequest); });
 
     expect(mocks.waitForRelayCompletion).not.toHaveBeenCalled();
+  });
+
+  it('uses the approved request snapshot for relay completion when the displayed request changes during approval', async () => {
+    const request = structuredClone(connectRequest);
+    const original = structuredClone(request);
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(request);
+    mocks.generatePin.mockResolvedValue('1234');
+    mocks.approveConnectRequest.mockImplementation(async (_selectedDid: string, activeRequest: typeof request) => {
+      const captured = structuredClone(activeRequest);
+      activeRequest.state = 'changed-after-approval';
+      activeRequest.reply.callbackUrl = 'https://other.example/callback';
+      return captured;
+    });
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+    await waitFor(() => expect(mocks.waitForRelayCompletion).toHaveBeenCalledWith(original));
+    expect(mocks.waitForRelayCompletion.mock.calls[0][0]).not.toBe(request);
   });
 
   it('shows an error when the deep-link connect request cannot be fetched', async () => {
@@ -499,7 +572,7 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(shortRequest);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
@@ -526,7 +599,7 @@ describe('AppConnectPage', () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
@@ -567,7 +640,7 @@ describe('AppConnectPage', () => {
     ];
     mocks.fetchConnectRequest.mockResolvedValue(refreshRequest);
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     setPageUrl(DEEP_LINK_FRAGMENT);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -736,7 +809,7 @@ describe('AppConnectPage', () => {
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.queryProtocolSetupStatus.mockResolvedValue('override');
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
@@ -783,7 +856,7 @@ describe('AppConnectPage', () => {
       ],
     });
     mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     const approve = await screen.findByRole('button', { name: 'Approve' });
@@ -908,7 +981,7 @@ describe('AppConnectPage', () => {
       });
       mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
       mocks.generatePin.mockResolvedValue('1234');
-      mocks.approveConnectRequest.mockResolvedValue(undefined);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
       // connect() unlocks the vault: reflect that in the store so the
       // approve flow finds the live agent right after onboarding.
       mocks.connectVault.mockImplementation(async () => {
