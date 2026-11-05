@@ -35,6 +35,7 @@ import { PinInput } from '@/components/ui/PinInput';
 import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
+import { AuthenticationDisplay } from '@/components/connect/AuthenticationDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
@@ -161,10 +162,16 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const needsOnboarding = firstTime && !agent;
   const isRefresh = connectionRequest?.requestType === 'refresh';
+  const authenticationOnly = connectionRequest?.requestType === 'authenticate';
+  const authentication = connectionRequest?.authentication;
+  const expectedAuthenticationDid = authentication !== undefined && !isRefresh
+    ? connectionRequest?.expectedProviderDid : undefined;
 
   // Build identity options for the selector and validate that a matched
   // refresh owner still uses a DID method accepted by the requester.
   const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
+    .filter((identity: any) => expectedAuthenticationDid === undefined
+      || (identity.did.uri === expectedAuthenticationDid && identity.metadata?.connectedDid === undefined))
     .filter((identity: any) =>
       connectionRequest === undefined
       || isDidSupportedByRequest(identity.did.uri, connectionRequest.supportedDidMethods)
@@ -195,13 +202,18 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     && (refreshLookupError
       || refreshDetection.matchState !== 'matched'
       || refreshOwnerOption === undefined);
+  const authenticationOwnerOption = agent !== null && !identitiesPending && !identitiesError
+    ? identityOptions.find((option) => option.value === expectedAuthenticationDid) : undefined;
+  const nonRefreshApprovalDid = expectedAuthenticationDid === undefined
+    ? selectedDid : authenticationOwnerOption?.value ?? '';
   const approvalDid = isRefresh
     ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
-    : selectedDid;
+    : nonRefreshApprovalDid;
 
   // Auto-created profiles use did:dht — only offer inline onboarding
   // when the requester accepts that method.
   const onboardingSupported = !isRefresh
+    && expectedAuthenticationDid === undefined
     && needsOnboarding
     && (connectionRequest === undefined
       || connectionRequest.supportedDidMethods.includes('did:dht'));
@@ -228,7 +240,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   // Auto-select first identity
   useEffect(() => {
-    if (isRefresh) return;
+    if (isRefresh || expectedAuthenticationDid !== undefined) return;
     const selectedExists = identityOptions.some((option: { value: string }) => option.value === selectedDid);
     if (identityOptions.length === 0) {
       if (selectedDid !== '') setSelectedDid('');
@@ -237,7 +249,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     if (identityOptions.length > 0 && !selectedExists) {
       setSelectedDid(identityOptions[0].value);
     }
-  }, [identityOptions, isRefresh, selectedDid]);
+  }, [expectedAuthenticationDid, identityOptions, isRefresh, selectedDid]);
 
   // A definition-override opt-in is profile-specific: clear it whenever the
   // approving profile changes so the choice must be made against the profile
@@ -463,7 +475,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // never leaves this device except by the user typing it into the app.
       const generatedPin = await generatePin(4);
       setPin(generatedPin);
-      await approveConnectRequest(
+      const completedRequest = await approveConnectRequest(
         approveAsDid,
         activeRequest,
         generatedPin,
@@ -476,9 +488,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // same event is emitted by the popup flow, while local DWN subscriptions
       // remain an additional best-effort invalidation path.
       try {
-        void runEnboxPromise(publishWalletEvent({
+        if (completedRequest.requestType !== 'authenticate') void runEnboxPromise(publishWalletEvent({
           _tag         : 'connect.approved',
-          origin       : activeRequest.clientMetadata?.origin ?? activeRequest.appName,
+          origin       : completedRequest.clientMetadata?.origin ?? completedRequest.appName,
           connectedDid : approveAsDid,
         })).catch((err: unknown) => console.warn('Relay connect approval event failed:', err));
       } catch (err) {
@@ -486,6 +498,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       }
 
       if (!mountedRef.current) return;
+      setConnectionRequest(completedRequest);
       setPhase('pin');
 
       // The app cannot open the response (and emit its completion marker)
@@ -493,7 +506,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // background after scheduling the PIN screen rather than delaying it.
       const completionId = ++relayCompletionIdRef.current;
       try {
-        void waitForRelayCompletion(activeRequest).then((completed) => {
+        void waitForRelayCompletion(completedRequest).then((completed) => {
           if (
             !completed
             || !mountedRef.current
@@ -640,7 +653,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     ? truncateDid(connectionRequest.clientDid)
     : 'Unknown requester';
   const requestSummary = connectionRequest
-    ? getConnectPermissionAskSummary(permissionRequests)
+    ? authenticationOnly ? 'Confirm your identity to sign in.' : getConnectPermissionAskSummary(permissionRequests)
     : '';
 
   async function handleCopyPin() {
@@ -855,6 +868,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             </p>
           </div>
 
+          {authentication && (
+            <AuthenticationDisplay
+              audience={authentication.audience}
+              authenticationOnly={authenticationOnly}
+            />
+          )}
+
           {isRefresh ? (
             <RenewSessionDisplay
               appName={connectionRequest.appName}
@@ -874,7 +894,15 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
           ) : (
             <>
               {/* Identity section */}
-              {onboardingSupported ? (
+              {expectedAuthenticationDid !== undefined && authenticationOwnerOption === undefined ? (
+                <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center" role="status">
+                  <p className="text-xs text-warning">
+                    {identitiesPending && !needsOnboarding
+                      ? 'Checking for the profile required by this sign-in…'
+                      : 'This sign-in requires an existing profile. Restore the wallet that owns it, or open the correct wallet, then try again.'}
+                  </p>
+                </div>
+              ) : onboardingSupported ? (
                 <section className="rounded-xl border border-border-default bg-surface-2 p-4">
                   <div className="flex items-center gap-2 text-accent">
                     <Sparkles size={16} />
@@ -897,7 +925,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                     id="app-connect-identity"
                     aria-label="Approve as profile"
                     options={identityOptions}
-                    value={selectedDid}
+                    value={nonRefreshApprovalDid}
+                    disabled={expectedAuthenticationDid !== undefined}
                     onChange={(e) => setSelectedDid(e.target.value)}
                   />
                 </section>
@@ -909,6 +938,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 </div>
               )}
 
+              {!authenticationOnly && (
               <PermissionDisplay
                 permissions={connectionRequest.permissionRequests}
                 protocolSetupStatuses={protocolSetupStatuses}
@@ -920,6 +950,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 overrideAcknowledged={overrideAcknowledged}
                 onOverrideAcknowledgedChange={setOverrideAcknowledged}
               />
+              )}
 
               <ProtocolOverrideConfirmDialog
                 open={showOverrideConfirm}
@@ -1016,7 +1047,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                     disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />
-                    {isRefresh ? 'Renew access' : 'Approve'}
+                    {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
                   </Button>
                 )}
               </div>
@@ -1076,7 +1107,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
               <Check className="h-8 w-8 text-success" />
             </div>
-            <p className="text-base font-semibold text-text-primary">Connected!</p>
+            <p className="text-base font-semibold text-text-primary">{authenticationOnly ? 'Signed in!' : 'Connected!'}</p>
             <p className="text-sm text-text-secondary">
               The requesting application confirmed the connection.
             </p>

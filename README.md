@@ -36,6 +36,7 @@
 - **Identity Management** -- Create, edit, delete, import, and export decentralised identities (DID:DHT) with auto-generated avatars, banners, and friendly names
 - **Profile** -- Display name, tagline, bio, avatar, and hero images stored on your personal DWN
 - **App Connect** -- Scan QR codes to connect with Enbox-compatible applications
+- **Wallet Sign-In** -- Approve owner authentication alone or alongside explicitly requested record permissions
 - **Permission Control** -- View and revoke permission grants from connected apps
 - **DID Search** -- Look up any DID to view its public profile, with recent search history
 - **Seed Phrase Recovery** -- Restore wallet vault from BIP-39 recovery phrase
@@ -44,6 +45,25 @@
 - **Themes** -- Dark and light modes with build-time product theme variants
 - **PWA** -- Installable with offline service worker support
 - **Security** -- PIN-locked vault, configurable auto-lock (5m / 10m / 30m / 1h / never), session persistence across tab refresh
+
+## Wallet Authentication
+
+The wallet accepts Connect authentication-only and combined requests over popup
+and relay transports. Consent shows the exact service audience and signs with
+the selected locally owned identity. Authentication-only approval creates no
+data delegate or DWN grants; combined approval returns an owner proof alongside
+the explicitly approved permissions.
+
+Popup requests must bind the authentication audience to the transport origin.
+Relay authentication requests must be served without redirects from the
+authentication service's HTTPS origin. The service must expose only requests
+bound to its registered transactions; arbitrary uploads to a public relay do
+not establish that trust.
+
+The receiving OAuth service verifies the proof against its stored request and
+issued challenge, then completes login. Wallet capability negotiation remains
+a separate integration step; callers should enable authentication only for
+wallet builds known to support it.
 
 ## Tech Stack
 
@@ -65,7 +85,7 @@
 ## Getting Started
 
 ```bash
-# Prerequisites: Bun (https://bun.sh)
+# Prerequisites: Bun 1.4.4 (https://bun.sh), matching packageManager and CI
 
 # Install dependencies
 bun install

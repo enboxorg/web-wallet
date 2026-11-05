@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => {
     createTransport: vi.fn(),
     queryProtocolSetupStatus: vi.fn(),
     publishWalletEvent: vi.fn(),
+    firstTime: false,
     transport,
     permissions: [] as any[],
     allPermissions: [] as any[],
@@ -48,9 +49,9 @@ vi.mock('@/enbox/hooks/use-agent', () => ({
 vi.mock('@/enbox/hooks/use-auth', () => ({
   useAuth: () => ({
     initialized: true,
-    unlocked: true,
-    firstTime: false,
-    agent: mocks.agent,
+    unlocked: !mocks.firstTime,
+    firstTime: mocks.firstTime,
+    agent: mocks.firstTime ? null : mocks.agent,
     connect: vi.fn(),
     unlock: vi.fn(),
     restore: vi.fn(),
@@ -177,6 +178,7 @@ function existingSessionGrant(ownerDid: string, delegateDid: string) {
 
 describe('DWebConnectPage', () => {
   beforeEach(() => {
+    mocks.firstTime = false;
     vi.clearAllMocks();
     useAuthStore.setState({
       initialized: true,
@@ -210,6 +212,76 @@ describe('DWebConnectPage', () => {
       did: { uri: 'did:dht:alice' },
       metadata: { name: 'Alice' },
     }];
+  });
+
+  it('signs in through the existing approval UI without protocol setup or delegation events', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(), requestType: 'authenticate', permissionRequests: [],
+      delegateDid: undefined, nonce: 'n'.repeat(32), state: 's'.repeat(32),
+      responseKey: { kty: 'OKP', crv: 'X25519', x: 'A'.repeat(43) },
+      authentication: { version: 1, audience: 'https://app.example/', challenge: 'c'.repeat(32) },
+    });
+    render(<DWebConnectPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Sign in', exact: true }));
+    await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledOnce());
+    await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledOnce());
+    expect(mocks.queryProtocolSetupStatus).not.toHaveBeenCalled();
+    expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
+  });
+
+  it.each(['authenticate', 'connect'] as const)('pins an authentication-bearing %s request to its second owned profile', async (requestType) => {
+    mocks.identities.push({ did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } });
+    const request = {
+      ...connectRequest(), requestType, expectedProviderDid: 'did:dht:bob',
+      ...(requestType === 'authenticate' ? { permissionRequests: [], delegateDid: undefined } : {}),
+      nonce: 'n'.repeat(32), state: 's'.repeat(32),
+      responseKey: { kty: 'OKP', crv: 'X25519', x: 'A'.repeat(43) },
+      authentication: { version: 1, audience: 'https://app.example/', challenge: 'c'.repeat(32) },
+    };
+    mocks.transport.awaitRequest.mockResolvedValue(request);
+    render(<DWebConnectPage />);
+    const approve = await screen.findByRole('button', { name: requestType === 'authenticate' ? 'Sign in' : 'Approve', exact: true });
+    await waitFor(() => expect(approve).toBeEnabled());
+    expect(screen.getByLabelText('Approve as profile')).toHaveValue('did:dht:bob');
+    expect(screen.getByLabelText('Approve as profile')).toBeDisabled();
+    expect(screen.queryByRole('option', { name: 'Alice' })).not.toBeInTheDocument();
+    fireEvent.click(approve);
+    await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
+      'did:dht:bob', request, 'https://app.example', expect.any(Number), mocks.agent, [],
+    ));
+  });
+
+  it.each([false, true])('blocks missing expected identity and never offers a new wallet (firstTime=%s)', async (firstTime) => {
+    mocks.firstTime = firstTime;
+    if (firstTime) {
+      mocks.identities = [];
+      useAuthStore.setState({ firstTime: true, agent: null });
+    }
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(), requestType: 'authenticate', expectedProviderDid: 'did:dht:bob',
+      permissionRequests: [], delegateDid: undefined, nonce: 'n'.repeat(32), state: 's'.repeat(32),
+      responseKey: { kty: 'OKP', crv: 'X25519', x: 'A'.repeat(43) },
+      authentication: { version: 1, audience: 'https://app.example/', challenge: 'c'.repeat(32) },
+    });
+    render(<DWebConnectPage />);
+    expect(await screen.findByText(/Restore the wallet that owns it/)).toBeInTheDocument();
+    const approve = screen.getByRole('button', { name: 'Sign in', exact: true });
+    expect(approve).toBeDisabled();
+    fireEvent.click(approve);
+    expect(screen.queryByRole('button', { name: 'Create wallet & connect' })).not.toBeInTheDocument();
+    expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
+  });
+
+  it('rejects a sign-in service that differs from the transport origin before presenting consent', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(), requestType: 'authenticate', permissionRequests: [],
+      authentication: { version: 1, audience: 'https://different.example/', challenge: 'c'.repeat(32) },
+    });
+    render(<DWebConnectPage />);
+    expect(await screen.findByText(/sign-in service does not match/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign in', exact: true })).not.toBeInTheDocument();
+    expect(mocks.approvePopupConnectRequest).not.toHaveBeenCalled();
   });
 
   it('shows guidance when not opened as a popup', async () => {

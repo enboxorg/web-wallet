@@ -97,7 +97,6 @@ function obtainProviderAuthTokenEffect(
       expiresAt: tokenResponse.expiresIn != null
         ? Date.now() + tokenResponse.expiresIn * 1000
         : undefined,
-      tokenUrl: providerAuth.tokenUrl,
       refreshUrl: providerAuth.refreshUrl,
     } satisfies RegistrationTokenData;
   });

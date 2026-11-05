@@ -6,6 +6,7 @@ import type {
   ConnectPermissionRequest,
   ConnectRequest,
 } from '@enbox/connect';
+import { assertConnectAuthenticationParams, assertConnectAuthenticationRequest } from '@enbox/connect';
 import type {
   EncryptionKeyDeriver,
   MessageSigner,
@@ -227,8 +228,17 @@ function parseCanonicalDid(value: string): Did | undefined {
 }
 
 export function preflightConnectRequest(request: ConnectRequest): ConnectPermissionPreflight {
-  const result = preflightConnectPermissions(request.permissionRequests);
-  resolveConnectSessionDurationSeconds(request.requestedSessionTtlSeconds);
+  if (request.authentication !== undefined) {
+    assertConnectAuthenticationParams(request.authentication);
+  }
+  let result: ConnectPermissionPreflight;
+  if (request.requestType === 'authenticate') {
+    assertConnectAuthenticationRequest(request);
+    result = { permissions: [], definitions: [], scopes: [] };
+  } else {
+    result = preflightConnectPermissions(request.permissionRequests);
+    resolveConnectSessionDurationSeconds(request.requestedSessionTtlSeconds);
+  }
 
   requireString(request.appName, 'Connect app name');
 
