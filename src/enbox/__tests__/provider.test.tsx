@@ -42,6 +42,7 @@ function createAgent() {
   return {
     agentDid: {
       uri: agentDidUri,
+      metadata: { published: true },
       document: {
         service: [{
           id: `${agentDidUri}#dwn`,
@@ -67,6 +68,8 @@ function createAgent() {
       clearDelegateDecryptionKeys: vi.fn(),
     },
     vault: {
+      isInitialized: vi.fn().mockResolvedValue(true),
+      getPendingSetup: vi.fn().mockResolvedValue(undefined),
       lock: vi.fn().mockResolvedValue(undefined),
       _store: {
         clear: vi.fn().mockResolvedValue(undefined),
@@ -86,6 +89,7 @@ function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
   const auth = {
     state,
     agent,
+    vault: agent.vault,
     connect: vi.fn(),
     connectVault: vi.fn(async () => {
       isLocked = false;
@@ -96,6 +100,7 @@ function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
       return { agent };
     }),
     restoreSession: vi.fn(),
+    connectHeadless: vi.fn(),
     lock: vi.fn(async () => {
       isLocked = true;
     }),
@@ -178,6 +183,11 @@ function LockThenUnlockButton() {
 function LockingStatus() {
   const { isLocking } = useEnboxAuth();
   return <span>{isLocking ? 'wallet-locking' : 'wallet-lock-settled'}</span>;
+}
+
+function LockButton() {
+  const { lock } = useEnboxAuth();
+  return <button type="button" onClick={lock}>Lock now</button>;
 }
 
 function AuthStatus() {
@@ -441,6 +451,149 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(useAuthStore.getState().agent).toBeNull();
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
     expect(queryMocks.invalidateQueries).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('keeps the wallet locked after late endpoint finalization (automatic=%s)', async (automatic) => {
+    const auth = createAuth('locked');
+    const settled = vi.fn();
+    const cachedEndpoints = ['https://previous.example/dwn'];
+    const signedEndpoints = ['https://signed.example/dwn'];
+    localStorage.setItem(STORAGE_KEYS.WALLET_DWN_ENDPOINTS, JSON.stringify({ version: 1, endpoints: cachedEndpoints }));
+    if (automatic) sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, '1234');
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    let resolveEndpoints!: (endpoints: string[]) => void;
+    auth.agent.identity.getDwnEndpoints.mockReturnValue(new Promise((resolve) => { resolveEndpoints = resolve; }));
+    authMocks.create.mockResolvedValue(auth);
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton onSettled={settled} />
+        <LockButton />
+        <AuthStatus />
+      </EnboxAuthProvider>,
+    );
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalledOnce());
+    if (!automatic) fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Lock now' }));
+    await waitFor(() => expect(auth.lock).toHaveBeenCalledOnce());
+    await act(async () => { resolveEndpoints(signedEndpoints); });
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    if (!automatic) await waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(auth.isLocked).toBe(true);
+    expect(useAuthStore.getState().agent).toBeNull();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.WALLET_DWN_ENDPOINTS)!)).toEqual({ version: 1, endpoints: cachedEndpoints });
+    expect(queryMocks.invalidateQueries).not.toHaveBeenCalled();
+
+    // Cancellation ends this attempt; a later explicit unlock still works.
+    auth.agent.identity.getDwnEndpoints.mockResolvedValue(signedEndpoints);
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(useAuthStore.getState().agent).toBe(auth.agent));
+  });
+
+  it.each([false, true])('cancels legacy owner reconnection while SDK locking is pending (automatic=%s)', async (automatic) => {
+    const auth = createAuth('locked');
+    const settled = vi.fn();
+    auth.restoreSession.mockResolvedValue(undefined);
+    auth.connectHeadless.mockImplementation(async () => {
+      auth.setLocked(false);
+      throw new Error('[@enbox/auth] No identities found in vault.');
+    });
+    let finishInventory!: (identities: unknown[]) => void;
+    auth.agent.identity.list.mockReturnValue(new Promise((resolve) => { finishInventory = resolve; }));
+    let finishLock!: () => void;
+    auth.lock.mockImplementation(() => new Promise<void>((resolve) => {
+      finishLock = () => { auth.setLocked(true); resolve(); };
+    }));
+    if (automatic) sessionStorage.setItem(SESSION_VAULT_PASSWORD_KEY, '1234');
+    authMocks.create.mockResolvedValue(auth);
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton onSettled={settled} />
+        <LockButton />
+      </EnboxAuthProvider>,
+    );
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalledOnce());
+    if (!automatic) fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(auth.agent.identity.list).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole('button', { name: 'Lock now' }));
+    await waitFor(() => expect(auth.lock).toHaveBeenCalledOnce());
+    await act(async () => { finishInventory([]); });
+    expect(auth.connectVault).not.toHaveBeenCalled();
+    expect(auth.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
+    await act(async () => { finishLock(); });
+    if (!automatic) await waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    else await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    expect(auth.isLocked).toBe(true);
+    expect(useAuthStore.getState().agent).toBeNull();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+  });
+
+  it('cancels legacy owner reconnection when its provider unmounts', async () => {
+    const auth = createAuth('locked');
+    const settled = vi.fn();
+    auth.restoreSession.mockResolvedValue(undefined);
+    auth.connectHeadless.mockImplementation(async () => {
+      auth.setLocked(false);
+      throw new Error('[@enbox/auth] No identities found in vault.');
+    });
+    let finishInventory!: (identities: unknown[]) => void;
+    auth.agent.identity.list.mockReturnValue(new Promise((resolve) => { finishInventory = resolve; }));
+    authMocks.create.mockResolvedValue(auth);
+    const view = render(<EnboxAuthProvider><UnlockButton onSettled={settled} /></EnboxAuthProvider>);
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(auth.agent.identity.list).toHaveBeenCalledOnce());
+    view.unmount();
+    await act(async () => { finishInventory([]); });
+    await waitFor(() => expect(settled).toHaveBeenCalledOnce());
+    expect(auth.shutdown).toHaveBeenCalledOnce();
+    expect(auth.connectVault).not.toHaveBeenCalled();
+    expect(auth.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
+    expect(useAuthStore.getState().agent).toBeNull();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBeNull();
+  });
+
+  it('does not clear a replacement provider session after a stale rollback lock completes', async () => {
+    const original = createAuth('locked');
+    const replacement = createAuth('locked');
+    const originalSettled = vi.fn();
+    original.restoreSession.mockImplementation(async () => {
+      original.setLocked(false);
+      return { agent: original.agent };
+    });
+    original.agent.identity.getDwnEndpoints.mockRejectedValue(new Error('endpoint lookup failed'));
+    let finishOriginalLock!: () => void;
+    original.lock.mockImplementation(() => new Promise<void>((resolve) => {
+      finishOriginalLock = () => { original.setLocked(true); resolve(); };
+    }));
+    replacement.restoreSession.mockImplementation(async () => {
+      replacement.setLocked(false);
+      return { agent: replacement.agent };
+    });
+    authMocks.create.mockResolvedValueOnce(original).mockResolvedValueOnce(replacement);
+    const view = render(
+      <EnboxAuthProvider key="original"><UnlockButton onSettled={originalSettled} /></EnboxAuthProvider>,
+    );
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(original.lock).toHaveBeenCalledOnce());
+
+    view.rerender(<EnboxAuthProvider key="replacement"><UnlockButton /></EnboxAuthProvider>);
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(useAuthStore.getState().agent).toBe(replacement.agent));
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
+
+    await act(async () => { finishOriginalLock(); });
+    await waitFor(() => expect(originalSettled).toHaveBeenCalledOnce());
+    expect(useAuthStore.getState().agent).toBe(replacement.agent);
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
+    expect(replacement.lock).not.toHaveBeenCalled();
   });
 
   it('configures AuthManager to own live sync for every session flow', async () => {
