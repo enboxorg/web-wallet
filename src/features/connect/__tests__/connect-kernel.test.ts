@@ -505,7 +505,7 @@ describe('connect-kernel', () => {
       expect(request).toEqual(original);
       expect(mocks.executeConnectAuthentication).not.toHaveBeenCalled();
     });
-    it('stamps the transport origin into the ceremony request but seals the original', async () => {
+    it('passes the transport origin separately for legacy approval and seals the original request', async () => {
       const agent = { id: 'agent-1' } as any;
       const request = connectRequest({ reply: { mode: 'post_message' } });
       const originalRequest = structuredClone(request);
@@ -526,10 +526,8 @@ describe('connect-kernel', () => {
         approvedProtocolOverrides : ['https://example.com/protocols/tasks'],
         approvedSessionTtlSeconds : 604_800,
         providerDid               : 'did:dht:alice',
-        request                   : expect.objectContaining({
-          applicationId  : 'https://app.example',
-          clientMetadata : { origin: 'https://app.example' },
-        }),
+        request                   : originalRequest,
+        verifiedRequesterOrigin   : 'https://app.example',
         transport                 : 'postMessage',
       });
       expect(mocks.executeConnectApproval.mock.calls[0][0].request)

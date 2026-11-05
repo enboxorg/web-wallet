@@ -1,4 +1,5 @@
 import { Effect } from 'effect';
+import type { ExecuteConnectApprovalParams } from '@enbox/agent';
 import { executeConnectApproval, executeConnectAuthentication } from '@enbox/agent';
 import {
   CONNECT_DENIED_TOKEN,
@@ -19,10 +20,6 @@ import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { CurrentAgent, currentAgentLayer } from '@/enbox/effect/services';
 import type { EnboxAgent } from '@/enbox/types';
 
-type ConnectRequestWithApplicationId = ConnectRequest & {
-  applicationId?: string;
-};
-
 function sdkTimeout(operation: string) {
   return sdkError(operation)(new Error(`${operation} timed out`));
 }
@@ -38,6 +35,27 @@ function captureApprovalInput<T>(operation: string, capture: () => T) {
   } catch (error) {
     return Effect.fail(sdkError(operation)(error));
   }
+}
+
+/** Approve and seal one captured request; only callback delivery may be retried. */
+async function approveAndSeal({ pin, ...params }: ExecuteConnectApprovalParams & {
+  request: ConnectRequest;
+  pin?: string;
+}): Promise<string> {
+  const { agent, providerDid, request, verifiedRequesterOrigin } = params;
+  if (request.requestType === 'authenticate') {
+    if (verifiedRequesterOrigin === undefined) {
+      throw new Error('Sign-in request origin is unavailable.');
+    }
+    const approval = await executeConnectAuthentication({ agent, providerDid, request, verifiedRequesterOrigin });
+    return ConnectProvider.sealAuthenticationResponse({
+      request, providerDid, approval, signer: approval.responseSigner, pin,
+    });
+  }
+  const approval = await executeConnectApproval(params);
+  return ConnectProvider.sealApprovedResponse({
+    request, providerDid, approval, signer: approval.responseSigner, pin,
+  });
 }
 
 /** The request's HTTPS origin is established by its non-redirecting fetch. */
@@ -218,48 +236,19 @@ export function approveConnectRequestEffect(
     }
     return {
       request: capturedRequest,
-      verifiedRequesterOrigin,
+      ...(verifiedRequesterOrigin === undefined ? {} : { verifiedRequesterOrigin }),
       callbackUrl: getRelayCallbackUrl(capturedRequest),
       approvedProtocolOverrides: [...approvedProtocolOverrides],
-      selectedDid,
+      providerDid: selectedDid,
       approvedSessionTtlSeconds,
     };
   });
   return Effect.gen(function* () {
-    const captured = yield* prepared;
-    const request = captured.request;
-    const { callbackUrl, verifiedRequesterOrigin, selectedDid, approvedSessionTtlSeconds } = captured;
+    const { callbackUrl, ...captured } = yield* prepared;
+    const { request } = captured;
     const agent = yield* CurrentAgent;
     const idToken = yield* Effect.tryPromise({
-      try: async () => {
-        if (request.requestType === 'authenticate') {
-          if (verifiedRequesterOrigin === undefined) {
-            throw new Error('Sign-in request origin is unavailable.');
-          }
-          const approval = await executeConnectAuthentication({
-            agent, providerDid: selectedDid, request, verifiedRequesterOrigin,
-          });
-          return ConnectProvider.sealAuthenticationResponse({
-            request, providerDid: selectedDid, approval, signer: approval.responseSigner, pin,
-          });
-        }
-        const approval = await executeConnectApproval({
-          agent,
-          approvedProtocolOverrides: captured.approvedProtocolOverrides,
-          approvedSessionTtlSeconds,
-          providerDid : selectedDid,
-          request,
-          transport   : 'relay',
-          ...(verifiedRequesterOrigin === undefined ? {} : { verifiedRequesterOrigin }),
-        });
-        return ConnectProvider.sealApprovedResponse({
-          request,
-          providerDid : selectedDid,
-          approval,
-          signer      : approval.responseSigner,
-          pin,
-        });
-      },
+      try: () => approveAndSeal({ ...captured, agent, transport: 'relay', pin }),
       catch: sdkError('connect.submitConnectResponse'),
     });
 
@@ -334,11 +323,10 @@ export function isTrustedDappOrigin(origin: string): boolean {
 /**
  * Runs the approval ceremony for a popup (postMessage) request and returns
  * the sealed response JWE for the page to hand to
- * `WalletPostMessageTransport.sendResponse`. The request's claimed
- * `clientMetadata.origin` is overwritten with the transport-authenticated
- * dapp origin and the wallet-approved lifetime is applied before session
- * metadata is stamped. Popup responses remain sealed against the original
- * verified request and use no PIN — the channel is origin-bound end to end.
+ * `WalletPostMessageTransport.sendResponse`. The SDK receives the verified
+ * dapp origin separately for stored session metadata. The original request
+ * remains intact for proof binding and response sealing; popup responses use
+ * no PIN because the transport pins the requesting origin.
  *
  * Like the relay path, the non-idempotent ceremony runs without the retrying
  * network policy (see `approveConnectRequestEffect`).
@@ -357,44 +345,14 @@ export function approvePopupConnectRequestEffect(
     assertConnectAuthenticationOrigin(request, dappOrigin);
     const capturedRequest = structuredClone(request);
     assertConnectAuthenticationOrigin(capturedRequest, dappOrigin);
-    const approvalRequest: ConnectRequestWithApplicationId = {
-      ...capturedRequest,
-      applicationId: dappOrigin,
-      clientMetadata: { ...capturedRequest.clientMetadata, origin: dappOrigin },
-    };
-    return { request: capturedRequest, approvalRequest, approvedProtocolOverrides: [...approvedProtocolOverrides], selectedDid,
-      approvedSessionTtlSeconds, dappOrigin };
+    return { request: capturedRequest, approvedProtocolOverrides: [...approvedProtocolOverrides], providerDid: selectedDid,
+      approvedSessionTtlSeconds, verifiedRequesterOrigin: dappOrigin };
   });
   return Effect.gen(function* () {
     const captured = yield* prepared;
-    const { request, approvalRequest, selectedDid, approvedSessionTtlSeconds, dappOrigin } = captured;
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
-      try: async () => {
-        if (request.requestType === 'authenticate') {
-          const approval = await executeConnectAuthentication({
-            agent, providerDid: selectedDid, request, verifiedRequesterOrigin: dappOrigin,
-          });
-          return ConnectProvider.sealAuthenticationResponse({
-            request, providerDid: selectedDid, approval, signer: approval.responseSigner,
-          });
-        }
-        const approval = await executeConnectApproval({
-          agent,
-          approvedProtocolOverrides: captured.approvedProtocolOverrides,
-          approvedSessionTtlSeconds,
-          providerDid : selectedDid,
-          request     : request.authentication === undefined ? approvalRequest : request,
-          transport   : 'postMessage',
-          ...(request.authentication === undefined ? {} : { verifiedRequesterOrigin: dappOrigin }),
-        });
-        return ConnectProvider.sealApprovedResponse({
-          request,
-          providerDid : selectedDid,
-          approval,
-          signer      : approval.responseSigner,
-        });
-      },
+      try: () => approveAndSeal({ ...captured, agent, transport: 'postMessage' }),
       catch: sdkError('dwebConnect.submitConnectResponse'),
     });
   });

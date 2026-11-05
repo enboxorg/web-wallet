@@ -124,7 +124,6 @@ async function reopenOwnerVault(auth: WalletAuthManager, password: string, signa
     throw refusal;
   }
 
-  assertActive();
   const session = await auth.connectVault({ password, createIdentity: false });
   signal?.throwIfAborted();
   return session;

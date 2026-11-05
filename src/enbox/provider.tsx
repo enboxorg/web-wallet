@@ -119,7 +119,6 @@ export function useEnboxAuth(): EnboxAuthContextValue {
 
 export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const authManagerRef = useRef<WalletAuthManager | null>(null);
-  const authenticationAttemptRef = useRef(false);
   // One cancellation scope spans SDK calls and the wallet's final cache/store commit.
   const authenticationControllerRef = useRef<AbortController | null>(null);
   const initializationRetryReadyRef = useRef(false);
@@ -180,11 +179,10 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     failureMessage: string,
     operation: (signal: AbortSignal) => Promise<T>,
   ): Promise<T> => {
-    if (authenticationAttemptRef.current) {
+    if (authenticationControllerRef.current !== null) {
       throw new Error('Authentication is already in progress.');
     }
 
-    authenticationAttemptRef.current = true;
     const controller = new AbortController();
     authenticationControllerRef.current = controller;
     setIsLoading(true);
@@ -211,7 +209,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       if (authenticationControllerRef.current === controller) {
         authenticationControllerRef.current = null;
-        authenticationAttemptRef.current = false;
         if (authManagerRef.current === auth) setIsLoading(false);
       }
     }
@@ -236,9 +233,8 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const cachedPassword = getCachedSessionPassword();
     if (!cachedPassword) return false;
     if (auth.state !== 'locked') return false;
-    if (authenticationAttemptRef.current) return false;
+    if (authenticationControllerRef.current !== null) return false;
 
-    authenticationAttemptRef.current = true;
     const controller = new AbortController();
     authenticationControllerRef.current = controller;
     try {
@@ -254,7 +250,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     } finally {
       if (authenticationControllerRef.current === controller) {
         authenticationControllerRef.current = null;
-        authenticationAttemptRef.current = false;
       }
     }
   }, [restoreStoredSession, rollbackAuthentication]);
@@ -300,12 +295,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
       const autoRestored = await tryAutoRestore(auth);
       if (cancelled) return;
 
-      if (!autoRestored) {
-        const firstTime = auth.state === 'uninitialized';
-        setInitialized(true, firstTime);
-      } else {
-        setInitialized(true, false);
-      }
+      setInitialized(true, !autoRestored && auth.state === 'uninitialized');
       setError(null);
     }
 
@@ -318,7 +308,6 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         if (authManagerRef.current === ownedAuth) {
           authenticationControllerRef.current?.abort();
           authenticationControllerRef.current = null;
-          authenticationAttemptRef.current = false;
           authManagerRef.current = null;
           storeLock();
           setInitialized(false, false);
