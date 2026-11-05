@@ -9,8 +9,9 @@ export function AuthenticationDisplay({ audience, authenticationOnly }: Authenti
   return (
     <section className="rounded-xl border border-border-default bg-surface-2 p-4">
       <h2 className="text-sm font-semibold text-text-primary">Sign in to {service}</h2>
+      <p className="mt-1.5 break-all font-mono text-xs text-text-primary">{audience}</p>
       <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
-        Use your selected profile to confirm this sign-in request.
+        Continue only if you started this sign-in. Your selected profile will confirm your identity.
       </p>
       <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
         {authenticationOnly
