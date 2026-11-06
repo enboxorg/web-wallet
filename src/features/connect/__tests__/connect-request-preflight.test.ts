@@ -8,9 +8,9 @@ import {
   validateConnectPermissionSemantics,
 } from '../connect-request-preflight';
 
-const protocol = 'https://example.com/protocols/tasks';
+const module = 'https://example.com/modules/tasks';
 const definition = {
-  protocol,
+  module,
   published: false,
   types: {
     task: { schema: 'https://example.com/schemas/task' },
@@ -22,7 +22,7 @@ const definition = {
 
 function permissions(scope: Record<string, unknown>): ConnectPermissionRequest[] {
   return [{
-    protocolDefinition: definition,
+    moduleDefinition: definition,
     permissionScopes: [scope],
   }] as ConnectPermissionRequest[];
 }
@@ -36,7 +36,7 @@ function relayRequest(overrides: Partial<ConnectRequest> = {}): ConnectRequest {
     state          : 'state',
     responseMode   : 'direct_post',
     supportedDidMethods: ['did:dht', 'did:jwk'],
-    permissionRequests: permissions({ interface: 'Records', method: 'Read', protocol }),
+    permissionRequests: permissions({ interface: 'Records', method: 'Read', module }),
     ...overrides,
   };
 }
@@ -47,12 +47,12 @@ describe('connect request preflight', () => {
     ['Records', 'Write'],
     ['Records', 'Delete'],
     ['Messages', 'Read'],
-    ['Protocols', 'Query'],
+    ['Modules', 'Query'],
   ])('accepts the Connect scope %s.%s', (interfaceName, method) => {
     const result = preflightConnectPermissions(permissions({
       interface: interfaceName,
       method,
-      protocol,
+      module,
     }));
 
     expect(result.scopes).toHaveLength(1);
@@ -64,27 +64,27 @@ describe('connect request preflight', () => {
     ['Records', 'Subscribe'],
     ['Records', 'Count'],
     ['Messages', 'Query'],
-    ['Protocols', 'Configure'],
+    ['Modules', 'Configure'],
     ['Permissions', 'Grant'],
   ])('rejects unsupported scope %s.%s', (interfaceName, method) => {
     expect(() => preflightConnectPermissions(permissions({
       interface: interfaceName,
       method,
-      protocol,
+      module,
     }))).toThrow(/not supported|cannot be delegated/i);
   });
 
-  it('rejects malformed, mismatched, and empty scopes', () => {
+  it('rejects malformed, mismatched, and absent scope arrays', () => {
     expect(() => preflightConnectPermissions([])).toThrow('at least one permission');
-    expect(() => preflightConnectPermissions([{ ...permissions({})[0], permissionScopes: [] }]))
-      .toThrow('at least one permission scope');
+    expect(() => preflightConnectPermissions([{ ...permissions({})[0], permissionScopes: undefined }]))
+      .toThrow('permission scope array');
     expect(() => preflightConnectPermissions(permissions(null as unknown as Record<string, unknown>)))
       .toThrow('must be an object');
     expect(() => preflightConnectPermissions(permissions({
       interface : 'Records',
       method    : 'Read',
-      protocol  : 'https://evil.example/protocol',
-    }))).toThrow('must match the protocol URI');
+      module  : 'https://evil.example/module',
+    }))).toThrow('must match the module URI');
   });
 
   it('rejects conflicting duplicate definitions and requester-owned key metadata', () => {
@@ -93,19 +93,19 @@ describe('connect request preflight', () => {
       types: { task: { schema: 'https://evil.example/task' } },
     };
     expect(() => preflightConnectPermissions([
-      ...permissions({ interface: 'Records', method: 'Read', protocol }),
+      ...permissions({ interface: 'Records', method: 'Read', module }),
       {
-        protocolDefinition: conflicting,
-        permissionScopes: [{ interface: 'Records', method: 'Write', protocol }],
+        moduleDefinition: conflicting,
+        permissionScopes: [{ interface: 'Records', method: 'Write', module }],
       },
     ])).toThrow('different definitions');
 
     const requesterKeyPermission = {
-      protocolDefinition: {
+      moduleDefinition: {
         ...definition,
         $keyAgreement: { publicKeyJwk: { kty: 'OKP', crv: 'X25519', x: 'requester-key' } },
       },
-      permissionScopes: [{ interface: 'Records', method: 'Read', protocol }],
+      permissionScopes: [{ interface: 'Records', method: 'Read', module }],
     } as ConnectPermissionRequest;
     expect(() => preflightConnectPermissions([requesterKeyPermission]))
       .toThrow('wallet-managed encryption keys');
@@ -114,31 +114,77 @@ describe('connect request preflight', () => {
     // duplicate must still be inspected so a later clean copy cannot hide it.
     expect(() => preflightConnectPermissions([
       requesterKeyPermission,
-      ...permissions({ interface: 'Records', method: 'Write', protocol }),
+      ...permissions({ interface: 'Records', method: 'Write', module }),
     ])).toThrow('wallet-managed encryption keys');
   });
 
-  it('requires normalized protocol URIs', () => {
+  it('requires normalized module URIs', () => {
     expect(() => preflightConnectPermissions([{
-      protocolDefinition: { ...definition, protocol: 'HTTPS://example.com/protocols/tasks' },
-      permissionScopes: [{ interface: 'Records', method: 'Read', protocol: 'HTTPS://example.com/protocols/tasks' }],
+      moduleDefinition: { ...definition, module: 'HTTPS://example.com/modules/tasks' },
+      permissionScopes: [{ interface: 'Records', method: 'Read', module: 'HTTPS://example.com/modules/tasks' }],
     }])).toThrow('not normalized');
   });
 
-  it('runs the complete DWN protocol and permission validators before mutation', async () => {
+  it('runs the complete DWN module and permission validators before mutation', async () => {
     const valid = preflightConnectPermissions(
-      permissions({ interface: 'Records', method: 'Read', protocol }),
+      permissions({ interface: 'Records', method: 'Read', module }),
     );
     await expect(validateConnectPermissionSemantics(valid)).resolves.toBeUndefined();
 
     const malformed = preflightConnectPermissions([{
-      protocolDefinition: {
+      moduleDefinition: {
         ...definition,
         structure: { task: { $actions: [{ who: 'anyone', can: ['not-an-action'] }] } },
       },
-      permissionScopes: [{ interface: 'Records', method: 'Read', protocol }],
+      permissionScopes: [{ interface: 'Records', method: 'Read', module }],
     }] as unknown as ConnectPermissionRequest[]);
     await expect(validateConnectPermissionSemantics(malformed)).rejects.toThrow('is invalid');
+  });
+
+  it('validates a composed consumer with a plaintext role provider without adding provider grants', async () => {
+    const provider = {
+      module: 'https://example.com/modules/workspace', published: false,
+      types: { workspace: {}, member: {} },
+      structure: { workspace: { member: { $role: true } } },
+    } as const;
+    const consumer = {
+      module: 'https://example.com/modules/comments', published: false,
+      uses: { core: provider.module },
+      types: { comment: { encryptionRequired: true } },
+      structure: { workspace: { $ref: 'core:workspace', comment: {
+        $actions: [{ role: 'core:workspace/member', can: ['read'] }],
+      } } },
+    } as const;
+    const requested: ConnectPermissionRequest[] = [
+      { moduleDefinition: provider, permissionScopes: [] },
+      { moduleDefinition: consumer, permissionScopes: [{ interface: 'Records', method: 'Read', module: consumer.module }] },
+    ];
+    const snapshot = structuredClone(requested);
+    const checked = preflightConnectPermissions(requested);
+    await expect(validateConnectPermissionSemantics(checked)).resolves.toBeUndefined();
+    expect(checked.scopes).toEqual(snapshot[1].permissionScopes);
+    expect(checked.permissions).toEqual(snapshot);
+    expect(requested).toEqual(snapshot);
+    expect(requested[0].moduleDefinition).not.toHaveProperty('$keyAgreement');
+
+    const invalid = preflightConnectPermissions([
+      requested[0],
+      { ...requested[1], moduleDefinition: { ...consumer, structure: { workspace: { ...consumer.structure.workspace, $ref: 'core:missing' } } } },
+    ]);
+    await expect(validateConnectPermissionSemantics(invalid)).rejects.toThrow(/missing|not found/);
+  });
+
+  it('defers dependencies omitted from the request to owner-specific SDK approval', async () => {
+    const checked = preflightConnectPermissions([{
+      moduleDefinition: {
+        module, published: false,
+        uses: { owner: 'https://example.com/modules/installed-owner' },
+        types: { task: {} },
+        structure: { workspace: { $ref: 'owner:workspace', task: {} } },
+      },
+      permissionScopes: [{ interface: 'Records', method: 'Read', module }],
+    }]);
+    await expect(validateConnectPermissionSemantics(checked)).resolves.toBeUndefined();
   });
 
   it('applies relay TTL, delegate DID, and supported-method checks', () => {

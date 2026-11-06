@@ -1,6 +1,6 @@
 import type { DwnPermissionScope } from '@enbox/agent';
 import type { ConnectPermissionRequest } from '@enbox/connect';
-import { getScopeLabel } from '@/lib/protocol-names';
+import { getScopeLabel } from '@/lib/module-names';
 
 export type DisplayScope = {
   interface: string;
@@ -40,7 +40,7 @@ const SUPPORT_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key'>> 
     phrase : 'view messages from',
     risk   : 'view',
   },
-  'Protocols.Query': {
+  'Modules.Query': {
     label  : 'Inspect setup',
     phrase : 'inspect setup for',
     risk   : 'view',
@@ -49,7 +49,7 @@ const SUPPORT_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key'>> 
 
 export function isInternalConnectScope(scope: DwnPermissionScope): boolean {
   return (
-    (scope?.interface === 'Protocols' && scope?.method === 'Query')
+    (scope?.interface === 'Modules' && scope?.method === 'Query')
     || (scope?.interface === 'Messages' && scope?.method === 'Read')
   );
 }
@@ -71,21 +71,21 @@ export function getDisplayScopes(
   return [...(scopes.size > 0 ? scopes : supportScopes).values()];
 }
 
-export function mergePermissionRequestsByProtocol(
+export function mergePermissionRequestsByModule(
   permissions: ConnectPermissionRequest[],
 ): ConnectPermissionRequest[] {
   const merged = new Map<string, ConnectPermissionRequest>();
 
   for (const permission of permissions) {
-    const protocolUri = permission.protocolDefinition.protocol;
-    const existing = merged.get(protocolUri);
+    const moduleUri = permission.moduleDefinition.module;
+    const existing = merged.get(moduleUri);
 
     if (!existing) {
-      merged.set(protocolUri, permission);
+      merged.set(moduleUri, permission);
       continue;
     }
 
-    merged.set(protocolUri, {
+    merged.set(moduleUri, {
       ...existing,
       permissionScopes: [
         ...existing.permissionScopes,

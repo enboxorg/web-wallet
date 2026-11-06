@@ -1,9 +1,9 @@
 import { Effect } from 'effect';
 
 import {
-  IDENTITY_SYNC_PROTOCOLS,
-  installProtocolsEffect,
-} from './protocols';
+  IDENTITY_SYNC_MODULES,
+  installModulesEffect,
+} from './modules';
 import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
 import { CurrentAgent, enboxLiveLayer } from './effect/services';
@@ -66,7 +66,7 @@ export function ensureIdentitySyncOptionsEffect(did: string) {
     return yield* Effect.tryPromise({
       try: () => agent.sync.ensureIdentityOptions({
         did,
-        options: { protocols: [...IDENTITY_SYNC_PROTOCOLS] },
+        options: { modules: [...IDENTITY_SYNC_MODULES] },
       }),
       catch: sdkError('sync.ensureIdentityOptions'),
     });
@@ -74,7 +74,7 @@ export function ensureIdentitySyncOptionsEffect(did: string) {
 }
 
 /**
- * Keep owner protocol definitions and sync registrations current. AuthManager
+ * Keep owner module definitions and sync registrations current. AuthManager
  * owns delegated registration scope because it derives that scope from grants.
  */
 export async function reconcileIdentitySync(
@@ -103,7 +103,7 @@ export function reconcileIdentitySyncEffect(
     const failedDids: string[] = [];
     for (const did of ownerDids) {
       const changed = yield* Effect.gen(function* () {
-        yield* installProtocolsEffect(did);
+        yield* installModulesEffect(did);
         return yield* ensureIdentitySyncOptionsEffect(did);
       }).pipe(
         Effect.catchAll((error) =>

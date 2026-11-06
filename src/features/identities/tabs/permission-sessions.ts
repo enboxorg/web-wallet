@@ -1,17 +1,16 @@
 import type { ConnectSessionMetadata, DwnPermissionGrant } from '@enbox/agent';
+import { PermissionsModule } from '@enbox/dwn-sdk-js';
 
 /**
  * The connect approval ceremony stores one contextId-scoped revocation grant
  * per session grant so the delegate can self-revoke its own access. They are
- * protocol machinery — deliberately stamped without `connectSession` display
+ * module machinery — deliberately stamped without `connectSession` display
  * metadata — and are never user-facing, so permission display and grouping
  * must exclude them rather than bucket them as session-less grants.
  */
-const PERMISSIONS_PROTOCOL_URI = 'https://identity.foundation/dwn/permissions';
-
 export function isSessionRevocationGrant(grant: DwnPermissionGrant): boolean {
-  const scope = grant.scope as { protocol?: string; contextId?: unknown } | undefined;
-  return scope?.protocol === PERMISSIONS_PROTOCOL_URI
+  const scope = grant.scope as { module?: string; contextId?: unknown } | undefined;
+  return scope?.module === PermissionsModule.uri
     && typeof scope.contextId === 'string';
 }
 
@@ -112,8 +111,8 @@ function normalizeOrigin(value: string | undefined): string | undefined {
 function isWebOrigin(value: string | undefined): boolean {
   if (value === undefined) return false;
   try {
-    const protocol = new URL(value).protocol;
-    return protocol === 'https:' || protocol === 'http:';
+    const scheme = new URL(value).protocol;
+    return scheme === 'https:' || scheme === 'http:';
   } catch {
     return false;
   }

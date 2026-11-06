@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import { ExternalLink, QrCode, Search } from 'lucide-react';
 import { useProfile } from '@/enbox/hooks/use-profile';
-import { useProtocols } from '@/enbox/hooks/use-protocols';
+import { useModules } from '@/enbox/hooks/use-modules';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -16,10 +16,10 @@ interface OverviewTabProps {
 
 export default function OverviewTab({ did }: OverviewTabProps) {
   const { data: profile, isLoading, isError, error } = useProfile(did);
-  const { data: protocols } = useProtocols(did);
+  const { data: modules } = useModules(did);
   const { data: permissions } = usePermissions(did);
 
-  const protocolCount = protocols?.length ?? 0;
+  const moduleCount = modules?.length ?? 0;
   const granteeCount = permissions
     ? new Set(permissions.map((p: any) => p.grantee)).size
     : 0;
@@ -98,8 +98,8 @@ export default function OverviewTab({ did }: OverviewTabProps) {
       {profile?.displayName && (
         <div className="grid grid-cols-3 gap-3">
           <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
-            <p className="text-xl font-semibold text-text-primary">{protocolCount}</p>
-            <p className="text-xs text-text-tertiary mt-0.5">Protocols</p>
+            <p className="text-xl font-semibold text-text-primary">{moduleCount}</p>
+            <p className="text-xs text-text-tertiary mt-0.5">Modules</p>
           </div>
           <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
             <p className="text-xl font-semibold text-text-primary">{granteeCount}</p>

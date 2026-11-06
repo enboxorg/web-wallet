@@ -8,7 +8,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 
-import type { ProtocolSetupStatus } from '@/features/connect/protocol-install';
+import type { ModuleSetupStatus } from '@/features/connect/module-install';
 import type { ConnectRefreshDetection } from '@/features/connect/connect-refresh';
 import { formatRelativeExpiry } from '@/features/connect/connect-session-duration';
 import { truncateDid } from '@/lib/utils';
@@ -23,12 +23,12 @@ interface RenewSessionDisplayProps {
   lookupError: boolean;
   ownerLabel?: string;
   ownerSupported: boolean;
-  protocolSetupStatuses?: Record<string, ProtocolSetupStatus>;
+  moduleSetupStatuses?: Record<string, ModuleSetupStatus>;
   requesterLabel?: string;
   sessionDurationSeconds?: number;
   requestedSessionTtlSeconds?: number;
   onSessionDurationSecondsChange?: (seconds: number) => void;
-  onRetryProtocolSetup?: () => void;
+  onRetryModuleSetup?: () => void;
   now?: Date;
 }
 
@@ -60,12 +60,12 @@ export function RenewSessionDisplay({
   lookupError,
   ownerLabel,
   ownerSupported,
-  protocolSetupStatuses,
+  moduleSetupStatuses,
   requesterLabel,
   sessionDurationSeconds,
   requestedSessionTtlSeconds,
   onSessionDurationSecondsChange,
-  onRetryProtocolSetup,
+  onRetryModuleSetup,
   now = new Date(),
 }: RenewSessionDisplayProps) {
   const display = statusDisplay(detection.status);
@@ -162,13 +162,13 @@ export function RenewSessionDisplay({
 
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={protocolSetupStatuses}
+        moduleSetupStatuses={moduleSetupStatuses}
         existingSessionCount={0}
         requesterLabel={requesterLabel}
         sessionDurationSeconds={sessionDurationSeconds}
         requestedSessionTtlSeconds={requestedSessionTtlSeconds}
         onSessionDurationSecondsChange={onSessionDurationSecondsChange}
-        onRetryProtocolSetup={onRetryProtocolSetup}
+        onRetryModuleSetup={onRetryModuleSetup}
         renewal
       />
     </div>

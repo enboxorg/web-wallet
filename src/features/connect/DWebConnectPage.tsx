@@ -12,7 +12,7 @@ import {
 import { AuthenticationDisplay } from '@/components/connect/AuthenticationDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
-import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
+import { ModuleOverrideConfirmDialog } from '@/components/connect/ModuleOverrideConfirmDialog';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import { PinInput } from '@/components/ui/PinInput';
 import { useAuth } from '@/enbox/hooks/use-auth';
@@ -44,10 +44,10 @@ import {
   resolveConnectSessionApprovalDurationSeconds,
 } from './connect-session-duration';
 import {
-  getOverridableProtocols,
-  protocolSetupAllowsApproval,
-  useProtocolSetupStatuses,
-} from './use-protocol-setup-statuses';
+  getOverridableModules,
+  moduleSetupAllowsApproval,
+  useModuleSetupStatuses,
+} from './use-module-setup-statuses';
 import { claimConnectDecision, requireConnectApprovalContext } from './connect-decision';
 import { getConnectErrorMessage } from './connect-error';
 
@@ -83,8 +83,8 @@ export default function DWebConnectPage() {
   const [statusMessage, setStatusMessage] = useState('');
   const [connectionConfirmed, setConnectionConfirmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
-  // Owner opt-in to replace a custom protocol installed with a different
+  const [moduleSetupRetryKey, setModuleSetupRetryKey] = useState(0);
+  // Owner opt-in to replace a custom module installed with a different
   // definition, plus the final confirmation gate before the reconfigure runs.
   const [overrideAcknowledged, setOverrideAcknowledged] = useState(false);
   const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
@@ -164,7 +164,7 @@ export default function DWebConnectPage() {
 
   // A definition-override opt-in is profile-specific: clear it whenever the
   // approving profile changes so the choice is made against the profile whose
-  // installed protocols were actually checked.
+  // installed modules were actually checked.
   useEffect(() => {
     setOverrideAcknowledged(false);
     setShowOverrideConfirm(false);
@@ -261,7 +261,7 @@ export default function DWebConnectPage() {
       }
 
       setStatusMessage('Getting your profile ready...');
-      // The agent ceremony owns protocol preparation end to end:
+      // The agent ceremony owns module preparation end to end:
       // install, explicitly approved definition replacement, encryption
       // upgrades, and fail-closed remote verification across reachable owner
       // endpoints. It then creates and delivers the grants, grant keys, and
@@ -274,7 +274,7 @@ export default function DWebConnectPage() {
         transport.dappOrigin,
         sessionDurationSeconds,
         liveAgent,
-        overrideAcknowledged ? overridableProtocols : [],
+        overrideAcknowledged ? overridableModules : [],
       );
 
       setStatusMessage(activeRequest.requestType === 'authenticate' ? 'Returning sign-in confirmation...' : 'Returning grants...');
@@ -445,27 +445,27 @@ export default function DWebConnectPage() {
     && needsOnboarding
     && (connectRequest === undefined
       || connectRequest.supportedDidMethods.includes('did:dht'));
-  const checkedProtocolSetupStatuses = useProtocolSetupStatuses(
+  const checkedModuleSetupStatuses = useModuleSetupStatuses(
     approvalDid,
     agent as NonNullable<typeof agent>,
     agent ? permissions : EMPTY_PERMISSION_REQUESTS,
-    protocolSetupRetryKey,
+    moduleSetupRetryKey,
   );
   // Before a wallet exists nothing is installed locally, so every
-  // requested protocol will be added during approval.
-  const protocolSetupStatuses = useMemo(() =>
+  // requested module will be added during approval.
+  const moduleSetupStatuses = useMemo(() =>
     needsOnboarding
       ? Object.fromEntries(permissions.map((permission) => [
-        permission.protocolDefinition.protocol,
+        permission.moduleDefinition.module,
         'install' as const,
       ]))
-      : checkedProtocolSetupStatuses,
-  [checkedProtocolSetupStatuses, needsOnboarding, permissions]);
-  const overridableProtocols = getOverridableProtocols(protocolSetupStatuses);
-  const protocolSetupReady = protocolSetupAllowsApproval(
+      : checkedModuleSetupStatuses,
+  [checkedModuleSetupStatuses, needsOnboarding, permissions]);
+  const overridableModules = getOverridableModules(moduleSetupStatuses);
+  const moduleSetupReady = moduleSetupAllowsApproval(
     permissions,
-    protocolSetupStatuses,
-    overrideAcknowledged ? new Set(overridableProtocols) : new Set(),
+    moduleSetupStatuses,
+    overrideAcknowledged ? new Set(overridableModules) : new Set(),
   );
   const requestSummary = useMemo(
     () => authenticationOnly ? 'Confirm your identity to sign in.' : getConnectPermissionAskSummary(permissions),
@@ -604,12 +604,12 @@ export default function DWebConnectPage() {
               lookupError={refreshLookupError}
               ownerLabel={refreshOwnerOption?.label}
               ownerSupported={refreshOwnerOption !== undefined}
-              protocolSetupStatuses={protocolSetupStatuses}
+              moduleSetupStatuses={moduleSetupStatuses}
               requesterLabel={requesterLabel}
               sessionDurationSeconds={sessionDurationSeconds}
               requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
               onSessionDurationSecondsChange={setSessionDurationSeconds}
-              onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+              onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
             />
           ) : (
             <>
@@ -661,21 +661,21 @@ export default function DWebConnectPage() {
               {!authenticationOnly && (
               <PermissionDisplay
                 permissions={permissions}
-                protocolSetupStatuses={protocolSetupStatuses}
+                moduleSetupStatuses={moduleSetupStatuses}
                 existingSessionCount={existingSessions.length}
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={sessionDurationSeconds}
                 requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
-                onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+                onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
                 overrideAcknowledged={overrideAcknowledged}
                 onOverrideAcknowledgedChange={setOverrideAcknowledged}
               />
               )}
 
-              <ProtocolOverrideConfirmDialog
+              <ModuleOverrideConfirmDialog
                 open={showOverrideConfirm}
-                protocols={overridableProtocols}
+                modules={overridableModules}
                 onConfirm={() => {
                   setShowOverrideConfirm(false);
                   void handleApprove();
@@ -744,11 +744,11 @@ export default function DWebConnectPage() {
                   <Button
                     className="flex-1"
                     onClick={() =>
-                      overridableProtocols.length > 0 && !isRefresh
+                      overridableModules.length > 0 && !isRefresh
                         ? setShowOverrideConfirm(true)
                         : handleApprove()
                     }
-                    disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
+                    disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />
                     {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}

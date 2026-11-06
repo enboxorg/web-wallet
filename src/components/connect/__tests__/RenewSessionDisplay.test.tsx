@@ -7,8 +7,8 @@ import type { ConnectRefreshDetection } from '@/features/connect/connect-refresh
 import { RenewSessionDisplay } from '../RenewSessionDisplay';
 
 const permissions = [{
-  protocolDefinition: {
-    protocol  : 'https://example.com/protocols/tasks',
+  moduleDefinition: {
+    module  : 'https://example.com/modules/tasks',
     published : false,
     types     : {},
     structure : {},
@@ -16,7 +16,7 @@ const permissions = [{
   permissionScopes: [{
     interface : 'Records',
     method    : 'Read',
-    protocol  : 'https://example.com/protocols/tasks',
+    module  : 'https://example.com/modules/tasks',
   }],
 }] as ConnectPermissionRequest[];
 
@@ -39,7 +39,7 @@ describe('RenewSessionDisplay', () => {
         lookupError={false}
         ownerLabel="Alice"
         ownerSupported
-        protocolSetupStatuses={{ 'https://example.com/protocols/tasks': 'configured' }}
+        moduleSetupStatuses={{ 'https://example.com/modules/tasks': 'configured' }}
         requesterLabel="https://app.example"
         now={new Date('2026-07-13T12:00:00.000Z')}
       />,
@@ -55,7 +55,7 @@ describe('RenewSessionDisplay', () => {
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
   });
 
-  it('keeps protocol approval blockers visible during renewal', () => {
+  it('keeps module approval blockers visible during renewal', () => {
     render(
       <RenewSessionDisplay
         appName="Example App"
@@ -65,11 +65,11 @@ describe('RenewSessionDisplay', () => {
         lookupError={false}
         ownerLabel="Alice"
         ownerSupported
-        protocolSetupStatuses={{ 'https://example.com/protocols/tasks': 'conflict' }}
+        moduleSetupStatuses={{ 'https://example.com/modules/tasks': 'conflict' }}
       />,
     );
 
-    expect(screen.getByText('Protocol setup conflict')).toBeVisible();
+    expect(screen.getByText('Module setup conflict')).toBeVisible();
   });
 
   it('explains when the exact previous session was revoked', () => {

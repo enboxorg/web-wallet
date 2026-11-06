@@ -1,3 +1,4 @@
+import { PermissionsModule } from '@enbox/dwn-sdk-js';
 import { describe, expect, it } from 'vitest';
 import type { DwnPermissionGrant } from '@enbox/agent';
 import {
@@ -15,7 +16,7 @@ function grant(overrides: Partial<DwnPermissionGrant> = {}): DwnPermissionGrant 
     scope       : overrides.scope ?? {
       interface : 'Records',
       method    : 'Read',
-      protocol  : 'https://example.com/protocols/demo',
+      module  : 'https://example.com/modules/demo',
     },
     ...overrides,
   } as DwnPermissionGrant;
@@ -370,7 +371,7 @@ describe('permission session grouping', () => {
       scope   : {
         interface : 'Records',
         method    : 'Write',
-        protocol  : 'https://identity.foundation/dwn/permissions',
+        module    : PermissionsModule.uri,
         contextId : 'grant-1',
       } as DwnPermissionGrant['scope'],
     });

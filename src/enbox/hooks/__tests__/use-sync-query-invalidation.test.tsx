@@ -2,10 +2,11 @@ import type { ReactNode } from 'react';
 import type { SyncEvent, SyncIdentityOptions } from '@enbox/agent';
 import type { DwnEndpointResolution } from '@enbox/dids';
 
-import { normalizeSyncProtocols, ServiceConfigProtocolDefinition } from '@enbox/agent';
+import { normalizeSyncModules, ServiceConfigModuleDefinition } from '@enbox/agent';
+import { PermissionsModule } from '@enbox/dwn-sdk-js';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
-import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
+import { ConnectDefinition, ProfileDefinition } from '@enbox/modules';
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { useAuthStore } from '@/stores/auth-store';
@@ -17,7 +18,7 @@ import { publishWalletEvent } from '../../effect/wallet-events';
 type TestSubscription = {
   connectedDid: string;
   delegateDid?: string;
-  request: { filters?: Array<{ protocol?: string }>; subscriptionHandler?: (message: unknown) => void };
+  request: { filters?: Array<{ module?: string }>; subscriptionHandler?: (message: unknown) => void };
   close: ReturnType<typeof vi.fn>;
   emit: (event: string, detail: unknown) => void;
 };
@@ -100,7 +101,7 @@ function setAgent(optionsByDid: Record<string, Partial<SyncIdentityOptions>> = {
           const options = optionsByDid[did];
           return options === undefined
             ? undefined
-            : { protocols: [ProfileDefinition.protocol, ConnectDefinition.protocol], ...options };
+            : { modules: [ProfileDefinition.module, ConnectDefinition.module], ...options };
         }),
         ensureIdentityOptions: vi.fn(async ({ did, options }: {
           did: string;
@@ -129,7 +130,7 @@ async function settleSubscriptions(): Promise<void> {
 
 function emitMessage(
   subscription: TestSubscription,
-  descriptor: { interface: string; method: string; protocol?: string },
+  descriptor: { interface: string; method: string; module?: string },
 ): void {
   subscription.emit('event', { descriptor });
 }
@@ -149,8 +150,8 @@ function serviceConfigEvent(tenantDid: string): SyncEvent {
     descriptor     : {
       interface    : 'Records',
       method       : 'Write',
-      protocol     : ServiceConfigProtocolDefinition.protocol,
-      protocolPath : 'serviceConfig',
+      module     : ServiceConfigModuleDefinition.module,
+      modulePath : 'serviceConfig',
       author       : tenantDid,
     },
   };
@@ -202,7 +203,7 @@ describe('useSyncQueryInvalidation', () => {
     expect(sdkMocks.syncListeners.size).toBe(0);
   });
 
-  it('uses single-protocol subscriptions for a delegated identity', async () => {
+  it('uses single-module subscriptions for a delegated identity', async () => {
     setAgent({ 'did:dht:owner': { delegateDid: 'did:dht:delegate' } });
     const queryClient = createQueryClient();
     renderHook(
@@ -219,10 +220,10 @@ describe('useSyncQueryInvalidation', () => {
     );
 
     expect(identitySubscriptions).toHaveLength(2);
-    expect(identitySubscriptions.map(({ request }) => request.filters?.[0]?.protocol)).toEqual(
+    expect(identitySubscriptions.map(({ request }) => request.filters?.[0]?.module)).toEqual(
       expect.arrayContaining([
-        ProfileDefinition.protocol,
-        ConnectDefinition.protocol,
+        ProfileDefinition.module,
+        ConnectDefinition.module,
       ]),
     );
     expect(identitySubscriptions.every(({ delegateDid }) => delegateDid === 'did:dht:delegate')).toBe(true);
@@ -299,14 +300,14 @@ describe('useSyncQueryInvalidation', () => {
 
     await settleSubscriptions();
     const subscription = sdkMocks.subscriptions.find(
-      ({ request }) => request.filters?.[0]?.protocol === ProfileDefinition.protocol,
+      ({ request }) => request.filters?.[0]?.module === ProfileDefinition.module,
     );
 
     act(() => {
       emitMessage(subscription!, {
         interface: 'Records',
         method   : 'Write',
-        protocol : ProfileDefinition.protocol,
+        module : ProfileDefinition.module,
       });
       vi.advanceTimersByTime(250);
     });
@@ -334,14 +335,14 @@ describe('useSyncQueryInvalidation', () => {
 
     await settleSubscriptions();
     const connectSubscription = sdkMocks.subscriptions.find(
-      ({ request }) => request.filters?.[0]?.protocol === ConnectDefinition.protocol,
+      ({ request }) => request.filters?.[0]?.module === ConnectDefinition.module,
     );
 
     act(() => {
       emitMessage(connectSubscription!, {
         interface: 'Records',
         method   : 'Write',
-        protocol : ConnectDefinition.protocol,
+        module : ConnectDefinition.module,
       });
       vi.advanceTimersByTime(250);
     });
@@ -353,7 +354,10 @@ describe('useSyncQueryInvalidation', () => {
     });
   });
 
-  it('routes protocol and permission messages for an owner identity', async () => {
+  it.each([
+    ['subscription', PermissionsModule.grantPath],
+    ['sync', PermissionsModule.revocationPath],
+  ] as const)('routes module configuration and permission records from %s', async (source, modulePath) => {
     setAgent();
     const queryClient = createQueryClient();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -369,16 +373,29 @@ describe('useSyncQueryInvalidation', () => {
     expect(subscription?.request.filters).toBeUndefined();
 
     act(() => {
-      emitMessage(subscription!, { interface: 'Protocols', method: 'Configure' });
-      emitMessage(subscription!, { interface: 'Permissions', method: 'Grant' });
+      emitMessage(subscription!, { interface: 'Modules', method: 'Configure' });
+      const descriptor = {
+        interface: 'Records', method: 'Write', module: PermissionsModule.uri, modulePath,
+      };
+      if (source === 'subscription') {
+        emitMessage(subscription!, descriptor);
+      } else {
+        emitSyncEvent({
+          type: 'delivery:applied', tenantDid: 'did:dht:identity', remoteEndpoint: 'https://dwn.example',
+          messageCid: 'permission-record-cid', descriptor,
+        });
+      }
       vi.advanceTimersByTime(250);
     });
 
     expect(invalidateSpy).toHaveBeenCalledWith({
-      queryKey: queryKeys.identities.protocols('did:dht:identity'),
+      queryKey: queryKeys.identities.modules('did:dht:identity'),
     });
     expect(invalidateSpy).toHaveBeenCalledWith({
       queryKey: queryKeys.identities.permissions('did:dht:identity'),
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.permissionHistory('did:dht:identity'),
     });
   });
 
@@ -404,13 +421,13 @@ describe('useSyncQueryInvalidation', () => {
         descriptor     : {
           interface : 'Records',
           method    : 'Write',
-          protocol  : ProfileDefinition.protocol,
+          module  : ProfileDefinition.module,
         },
       });
       emitMessage(subscription!, {
         interface : 'Records',
         method    : 'Write',
-        protocol  : ProfileDefinition.protocol,
+        module  : ProfileDefinition.module,
       });
       vi.advanceTimersByTime(250);
     });
@@ -430,9 +447,9 @@ describe('useSyncQueryInvalidation', () => {
 
   it('freshly resolves and retargets sync after a service-config wake', async () => {
     const options = {
-      protocols: [
-        ProfileDefinition.protocol,
-        ServiceConfigProtocolDefinition.protocol,
+      modules: [
+        ProfileDefinition.module,
+        ServiceConfigModuleDefinition.module,
       ],
     };
     setAgent({ 'did:dht:agent': options });
@@ -474,7 +491,7 @@ describe('useSyncQueryInvalidation', () => {
   });
 
   it('adds service-config wakes to the agent DID sync scope once', async () => {
-    setAgent({ 'did:dht:agent': { protocols: [ProfileDefinition.protocol] } });
+    setAgent({ 'did:dht:agent': { modules: [ProfileDefinition.module] } });
     const agent = useAuthStore.getState().agent!;
     const queryClient = createQueryClient();
     renderHook(() => useSyncQueryInvalidation([]), {
@@ -485,9 +502,9 @@ describe('useSyncQueryInvalidation', () => {
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did     : 'did:dht:agent',
       options : {
-        protocols: normalizeSyncProtocols([
-          ProfileDefinition.protocol,
-          ServiceConfigProtocolDefinition.protocol,
+        modules: normalizeSyncModules([
+          ProfileDefinition.module,
+          ServiceConfigModuleDefinition.module,
         ]),
       },
     });
@@ -496,9 +513,9 @@ describe('useSyncQueryInvalidation', () => {
       type      : 'identity:registration-change',
       tenantDid : 'did:dht:agent',
       options   : {
-        protocols: [
-          ProfileDefinition.protocol,
-          ServiceConfigProtocolDefinition.protocol,
+        modules: [
+          ProfileDefinition.module,
+          ServiceConfigModuleDefinition.module,
         ],
       },
     }));
@@ -507,7 +524,7 @@ describe('useSyncQueryInvalidation', () => {
   });
 
   it('preserves existing routing when a fresh endpoint resolution fails', async () => {
-    setAgent({ 'did:dht:identity': { protocols: [ProfileDefinition.protocol] } });
+    setAgent({ 'did:dht:identity': { modules: [ProfileDefinition.module] } });
     const agent = useAuthStore.getState().agent!;
     vi.mocked(agent.identity.getDwnEndpointStatus).mockResolvedValue({
       status          : 'resolution-failed',

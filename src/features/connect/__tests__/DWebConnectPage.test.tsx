@@ -23,7 +23,7 @@ const mocks = vi.hoisted(() => {
     },
     approvePopupConnectRequest: vi.fn(),
     createTransport: vi.fn(),
-    queryProtocolSetupStatus: vi.fn(),
+    queryModuleSetupStatus: vi.fn(),
     publishWalletEvent: vi.fn(),
     firstTime: false,
     transport,
@@ -111,18 +111,18 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
   approvePopupConnectRequest: mocks.approvePopupConnectRequest,
 }));
 
-vi.mock('../protocol-install', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../protocol-install')>(),
-  queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
+vi.mock('../module-install', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../module-install')>(),
+  queryModuleSetupStatus: mocks.queryModuleSetupStatus,
 }));
 
 const permissionRequest = {
-  protocolDefinition: {
-    protocol  : 'https://example.com/protocols/tasks',
+  moduleDefinition: {
+    module  : 'https://example.com/modules/tasks',
     published : false,
     types     : {
       task: {
-        schema             : 'https://example.com/protocols/tasks/schema/task',
+        schema             : 'https://example.com/modules/tasks/schema/task',
         dataFormats        : ['application/json'],
         encryptionRequired : true,
       },
@@ -133,7 +133,7 @@ const permissionRequest = {
     {
       interface: 'Records',
       method: 'Read',
-      protocol: 'https://example.com/protocols/tasks',
+      module: 'https://example.com/modules/tasks',
     },
   ],
 };
@@ -162,7 +162,7 @@ function existingSessionGrant(ownerDid: string, delegateDid: string) {
     scope       : {
       interface : 'Records',
       method    : 'Read',
-      protocol  : 'https://example.com/protocols/tasks',
+      module  : 'https://example.com/modules/tasks',
     },
     connectSession: {
       id        : `session-${ownerDid}`,
@@ -200,7 +200,7 @@ describe('DWebConnectPage', () => {
     mocks.transport.sendResponseAwaitingAck.mockResolvedValue(true);
     mocks.approvePopupConnectRequest.mockResolvedValue('sealed-response-jwe');
     mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
-    mocks.queryProtocolSetupStatus.mockResolvedValue('install');
+    mocks.queryModuleSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.permissions = [];
     mocks.allPermissions = [];
@@ -214,7 +214,7 @@ describe('DWebConnectPage', () => {
     }];
   });
 
-  it('signs in through the existing approval UI without protocol setup or delegation events', async () => {
+  it('signs in through the existing approval UI without module setup or delegation events', async () => {
     mocks.transport.awaitRequest.mockResolvedValue({
       ...connectRequest(), requestType: 'authenticate', permissionRequests: [],
       delegateDid: undefined, nonce: 'n'.repeat(32), state: 's'.repeat(32),
@@ -225,7 +225,7 @@ describe('DWebConnectPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in', exact: true }));
     await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledOnce());
     await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledOnce());
-    expect(mocks.queryProtocolSetupStatus).not.toHaveBeenCalled();
+    expect(mocks.queryModuleSetupStatus).not.toHaveBeenCalled();
     expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
   });
@@ -416,8 +416,8 @@ describe('DWebConnectPage', () => {
     ));
   });
 
-  it('replaces an overridable protocol only after opt-in and confirmation', async () => {
-    mocks.queryProtocolSetupStatus.mockResolvedValue('override');
+  it('replaces an overridable module only after opt-in and confirmation', async () => {
+    mocks.queryModuleSetupStatus.mockResolvedValue('override');
 
     render(<DWebConnectPage />);
 
@@ -434,14 +434,14 @@ describe('DWebConnectPage', () => {
     const confirm = await screen.findByRole('button', { name: /replace & connect/i });
     fireEvent.click(confirm);
 
-    // Confirmation hands only the approved protocol URI to the agent ceremony.
+    // Confirmation hands only the approved module URI to the agent ceremony.
     await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       expect.objectContaining({ permissionRequests: [permissionRequest] }),
       'https://app.example',
       expect.any(Number),
       mocks.agent,
-      [permissionRequest.protocolDefinition.protocol],
+      [permissionRequest.moduleDefinition.module],
     ));
 
     await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe'));
@@ -547,16 +547,16 @@ describe('DWebConnectPage', () => {
       permissionRequests: [{
         ...permissionRequest,
         permissionScopes: [{
-          interface : 'Protocols',
+          interface : 'Modules',
           method    : 'Configure',
-          protocol  : 'https://example.com/protocols/tasks',
+          module  : 'https://example.com/modules/tasks',
         }],
       }],
     });
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText(/Protocols\.Configure cannot be delegated/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Modules\.Configure cannot be delegated/i)).toBeInTheDocument();
     expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
     expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
   });
@@ -570,7 +570,7 @@ describe('DWebConnectPage', () => {
       scope       : {
         interface : 'Records',
         method    : 'Read',
-        protocol  : 'https://example.com/protocols/tasks',
+        module  : 'https://example.com/modules/tasks',
       },
       connectSession: {
         id        : 'session-existing',
@@ -597,9 +597,9 @@ describe('DWebConnectPage', () => {
       delegateDid,
       permissionRequests: [{
         ...permissionRequest,
-        protocolDefinition: {
-          ...permissionRequest.protocolDefinition,
-          types: { task: { schema: 'https://example.com/protocols/tasks/schema/task' } },
+        moduleDefinition: {
+          ...permissionRequest.moduleDefinition,
+          types: { task: { schema: 'https://example.com/modules/tasks/schema/task' } },
         },
       }],
     };

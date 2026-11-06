@@ -38,13 +38,13 @@ import {
 import { AuthenticationDisplay } from '@/components/connect/AuthenticationDisplay';
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
-import { ProtocolOverrideConfirmDialog } from '@/components/connect/ProtocolOverrideConfirmDialog';
+import { ModuleOverrideConfirmDialog } from '@/components/connect/ModuleOverrideConfirmDialog';
 import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
 import {
-  getOverridableProtocols,
-  protocolSetupAllowsApproval,
-  useProtocolSetupStatuses,
-} from './use-protocol-setup-statuses';
+  getOverridableModules,
+  moduleSetupAllowsApproval,
+  useModuleSetupStatuses,
+} from './use-module-setup-statuses';
 import {
   approveConnectRequest,
   denyConnectRequest,
@@ -135,8 +135,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pinCopied, setPinCopied] = useState(false);
-  const [protocolSetupRetryKey, setProtocolSetupRetryKey] = useState(0);
-  // Owner opt-in to replace a custom protocol installed with a different
+  const [moduleSetupRetryKey, setModuleSetupRetryKey] = useState(0);
+  // Owner opt-in to replace a custom module installed with a different
   // definition, plus the final confirmation gate before the reconfigure runs.
   const [overrideAcknowledged, setOverrideAcknowledged] = useState(false);
   const [showOverrideConfirm, setShowOverrideConfirm] = useState(false);
@@ -217,25 +217,25 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     && needsOnboarding
     && (connectionRequest === undefined
       || connectionRequest.supportedDidMethods.includes('did:dht'));
-  const checkedProtocolSetupStatuses = useProtocolSetupStatuses(
+  const checkedModuleSetupStatuses = useModuleSetupStatuses(
     approvalDid,
     agent as NonNullable<typeof agent>,
     agent ? permissionRequests : EMPTY_PERMISSION_REQUESTS,
-    protocolSetupRetryKey,
+    moduleSetupRetryKey,
   );
   // Before a wallet exists nothing is installed locally, so every
-  // requested protocol will be added during approval.
-  const protocolSetupStatuses = needsOnboarding
+  // requested module will be added during approval.
+  const moduleSetupStatuses = needsOnboarding
     ? Object.fromEntries(permissionRequests.map((permission) => [
-      permission.protocolDefinition.protocol,
+      permission.moduleDefinition.module,
       'install' as const,
     ]))
-    : checkedProtocolSetupStatuses;
-  const overridableProtocols = getOverridableProtocols(protocolSetupStatuses);
-  const protocolSetupReady = protocolSetupAllowsApproval(
+    : checkedModuleSetupStatuses;
+  const overridableModules = getOverridableModules(moduleSetupStatuses);
+  const moduleSetupReady = moduleSetupAllowsApproval(
     permissionRequests,
-    protocolSetupStatuses,
-    overrideAcknowledged ? new Set(overridableProtocols) : new Set(),
+    moduleSetupStatuses,
+    overrideAcknowledged ? new Set(overridableModules) : new Set(),
   );
 
   // Auto-select first identity
@@ -253,7 +253,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   // A definition-override opt-in is profile-specific: clear it whenever the
   // approving profile changes so the choice must be made against the profile
-  // whose installed protocols were actually checked.
+  // whose installed modules were actually checked.
   useEffect(() => {
     setOverrideAcknowledged(false);
     setShowOverrideConfirm(false);
@@ -466,7 +466,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         throw new Error('This profile uses an ID type the app does not support.');
       }
 
-      // The agent ceremony owns protocol preparation end to end:
+      // The agent ceremony owns module preparation end to end:
       // install, explicitly approved definition replacement, encryption
       // upgrades, and fail-closed remote verification across reachable owner
       // endpoints. It then creates and delivers the grants, grant keys, and
@@ -481,7 +481,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         generatedPin,
         sessionDurationSeconds,
         liveAgent,
-        overrideAcknowledged ? overridableProtocols : [],
+        overrideAcknowledged ? overridableModules : [],
       );
 
       // Permission-query freshness is secondary to a completed approval. The
@@ -884,12 +884,12 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               lookupError={refreshLookupError}
               ownerLabel={refreshOwnerOption?.label}
               ownerSupported={refreshOwnerOption !== undefined}
-              protocolSetupStatuses={protocolSetupStatuses}
+              moduleSetupStatuses={moduleSetupStatuses}
               requesterLabel={requesterLabel}
               sessionDurationSeconds={sessionDurationSeconds}
               requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
               onSessionDurationSecondsChange={setSessionDurationSeconds}
-              onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+              onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
             />
           ) : (
             <>
@@ -941,20 +941,20 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               {!authenticationOnly && (
               <PermissionDisplay
                 permissions={connectionRequest.permissionRequests}
-                protocolSetupStatuses={protocolSetupStatuses}
+                moduleSetupStatuses={moduleSetupStatuses}
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={sessionDurationSeconds}
                 requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
-                onRetryProtocolSetup={() => setProtocolSetupRetryKey((key) => key + 1)}
+                onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
                 overrideAcknowledged={overrideAcknowledged}
                 onOverrideAcknowledgedChange={setOverrideAcknowledged}
               />
               )}
 
-              <ProtocolOverrideConfirmDialog
+              <ModuleOverrideConfirmDialog
                 open={showOverrideConfirm}
-                protocols={overridableProtocols}
+                modules={overridableModules}
                 onConfirm={() => {
                   setShowOverrideConfirm(false);
                   void handleApprove();
@@ -1040,11 +1040,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   <Button
                     className="w-full min-h-[44px] sm:flex-1"
                     onClick={() =>
-                      overridableProtocols.length > 0 && !isRefresh
+                      overridableModules.length > 0 && !isRefresh
                         ? setShowOverrideConfirm(true)
                         : handleApprove()
                     }
-                    disabled={!approvalDid || !protocolSetupReady || (isRefresh && !refreshReady)}
+                    disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
                   >
                     <Check className="h-4 w-4" />
                     {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}

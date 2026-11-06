@@ -38,7 +38,7 @@ function grant({
     scope       : {
       interface : 'Records',
       method    : 'Read',
-      protocol  : 'https://example.com/protocols/tasks',
+      module  : 'https://example.com/modules/tasks',
     },
     connectSession: {
       id: sessionId,

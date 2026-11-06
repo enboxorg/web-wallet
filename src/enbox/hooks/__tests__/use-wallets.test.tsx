@@ -5,7 +5,7 @@ import { useAuthStore } from '@/stores/auth-store';
 import { useWallets } from '../use-wallets';
 
 const mocks = vi.hoisted(() => {
-  const connectProtocol = Symbol('ConnectProtocol');
+  const connectModule = Symbol('ConnectModule');
   const closeView = vi.fn(async () => undefined);
   const closeEnbox = vi.fn();
   const snapshot = {
@@ -26,14 +26,14 @@ const mocks = vi.hoisted(() => {
   return {
     closeEnbox,
     closeView,
-    connectProtocol,
+    connectModule,
     observe,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
         close: closeEnbox,
-        using: vi.fn((protocol) => {
-          if (protocol !== connectProtocol) {
-            throw new Error('Unexpected protocol');
+        using: vi.fn((module) => {
+          if (module !== connectModule) {
+            throw new Error('Unexpected module');
           }
           return { records: { observe } };
         }),
@@ -46,8 +46,8 @@ vi.mock('@enbox/browser', () => ({
   Enbox: mocks.Enbox,
 }));
 
-vi.mock('@enbox/protocols', () => ({
-  ConnectProtocol: mocks.connectProtocol,
+vi.mock('@enbox/modules', () => ({
+  ConnectModule: mocks.connectModule,
 }));
 
 afterEach(() => {

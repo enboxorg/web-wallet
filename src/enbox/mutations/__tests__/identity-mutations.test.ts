@@ -12,7 +12,7 @@ import { reconcileIdentitySync } from '../../identity-sync';
 const mocks = vi.hoisted(() => {
   const calls: string[] = [];
   const close = vi.fn();
-  const connectProtocol = Symbol('ConnectProtocol');
+  const connectModule = Symbol('ConnectModule');
 
   const profileRecord = { contextId: 'profile-context' };
   const walletRecord = {};
@@ -32,7 +32,7 @@ const mocks = vi.hoisted(() => {
       },
     },
   };
-  // Map the typed records surface onto one spy per protocol path so tests can
+  // Map the typed records surface onto one spy per module path so tests can
   // assert the root and nested singleton operations independently.
   const nodeFor = (path: string): any =>
     path === 'profile' ? profileRepo.profile
@@ -71,7 +71,7 @@ const mocks = vi.hoisted(() => {
   return {
     calls,
     close,
-    connectProtocol,
+    connectModule,
     connectApi,
     profileRepo,
     profileApi,
@@ -80,11 +80,11 @@ const mocks = vi.hoisted(() => {
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
         close,
-        using: vi.fn((protocol) => protocol === connectProtocol ? connectApi : profileApi),
+        using: vi.fn((module) => module === connectModule ? connectApi : profileApi),
       };
     }),
     ensureRegistration: vi.fn(),
-    installProtocols: vi.fn(),
+    installModules: vi.fn(),
     validatePortableOwnerIdentity: vi.fn(),
   };
 });
@@ -93,28 +93,28 @@ vi.mock('@enbox/browser', () => ({
   Enbox: mocks.Enbox,
 }));
 
-vi.mock('@enbox/protocols', () => ({
-  ProfileProtocol: Symbol('ProfileProtocol'),
-  ConnectProtocol: mocks.connectProtocol,
-  ProfileDefinition: { protocol: 'https://identity.foundation/protocols/profile' },
-  ConnectDefinition: { protocol: 'https://identity.foundation/protocols/connect' },
+vi.mock('@enbox/modules', () => ({
+  ProfileModule: Symbol('ProfileModule'),
+  ConnectModule: mocks.connectModule,
+  ProfileDefinition: { module: 'https://identity.foundation/modules/profile' },
+  ConnectDefinition: { module: 'https://identity.foundation/modules/connect' },
 }));
 
-vi.mock('../../protocols', async () => {
+vi.mock('../../modules', async () => {
   const effect = await vi.importActual<typeof import('effect')>('effect');
 
-  mocks.installProtocols.mockImplementation(() =>
+  mocks.installModules.mockImplementation(() =>
     effect.Effect.sync(() => {
-      mocks.calls.push('protocols:install');
+      mocks.calls.push('modules:install');
     })
   );
 
   return {
-    IDENTITY_SYNC_PROTOCOLS : [
-      'https://identity.foundation/protocols/profile',
-      'https://identity.foundation/protocols/connect',
+    IDENTITY_SYNC_MODULES : [
+      'https://identity.foundation/modules/profile',
+      'https://identity.foundation/modules/connect',
     ],
-    installProtocolsEffect : mocks.installProtocols,
+    installModulesEffect : mocks.installModules,
   };
 });
 
@@ -184,7 +184,7 @@ describe('identity mutations', () => {
     }));
   });
 
-  it('installs protocols locally before live sync and profile writes', async () => {
+  it('installs modules locally before live sync and profile writes', async () => {
     const did = 'did:dht:new';
     const dwnEndpoints = ['https://aws.example/dwn', 'https://fly.example/dwn'];
     const agent = createAgent(did);
@@ -195,21 +195,21 @@ describe('identity mutations', () => {
       dwnEndpoints,
     });
 
-    expect(mocks.installProtocols).toHaveBeenCalledWith(did);
+    expect(mocks.installModules).toHaveBeenCalledWith(did);
     expect(mocks.ensureRegistration).toHaveBeenCalledWith(dwnEndpoints, [did]);
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did,
       options: {
-        protocols: [
-          'https://identity.foundation/protocols/profile',
-          'https://identity.foundation/protocols/connect',
+        modules: [
+          'https://identity.foundation/modules/profile',
+          'https://identity.foundation/modules/connect',
         ],
       },
     });
     expect(mocks.calls).toEqual([
       'identity:create',
       'registration:ensure',
-      'protocols:install',
+      'modules:install',
       'sync:ensure-options',
       'profile:set',
       'wallet:create',
@@ -260,7 +260,7 @@ describe('identity mutations', () => {
     })).rejects.toThrow(`Failed to publish DID ${did}`);
 
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
-    expect(mocks.installProtocols).not.toHaveBeenCalled();
+    expect(mocks.installModules).not.toHaveBeenCalled();
     expect(agent.identity.delete).toHaveBeenCalledWith({ didUri: did });
     expect(agent.did.delete).toHaveBeenCalledWith({ didUri: did, tenant: 'did:dht:agent' });
   });
@@ -281,10 +281,10 @@ describe('identity mutations', () => {
     expect(agent.did.delete).not.toHaveBeenCalled();
   });
 
-  it('retains a published identity and its keys when required protocol bootstrap fails', async () => {
+  it('retains a published identity and its keys when required module bootstrap fails', async () => {
     const did = 'did:dht:failed-bootstrap';
     const agent = createAgent(did);
-    mocks.installProtocols.mockImplementationOnce(() =>
+    mocks.installModules.mockImplementationOnce(() =>
       Effect.fail(new Error('bootstrap failed'))
     );
 
@@ -315,7 +315,7 @@ describe('identity mutations', () => {
 
     expect(agent.identity.delete).not.toHaveBeenCalled();
     expect(agent.did.delete).not.toHaveBeenCalled();
-    expect(mocks.installProtocols).not.toHaveBeenCalled();
+    expect(mocks.installModules).not.toHaveBeenCalled();
     expect(agent.sync.ensureIdentityOptions).not.toHaveBeenCalled();
 
     await updateDwnEndpoints(agent, {
@@ -349,26 +349,26 @@ describe('identity mutations', () => {
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
-  it('prepares local protocols and sync without re-registering an imported identity', async () => {
+  it('prepares local modules and sync without re-registering an imported identity', async () => {
     const did = 'did:dht:imported';
     const agent = createAgent(did);
 
     await importIdentity(agent, { portableDid: { uri: did } });
 
-    expect(mocks.installProtocols).toHaveBeenCalledWith(did);
+    expect(mocks.installModules).toHaveBeenCalledWith(did);
     expect(mocks.ensureRegistration).not.toHaveBeenCalled();
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did,
       options: {
-        protocols: [
-          'https://identity.foundation/protocols/profile',
-          'https://identity.foundation/protocols/connect',
+        modules: [
+          'https://identity.foundation/modules/profile',
+          'https://identity.foundation/modules/connect',
         ],
       },
     });
     expect(mocks.calls).toEqual([
       'identity:import',
-      'protocols:install',
+      'modules:install',
       'sync:ensure-options',
       'wallet:create',
     ]);
@@ -378,8 +378,8 @@ describe('identity mutations', () => {
   it('retains imported DID keys when identity metadata rollback fails', async () => {
     const did = 'did:dht:import-rollback-pending';
     const agent = createAgent(did);
-    mocks.installProtocols.mockImplementationOnce(() =>
-      Effect.fail(new Error('protocol setup failed'))
+    mocks.installModules.mockImplementationOnce(() =>
+      Effect.fail(new Error('module setup failed'))
     );
     agent.identity.delete.mockRejectedValueOnce(new Error('identity store unavailable'));
 

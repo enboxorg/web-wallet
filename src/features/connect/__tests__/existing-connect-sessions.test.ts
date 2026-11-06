@@ -20,7 +20,7 @@ function grant(overrides: Partial<DwnPermissionGrant> = {}): DwnPermissionGrant 
     scope       : overrides.scope ?? {
       interface : 'Records',
       method    : 'Read',
-      protocol  : 'https://example.com/protocols/demo',
+      module  : 'https://example.com/modules/demo',
     },
     ...overrides,
   } as DwnPermissionGrant;

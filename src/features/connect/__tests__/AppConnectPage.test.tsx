@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   fetchConnectRequest: vi.fn(),
   generatePin: vi.fn(),
   waitForRelayCompletion: vi.fn(),
-  queryProtocolSetupStatus: vi.fn(),
+  queryModuleSetupStatus: vi.fn(),
   scannerHasCamera: vi.fn(),
   authState: { firstTime: false as boolean },
   connectVault: vi.fn(),
@@ -109,9 +109,9 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
   waitForRelayCompletion: mocks.waitForRelayCompletion,
 }));
 
-vi.mock('../protocol-install', async (importOriginal) => ({
-  ...await importOriginal<typeof import('../protocol-install')>(),
-  queryProtocolSetupStatus: mocks.queryProtocolSetupStatus,
+vi.mock('../module-install', async (importOriginal) => ({
+  ...await importOriginal<typeof import('../module-install')>(),
+  queryModuleSetupStatus: mocks.queryModuleSetupStatus,
 }));
 
 vi.mock('qr-scanner', () => ({
@@ -146,8 +146,8 @@ const connectRequest = {
   supportedDidMethods: ['did:dht'],
   permissionRequests: [
     {
-      protocolDefinition: {
-        protocol  : 'https://example.com/protocols/wireguard-mesh',
+      moduleDefinition: {
+        module  : 'https://example.com/modules/wireguard-mesh',
         published : false,
         types     : {},
         structure : {},
@@ -156,7 +156,7 @@ const connectRequest = {
         {
           interface : 'Records',
           method    : 'Read',
-          protocol  : 'https://example.com/protocols/wireguard-mesh',
+          module  : 'https://example.com/modules/wireguard-mesh',
         },
       ],
     },
@@ -173,7 +173,7 @@ function existingSessionGrant(ownerDid: string, delegateDid: string) {
     scope       : {
       interface : 'Records',
       method    : 'Read',
-      protocol  : 'https://example.com/protocols/wireguard-mesh',
+      module  : 'https://example.com/modules/wireguard-mesh',
     },
     connectSession: {
       id        : `session-${ownerDid}`,
@@ -203,7 +203,7 @@ describe('AppConnectPage', () => {
     });
     mocks.scannerHasCamera.mockResolvedValue(false);
     mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
-    mocks.queryProtocolSetupStatus.mockResolvedValue('install');
+    mocks.queryModuleSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.waitForRelayCompletion.mockResolvedValue(false);
     mocks.allPermissions = [];
@@ -228,7 +228,7 @@ describe('AppConnectPage', () => {
     expect(mocks.fetchConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('offers sign-in without grant duration or protocol setup and does not publish a delegation event', async () => {
+  it('offers sign-in without grant duration or module setup and does not publish a delegation event', async () => {
     const request = {
       ...connectRequest,
       requestType: 'authenticate', delegateDid: undefined,
@@ -243,7 +243,7 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in', exact: true }));
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledOnce());
-    expect(mocks.queryProtocolSetupStatus).not.toHaveBeenCalled();
+    expect(mocks.queryModuleSetupStatus).not.toHaveBeenCalled();
     expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Access duration')).not.toBeInTheDocument();
   });
@@ -366,7 +366,7 @@ describe('AppConnectPage', () => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
     });
     expect(mocks.agent.identity.getDwnEndpoints).not.toHaveBeenCalled();
-    // Protocol preparation is owned by the approval ceremony itself — the
+    // Module preparation is owned by the approval ceremony itself — the
     // wallet no longer runs a pre-approval step.
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
@@ -764,7 +764,7 @@ describe('AppConnectPage', () => {
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('rejects an invalid supplied delegate before protocol setup', async () => {
+  it('rejects an invalid supplied delegate before module setup', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
@@ -791,23 +791,23 @@ describe('AppConnectPage', () => {
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('blocks approval when protocol verification finds a conflict', async () => {
+  it('blocks approval when module verification finds a conflict', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.queryProtocolSetupStatus.mockResolvedValue('conflict');
+    mocks.queryModuleSetupStatus.mockResolvedValue('conflict');
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
-    expect(await screen.findByText('Protocol setup conflict')).toBeInTheDocument();
+    expect(await screen.findByText('Module setup conflict')).toBeInTheDocument();
     expect(approve).toBeDisabled();
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('replaces an overridable protocol only after opt-in and confirmation', async () => {
+  it('replaces an overridable module only after opt-in and confirmation', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.queryProtocolSetupStatus.mockResolvedValue('override');
+    mocks.queryModuleSetupStatus.mockResolvedValue('override');
     mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
@@ -826,7 +826,7 @@ describe('AppConnectPage', () => {
     const confirm = await screen.findByRole('button', { name: /replace & connect/i });
     fireEvent.click(confirm);
 
-    // Confirmation hands only the approved protocol URI to the agent ceremony.
+    // Confirmation hands only the approved module URI to the agent ceremony.
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
@@ -834,12 +834,12 @@ describe('AppConnectPage', () => {
       '1234',
       expect.any(Number),
       mocks.agent,
-      [connectRequest.permissionRequests[0].protocolDefinition.protocol],
+      [connectRequest.permissionRequests[0].moduleDefinition.module],
     );
     expect(await screen.findByText('1234')).toBeInTheDocument();
   });
 
-  it('prepares an identical requested protocol only once', async () => {
+  it('prepares an identical requested module only once', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
@@ -850,7 +850,7 @@ describe('AppConnectPage', () => {
           permissionScopes: [{
             interface : 'Records',
             method    : 'Write',
-            protocol  : connectRequest.permissionRequests[0].protocolDefinition.protocol,
+            module  : connectRequest.permissionRequests[0].moduleDefinition.module,
           }],
         },
       ],
@@ -866,7 +866,7 @@ describe('AppConnectPage', () => {
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
   });
 
-  it('rejects mismatched permission scopes before protocol setup', async () => {
+  it('rejects mismatched permission scopes before module setup', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
@@ -875,7 +875,7 @@ describe('AppConnectPage', () => {
         permissionScopes: [{
           interface : 'Records',
           method    : 'Read',
-          protocol  : 'https://evil.example/protocol',
+          module  : 'https://evil.example/module',
         }],
       }],
     });

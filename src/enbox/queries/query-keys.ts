@@ -10,7 +10,7 @@ export const queryKeys = {
   identities: {
     all: ['identities'] as const,
     profile: (did: string) => ['identities', did, 'profile'] as const,
-    protocols: (did: string) => ['identities', did, 'protocols'] as const,
+    modules: (did: string) => ['identities', did, 'modules'] as const,
     permissions: (did: string) => ['identities', did, 'permissions'] as const,
     permissionHistory: (did: string) => ['identities', did, 'permissionHistory'] as const,
     activity: (did: string) => ['identities', did, 'activity'] as const,

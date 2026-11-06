@@ -18,7 +18,7 @@ describe('queryKeys.identities.all', () => {
 
 const subKeyFactories = [
   'profile',
-  'protocols',
+  'modules',
   'permissions',
   'permissionHistory',
   'activity',

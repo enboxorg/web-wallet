@@ -126,7 +126,7 @@ export function setConfiguredDwnEndpoints(endpoints: readonly string[]): string[
 
 /**
  * The public-facing wallet URL used by DWeb Connect handlers
- * and written into wallet records via the Connect protocol.
+ * and written into wallet records via the Connect module.
  *
  * Respects the VITE_PRODUCT_THEME env var so the blue variant
  * writes its own URL.

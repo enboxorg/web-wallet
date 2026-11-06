@@ -2,7 +2,7 @@ import { executeConnectApproval } from '@enbox/agent';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 
 import { CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS } from '@/features/connect/connect-session-duration';
-import { fetchProtocols } from '@/enbox/queries/identity-queries';
+import { fetchModules } from '@/enbox/queries/identity-queries';
 import type { EnboxAgent } from '@/enbox/types';
 import type { PermissionSessionGroup } from './permission-sessions';
 
@@ -10,8 +10,8 @@ function scopeKey(scope: Record<string, unknown>): string {
   return JSON.stringify([
     scope.interface,
     scope.method,
-    scope.protocol,
-    scope.protocolPath,
+    scope.module,
+    scope.modulePath,
     scope.contextId,
   ]);
 }
@@ -32,8 +32,8 @@ export async function renewExpiredSession(
   const dedupedScopes = new Map<string, ConnectPermissionRequest['permissionScopes'][number]>();
   for (const grant of session.grants) {
     const scope = grant.scope as Record<string, unknown> | undefined;
-    if (!scope || typeof scope.protocol !== 'string' || scope.protocol.length === 0) {
-      throw new Error('This session has a permission without a protocol and cannot be renewed.');
+    if (!scope || typeof scope.module !== 'string' || scope.module.length === 0) {
+      throw new Error('This session has a permission without a module and cannot be renewed.');
     }
     const key = scopeKey(scope);
     if (!dedupedScopes.has(key)) {
@@ -41,28 +41,28 @@ export async function renewExpiredSession(
     }
   }
 
-  const installedProtocols = await fetchProtocols(agent, ownerDid);
+  const installedModules = await fetchModules(agent, ownerDid);
   const definitionByUri = new Map(
-    installedProtocols.map((protocol) => [protocol.uri, protocol.definition]),
+    installedModules.map((module) => [module.uri, module.definition]),
   );
 
-  const scopesByProtocol = new Map<string, ConnectPermissionRequest['permissionScopes']>();
+  const scopesByModule = new Map<string, ConnectPermissionRequest['permissionScopes']>();
   for (const scope of dedupedScopes.values()) {
-    const protocol = (scope as { protocol: string }).protocol;
-    const scopes = scopesByProtocol.get(protocol) ?? [];
+    const module = (scope as { module: string }).module;
+    const scopes = scopesByModule.get(module) ?? [];
     scopes.push(scope);
-    scopesByProtocol.set(protocol, scopes);
+    scopesByModule.set(module, scopes);
   }
 
-  const permissionRequests: ConnectPermissionRequest[] = [...scopesByProtocol.entries()]
-    .map(([protocol, permissionScopes]) => {
-      const protocolDefinition = definitionByUri.get(protocol);
-      if (!protocolDefinition) {
+  const permissionRequests: ConnectPermissionRequest[] = [...scopesByModule.entries()]
+    .map(([module, permissionScopes]) => {
+      const moduleDefinition = definitionByUri.get(module);
+      if (!moduleDefinition) {
         throw new Error(
-          'A protocol this app used is no longer installed, so its access cannot be renewed. The app needs to reconnect.',
+          'A module this app used is no longer installed, so its access cannot be renewed. The app needs to reconnect.',
         );
       }
-      return { protocolDefinition, permissionScopes } as ConnectPermissionRequest;
+      return { moduleDefinition, permissionScopes } as ConnectPermissionRequest;
     });
 
   const previous = session.session;

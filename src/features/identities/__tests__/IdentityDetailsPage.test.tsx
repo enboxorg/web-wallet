@@ -4,7 +4,7 @@ import { renderWithProviders } from '@/test-utils';
 import {
   createMockIdentity,
   createMockProfile,
-  createMockProtocol,
+  createMockModule,
   createMockPermission,
 } from '@/__mocks__/enbox-mocks';
 
@@ -23,16 +23,16 @@ const mockProfile = createMockProfile({
   bio: 'A test bio',
 });
 
-const mockProtocols = [
-  createMockProtocol({ uri: 'https://identity.foundation/protocols/profile' }),
-  createMockProtocol({ uri: 'https://identity.foundation/protocols/connect' }),
+const mockModules = [
+  createMockModule({ uri: 'https://identity.foundation/modules/profile' }),
+  createMockModule({ uri: 'https://identity.foundation/modules/connect' }),
 ];
 
 const mockPermissions = [
   {
     ...createMockPermission({
     grantee: 'did:dht:app1',
-    protocol: 'https://identity.foundation/protocols/profile',
+    module: 'https://identity.foundation/modules/profile',
     }),
     dateGranted    : '2026-06-23T00:00:00.000Z',
     dateExpires    : '2099-06-24T00:00:00.000Z',
@@ -96,9 +96,9 @@ vi.mock('@/enbox/hooks/use-profile', () => ({
   }),
 }));
 
-vi.mock('@/enbox/hooks/use-protocols', () => ({
-  useProtocols: () => ({
-    data: mockProtocols,
+vi.mock('@/enbox/hooks/use-modules', () => ({
+  useModules: () => ({
+    data: mockModules,
     isLoading: false,
   }),
 }));
@@ -189,16 +189,16 @@ describe('IdentityDetailsPage', () => {
     renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
 
     expect(screen.getByRole('tab', { name: /overview/i })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: /protocols/i })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: /modules/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /wallets/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /permissions/i })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: /activity/i })).toBeInTheDocument();
   });
 
-  it('renders protocol count in tab label', () => {
+  it('renders module count in tab label', () => {
     renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
-    // With 2 protocols, the label should be "Protocols (2)"
-    expect(screen.getByRole('tab', { name: /protocols \(2\)/i })).toBeInTheDocument();
+    // With 2 modules, the label should be "Modules (2)"
+    expect(screen.getByRole('tab', { name: /modules \(2\)/i })).toBeInTheDocument();
   });
 
   it('renders app count in tab label', () => {
@@ -214,14 +214,14 @@ describe('IdentityDetailsPage', () => {
     expect(screen.getByText('A test bio')).toBeInTheDocument();
   });
 
-  it('switches to protocols tab when clicked', async () => {
+  it('switches to modules tab when clicked', async () => {
     const { user } = renderWithProviders(<IdentityDetailsPage />, {
       initialRoute: route,
     });
 
-    await user.click(screen.getByRole('tab', { name: /protocols/i }));
+    await user.click(screen.getByRole('tab', { name: /modules/i }));
 
-    // Should show protocol human-friendly names (catalog data, not UI copy)
+    // Should show module human-friendly names (catalog data, not UI copy)
     expect(screen.getByText('Profile')).toBeInTheDocument();
     expect(screen.getByText('Connect')).toBeInTheDocument();
   });
@@ -261,9 +261,9 @@ describe('IdentityDetailsPage', () => {
     const overviewTab = screen.getByRole('tab', { name: /overview/i });
     overviewTab.focus();
 
-    // ArrowRight should move to the next tab (Protocols)
+    // ArrowRight should move to the next tab (Modules)
     await user.keyboard('{ArrowRight}');
-    expect(screen.getByRole('tab', { name: /protocols/i })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: /modules/i })).toHaveFocus();
   });
 
   it('shows delete and export buttons', () => {

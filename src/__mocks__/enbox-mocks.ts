@@ -1,7 +1,7 @@
 /**
  * Mock factories for Enbox SDK objects.
  * These create realistic-looking mock data for testing components
- * that display identity, profile, protocol, and permission information.
+ * that display identity, profile, module, and permission information.
  */
 
 import { vi } from 'vitest';
@@ -47,16 +47,16 @@ export function createMockProfile(overrides?: Partial<{
   };
 }
 
-/** Create a mock protocol entry */
-export function createMockProtocol(overrides?: Partial<{
+/** Create a mock module entry */
+export function createMockModule(overrides?: Partial<{
   uri: string;
   published: boolean;
 }>) {
   return {
-    uri: overrides?.uri ?? 'https://identity.foundation/protocols/profile',
+    uri: overrides?.uri ?? 'https://identity.foundation/modules/profile',
     published: overrides?.published ?? true,
     definition: {
-      protocol: overrides?.uri ?? 'https://identity.foundation/protocols/profile',
+      module: overrides?.uri ?? 'https://identity.foundation/modules/profile',
       published: overrides?.published ?? true,
     },
   };
@@ -66,14 +66,14 @@ export function createMockProtocol(overrides?: Partial<{
 export function createMockPermission(overrides?: Partial<{
   id: string;
   grantee: string;
-  protocol: string;
+  module: string;
   interface: string;
 }>) {
   return {
     id: overrides?.id ?? 'grant-123',
     grantee: overrides?.grantee ?? 'did:dht:app123',
     scope: {
-      protocol: overrides?.protocol ?? 'https://identity.foundation/protocols/profile',
+      module: overrides?.module ?? 'https://identity.foundation/modules/profile',
       interface: overrides?.interface ?? 'Records',
     },
     revoke: vi.fn().mockResolvedValue(undefined),

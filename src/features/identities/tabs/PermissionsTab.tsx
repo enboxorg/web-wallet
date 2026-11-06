@@ -25,7 +25,7 @@ import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { truncateDid, copyToClipboard } from '@/lib/utils';
-import { getProtocolName, getScopeLabel } from '@/lib/protocol-names';
+import { getModuleName, getScopeLabel } from '@/lib/module-names';
 import type { DwnPermissionGrant } from '@enbox/agent';
 import {
   buildPermissionSections,
@@ -113,7 +113,7 @@ function revokeDialogCopy(target: RevokeTarget | null): {
 
   return {
     title   : 'Revoke permission',
-    body    : 'Revoke this permission? The app will no longer be able to access this protocol.',
+    body    : 'Revoke this permission? The app will no longer be able to access this module.',
     confirm : 'Revoke',
   };
 }
@@ -125,20 +125,20 @@ function PermissionGrantRow({
   grant: DwnPermissionGrant;
   onRevoke?: (grant: DwnPermissionGrant) => void;
 }) {
-  const protocol = grant.scope?.protocol;
+  const module = grant.scope?.module;
   const scopeLabel = grantScopeLabel(grant);
-  const protocolLabel = protocol ? getProtocolName(protocol) : 'All protocols';
+  const moduleLabel = module ? getModuleName(module) : 'All modules';
   const revokeLabel = scopeLabel
-    ? `Revoke ${protocolLabel} ${scopeLabel} permission`
-    : `Revoke ${protocolLabel} permission`;
+    ? `Revoke ${moduleLabel} ${scopeLabel} permission`
+    : `Revoke ${moduleLabel} permission`;
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] bg-surface-2 px-3 py-2">
       <span
         className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary"
-        title={protocol}
+        title={module}
       >
-        {protocolLabel}
+        {moduleLabel}
       </span>
       {scopeLabel && (
         <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">

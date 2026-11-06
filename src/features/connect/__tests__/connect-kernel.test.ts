@@ -91,6 +91,33 @@ describe('connect-kernel', () => {
     mocks.randomPin.mockReturnValue('1234');
   });
 
+  it.each(['relay', 'popup'] as const)('preserves installation-only provider requests through %s approval', async (transport) => {
+    const provider = { module: 'https://example.test/modules/core', published: false, types: { workspace: {} }, structure: { workspace: {} } };
+    const consumer = {
+      module: 'https://example.test/modules/comments', published: false,
+      uses: { core: provider.module }, types: { comment: {} },
+      structure: { workspace: { $ref: 'core:workspace', comment: {} } },
+    };
+    const request = connectRequest({
+      permissionRequests: [
+        { moduleDefinition: provider, permissionScopes: [] },
+        { moduleDefinition: consumer, permissionScopes: [{ interface: 'Records', method: 'Read', module: consumer.module }] },
+      ],
+      ...(transport === 'popup' ? { reply: { mode: 'post_message' } } : {}),
+    });
+    const original = structuredClone(request);
+    if (transport === 'relay') {
+      await approveConnectRequest('did:dht:owner', request, '1234', 3600, {} as any);
+    } else {
+      await approvePopupConnectRequest('did:dht:owner', request, 'https://app.example', 3600, {} as any);
+    }
+    const approved = mocks.executeConnectApproval.mock.calls[0][0];
+    expect(approved.request).toEqual(original);
+    expect(approved.request.permissionRequests[0].permissionScopes).toEqual([]);
+    expect(approved.approvedModuleOverrides).toEqual([]);
+    expect(request).toEqual(original);
+  });
+
   describe('fetchConnectRequest', () => {
     it('requires an authentication request to be hosted by its audience origin', async () => {
       mocks.openRequest.mockResolvedValue(connectRequest({
@@ -237,7 +264,7 @@ describe('connect-kernel', () => {
       mocks.openRequest.mockResolvedValue(request);
       const fetched = await fetchConnectRequest('https://auth.example/request/one', REQUEST_KEY);
       const original = structuredClone(fetched);
-      const overrides = ['https://example.test/original-protocol'];
+      const overrides = ['https://example.test/original-module'];
       let release!: () => void;
       const pending = new Promise<void>(resolve => { release = resolve; });
       let entered!: () => void;
@@ -252,7 +279,7 @@ describe('connect-kernel', () => {
       fetched.state = 'mutated-state'; fetched.nonce = 'mutated-nonce';
       fetched.authentication!.challenge = 'z'.repeat(32);
       fetched.reply = { mode: 'direct_post', callbackUrl: 'https://other.example/callback' };
-      fetched.responseKey.x = 'mutated-public-key'; overrides.push('https://other.example/protocol');
+      fetched.responseKey.x = 'mutated-public-key'; overrides.push('https://other.example/module');
       release();
       const completed = await result;
       expect(completed).toEqual(original);
@@ -261,7 +288,7 @@ describe('connect-kernel', () => {
       expect(seal).toHaveBeenCalledWith(expect.objectContaining({ request: original }));
       expect(execute).toHaveBeenCalledWith(expect.objectContaining({ request: original, verifiedRequesterOrigin: 'https://auth.example' }));
       if (requestType === 'connect') {
-        expect(execute).toHaveBeenCalledWith(expect.objectContaining({ approvedProtocolOverrides: ['https://example.test/original-protocol'] }));
+        expect(execute).toHaveBeenCalledWith(expect.objectContaining({ approvedModuleOverrides: ['https://example.test/original-module'] }));
       }
       expect(mocks.postRelayResponse).toHaveBeenCalledWith(expect.objectContaining({ state: original.state, callbackUrl: original.reply.callbackUrl }));
       await waitForRelayCompletion(completed);
@@ -320,12 +347,12 @@ describe('connect-kernel', () => {
         '1234',
         3_600,
         agent,
-        ['https://example.com/protocols/tasks'],
+        ['https://example.com/modules/tasks'],
       );
 
       expect(mocks.executeConnectApproval).toHaveBeenCalledWith({
         agent,
-        approvedProtocolOverrides : ['https://example.com/protocols/tasks'],
+        approvedModuleOverrides : ['https://example.com/modules/tasks'],
         approvedSessionTtlSeconds : 3_600,
         providerDid               : 'did:dht:alice',
         request,
@@ -445,7 +472,7 @@ describe('connect-kernel', () => {
       const request = connectRequest({ requestType, reply: { mode: 'post_message' },
         authentication: { version: 1, audience: 'https://app.example/', challenge: 'c'.repeat(32) } });
       const original = structuredClone(request);
-      const overrides = ['https://example.test/original-protocol'];
+      const overrides = ['https://example.test/original-module'];
       let release!: () => void;
       const pending = new Promise<void>(resolve => { release = resolve; });
       let entered!: () => void;
@@ -458,13 +485,13 @@ describe('connect-kernel', () => {
       const result = approvePopupConnectRequest('did:dht:owner', request, 'https://app.example', 3600, {} as any, overrides);
       await started;
       request.state = 'mutated-state'; request.authentication.audience = 'https://other.example/';
-      request.responseKey.x = 'mutated-public-key'; overrides.push('https://other.example/protocol');
+      request.responseKey.x = 'mutated-public-key'; overrides.push('https://other.example/module');
       release(); await result;
       const seal = requestType === 'authenticate' ? mocks.sealAuthenticationResponse : mocks.sealApprovedResponse;
       expect(seal).toHaveBeenCalledWith(expect.objectContaining({ request: original }));
       expect(execute).toHaveBeenCalledWith(expect.objectContaining({ request: original, verifiedRequesterOrigin: 'https://app.example' }));
       if (requestType === 'connect') {
-        expect(execute).toHaveBeenCalledWith(expect.objectContaining({ approvedProtocolOverrides: ['https://example.test/original-protocol'] }));
+        expect(execute).toHaveBeenCalledWith(expect.objectContaining({ approvedModuleOverrides: ['https://example.test/original-module'] }));
       }
     });
 
@@ -517,13 +544,13 @@ describe('connect-kernel', () => {
           'https://app.example',
           604_800,
           agent,
-          ['https://example.com/protocols/tasks'],
+          ['https://example.com/modules/tasks'],
         ),
       ).resolves.toBe('sealed-response-jwe');
 
       expect(mocks.executeConnectApproval).toHaveBeenCalledWith({
         agent,
-        approvedProtocolOverrides : ['https://example.com/protocols/tasks'],
+        approvedModuleOverrides : ['https://example.com/modules/tasks'],
         approvedSessionTtlSeconds : 604_800,
         providerDid               : 'did:dht:alice',
         request                   : originalRequest,

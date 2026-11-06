@@ -9,19 +9,19 @@
  * The SDK manages sync automatically. We only:
  * - Set sync options for new identity DIDs
  * - Register DIDs as DWN tenants
- * - Install protocols locally before writing records
+ * - Install modules locally before writing records
  */
 
 import type { Enbox } from '@enbox/browser';
 
 import { Effect } from 'effect';
 import {
-  ProfileProtocol,
-  ConnectProtocol,
-} from '@enbox/protocols';
+  ProfileModule,
+  ConnectModule,
+} from '@enbox/modules';
 
 import type { EnboxAgent } from '../types';
-import { installProtocolsEffect } from '../protocols';
+import { installModulesEffect } from '../modules';
 import { ensureIdentitySyncOptionsEffect } from '../identity-sync';
 import { ensureRegistrationEffect } from '../registration';
 import { normalizeDwnEndpoints, WALLET_URL } from '@/lib/dwn-endpoints';
@@ -92,14 +92,14 @@ function rollbackLocalIdentityEffect(did: string, cause: unknown) {
 }
 
 function createProfileApi(enbox: Enbox) {
-  return enbox.using(ProfileProtocol);
+  return enbox.using(ProfileModule);
 }
 
 type ProfileApi = ReturnType<typeof createProfileApi>;
 
 function createWalletRecordBestEffortEffect(did: string, warningPrefix: string) {
   return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
-    const connect = enbox.using(ConnectProtocol);
+    const connect = enbox.using(ConnectModule);
     const { records: existingWallets } = yield* Effect.tryPromise({
       try: () => connect.records.query('wallet'),
       catch: sdkError('connect.wallet.query'),
@@ -279,11 +279,11 @@ export function createIdentityEffect(params: CreateIdentityParams) {
       //    to be a recognised tenant on the remote DWN.
       yield* ensureRegistrationEffect(dwnEndpoints, [did]);
 
-      // 3. Install protocols locally before writing records. Remote propagation
+      // 3. Install modules locally before writing records. Remote propagation
       //    is handled by sync through replicated admission dependencies.
-      yield* installProtocolsEffect(did);
+      yield* installModulesEffect(did);
 
-      // 4. Register identity DID for sync after protocol bootstrap is complete.
+      // 4. Register identity DID for sync after module bootstrap is complete.
       yield* ensureIdentitySyncOptionsEffect(did).pipe(
         Effect.catchAll(() => Effect.void),
       );
@@ -541,7 +541,7 @@ export function importIdentityEffect(
 
       // Import preserves the DID's existing remote tenant ownership. Re-registering
       // here could silently rebind a provider-auth account, so only prepare local state.
-      yield* installProtocolsEffect(did).pipe(
+      yield* installModulesEffect(did).pipe(
         Effect.catchAll((cause) => rollbackLocalIdentityEffect(did, cause)),
       );
 

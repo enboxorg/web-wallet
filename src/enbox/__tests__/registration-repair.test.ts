@@ -99,7 +99,7 @@ describe('registration repair', () => {
     const first = repairRegistrationFromSyncEvent(agent, event);
     const second = repairRegistrationFromSyncEvent(agent, {
       ...event,
-      protocol: 'https://example.com/other-protocol',
+      module: 'https://example.com/other-module',
     });
 
     await vi.waitFor(() => {

@@ -1,3 +1,4 @@
+import { PermissionsModule } from '@enbox/dwn-sdk-js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -5,25 +6,25 @@ import {
   fetchPermissionHistory,
   fetchPermissions,
   fetchProfile,
-  fetchProtocols,
+  fetchModules,
 } from '../identity-queries';
 
 const mocks = vi.hoisted(() => {
   const activityQuery = vi.fn();
   const close = vi.fn();
-  const protocolQuery = vi.fn();
+  const moduleQuery = vi.fn();
   const query = vi.fn();
 
   return {
     activityQuery,
     close,
-    protocolQuery,
+    moduleQuery,
     query,
     Enbox: vi.fn().mockImplementation(function Enbox() {
       return {
         close,
         dwn: {
-          protocols: { query: protocolQuery },
+          modules: { query: moduleQuery },
           records: { query: activityQuery },
         },
         using: vi.fn(() => ({ records: { query } })),
@@ -36,9 +37,9 @@ vi.mock('@enbox/browser', () => ({
   Enbox: mocks.Enbox,
 }));
 
-vi.mock('@enbox/protocols', () => ({
-  ConnectProtocol: Symbol('ConnectProtocol'),
-  ProfileProtocol: Symbol('ProfileProtocol'),
+vi.mock('@enbox/modules', () => ({
+  ConnectModule: Symbol('ConnectModule'),
+  ProfileModule: Symbol('ProfileModule'),
 }));
 
 vi.mock('@enbox/agent', () => ({
@@ -128,25 +129,25 @@ describe('raw DWN reads', () => {
     vi.clearAllMocks();
   });
 
-  it('uses and closes the Enbox raw-DWN escape hatch for protocols', async () => {
-    mocks.protocolQuery.mockResolvedValue({
-      protocols: [{
+  it('uses and closes the Enbox raw-DWN escape hatch for modules', async () => {
+    mocks.moduleQuery.mockResolvedValue({
+      modules: [{
         definition: {
-          protocol  : 'https://example.com/protocol',
+          module  : 'https://example.com/module',
           published : true,
         },
       }],
     });
 
-    await expect(fetchProtocols({} as never, 'did:dht:alice')).resolves.toEqual([{
-      uri        : 'https://example.com/protocol',
+    await expect(fetchModules({} as never, 'did:dht:alice')).resolves.toEqual([{
+      uri        : 'https://example.com/module',
       published  : true,
       definition : {
-        protocol  : 'https://example.com/protocol',
+        module  : 'https://example.com/module',
         published : true,
       },
     }]);
-    expect(mocks.protocolQuery).toHaveBeenCalledWith({});
+    expect(mocks.moduleQuery).toHaveBeenCalledWith({});
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
@@ -154,8 +155,8 @@ describe('raw DWN reads', () => {
     mocks.activityQuery.mockResolvedValue({
       records: [{
         id          : 'record-1',
-        protocol    : 'https://example.com/protocol',
-        protocolPath: 'note',
+        module    : 'https://example.com/module',
+        modulePath: 'note',
         dateCreated : '2026-08-11T00:00:00.000Z',
         author      : 'did:dht:alice',
       }],
@@ -163,8 +164,8 @@ describe('raw DWN reads', () => {
 
     await expect(fetchActivity({} as never, 'did:dht:alice', 5)).resolves.toEqual([{
       id           : 'record-1',
-      protocol     : 'https://example.com/protocol',
-      protocolPath : 'note',
+      module     : 'https://example.com/module',
+      modulePath : 'note',
       schema       : undefined,
       dataFormat   : undefined,
       dateCreated  : '2026-08-11T00:00:00.000Z',
@@ -223,14 +224,14 @@ describe('fetchPermissions', () => {
   it('filters internal session revocation grants out of both permission views', async () => {
     const sessionGrant = {
       id    : 'grant-1',
-      scope : { interface: 'Records', method: 'Read', protocol: 'https://example.com/protocols/demo' },
+      scope : { interface: 'Records', method: 'Read', module: 'https://example.com/modules/demo' },
     };
     const revocationGrant = {
       id    : 'revocation-grant-1',
       scope : {
         interface : 'Records',
         method    : 'Write',
-        protocol  : 'https://identity.foundation/dwn/permissions',
+        module    : PermissionsModule.uri,
         contextId : 'grant-1',
       },
     };

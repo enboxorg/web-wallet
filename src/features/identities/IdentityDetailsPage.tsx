@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useProfile } from '@/enbox/hooks/use-profile';
-import { useProtocols } from '@/enbox/hooks/use-protocols';
+import { useModules } from '@/enbox/hooks/use-modules';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import {
   useDeleteIdentity,
@@ -23,13 +23,13 @@ import { shareEffect } from '@/lib/browser-effects';
 import { truncateDid, copyToClipboard } from '@/lib/utils';
 
 import OverviewTab from './tabs/OverviewTab';
-import ProtocolsTab from './tabs/ProtocolsTab';
+import ModulesTab from './tabs/ModulesTab';
 import WalletsTab from './tabs/WalletsTab';
 import PermissionsTab from './tabs/PermissionsTab';
 import ActivityTab from './tabs/ActivityTab';
 import { countActivePermissionApps } from './tabs/permission-sessions';
 
-const TABS = ['Overview', 'Protocols', 'Wallets', 'Apps & Permissions', 'Activity'] as const;
+const TABS = ['Overview', 'Modules', 'Wallets', 'Apps & Permissions', 'Activity'] as const;
 const tabId = (i: number) => `identity-tab-${i}`;
 const panelId = (i: number) => `identity-panel-${i}`;
 
@@ -40,22 +40,22 @@ export default function IdentityDetailsPage() {
 
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
   const { data: profile, isLoading: profileLoading } = useProfile(did);
-  const { data: protocols } = useProtocols(did);
+  const { data: modules } = useModules(did);
   const { data: permissions } = usePermissions(did);
   const deleteIdentity = useDeleteIdentity();
   const exportIdentity = useExportIdentity();
 
   const tabLabels = useMemo(() => {
-    const protocolCount = protocols?.length ?? 0;
+    const moduleCount = modules?.length ?? 0;
     const appCount = countActivePermissionApps(permissions);
     return [
       'Overview',
-      protocolCount > 0 ? `Protocols (${protocolCount})` : 'Protocols',
+      moduleCount > 0 ? `Modules (${moduleCount})` : 'Modules',
       'Wallets',
       appCount > 0 ? `Apps & Permissions (${appCount})` : 'Apps & Permissions',
       'Activity',
     ];
-  }, [protocols, permissions]);
+  }, [modules, permissions]);
 
   const identity = useMemo(
     () => identities?.find((id: any) => id.did.uri === did),
@@ -233,7 +233,7 @@ export default function IdentityDetailsPage() {
         <OverviewTab did={did} />
       </TabPanel>
       <TabPanel id={panelId(1)} labelledBy={tabId(1)} active={activeTab === 1}>
-        <ProtocolsTab did={did} />
+        <ModulesTab did={did} />
       </TabPanel>
       <TabPanel id={panelId(2)} labelledBy={tabId(2)} active={activeTab === 2}>
         <WalletsTab did={did} />

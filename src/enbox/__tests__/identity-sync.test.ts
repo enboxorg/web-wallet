@@ -4,22 +4,22 @@ import { Effect } from 'effect';
 import { reconcileIdentitySync } from '../identity-sync';
 
 const mocks = vi.hoisted(() => ({
-  installProtocols: vi.fn(),
+  installModules: vi.fn(),
 }));
 
-vi.mock('../protocols', () => ({
-  IDENTITY_SYNC_PROTOCOLS: [
-    'https://identity.foundation/protocols/profile',
-    'https://identity.foundation/protocols/connect',
-    'https://identity.foundation/protocols/service-config',
+vi.mock('../modules', () => ({
+  IDENTITY_SYNC_MODULES: [
+    'https://identity.foundation/modules/profile',
+    'https://identity.foundation/modules/connect',
+    'https://identity.foundation/modules/service-config',
   ],
-  installProtocolsEffect: mocks.installProtocols,
+  installModulesEffect: mocks.installModules,
 }));
 
-const desiredProtocols = [
-  'https://identity.foundation/protocols/profile',
-  'https://identity.foundation/protocols/connect',
-  'https://identity.foundation/protocols/service-config',
+const desiredModules = [
+  'https://identity.foundation/modules/profile',
+  'https://identity.foundation/modules/connect',
+  'https://identity.foundation/modules/service-config',
 ];
 
 function createAgent(optionsChanged = true) {
@@ -34,7 +34,7 @@ function createAgent(optionsChanged = true) {
 describe('reconcileIdentitySync', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.installProtocols.mockImplementation(() => Effect.void);
+    mocks.installModules.mockImplementation(() => Effect.void);
   });
 
   it('registers a newly discovered identity for scoped sync without driving a manual pull', async () => {
@@ -45,10 +45,10 @@ describe('reconcileIdentitySync', () => {
 
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:new',
-      options: { protocols: desiredProtocols },
+      options: { modules: desiredModules },
     });
     expect(agent.sync.sync).not.toHaveBeenCalled();
-    expect(mocks.installProtocols).toHaveBeenCalledWith('did:dht:new');
+    expect(mocks.installModules).toHaveBeenCalledWith('did:dht:new');
     expect(result.changedDids).toEqual(['did:dht:new']);
   });
 
@@ -60,10 +60,10 @@ describe('reconcileIdentitySync', () => {
 
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:known',
-      options: { protocols: desiredProtocols },
+      options: { modules: desiredModules },
     });
     expect(agent.sync.sync).not.toHaveBeenCalled();
-    expect(mocks.installProtocols).toHaveBeenCalledWith('did:dht:known');
+    expect(mocks.installModules).toHaveBeenCalledWith('did:dht:known');
     expect(result.changedDids).toEqual([]);
   });
 
@@ -76,7 +76,7 @@ describe('reconcileIdentitySync', () => {
 
     await reconcileIdentitySync(agent, [identity]);
 
-    expect(mocks.installProtocols).not.toHaveBeenCalled();
+    expect(mocks.installModules).not.toHaveBeenCalled();
     expect(agent.sync.ensureIdentityOptions).not.toHaveBeenCalled();
   });
 
@@ -91,8 +91,8 @@ describe('reconcileIdentitySync', () => {
       { did: { uri: 'did:dht:owner' } },
     ]);
 
-    expect(mocks.installProtocols).toHaveBeenCalledOnce();
-    expect(mocks.installProtocols).toHaveBeenCalledWith('did:dht:owner');
+    expect(mocks.installModules).toHaveBeenCalledOnce();
+    expect(mocks.installModules).toHaveBeenCalledWith('did:dht:owner');
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledOnce();
     expect(result.changedDids).toEqual(['did:dht:owner']);
   });
@@ -118,7 +118,7 @@ describe('reconcileIdentitySync', () => {
     });
     expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledWith({
       did: 'did:dht:good',
-      options: { protocols: desiredProtocols },
+      options: { modules: desiredModules },
     });
     warn.mockRestore();
   });

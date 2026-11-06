@@ -1,3 +1,4 @@
+import { assertConnectPermissionRequests } from '@enbox/connect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DwnPermissionGrant } from '@enbox/agent';
 
@@ -5,7 +6,7 @@ import type { PermissionSessionGroup } from '../permission-sessions';
 
 const mocks = vi.hoisted(() => ({
   executeConnectApproval: vi.fn(),
-  fetchProtocols: vi.fn(),
+  fetchModules: vi.fn(),
 }));
 
 vi.mock('@enbox/agent', async (importOriginal) => ({
@@ -14,20 +15,20 @@ vi.mock('@enbox/agent', async (importOriginal) => ({
 }));
 
 vi.mock('@/enbox/queries/identity-queries', () => ({
-  fetchProtocols: mocks.fetchProtocols,
+  fetchModules: mocks.fetchModules,
 }));
 
 import { renewExpiredSession } from '../renew-session';
 
 const agent = { id: 'agent-1' } as never;
 
-function grant(id: string, protocol: string, method: string): DwnPermissionGrant {
+function grant(id: string, module: string, method: string): DwnPermissionGrant {
   return {
     id,
     grantee     : 'did:jwk:delegate',
     dateGranted : '2026-06-20T00:00:00.000Z',
     dateExpires : '2026-06-21T00:00:00.000Z',
-    scope       : { interface: 'Records', method, protocol },
+    scope       : { interface: 'Records', method, module },
   } as DwnPermissionGrant;
 }
 
@@ -53,19 +54,25 @@ function sessionGroup(grants: DwnPermissionGrant[]): PermissionSessionGroup {
 describe('renewExpiredSession', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.fetchProtocols.mockResolvedValue([
-      { uri: 'https://example.com/protocols/tasks', published: true, definition: { protocol: 'https://example.com/protocols/tasks' } },
-      { uri: 'https://example.com/protocols/notes', published: true, definition: { protocol: 'https://example.com/protocols/notes' } },
+    mocks.fetchModules.mockResolvedValue([
+      { uri: 'https://example.com/modules/tasks', published: true, definition: {
+        module: 'https://example.com/modules/tasks', published: true,
+        types: { task: { dataFormats: ['application/json'] } }, structure: { task: {} },
+      } },
+      { uri: 'https://example.com/modules/notes', published: true, definition: {
+        module: 'https://example.com/modules/notes', published: true,
+        types: { note: { dataFormats: ['application/json'] } }, structure: { note: {} },
+      } },
     ]);
     mocks.executeConnectApproval.mockResolvedValue({});
   });
 
-  it('re-runs the approval ceremony for the same delegate with deduped scopes grouped by protocol', async () => {
+  it('re-runs the approval ceremony for the same delegate with deduped scopes grouped by module', async () => {
     const grants = [
-      grant('grant-1', 'https://example.com/protocols/tasks', 'Read'),
-      grant('grant-2', 'https://example.com/protocols/tasks', 'Write'),
-      grant('grant-3', 'https://example.com/protocols/notes', 'Read'),
-      grant('grant-4', 'https://example.com/protocols/tasks', 'Read'),
+      grant('grant-1', 'https://example.com/modules/tasks', 'Read'),
+      grant('grant-2', 'https://example.com/modules/tasks', 'Write'),
+      grant('grant-3', 'https://example.com/modules/notes', 'Read'),
+      grant('grant-4', 'https://example.com/modules/tasks', 'Read'),
     ];
 
     await renewExpiredSession(agent, 'did:dht:owner', sessionGroup(grants));
@@ -79,19 +86,42 @@ describe('renewExpiredSession', () => {
     expect(params.request.clientMetadata).toEqual(expect.objectContaining({
       origin: 'https://app.example',
     }));
+    assertConnectPermissionRequests(params.request.permissionRequests);
     expect(params.request.permissionRequests).toHaveLength(2);
     const tasksRequest = params.request.permissionRequests.find(
-      (request: any) => request.protocolDefinition.protocol === 'https://example.com/protocols/tasks',
+      (request: any) => request.moduleDefinition.module === 'https://example.com/modules/tasks',
     );
     expect(tasksRequest.permissionScopes).toHaveLength(2);
   });
 
-  it('fails visibly when a used protocol is no longer installed', async () => {
-    mocks.fetchProtocols.mockResolvedValue([]);
+  it('preserves module paths, context restrictions, and metadata scopes instead of widening them during renewal', async () => {
+    const module = 'https://example.com/modules/tasks';
+    const scopes = [
+      { interface: 'Records', method: 'Read', module, modulePath: 'task' },
+      { interface: 'Records', method: 'Read', module, modulePath: 'task/detail' },
+      { interface: 'Records', method: 'Read', module, contextId: 'project-context' },
+      { interface: 'Modules', method: 'Query', module },
+    ];
+    const grants = [...scopes, scopes[0]].map((scope, index) => ({
+      ...grant(`grant-${index}`, module, 'Read'), scope,
+    } as DwnPermissionGrant));
+
+    await renewExpiredSession(agent, 'did:dht:owner', sessionGroup(grants));
+
+    const params = mocks.executeConnectApproval.mock.calls[0][0];
+    assertConnectPermissionRequests(params.request.permissionRequests);
+    expect(params.request.permissionRequests).toEqual([{
+      moduleDefinition: expect.objectContaining({ module }),
+      permissionScopes: scopes,
+    }]);
+  });
+
+  it('fails visibly when a used module is no longer installed', async () => {
+    mocks.fetchModules.mockResolvedValue([]);
 
     await expect(
       renewExpiredSession(agent, 'did:dht:owner', sessionGroup([
-        grant('grant-1', 'https://example.com/protocols/tasks', 'Read'),
+        grant('grant-1', 'https://example.com/modules/tasks', 'Read'),
       ])),
     ).rejects.toThrow(/no longer installed/i);
 

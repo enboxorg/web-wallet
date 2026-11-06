@@ -8,10 +8,10 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { truncateDid, formatRelativeTime } from '@/lib/utils';
 
-function getProtocolIcon(protocol?: string) {
-  if (!protocol) return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
-  if (protocol.includes('profile')) return <User className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
-  if (protocol.includes('connect')) return <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+function getModuleIcon(module?: string) {
+  if (!module) return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+  if (module.includes('profile')) return <User className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
+  if (module.includes('connect')) return <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
   return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
 }
 
@@ -54,14 +54,14 @@ export default function ActivityTab({ did }: ActivityTabProps) {
           className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border-default bg-surface-1 px-4 py-3"
         >
           {/* Icon */}
-          {getProtocolIcon(item.protocol)}
+          {getModuleIcon(item.module)}
 
           {/* Content */}
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
               <span className="truncate text-sm font-medium text-text-primary">
-                {item.protocol
-                  ? item.protocol.split('/').pop() || 'Unknown'
+                {item.module
+                  ? item.module.split('/').pop() || 'Unknown'
                   : 'Unknown'}
               </span>
               {item.published && (
@@ -72,9 +72,9 @@ export default function ActivityTab({ did }: ActivityTabProps) {
               )}
             </div>
 
-            {item.protocolPath && (
+            {item.modulePath && (
               <p className="mt-0.5 truncate font-mono text-xs text-text-tertiary">
-                {item.protocolPath}
+                {item.modulePath}
               </p>
             )}
 
