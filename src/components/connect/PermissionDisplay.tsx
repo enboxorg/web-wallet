@@ -4,7 +4,7 @@
  * Keeps the primary surface focused on consent:
  * - what the requester can do
  * - how long access lasts
- * - where setup/protocol mechanics can be inspected
+ * - where setup/module mechanics can be inspected
  */
 import {
   AlertTriangle,
@@ -21,15 +21,15 @@ import {
 import type { LucideIcon } from 'lucide-react';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 import {
-  protocolDefinitionsMatch,
-  type ProtocolSetupStatus,
-} from '@/features/connect/protocol-install';
+  moduleDefinitionsMatch,
+  type ModuleSetupStatus,
+} from '@/features/connect/module-install';
 import {
   formatConnectSessionDuration,
   getConnectSessionDurationOptions,
   resolveConnectSessionDurationSeconds,
 } from '@/features/connect/connect-session-duration';
-import { getCanonicalProtocolDefinition, getProtocolInfo } from '@/lib/protocol-names';
+import { getCanonicalModuleDefinition, getModuleInfo } from '@/lib/module-names';
 import { Select } from '@/components/ui/Select';
 import {
   formatActionPhrase,
@@ -37,15 +37,15 @@ import {
   getHighestPermissionRisk,
   getPermissionActions,
   isInternalConnectScope,
-  mergePermissionRequestsByProtocol,
+  mergePermissionRequestsByModule,
 } from './connect-scope-display';
 import type { DisplayScope, PermissionRisk } from './connect-scope-display';
 
 interface PermissionDisplayProps {
   /** The permission requests from the dapp. */
   permissions: ConnectPermissionRequest[];
-  /** Setup status keyed by protocol URI. */
-  protocolSetupStatuses?: Record<string, ProtocolSetupStatus>;
+  /** Setup status keyed by module URI. */
+  moduleSetupStatuses?: Record<string, ModuleSetupStatus>;
   /** Number of active matching sessions for this app + identity. */
   existingSessionCount?: number;
   /** Trust anchor shown in section copy, usually the verified origin. */
@@ -56,8 +56,8 @@ interface PermissionDisplayProps {
   requestedSessionTtlSeconds?: number;
   /** Change the wallet-approved connect session lifetime. */
   onSessionDurationSecondsChange?: (seconds: number) => void;
-  /** Retry a failed protocol setup check. */
-  onRetryProtocolSetup?: () => void;
+  /** Retry a failed module setup check. */
+  onRetryModuleSetup?: () => void;
   /** Whether the owner has opted into replacing conflicting custom definitions. */
   overrideAcknowledged?: boolean;
   /** Toggle the override opt-in for definition conflicts. */
@@ -66,26 +66,26 @@ interface PermissionDisplayProps {
   renewal?: boolean;
 }
 
-type ProtocolDefinition = ConnectPermissionRequest['protocolDefinition'];
+type ModuleDefinition = ConnectPermissionRequest['moduleDefinition'];
 
-type ProtocolAccess = {
+type ModuleAccess = {
   permission: ConnectPermissionRequest;
-  protocolUri: string;
+  moduleUri: string;
   name: string;
   description: string;
-  isKnownProtocol: boolean;
+  isKnownModule: boolean;
   displayScopes: DisplayScope[];
   paths: string[];
   hasEncryptedTypes: boolean;
   sharesDecryptionKeys: boolean;
-  setupStatus: ProtocolSetupStatus;
+  setupStatus: ModuleSetupStatus;
 };
 
 type SetupStatusDisplay = {
   label: string;
 };
 
-const SETUP_STATUS_DISPLAY: Record<ProtocolSetupStatus, SetupStatusDisplay> = {
+const SETUP_STATUS_DISPLAY: Record<ModuleSetupStatus, SetupStatusDisplay> = {
   checking: {
     label : 'Checking',
   },
@@ -126,7 +126,7 @@ function hostLabel(value: string): string {
   }
 }
 
-function protocolUriLabel(uri: string): string {
+function moduleUriLabel(uri: string): string {
   try {
     const url = new URL(uri);
     return `${url.host}${url.pathname}`;
@@ -144,10 +144,9 @@ function collectStructurePaths(
   const paths: string[] = [];
   for (const [key, value] of Object.entries(structure)) {
     const path = prefix ? `${prefix}/${key}` : key;
-    paths.push(path);
-
     if (value && typeof value === 'object' && !Array.isArray(value)) {
       const child = value as Record<string, unknown>;
+      if (child.$ref === undefined) paths.push(path);
       const childStructure = Object.fromEntries(
         Object.entries(child).filter(([childKey, childValue]) =>
           !childKey.startsWith('$')
@@ -172,41 +171,41 @@ function isEncryptedType(type: unknown): boolean {
   );
 }
 
-function getEncryptedTypeCount(protocolDefinition: ProtocolDefinition): number {
-  return Object.values(protocolDefinition.types ?? {})
+function getEncryptedTypeCount(moduleDefinition: ModuleDefinition): number {
+  return Object.values(moduleDefinition.types ?? {})
     .filter(isEncryptedType)
     .length;
 }
 
-function getProtocolAccess(
+function getModuleAccess(
   permissions: ConnectPermissionRequest[],
-  protocolSetupStatuses?: Record<string, ProtocolSetupStatus>,
-): ProtocolAccess[] {
-  return mergePermissionRequestsByProtocol(permissions).map((permission) => {
-    const protocolUri = permission.protocolDefinition.protocol;
-    const info = getProtocolInfo(protocolUri);
+  moduleSetupStatuses?: Record<string, ModuleSetupStatus>,
+): ModuleAccess[] {
+  return mergePermissionRequestsByModule(permissions).map((permission) => {
+    const moduleUri = permission.moduleDefinition.module;
+    const info = getModuleInfo(moduleUri);
     const paths = collectStructurePaths(
-      permission.protocolDefinition.structure as Record<string, unknown> | undefined,
+      permission.moduleDefinition.structure as Record<string, unknown> | undefined,
     );
-    const hasEncryptedTypes = Object.values(permission.protocolDefinition.types ?? {})
+    const hasEncryptedTypes = Object.values(permission.moduleDefinition.types ?? {})
       .some(isEncryptedType);
-    const canonicalDefinition = getCanonicalProtocolDefinition(protocolUri);
-    const isCanonicalProtocol = canonicalDefinition !== undefined
-      && protocolDefinitionsMatch(canonicalDefinition, permission.protocolDefinition);
+    const canonicalDefinition = getCanonicalModuleDefinition(moduleUri);
+    const isCanonicalModule = canonicalDefinition !== undefined
+      && moduleDefinitionsMatch(canonicalDefinition, permission.moduleDefinition);
 
     return {
       permission,
-      protocolUri,
+      moduleUri,
       name: info.name,
       description: info.description,
-      isKnownProtocol: isCanonicalProtocol,
+      isKnownModule: isCanonicalModule,
       displayScopes: getDisplayScopes(permission.permissionScopes),
       paths,
       hasEncryptedTypes,
       sharesDecryptionKeys: permission.permissionScopes.some((scope) =>
         scope.interface === 'Records' && scope.method === 'Read'
       ),
-      setupStatus: protocolSetupStatuses?.[protocolUri] ?? 'checking',
+      setupStatus: moduleSetupStatuses?.[moduleUri] ?? 'checking',
     };
   });
 }
@@ -233,9 +232,9 @@ function rowRiskClasses(risk: PermissionRisk): string {
   }
 }
 
-function formatAccessSentence(item: ProtocolAccess): string {
+function formatAccessSentence(item: ModuleAccess): string {
   const actions = getPermissionActions(item.displayScopes);
-  const objectLabel = item.isKnownProtocol ? `your ${item.name}` : 'a custom data type';
+  const objectLabel = item.isKnownModule ? `your ${item.name}` : 'a custom data type';
   return `${capitalize(formatActionPhrase(actions))} ${objectLabel}`;
 }
 
@@ -247,7 +246,7 @@ function AccessRows({
   access,
   requesterLabel = 'this app',
 }: {
-  access: ProtocolAccess[];
+  access: ModuleAccess[];
   requesterLabel?: string;
 }) {
   const requesterSentenceLabel = hostLabel(requesterLabel);
@@ -261,6 +260,9 @@ function AccessRows({
       </p>
 
       <div className="overflow-hidden rounded-xl border border-border-default bg-surface-2">
+        {access.length === 0 && (
+          <p className="px-4 py-3 text-sm text-text-secondary">No record or message access is requested.</p>
+        )}
         {access.map((item, index) => {
           const actions = getPermissionActions(item.displayScopes);
           const risk = getHighestPermissionRisk(actions);
@@ -271,7 +273,7 @@ function AccessRows({
 
           return (
             <div
-              key={item.protocolUri}
+              key={item.moduleUri}
               className={`border-l-2 px-4 py-3 ${rowRiskClasses(risk)} ${index > 0 ? 'border-t border-t-border-subtle' : ''}`}
             >
               <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -279,14 +281,14 @@ function AccessRows({
                   <p className="text-sm font-semibold text-text-primary">
                     {formatAccessSentence(item)}
                   </p>
-                  {item.isKnownProtocol && (
+                  {item.isKnownModule && (
                     <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-secondary">
                       {item.description}
                     </p>
                   )}
-                  {!item.isKnownProtocol && (
-                    <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.protocolUri}>
-                      Custom protocol: {protocolUriLabel(item.protocolUri)}
+                  {!item.isKnownModule && (
+                    <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
+                      Custom module: {moduleUriLabel(item.moduleUri)}
                     </p>
                   )}
                 </div>
@@ -401,7 +403,7 @@ function SessionTerms({
   );
 }
 
-function SetupStatusBadge({ status }: { status: ProtocolSetupStatus }) {
+function SetupStatusBadge({ status }: { status: ModuleSetupStatus }) {
   const display = SETUP_STATUS_DISPLAY[status];
   const classes = status === 'conflict'
     ? 'border-red-500/30 bg-red-500/10 text-red-300'
@@ -424,7 +426,7 @@ function SetupDetailGroup({
 }: {
   title: string;
   summary: string;
-  items: ProtocolAccess[];
+  items: ModuleAccess[];
   icon: LucideIcon;
 }) {
   if (items.length === 0) return null;
@@ -449,16 +451,16 @@ function SetupDetailGroup({
           <div className="mt-2 space-y-1.5">
             {items.map((item) => (
               <div
-                key={item.protocolUri}
+                key={item.moduleUri}
                 className="flex flex-col gap-1 rounded-md bg-surface-2 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
                   <p className="truncate text-xs text-text-primary">
-                    {item.isKnownProtocol ? item.name : 'Custom protocol'}
+                    {item.isKnownModule ? item.name : 'Custom module'}
                   </p>
-                  {!item.isKnownProtocol && (
-                    <p className="truncate font-mono text-[10px] text-text-ghost" title={item.protocolUri}>
-                      {protocolUriLabel(item.protocolUri)}
+                  {!item.isKnownModule && (
+                    <p className="truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
+                      {moduleUriLabel(item.moduleUri)}
                     </p>
                   )}
                 </div>
@@ -472,7 +474,7 @@ function SetupDetailGroup({
   );
 }
 
-function SetupDetails({ access }: { access: ProtocolAccess[] }) {
+function SetupDetails({ access }: { access: ModuleAccess[] }) {
   const setupChanges = access.filter((item) => item.setupStatus === 'install');
   const encryptionUpgrades = access.filter((item) => item.setupStatus === 'upgrade');
   const overrides = access.filter((item) => item.setupStatus === 'override');
@@ -490,7 +492,7 @@ function SetupDetails({ access }: { access: ProtocolAccess[] }) {
           Wallet setup
         </p>
         <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-          Protocol setup controls record authorization. New policies are installed before the app grant; an existing policy is only replaced when you explicitly override it below.
+          Module setup controls record authorization. New policies are installed before the app grant; an existing policy is only replaced when you explicitly override it below. Dependencies listed only for setup do not grant the app access to their records or messages.
         </p>
       </div>
 
@@ -515,7 +517,7 @@ function SetupDetails({ access }: { access: ProtocolAccess[] }) {
       <SetupDetailGroup
         icon={AlertTriangle}
         title="Setup conflict"
-        summary="The wallet will not replace an existing owner protocol during a connection."
+        summary="The wallet will not replace an existing owner module during a connection."
         items={conflicts}
       />
       <SetupDetailGroup
@@ -534,7 +536,7 @@ function SetupDetails({ access }: { access: ProtocolAccess[] }) {
   );
 }
 
-function ProtocolConflictNotice({ access }: { access: ProtocolAccess[] }) {
+function ModuleConflictNotice({ access }: { access: ModuleAccess[] }) {
   if (!access.some((item) => item.setupStatus === 'conflict')) return null;
 
   return (
@@ -542,9 +544,9 @@ function ProtocolConflictNotice({ access }: { access: ProtocolAccess[] }) {
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
         <div>
-          <p className="text-sm font-medium text-red-200">Protocol setup conflict</p>
+          <p className="text-sm font-medium text-red-200">Module setup conflict</p>
           <p className="mt-1 text-xs leading-relaxed text-red-200/80">
-            A requested protocol conflicts with this profile&apos;s protected or invalid setup and can&apos;t be approved. The wallet will not replace a core protocol during a connection.
+            A requested module conflicts with this profile&apos;s protected or invalid setup and can&apos;t be approved. The wallet will not replace a core module during a connection.
           </p>
         </div>
       </div>
@@ -553,17 +555,17 @@ function ProtocolConflictNotice({ access }: { access: ProtocolAccess[] }) {
 }
 
 /**
- * Overridable definition conflict: a custom protocol installed with a different
+ * Overridable definition conflict: a custom module installed with a different
  * definition. Unlike a hard conflict, the owner may consent to replacing it. The
  * opt-in checkbox is controlled by the parent, which gates approval on it and
  * then runs the owner reconfigure before the connect ceremony.
  */
-function ProtocolOverrideNotice({
+function ModuleOverrideNotice({
   access,
   overrideAcknowledged,
   onOverrideAcknowledgedChange,
 }: {
-  access: ProtocolAccess[];
+  access: ModuleAccess[];
   overrideAcknowledged: boolean;
   onOverrideAcknowledgedChange?: (value: boolean) => void;
 }) {
@@ -578,10 +580,10 @@ function ProtocolOverrideNotice({
         <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-amber-200">
-            {pluralize(overrides.length, 'protocol')} installed with a different definition
+            {pluralize(overrides.length, 'module')} installed with a different definition
           </p>
           <p className="mt-1 text-xs leading-relaxed text-amber-200/80">
-            This app asks to use a changed version of {many ? 'protocols' : 'a protocol'} you already
+            This app asks to use a changed version of {many ? 'modules' : 'a module'} you already
             have installed. Approving replaces your installed definition with the app&apos;s version on
             this profile and its DWN endpoints. The change is kept even if the rest of the connection
             fails.
@@ -589,11 +591,11 @@ function ProtocolOverrideNotice({
           <ul className="mt-2 space-y-1">
             {overrides.map((item) => (
               <li
-                key={item.protocolUri}
+                key={item.moduleUri}
                 className="min-w-0 truncate font-mono text-[10px] text-amber-200/70"
-                title={item.protocolUri}
+                title={item.moduleUri}
               >
-                {protocolUriLabel(item.protocolUri)}
+                {moduleUriLabel(item.moduleUri)}
               </li>
             ))}
           </ul>
@@ -605,7 +607,7 @@ function ProtocolOverrideNotice({
               onChange={(event) => onOverrideAcknowledgedChange?.(event.target.checked)}
             />
             <span>
-              Replace my installed protocol {many ? 'definitions' : 'definition'} with this app&apos;s version.
+              Replace my installed module {many ? 'definitions' : 'definition'} with this app&apos;s version.
             </span>
           </label>
         </div>
@@ -614,11 +616,11 @@ function ProtocolOverrideNotice({
   );
 }
 
-function ProtocolSetupUnavailableNotice({
+function ModuleSetupUnavailableNotice({
   access,
   onRetry,
 }: {
-  access: ProtocolAccess[];
+  access: ModuleAccess[];
   onRetry?: () => void;
 }) {
   if (!access.some((item) => item.setupStatus === 'unavailable')) return null;
@@ -628,9 +630,9 @@ function ProtocolSetupUnavailableNotice({
       <div className="flex items-start gap-2">
         <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-warning">Protocol setup could not be verified</p>
+          <p className="text-sm font-medium text-warning">Module setup could not be verified</p>
           <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-            Approval remains blocked until the wallet can check the selected profile&apos;s local protocol state.
+            Approval remains blocked until the wallet can check the selected profile&apos;s local module state.
           </p>
           {onRetry && (
             <button
@@ -648,7 +650,7 @@ function ProtocolSetupUnavailableNotice({
   );
 }
 
-function TechnicalDetails({ access }: { access: ProtocolAccess[] }) {
+function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
   return (
     <details
       data-testid="technical-setup-details"
@@ -667,22 +669,22 @@ function TechnicalDetails({ access }: { access: ProtocolAccess[] }) {
 
         <section className="space-y-4">
           <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-            Protocol details
+            Module details
           </p>
 
           {access.map((item) => {
-            const typeNames = Object.keys(item.permission.protocolDefinition.types ?? {});
-            const encryptedTypeCount = getEncryptedTypeCount(item.permission.protocolDefinition);
-            const protocolJson = JSON.stringify(item.permission.protocolDefinition, null, 2);
+            const typeNames = Object.keys(item.permission.moduleDefinition.types ?? {});
+            const encryptedTypeCount = getEncryptedTypeCount(item.permission.moduleDefinition);
+            const moduleJson = JSON.stringify(item.permission.moduleDefinition, null, 2);
 
             return (
-              <div key={item.protocolUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
+              <div key={item.moduleUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
                 <div>
                   <p className="text-sm font-medium text-text-primary">
-                    {item.isKnownProtocol ? item.name : 'Custom protocol'}
+                    {item.isKnownModule ? item.name : 'Custom module'}
                   </p>
-                  <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.protocolUri}>
-                    {item.protocolUri}
+                  <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
+                    {item.moduleUri}
                   </p>
                 </div>
 
@@ -735,6 +737,9 @@ function TechnicalDetails({ access }: { access: ProtocolAccess[] }) {
 
                 <div>
                   <p className="mb-1.5 text-xs text-text-ghost">Granted scopes</p>
+                  {item.permission.permissionScopes.length === 0 && (
+                    <p className="text-xs text-text-secondary">None. This module is included only for setup.</p>
+                  )}
                   <div className="flex flex-wrap gap-1.5">
                     {item.permission.permissionScopes.map((scope, index) => (
                       <span
@@ -748,7 +753,7 @@ function TechnicalDetails({ access }: { access: ProtocolAccess[] }) {
                 </div>
 
                 <pre className="max-h-72 overflow-auto rounded-md bg-surface-1 p-3 font-mono text-[11px] leading-relaxed text-text-tertiary">
-                  {protocolJson}
+                  {moduleJson}
                 </pre>
               </div>
             );
@@ -761,31 +766,31 @@ function TechnicalDetails({ access }: { access: ProtocolAccess[] }) {
 
 export function PermissionDisplay({
   permissions,
-  protocolSetupStatuses,
+  moduleSetupStatuses,
   existingSessionCount = 0,
   requesterLabel,
   sessionDurationSeconds,
   requestedSessionTtlSeconds,
   onSessionDurationSecondsChange,
-  onRetryProtocolSetup,
+  onRetryModuleSetup,
   overrideAcknowledged = false,
   onOverrideAcknowledgedChange,
   renewal,
 }: PermissionDisplayProps) {
   if (permissions.length === 0) return null;
 
-  const access = getProtocolAccess(permissions, protocolSetupStatuses);
+  const access = getModuleAccess(permissions, moduleSetupStatuses);
 
   return (
     <div className="space-y-4">
-      <AccessRows access={access} requesterLabel={requesterLabel} />
-      <ProtocolConflictNotice access={access} />
-      <ProtocolOverrideNotice
+      <AccessRows access={access.filter(item => item.permission.permissionScopes.length > 0)} requesterLabel={requesterLabel} />
+      <ModuleConflictNotice access={access} />
+      <ModuleOverrideNotice
         access={access}
         overrideAcknowledged={overrideAcknowledged}
         onOverrideAcknowledgedChange={onOverrideAcknowledgedChange}
       />
-      <ProtocolSetupUnavailableNotice access={access} onRetry={onRetryProtocolSetup} />
+      <ModuleSetupUnavailableNotice access={access} onRetry={onRetryModuleSetup} />
       <SessionTerms
         existingSessionCount={existingSessionCount}
         sessionDurationSeconds={sessionDurationSeconds}

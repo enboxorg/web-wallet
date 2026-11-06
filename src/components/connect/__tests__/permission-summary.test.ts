@@ -4,12 +4,12 @@ import type { ConnectPermissionRequest } from '@enbox/connect';
 import { getConnectPermissionAskSummary } from '../permission-summary';
 
 function permissionRequest(
-  protocol: string,
+  module: string,
   permissionScopes: ConnectPermissionRequest['permissionScopes'],
 ): ConnectPermissionRequest {
   return {
-    protocolDefinition: {
-      protocol,
+    moduleDefinition: {
+      module,
       types: {},
       structure: {},
     },
@@ -18,23 +18,32 @@ function permissionRequest(
 }
 
 describe('getConnectPermissionAskSummary', () => {
+  it('does not describe installation-only dependencies as app access', () => {
+    const dependencies = [permissionRequest('https://example.com/modules/shared-roles', [])];
+    expect(getConnectPermissionAskSummary(dependencies)).toBe('wants to connect.');
+    expect(getConnectPermissionAskSummary([
+      ...dependencies,
+      permissionRequest('https://example.com/modules/comments', [{ interface: 'Records', method: 'Read', module: 'https://example.com/modules/comments' }]),
+    ])).toBe('wants to view a custom data type.');
+  });
+
   it('hides internal connect-support scopes from the user-facing ask', () => {
     const permissions = [
-      permissionRequest('https://example.com/protocols/tasks', [
+      permissionRequest('https://example.com/modules/tasks', [
         {
-          interface: 'Protocols',
+          interface: 'Modules',
           method: 'Query',
-          protocol: 'https://example.com/protocols/tasks',
+          module: 'https://example.com/modules/tasks',
         },
         {
           interface: 'Messages',
           method: 'Read',
-          protocol: 'https://example.com/protocols/tasks',
+          module: 'https://example.com/modules/tasks',
         },
         {
           interface: 'Records',
           method: 'Read',
-          protocol: 'https://example.com/protocols/tasks',
+          module: 'https://example.com/modules/tasks',
         },
       ]),
     ];
@@ -44,10 +53,10 @@ describe('getConnectPermissionAskSummary', () => {
 
   it('describes an internal scope when it is the only granted capability', () => {
     const permissions = [
-      permissionRequest('https://example.com/protocols/tasks', [{
+      permissionRequest('https://example.com/modules/tasks', [{
         interface: 'Messages',
         method: 'Read',
-        protocol: 'https://example.com/protocols/tasks',
+        module: 'https://example.com/modules/tasks',
       }]),
     ];
 
@@ -56,27 +65,27 @@ describe('getConnectPermissionAskSummary', () => {
     );
   });
 
-  it('collapses repeated unknown protocol placeholders in longer summaries', () => {
+  it('collapses repeated unknown module placeholders in longer summaries', () => {
     const permissions = [
-      permissionRequest('https://example.com/protocols/tasks', [
+      permissionRequest('https://example.com/modules/tasks', [
         {
           interface: 'Records',
           method: 'Read',
-          protocol: 'https://example.com/protocols/tasks',
+          module: 'https://example.com/modules/tasks',
         },
       ]),
-      permissionRequest('https://example.com/protocols/notes', [
+      permissionRequest('https://example.com/modules/notes', [
         {
           interface: 'Records',
           method: 'Read',
-          protocol: 'https://example.com/protocols/notes',
+          module: 'https://example.com/modules/notes',
         },
       ]),
-      permissionRequest('https://identity.foundation/protocols/profile', [
+      permissionRequest('https://identity.foundation/modules/profile', [
         {
           interface: 'Records',
           method: 'Read',
-          protocol: 'https://identity.foundation/protocols/profile',
+          module: 'https://identity.foundation/modules/profile',
         },
       ]),
     ];
@@ -88,26 +97,26 @@ describe('getConnectPermissionAskSummary', () => {
     const permissions = [permissionRequest('https://enbox.id/protocols/cashu-wallet', [{
       interface : 'Records',
       method    : 'Read',
-      protocol  : 'https://enbox.id/protocols/cashu-wallet',
+      module  : 'https://enbox.id/protocols/cashu-wallet',
     }])];
 
     expect(getConnectPermissionAskSummary(permissions)).toBe('wants to view a custom data type.');
   });
 
-  it('merges duplicate protocol entries before writing the headline ask', () => {
+  it('merges duplicate module entries before writing the headline ask', () => {
     const permissions = [
-      permissionRequest('https://example.com/protocols/tasks', [
+      permissionRequest('https://example.com/modules/tasks', [
         {
           interface: 'Records',
           method: 'Read',
-          protocol: 'https://example.com/protocols/tasks',
+          module: 'https://example.com/modules/tasks',
         },
       ]),
-      permissionRequest('https://example.com/protocols/tasks', [
+      permissionRequest('https://example.com/modules/tasks', [
         {
           interface: 'Records',
           method: 'Write',
-          protocol: 'https://example.com/protocols/tasks',
+          module: 'https://example.com/modules/tasks',
         },
       ]),
     ];

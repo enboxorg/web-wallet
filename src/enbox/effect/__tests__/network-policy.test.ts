@@ -61,7 +61,7 @@ describe('NetworkPolicy', () => {
 
   it('does not retry non-transient permission failures', async () => {
     const run = vi.fn().mockRejectedValue(new Error(
-      'CachedPermissions: No permissions found for ProtocolsConfigure',
+      'CachedPermissions: No permissions found for ModulesConfigure',
     ));
 
     const effect = withNetworkPolicy(
@@ -76,7 +76,7 @@ describe('NetworkPolicy', () => {
     );
 
     await expect(runEnboxPromise(effect)).rejects.toMatchObject({
-      message: 'CachedPermissions: No permissions found for ProtocolsConfigure',
+      message: 'CachedPermissions: No permissions found for ModulesConfigure',
     });
     expect(run).toHaveBeenCalledOnce();
   });

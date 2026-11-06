@@ -86,13 +86,13 @@ function remoteDetail(status: RemoteSyncStatus): string {
 
 function linkScopeLabel(link: ReplicationLinkSnapshot): string {
   if (link.scope.kind === 'full') {
-    return 'All protocols';
+    return 'All modules';
   }
   if (link.scope.kind === 'context') {
     return 'Shared context';
   }
-  const count = link.scope.protocols.length;
-  return `${count} ${count === 1 ? 'protocol' : 'protocols'}`;
+  const count = link.scope.modules.length;
+  return `${count} ${count === 1 ? 'module' : 'modules'}`;
 }
 
 function linkScopeDetail(link: ReplicationLinkSnapshot): string | undefined {
@@ -100,16 +100,16 @@ function linkScopeDetail(link: ReplicationLinkSnapshot): string | undefined {
     return undefined;
   }
   return link.scope.kind === 'context'
-    ? `${link.scope.protocol}\n${link.scope.contextId}`
-    : link.scope.protocols.join('\n');
+    ? `${link.scope.module}\n${link.scope.contextId}`
+    : link.scope.modules.join('\n');
 }
 
 function linkKey(link: ReplicationLinkSnapshot): string {
   const scope = link.scope.kind === 'full'
     ? 'all'
     : link.scope.kind === 'context'
-      ? `${link.scope.protocol}:${link.scope.contextId}`
-      : link.scope.protocols.join('|');
+      ? `${link.scope.module}:${link.scope.contextId}`
+      : link.scope.modules.join('|');
   return `${link.remoteEndpoint}:${link.delegateDid ?? 'owner'}:${scope}`;
 }
 

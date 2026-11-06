@@ -7,7 +7,7 @@ import { normalizeDwnEndpoints } from '@/lib/dwn-endpoints';
 import { DwnRegistrationError, sdkError } from './effect/errors';
 import { fetchWithEffectSignal, withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
-import { IDENTITY_SYNC_PROTOCOLS } from './protocols';
+import { IDENTITY_SYNC_MODULES } from './modules';
 import type { WalletRestoreOptions } from './types';
 
 export type WalletAuthManager = Awaited<ReturnType<typeof AuthManager.create>>;
@@ -51,7 +51,7 @@ export function createWalletAuthManagerEffect() {
   return Effect.tryPromise({
     try: () =>
       AuthManager.create({
-        identitySyncProtocols: IDENTITY_SYNC_PROTOCOLS,
+        identitySyncModules: IDENTITY_SYNC_MODULES,
         // AuthManager owns background sync startup and session-bound cleanup.
         sync: 'live',
         registration: {

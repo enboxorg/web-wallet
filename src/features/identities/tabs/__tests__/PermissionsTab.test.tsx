@@ -51,13 +51,13 @@ function permissionGrant({
   id,
   session,
   grantee = 'did:dht:delegate',
-  protocol = 'https://identity.foundation/protocols/profile',
+  module = 'https://identity.foundation/modules/profile',
   method = 'Read',
 }: {
   id: string;
   session: TestConnectSession;
   grantee?: string;
-  protocol?: string;
+  module?: string;
   method?: string;
 }): DwnPermissionGrant {
   return {
@@ -69,7 +69,7 @@ function permissionGrant({
     scope          : {
       interface: 'Records',
       method,
-      protocol,
+      module,
     },
   } as DwnPermissionGrant;
 }

@@ -208,7 +208,7 @@ export function generatePin(length = 4): Promise<string> {
 /**
  * Runs the agent's connect approval ceremony for a relayed request and posts
  * the sealed response to the request's callback: delegate mint (or
- * pre-supplied delegate validation), protocol preparation, grant creation and
+ * pre-supplied delegate validation), module preparation, grant creation and
  * delivery, encrypted-read grant keys, and session revocation grants all
  * happen inside `executeConnectApproval`; the PIN strengthens the response
  * encryption key and never transits.
@@ -224,7 +224,7 @@ export function approveConnectRequestEffect(
   request: ConnectRequest,
   pin: string,
   approvedSessionTtlSeconds: number,
-  approvedProtocolOverrides: readonly string[] = [],
+  approvedModuleOverrides: readonly string[] = [],
 ) {
   const prepared = captureApprovalInput('connect.submitConnectResponse', () => {
     // Only the original fetched object carries the verified relay origin.
@@ -238,7 +238,7 @@ export function approveConnectRequestEffect(
       request: capturedRequest,
       ...(verifiedRequesterOrigin === undefined ? {} : { verifiedRequesterOrigin }),
       callbackUrl: getRelayCallbackUrl(capturedRequest),
-      approvedProtocolOverrides: [...approvedProtocolOverrides],
+      approvedModuleOverrides: [...approvedModuleOverrides],
       providerDid: selectedDid,
       approvedSessionTtlSeconds,
     };
@@ -275,7 +275,7 @@ export function approveConnectRequest(
   pin: string,
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
-  approvedProtocolOverrides: readonly string[] = [],
+  approvedModuleOverrides: readonly string[] = [],
 ): Promise<ConnectRequest> {
   return runEnboxPromise(
     approveConnectRequestEffect(
@@ -283,7 +283,7 @@ export function approveConnectRequest(
       request,
       pin,
       approvedSessionTtlSeconds,
-      approvedProtocolOverrides,
+      approvedModuleOverrides,
     ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
@@ -336,7 +336,7 @@ export function approvePopupConnectRequestEffect(
   request: ConnectRequest,
   dappOrigin: string,
   approvedSessionTtlSeconds: number,
-  approvedProtocolOverrides: readonly string[] = [],
+  approvedModuleOverrides: readonly string[] = [],
 ) {
   const prepared = captureApprovalInput('dwebConnect.submitConnectResponse', () => {
     if (!isTrustedDappOrigin(dappOrigin)) {
@@ -345,7 +345,7 @@ export function approvePopupConnectRequestEffect(
     assertConnectAuthenticationOrigin(request, dappOrigin);
     const capturedRequest = structuredClone(request);
     assertConnectAuthenticationOrigin(capturedRequest, dappOrigin);
-    return { request: capturedRequest, approvedProtocolOverrides: [...approvedProtocolOverrides], providerDid: selectedDid,
+    return { request: capturedRequest, approvedModuleOverrides: [...approvedModuleOverrides], providerDid: selectedDid,
       approvedSessionTtlSeconds, verifiedRequesterOrigin: dappOrigin };
   });
   return Effect.gen(function* () {
@@ -364,7 +364,7 @@ export function approvePopupConnectRequest(
   dappOrigin: string,
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
-  approvedProtocolOverrides: readonly string[] = [],
+  approvedModuleOverrides: readonly string[] = [],
 ): Promise<string> {
   return runEnboxPromise(
     approvePopupConnectRequestEffect(
@@ -372,7 +372,7 @@ export function approvePopupConnectRequest(
       request,
       dappOrigin,
       approvedSessionTtlSeconds,
-      approvedProtocolOverrides,
+      approvedModuleOverrides,
     ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),

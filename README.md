@@ -5,7 +5,7 @@
 <h1 align="center">Enbox Web Wallet</h1>
 
 <p align="center">
-  A decentralised identity wallet for managing DIDs, profiles, protocols, and permissions on the Enbox network.
+  A decentralised identity wallet for managing DIDs, profiles, modules, and permissions on the Enbox network.
 </p>
 
 <p align="center">
@@ -80,7 +80,7 @@ wallet builds known to support it.
 | E2E Testing | [Playwright](https://playwright.dev/) + [axe-core](https://www.deque.com/axe/) |
 | CI/CD | [GitHub Actions](https://github.com/features/actions) + [Codecov](https://codecov.io/) |
 | Deployment | [Cloudflare Pages](https://pages.cloudflare.com/) |
-| SDK | `@enbox/agent` `@enbox/browser` `@enbox/protocols` |
+| SDK | `@enbox/agent` `@enbox/browser` `@enbox/modules` |
 
 ## Getting Started
 
@@ -130,7 +130,7 @@ The wallet uses a comprehensive testing pyramid:
 
 Run with [Vitest](https://vitest.dev/) + [happy-dom](https://github.com/nicedayfor/happy-dom) + [Testing Library](https://testing-library.com/):
 
-- **Pure logic**: identity generators, protocol names, constants, query keys
+- **Pure logic**: identity generators, module names, constants, query keys
 - **UI components**: Button, Dialog, Tabs, PinInput, Avatar, Card, etc.
 - **User flows**: identity list filtering, tab navigation, backup confirmation
 - **Stores**: auth, UI, backup seed, drag-drop state transitions
@@ -197,7 +197,7 @@ src/
     hooks/                  # useAuth, useIdentities, useProfile, usePermissions
     queries/                # TanStack Query functions + key factories
     mutations/              # Identity CRUD mutations
-    protocols.ts            # Protocol installation (dependency-ordered)
+    modules.ts            # Module installation (dependency-ordered)
     registration.ts         # DWN tenant registration
 
   stores/                   # Zustand (auth, UI, backup seed, drag-drop)
@@ -214,11 +214,11 @@ This fork keeps React, TanStack Query, and Zustand at the UI boundary, but moves
 
 Current Effect boundaries:
 
-- `src/enbox/effect/errors.ts` defines typed failures for SDK, storage, DWN registration, protocol installation, and identity validation.
+- `src/enbox/effect/errors.ts` defines typed failures for SDK, storage, DWN registration, module installation, and identity validation.
 - `src/enbox/effect/services.ts` defines `CurrentAgent` and `RegistrationTokenStore` services plus browser and memory-backed layers.
 - `src/enbox/auth-effects.ts` wraps AuthManager create/connect/unlock/restore/lock flows.
-- `src/enbox/registration.ts`, `protocols.ts`, `identity-sync.ts`, `queries/identity-queries.ts`, and `mutations/identity-mutations.ts` expose composable Effect programs with Promise adapters for React Query.
-- `src/features/connect/connect-kernel.ts` (the `@enbox/connect` kernel adapter: bounded relay fetch, approval ceremony, sealed response delivery), `protocol-install.ts`, and `src/features/search/public-profile.ts` keep feature-level Enbox/DWN side effects behind Effect adapters.
+- `src/enbox/registration.ts`, `modules.ts`, `identity-sync.ts`, `queries/identity-queries.ts`, and `mutations/identity-mutations.ts` expose composable Effect programs with Promise adapters for React Query.
+- `src/features/connect/connect-kernel.ts` (the `@enbox/connect` kernel adapter: bounded relay fetch, approval ceremony, sealed response delivery), `module-install.ts`, and `src/features/search/public-profile.ts` keep feature-level Enbox/DWN side effects behind Effect adapters.
 - `src/lib/passkeys.ts` wraps WebAuthn, PRF, WebCrypto, IndexedDB, and passkey credential persistence behind Effect programs while preserving the existing public async API.
 - `src/lib/browser-effects.ts` centralizes browser storage, clipboard/share, endpoint health, random UUID, and service worker registration effects used by stores, settings, search history, provider session cache, and bootstrap code.
 
@@ -240,7 +240,7 @@ Tests can swap the browser layer for `memoryRegistrationTokenStoreLayer` or dire
 | Type | Tool | Examples |
 |------|------|---------|
 | Client state | Zustand | Auth status, UI preferences, sidebar state |
-| Server/DWN state | TanStack Query over Effect adapters | Identities, profiles, protocols, permissions |
+| Server/DWN state | TanStack Query over Effect adapters | Identities, profiles, modules, permissions |
 | URL state | React Router v7 | Current page, identity DID params |
 
 ### SDK Integration Layer
@@ -252,7 +252,7 @@ App.tsx
   └─ EnboxAuthProvider         ← manages AuthManager lifecycle
        └─ useAuth()            ← connect / unlock / restore / lock
        └─ useIdentities()      ← TanStack Query → agent.identity.list()
-       └─ useProfile(did)      ← TanStack Query → ProfileProtocol
+       └─ useProfile(did)      ← TanStack Query → ProfileModule
        └─ usePermissions(did)  ← TanStack Query → DwnApi.permissions
 ```
 

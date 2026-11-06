@@ -1,45 +1,45 @@
 /**
- * Final confirmation before the wallet replaces one or more installed protocol
+ * Final confirmation before the wallet replaces one or more installed module
  * definitions during a connect approval override. The opt-in checkbox in
  * {@link PermissionDisplay} unlocks approval; this dialog is the last gate,
- * spelling out exactly which protocols will be replaced before the owner
+ * spelling out exactly which modules will be replaced before the owner
  * reconfigure runs.
  */
 import { RefreshCw } from 'lucide-react';
 
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
-import { getProtocolName } from '@/lib/protocol-names';
+import { getModuleName } from '@/lib/module-names';
 
-interface ProtocolOverrideConfirmDialogProps {
+interface ModuleOverrideConfirmDialogProps {
   open: boolean;
-  /** URIs of the protocols that will be replaced. */
-  protocols: string[];
+  /** URIs of the modules that will be replaced. */
+  modules: string[];
   onConfirm: () => void;
   onCancel: () => void;
 }
 
-export function ProtocolOverrideConfirmDialog({
+export function ModuleOverrideConfirmDialog({
   open,
-  protocols,
+  modules,
   onConfirm,
   onCancel,
-}: ProtocolOverrideConfirmDialogProps) {
-  const many = protocols.length > 1;
+}: ModuleOverrideConfirmDialogProps) {
+  const many = modules.length > 1;
 
   return (
-    <Dialog open={open} onClose={onCancel} title="Replace installed protocol setup?">
+    <Dialog open={open} onClose={onCancel} title="Replace installed module setup?">
       <div className="space-y-4">
         <p className="text-sm leading-relaxed text-text-secondary">
-          The wallet will replace {many ? 'these installed protocol definitions' : 'this installed protocol definition'} with
+          The wallet will replace {many ? 'these installed module definitions' : 'this installed module definition'} with
           the app&apos;s version on this profile and its DWN endpoints before connecting. This change is
           kept even if the connection does not finish.
         </p>
 
         <ul className="space-y-2">
-          {protocols.map((uri) => (
+          {modules.map((uri) => (
             <li key={uri} className="rounded-lg border border-border-default bg-surface-1 px-3 py-2">
-              <p className="text-sm font-medium text-text-primary">{getProtocolName(uri)}</p>
+              <p className="text-sm font-medium text-text-primary">{getModuleName(uri)}</p>
               <p className="mt-0.5 truncate font-mono text-[10px] text-text-ghost" title={uri}>
                 {uri}
               </p>

@@ -72,7 +72,7 @@ describe('RemoteSyncStatusPanel', () => {
             {
               tenantDid      : 'did:dht:alice',
               remoteEndpoint : 'https://healthy.example/dwn',
-              scope          : { kind: 'protocolSet', protocols: ['profile', 'connect'] },
+              scope          : { kind: 'moduleSet', modules: ['profile', 'connect'] },
               status         : 'live',
               connectivity   : 'online',
               isPullCurrent  : true,
@@ -100,7 +100,7 @@ describe('RemoteSyncStatusPanel', () => {
     expect(screen.getByText(/2 messages are waiting for remote quota/i)).toBeInTheDocument();
     expect(screen.getByText(/tenant storage quota exceeded/i)).toBeInTheDocument();
     expect(screen.getByText('Replication link caught up')).toBeInTheDocument();
-    expect(screen.getByText('2 protocols')).toBeInTheDocument();
+    expect(screen.getByText('2 modules')).toBeInTheDocument();
     expect(screen.getByText('Live')).toBeInTheDocument();
     expect(screen.getByText('0 of 1 replication link caught up')).toBeInTheDocument();
     expect(screen.getByText('Repairing')).toBeInTheDocument();
@@ -153,9 +153,9 @@ describe('RemoteSyncStatusPanel', () => {
             remoteEndpoint : 'https://shared.example/dwn',
             scope          : {
               kind          : 'context',
-              protocol      : 'https://example.com/notebook',
+              module      : 'https://example.com/notebook',
               contextId     : 'notebook-1',
-              protocolPaths : ['notebook/page'],
+              modulePaths : ['notebook/page'],
             },
             status       : 'live',
             connectivity : 'online',

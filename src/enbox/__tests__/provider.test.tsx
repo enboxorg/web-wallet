@@ -10,9 +10,9 @@ const TEST_PHRASE =
   'abandon ability able about above absent absorb abstract absurd abuse access accident';
 const TEST_ENDPOINTS = ['https://dwn.example'];
 
-const TEST_IDENTITY_SYNC_PROTOCOLS = vi.hoisted(() => [
-  'https://identity.foundation/protocols/profile',
-  'https://identity.foundation/protocols/connect',
+const TEST_IDENTITY_SYNC_MODULES = vi.hoisted(() => [
+  'https://identity.foundation/modules/profile',
+  'https://identity.foundation/modules/connect',
 ]);
 
 const authMocks = vi.hoisted(() => ({
@@ -33,8 +33,8 @@ vi.mock('@tanstack/react-query', () => ({
   useQueryClient: () => queryMocks,
 }));
 
-vi.mock('../protocols', () => ({
-  IDENTITY_SYNC_PROTOCOLS: TEST_IDENTITY_SYNC_PROTOCOLS,
+vi.mock('../modules', () => ({
+  IDENTITY_SYNC_MODULES: TEST_IDENTITY_SYNC_MODULES,
 }));
 
 function createAgent() {
@@ -609,7 +609,7 @@ describe('EnboxAuthProvider restore flow', () => {
     await waitFor(() => {
       const [options] = authMocks.create.mock.calls[0];
       expect(options).toEqual(expect.objectContaining({
-        identitySyncProtocols: TEST_IDENTITY_SYNC_PROTOCOLS,
+        identitySyncModules: TEST_IDENTITY_SYNC_MODULES,
         registration: expect.objectContaining({ persistTokens: true }),
         sync: 'live',
       }));

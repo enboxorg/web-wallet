@@ -1,6 +1,6 @@
 import type {
   DwnPermissionScope,
-  DwnProtocolDefinition,
+  DwnModuleDefinition,
 } from '@enbox/agent';
 import type {
   ConnectPermissionRequest,
@@ -8,30 +8,24 @@ import type {
 } from '@enbox/connect';
 import { assertConnectAuthenticationParams, assertConnectAuthenticationRequest } from '@enbox/connect';
 import type {
-  EncryptionKeyDeriver,
   MessageSigner,
-  PublicKeyJwk,
 } from '@enbox/dwn-sdk-js';
 
-import { X25519 } from '@enbox/crypto';
 import { Did } from '@enbox/dids';
 import {
-  KeyDerivationScheme,
-  PermissionsProtocol,
-  Protocols,
-  ProtocolsConfigure,
+  PermissionsModule,
+  ModulesConfigure,
+  resolveModuleGraph,
 } from '@enbox/dwn-sdk-js';
 
 import { resolveConnectSessionDurationSeconds } from './connect-session-duration';
 import {
-  getRequestedProtocolDefinitionsConflictMessage,
-  protocolDefinitionsMatch,
-  protocolHasEncryptedTypes,
-} from './protocol-install';
+  getRequestedModuleDefinitionsConflictMessage,
+} from './module-install';
 
 export type ConnectPermissionPreflight = {
   permissions: ConnectPermissionRequest[];
-  definitions: DwnProtocolDefinition[];
+  definitions: DwnModuleDefinition[];
   scopes: DwnPermissionScope[];
 };
 
@@ -40,8 +34,6 @@ const VALIDATION_SIGNER: MessageSigner = {
   algorithm: 'EdDSA',
   sign     : async (): Promise<Uint8Array> => new Uint8Array(64),
 };
-
-let validationPublicKeyPromise: Promise<PublicKeyJwk> | undefined;
 
 export function isPlainRecord(value: unknown): value is Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
@@ -58,14 +50,14 @@ function requireString(value: unknown, label: string): string {
 
 function assertPermissionScope(
   value: unknown,
-  protocol: string,
+  module: string,
 ): asserts value is DwnPermissionScope {
   if (!isPlainRecord(value)) throw new Error('Each permission scope must be an object.');
 
   const interfaceName = value.interface;
   const method = value.method;
-  if (value.protocol !== protocol) {
-    throw new Error('All permission scopes must match the protocol URI they are provided with.');
+  if (value.module !== module) {
+    throw new Error('All permission scopes must match the module URI they are provided with.');
   }
 
   if (interfaceName === 'Records') {
@@ -80,12 +72,12 @@ function assertPermissionScope(
     return;
   }
 
-  if (interfaceName === 'Protocols') {
+  if (interfaceName === 'Modules') {
     if (method !== 'Query') {
       if (method === 'Configure') {
-        throw new Error('Protocols.Configure cannot be delegated through Connect. The wallet configures protocols during approval.');
+        throw new Error('Modules.Configure cannot be delegated through Connect. The wallet configures modules during approval.');
       }
-      throw new Error(`Protocols.${String(method)} is not supported by Connect.`);
+      throw new Error(`Modules.${String(method)} is not supported by Connect.`);
     }
     return;
   }
@@ -93,74 +85,74 @@ function assertPermissionScope(
   throw new Error(`The '${String(interfaceName)}' permission interface is not supported by Connect.`);
 }
 
-function assertProtocolDefinition(value: unknown): asserts value is DwnProtocolDefinition {
-  if (!isPlainRecord(value)) throw new Error('Each protocol definition must be an object.');
-  requireString(value.protocol, 'Protocol URI');
-  if (typeof value.published !== 'boolean') throw new Error('Protocol definitions must declare whether they are published.');
+function assertModuleDefinition(value: unknown): asserts value is DwnModuleDefinition {
+  if (!isPlainRecord(value)) throw new Error('Each module definition must be an object.');
+  requireString(value.module, 'Module URI');
+  if (typeof value.published !== 'boolean') throw new Error('Module definitions must declare whether they are published.');
   if (!isPlainRecord(value.types) || !isPlainRecord(value.structure)) {
-    throw new Error('Protocol definitions must include object types and structure fields.');
+    throw new Error('Module definitions must include object types and structure fields.');
   }
 }
 
 function scopeFingerprint(scope: DwnPermissionScope): string {
-  const scoped = scope as DwnPermissionScope & { contextId?: string; protocolPath?: string };
+  const scoped = scope as DwnPermissionScope & { contextId?: string; modulePath?: string };
   return JSON.stringify([
     scope.interface,
     scope.method,
-    'protocol' in scope ? scope.protocol : undefined,
+    'module' in scope ? scope.module : undefined,
     scoped.contextId,
-    scoped.protocolPath,
+    scoped.modulePath,
   ]);
 }
 
-async function getValidationPublicKey(): Promise<PublicKeyJwk> {
-  if (validationPublicKeyPromise === undefined) {
-    validationPublicKeyPromise = X25519.generateKey().then(async (privateKey) =>
-      X25519.computePublicKey({ key: privateKey }) as Promise<PublicKeyJwk>
-    );
+/** Dependencies omitted by the requester are resolved against the selected owner during approval. */
+function hasRequestedDependencyClosure(
+  definition: DwnModuleDefinition,
+  definitions: ReadonlyMap<string, DwnModuleDefinition>,
+): boolean {
+  const pending = [definition];
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const current = pending.pop()!;
+    if (visited.has(current.module)) continue;
+    visited.add(current.module);
+    for (const uri of Object.values(current.uses ?? {})) {
+      const dependency = definitions.get(uri);
+      if (dependency === undefined) return false;
+      pending.push(dependency);
+    }
   }
-  return validationPublicKeyPromise;
+  return true;
 }
 
-/** Run the installed DWN implementation's complete protocol and grant validators. */
+/** Run the installed DWN implementation's complete module and grant validators. */
 export async function validateConnectPermissionSemantics(
   preflight: ConnectPermissionPreflight,
 ): Promise<void> {
-  const publicKey = await getValidationPublicKey();
-  const keyDeriver: EncryptionKeyDeriver = {
-    rootKeyId       : 'urn:enbox:connect-validation-key',
-    derivationScheme: KeyDerivationScheme.ProtocolPath,
-    derivePublicKey : async (): Promise<PublicKeyJwk> => publicKey,
-  };
+  const definitions = new Map(preflight.definitions.map(definition => [definition.module, definition]));
 
   for (const definition of preflight.definitions) {
     try {
-      const definitionWithKeys = protocolHasEncryptedTypes(definition)
-        ? await Protocols.deriveAndInjectPublicEncryptionKeys(definition, keyDeriver)
-        : definition;
-      const configure = await ProtocolsConfigure.create({
-        definition: definitionWithKeys,
-        signer    : VALIDATION_SIGNER,
-      });
-      if (!protocolDefinitionsMatch(configure.message.descriptor.definition, definition)) {
-        throw new Error('the protocol or schema URLs are not normalized');
+      ModulesConfigure.validateModuleDefinition(definition, { requireKeyAgreement: false });
+      if (hasRequestedDependencyClosure(definition, definitions)) {
+        resolveModuleGraph(definition, uri => definitions.get(uri), { requireKeyAgreement: false });
       }
     } catch (error) {
-      const detail = error instanceof Error ? error.message : 'unknown protocol validation error';
-      throw new Error(`Protocol '${definition.protocol}' is invalid: ${detail}`);
+      const detail = error instanceof Error ? error.message : 'unknown module validation error';
+      throw new Error(`Module '${definition.module}' is invalid: ${detail}`);
     }
   }
 
   for (const scope of preflight.scopes) {
     try {
-      const grant = await PermissionsProtocol.createGrant({
+      const grant = await PermissionsModule.createGrant({
         signer      : VALIDATION_SIGNER,
         grantedTo   : 'did:example:enbox-connect-delegate',
         dateExpires : '2099-01-01T00:00:00.000000Z',
         delegated   : scope.interface === 'Records',
         scope,
       });
-      PermissionsProtocol.validateSchema(grant.recordsWrite.message, grant.permissionGrantBytes);
+      PermissionsModule.validateSchema(grant.recordsWrite.message, grant.permissionGrantBytes);
       if (scopeFingerprint(grant.permissionGrantData.scope) !== scopeFingerprint(scope)) {
         throw new Error('the permission scope is not normalized');
       }
@@ -178,37 +170,37 @@ export function preflightConnectPermissions(value: unknown): ConnectPermissionPr
 
   const permissions: ConnectPermissionRequest[] = [];
   const scopes: DwnPermissionScope[] = [];
-  const requestedDefinitions: DwnProtocolDefinition[] = [];
-  const byProtocol = new Map<string, DwnProtocolDefinition>();
+  const requestedDefinitions: DwnModuleDefinition[] = [];
+  const byModule = new Map<string, DwnModuleDefinition>();
 
   for (const permission of value) {
     if (!isPlainRecord(permission)) throw new Error('Each permission request must be an object.');
-    assertProtocolDefinition(permission.protocolDefinition);
-    if (!Array.isArray(permission.permissionScopes) || permission.permissionScopes.length === 0) {
-      throw new Error('Each permission request must include at least one permission scope.');
+    assertModuleDefinition(permission.moduleDefinition);
+    if (!Array.isArray(permission.permissionScopes)) {
+      throw new Error('Each permission request must include a permission scope array.');
     }
 
-    const definition = permission.protocolDefinition;
+    const definition = permission.moduleDefinition;
     const validatedScopes: DwnPermissionScope[] = [];
     for (const scope of permission.permissionScopes) {
-      assertPermissionScope(scope, definition.protocol);
+      assertPermissionScope(scope, definition.module);
       validatedScopes.push(scope);
     }
 
     requestedDefinitions.push(definition);
-    if (!byProtocol.has(definition.protocol)) {
-      byProtocol.set(definition.protocol, definition);
+    if (!byModule.has(definition.module)) {
+      byModule.set(definition.module, definition);
     }
     scopes.push(...validatedScopes);
     permissions.push(permission as unknown as ConnectPermissionRequest);
   }
 
-  const definitionConflict = getRequestedProtocolDefinitionsConflictMessage(requestedDefinitions);
+  const definitionConflict = getRequestedModuleDefinitionsConflictMessage(requestedDefinitions);
   if (definitionConflict !== undefined) throw new Error(definitionConflict);
 
   return {
     permissions,
-    definitions: [...byProtocol.values()],
+    definitions: [...byModule.values()],
     scopes,
   };
 }

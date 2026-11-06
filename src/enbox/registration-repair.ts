@@ -33,7 +33,7 @@ export function isRepairableRegistrationFailure(error: string): boolean {
  * Repair a remote tenant registration only after sync receives a definitive
  * server rejection. Refreshing routing removes the durable paused link and
  * immediately reopens live links with the existing scope.
- * Concurrent failures from multiple protocol projections share one repair.
+ * Concurrent failures from multiple module projections share one repair.
  */
 export async function repairRegistrationFromSyncEvent(
   agent: EnboxAgent,

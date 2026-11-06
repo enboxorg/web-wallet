@@ -4,44 +4,76 @@ import type { ConnectPermissionRequest } from '@enbox/connect';
 
 import { PermissionDisplay } from '../PermissionDisplay';
 
-const tasksProtocol = 'https://example.com/protocols/tasks';
-const notesProtocol = 'https://example.com/protocols/notes';
-const profileProtocol = 'https://identity.foundation/protocols/profile';
-const connectProtocol = 'https://identity.foundation/protocols/connect';
+const tasksModule = 'https://example.com/modules/tasks';
+const notesModule = 'https://example.com/modules/notes';
+const profileModule = 'https://identity.foundation/modules/profile';
+const connectModule = 'https://identity.foundation/modules/connect';
 
 describe('PermissionDisplay', () => {
+  it('keeps installation-only providers in setup details without presenting data permissions', () => {
+    const provider = 'https://example.com/modules/shared-roles';
+    const permissions: ConnectPermissionRequest[] = [{
+      moduleDefinition: { module: provider, published: false, types: { member: {} }, structure: { member: { $role: true } } },
+      permissionScopes: [],
+    }, {
+      moduleDefinition: { module: tasksModule, published: false, uses: { shared: provider }, types: { task: {} }, structure: { task: {} } },
+      permissionScopes: [{ interface: 'Records', method: 'Read', module: tasksModule }],
+    }];
+    render(<PermissionDisplay permissions={permissions} />);
+    expect(screen.getAllByText('View a custom data type')).toHaveLength(1);
+    expect(screen.queryByText('Use a custom data type')).not.toBeInTheDocument();
+    expect(screen.getByText(/Dependencies listed only for setup do not grant the app access/)).toBeInTheDocument();
+    expect(screen.getAllByText(provider).length).toBeGreaterThan(0);
+  });
+
+  it('labels setup-only requests and excludes referenced roots from local record paths', () => {
+    const permissions: ConnectPermissionRequest[] = [{
+      moduleDefinition: {
+        module: tasksModule, published: false, uses: { shared: notesModule },
+        types: { task: {} }, structure: { workspace: { $ref: 'shared:workspace', task: {} } },
+      },
+      permissionScopes: [],
+    }];
+    render(<PermissionDisplay permissions={permissions} />);
+    expect(screen.getByText('No record or message access is requested.')).toBeInTheDocument();
+    expect(screen.getByText('None. This module is included only for setup.')).toBeInTheDocument();
+    expect(screen.getByText('1 path')).toBeInTheDocument();
+    expect(screen.getByText('workspace/task')).toBeInTheDocument();
+    expect(screen.queryByText('workspace')).not.toBeInTheDocument();
+  });
+
   it('keeps support scopes out of the summary while disclosing every granted scope', () => {
     const permissions = [{
-      protocolDefinition: {
-        protocol: 'https://example.com/protocols/demo',
+      moduleDefinition: {
+        module: 'https://example.com/modules/demo',
         types: {},
         structure: {},
       },
       permissionScopes: [
         {
-          interface: 'Protocols',
+          interface: 'Modules',
           method: 'Query',
-          protocol: 'https://example.com/protocols/demo',
+          module: 'https://example.com/modules/demo',
         },
         {
           interface: 'Messages',
           method: 'Read',
-          protocol: 'https://example.com/protocols/demo',
+          module: 'https://example.com/modules/demo',
         },
         {
           interface: 'Records',
           method: 'Read',
-          protocol: 'https://example.com/protocols/demo',
+          module: 'https://example.com/modules/demo',
         },
         {
           interface: 'Records',
           method: 'Write',
-          protocol: 'https://example.com/protocols/demo',
+          module: 'https://example.com/modules/demo',
         },
         {
           interface: 'Records',
           method: 'Delete',
-          protocol: 'https://example.com/protocols/demo',
+          module: 'https://example.com/modules/demo',
         },
       ],
     }] as unknown as ConnectPermissionRequest[];
@@ -51,28 +83,28 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText(/will be able to do/i)).toBeInTheDocument();
     expect(screen.getByText('Access lasts 1 hour')).toBeInTheDocument();
     expect(screen.getByText('View, add or edit, and delete a custom data type')).toBeInTheDocument();
-    expect(screen.getByText(/Custom protocol:\s*example\.com\/protocols\/demo/i)).toBeInTheDocument();
+    expect(screen.getByText(/Custom module:\s*example\.com\/modules\/demo/i)).toBeInTheDocument();
     expect(screen.getByText('View')).toBeInTheDocument();
     expect(screen.getByText('Add or edit')).toBeInTheDocument();
     expect(screen.getByText('Delete')).toBeInTheDocument();
     expect(screen.queryByText('Query')).not.toBeInTheDocument();
-    expect(screen.getByText('Additional grants: Protocols.Query, Messages.Read.')).toBeInTheDocument();
-    expect(screen.getAllByText('Protocols.Query')).toHaveLength(1);
+    expect(screen.getByText('Additional grants: Modules.Query, Messages.Read.')).toBeInTheDocument();
+    expect(screen.getAllByText('Modules.Query')).toHaveLength(1);
     expect(screen.getAllByText('Messages.Read')).toHaveLength(1);
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
   });
 
   it('shows the effective capability when a request contains only a support scope', () => {
     const permissions = [{
-      protocolDefinition: {
-        protocol: 'https://example.com/protocols/demo',
+      moduleDefinition: {
+        module: 'https://example.com/modules/demo',
         types: {},
         structure: {},
       },
       permissionScopes: [{
         interface: 'Messages',
         method: 'Read',
-        protocol: 'https://example.com/protocols/demo',
+        module: 'https://example.com/modules/demo',
       }],
     }] as unknown as ConnectPermissionRequest[];
 
@@ -82,10 +114,10 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText('Messages.Read')).toBeInTheDocument();
   });
 
-  it('does not promote unknown protocol slugs into trusted data names', () => {
+  it('does not promote unknown module slugs into trusted data names', () => {
     const permissions = [{
-      protocolDefinition: {
-        protocol: 'https://evil.example/protocols/verified-account',
+      moduleDefinition: {
+        module: 'https://evil.example/modules/verified-account',
         types: {},
         structure: {},
       },
@@ -93,7 +125,7 @@ describe('PermissionDisplay', () => {
         {
           interface: 'Records',
           method: 'Read',
-          protocol: 'https://evil.example/protocols/verified-account',
+          module: 'https://evil.example/modules/verified-account',
         },
       ],
     }] as unknown as ConnectPermissionRequest[];
@@ -101,9 +133,9 @@ describe('PermissionDisplay', () => {
     render(<PermissionDisplay permissions={permissions} />);
 
     expect(screen.getByText('View a custom data type')).toBeInTheDocument();
-    expect(screen.getByText(/Custom protocol:\s*evil\.example\/protocols\/verified-account/i)).toBeInTheDocument();
-    expect(screen.getAllByText('Custom protocol').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Protocol at https://evil.example/protocols/verified-account')).not.toBeInTheDocument();
+    expect(screen.getByText(/Custom module:\s*evil\.example\/modules\/verified-account/i)).toBeInTheDocument();
+    expect(screen.getAllByText('Custom module').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Module at https://evil.example/modules/verified-account')).not.toBeInTheDocument();
     expect(screen.queryByText('Verified Account')).not.toBeInTheDocument();
     expect(screen.queryByText('View your Verified Account')).not.toBeInTheDocument();
     expect(screen.queryByText('View')).not.toBeInTheDocument();
@@ -112,8 +144,8 @@ describe('PermissionDisplay', () => {
   it('shows a single encrypted-data explanation for multiple encrypted rows', () => {
     const permissions = [
       {
-        protocolDefinition: {
-          protocol: 'https://example.com/protocols/private-notes',
+        moduleDefinition: {
+          module: 'https://example.com/modules/private-notes',
           types: {
             note: {
               encryptionRequired: true,
@@ -125,13 +157,13 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: 'https://example.com/protocols/private-notes',
+            module: 'https://example.com/modules/private-notes',
           },
         ],
       },
       {
-        protocolDefinition: {
-          protocol: 'https://example.com/protocols/private-tasks',
+        moduleDefinition: {
+          module: 'https://example.com/modules/private-tasks',
           types: {
             task: {
               encryptionRequired: true,
@@ -143,7 +175,7 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: 'https://example.com/protocols/private-tasks',
+            module: 'https://example.com/modules/private-tasks',
           },
         ],
       },
@@ -157,8 +189,8 @@ describe('PermissionDisplay', () => {
 
   it('does not claim that write-only encrypted access receives private keys', () => {
     const permissions = [{
-      protocolDefinition: {
-        protocol: 'https://example.com/protocols/private-tasks',
+      moduleDefinition: {
+        module: 'https://example.com/modules/private-tasks',
         types: {
           task: { encryptionRequired: true },
         },
@@ -167,7 +199,7 @@ describe('PermissionDisplay', () => {
       permissionScopes: [{
         interface: 'Records',
         method: 'Write',
-        protocol: 'https://example.com/protocols/private-tasks',
+        module: 'https://example.com/modules/private-tasks',
       }],
     }] as unknown as ConnectPermissionRequest[];
 
@@ -177,11 +209,11 @@ describe('PermissionDisplay', () => {
     expect(screen.queryByText(/Approval permanently shares decryption keys/i)).not.toBeInTheDocument();
   });
 
-  it('merges duplicate permission entries for the same protocol into one access row', () => {
+  it('merges duplicate permission entries for the same module into one access row', () => {
     const permissions = [
       {
-        protocolDefinition: {
-          protocol: tasksProtocol,
+        moduleDefinition: {
+          module: tasksModule,
           types: {},
           structure: {},
         },
@@ -189,13 +221,13 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: tasksProtocol,
+            module: tasksModule,
           },
         ],
       },
       {
-        protocolDefinition: {
-          protocol: tasksProtocol,
+        moduleDefinition: {
+          module: tasksModule,
           types: {},
           structure: {},
         },
@@ -203,7 +235,7 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Write',
-            protocol: tasksProtocol,
+            module: tasksModule,
           },
         ],
       },
@@ -214,15 +246,15 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText('View and add or edit a custom data type')).toBeInTheDocument();
     expect(screen.queryByText('View a custom data type')).not.toBeInTheDocument();
     expect(screen.queryByText('Add or edit a custom data type')).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Custom protocol:\s*example\.com\/protocols\/tasks/i)).toHaveLength(1);
+    expect(screen.getAllByText(/Custom module:\s*example\.com\/modules\/tasks/i)).toHaveLength(1);
     expect(screen.getByText('View')).toBeInTheDocument();
     expect(screen.getByText('Add or edit')).toBeInTheDocument();
   });
 
-  it('shows wallet-owned protocol setup and an advanced protocol definition view', () => {
+  it('shows wallet-owned module setup and an advanced module definition view', () => {
     const permissions = [{
-      protocolDefinition: {
-        protocol: tasksProtocol,
+      moduleDefinition: {
+        module: tasksModule,
         types: {
           task: {
             schema: 'https://example.com/schemas/task',
@@ -245,7 +277,7 @@ describe('PermissionDisplay', () => {
         {
           interface: 'Records',
           method: 'Read',
-          protocol: tasksProtocol,
+          module: tasksModule,
         },
       ],
     }] as unknown as ConnectPermissionRequest[];
@@ -253,27 +285,27 @@ describe('PermissionDisplay', () => {
     render(
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={{ [tasksProtocol]: 'install' }}
+        moduleSetupStatuses={{ [tasksModule]: 'install' }}
       />,
     );
 
     expect(screen.getByText('Wallet setup')).toBeInTheDocument();
     expect(screen.getByText('Will add setup')).toBeInTheDocument();
     expect(screen.getByText('Will add')).toBeInTheDocument();
-    expect(screen.getByText(/Protocol setup controls record authorization/i)).toBeInTheDocument();
+    expect(screen.getByText(/Module setup controls record authorization/i)).toBeInTheDocument();
     expect(screen.getByText('Technical & setup details')).toBeInTheDocument();
     expect(screen.getByText(/Approval permanently shares decryption keys/i)).toBeInTheDocument();
     expect(screen.getByText('2 types')).toBeInTheDocument();
     expect(screen.getByText('2 paths')).toBeInTheDocument();
     expect(screen.getByText('task/comment')).toBeInTheDocument();
-    expect(screen.getByText(/"protocol": "https:\/\/example\.com\/protocols\/tasks"/)).toBeInTheDocument();
+    expect(screen.getByText(/"module": "https:\/\/example\.com\/modules\/tasks"/)).toBeInTheDocument();
     expect(screen.getByText(/"encryptionRequired": true/)).toBeInTheDocument();
   });
 
-  it('blocks a conflicting installed protocol setup', () => {
+  it('blocks a conflicting installed module setup', () => {
     const permissions = [{
-      protocolDefinition: {
-        protocol: tasksProtocol,
+      moduleDefinition: {
+        module: tasksModule,
         types: {},
         structure: {},
       },
@@ -281,7 +313,7 @@ describe('PermissionDisplay', () => {
         {
           interface: 'Records',
           method: 'Read',
-          protocol: tasksProtocol,
+          module: tasksModule,
         },
       ],
     }] as unknown as ConnectPermissionRequest[];
@@ -289,42 +321,42 @@ describe('PermissionDisplay', () => {
     render(
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={{ [tasksProtocol]: 'conflict' }}
+        moduleSetupStatuses={{ [tasksModule]: 'conflict' }}
       />,
     );
 
-    expect(screen.getByText('Protocol setup conflict')).toBeInTheDocument();
-    expect(screen.getByText(/will not replace a core protocol during a connection/i)).toBeInTheDocument();
+    expect(screen.getByText('Module setup conflict')).toBeInTheDocument();
+    expect(screen.getByText(/will not replace a core module during a connection/i)).toBeInTheDocument();
     expect(screen.getByText('Blocked')).toBeInTheDocument();
   });
 
   it('offers an override opt-in for a custom definition conflict', () => {
     const onOverrideAcknowledgedChange = vi.fn();
     const permissions = [{
-      protocolDefinition: {
-        protocol: notesProtocol,
+      moduleDefinition: {
+        module: notesModule,
         types: {},
         structure: {},
       },
       permissionScopes: [{
         interface: 'Records',
         method: 'Write',
-        protocol: notesProtocol,
+        module: notesModule,
       }],
     }] as unknown as ConnectPermissionRequest[];
 
     render(
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={{ [notesProtocol]: 'override' }}
+        moduleSetupStatuses={{ [notesModule]: 'override' }}
         overrideAcknowledged={false}
         onOverrideAcknowledgedChange={onOverrideAcknowledgedChange}
       />,
     );
 
     // An override is NOT the hard-conflict notice.
-    expect(screen.queryByText('Protocol setup conflict')).not.toBeInTheDocument();
-    expect(screen.getByText(/replace my installed protocol/i)).toBeInTheDocument();
+    expect(screen.queryByText('Module setup conflict')).not.toBeInTheDocument();
+    expect(screen.getByText(/replace my installed module/i)).toBeInTheDocument();
 
     const checkbox = screen.getByRole('checkbox');
     expect(checkbox).not.toBeChecked();
@@ -335,27 +367,27 @@ describe('PermissionDisplay', () => {
   it('surfaces an unavailable setup check and retries it', () => {
     const retry = vi.fn();
     const permissions = [{
-      protocolDefinition: {
-        protocol: tasksProtocol,
+      moduleDefinition: {
+        module: tasksModule,
         types: {},
         structure: {},
       },
       permissionScopes: [{
         interface: 'Records',
         method: 'Read',
-        protocol: tasksProtocol,
+        module: tasksModule,
       }],
     }] as unknown as ConnectPermissionRequest[];
 
     render(
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={{ [tasksProtocol]: 'unavailable' }}
-        onRetryProtocolSetup={retry}
+        moduleSetupStatuses={{ [tasksModule]: 'unavailable' }}
+        onRetryModuleSetup={retry}
       />,
     );
 
-    expect(screen.getByText('Protocol setup could not be verified')).toBeInTheDocument();
+    expect(screen.getByText('Module setup could not be verified')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry check' }));
     expect(retry).toHaveBeenCalledOnce();
   });
@@ -363,8 +395,8 @@ describe('PermissionDisplay', () => {
   it('groups setup work separately from data areas that are already ready', () => {
     const permissions = [
       {
-        protocolDefinition: {
-          protocol: profileProtocol,
+        moduleDefinition: {
+          module: profileModule,
           types: {},
           structure: {},
         },
@@ -372,13 +404,13 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: profileProtocol,
+            module: profileModule,
           },
         ],
       },
       {
-        protocolDefinition: {
-          protocol: connectProtocol,
+        moduleDefinition: {
+          module: connectModule,
           types: {},
           structure: {},
         },
@@ -386,13 +418,13 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: connectProtocol,
+            module: connectModule,
           },
         ],
       },
       {
-        protocolDefinition: {
-          protocol: tasksProtocol,
+        moduleDefinition: {
+          module: tasksModule,
           types: {},
           structure: {},
         },
@@ -400,13 +432,13 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: tasksProtocol,
+            module: tasksModule,
           },
         ],
       },
       {
-        protocolDefinition: {
-          protocol: notesProtocol,
+        moduleDefinition: {
+          module: notesModule,
           types: {},
           structure: {},
         },
@@ -414,7 +446,7 @@ describe('PermissionDisplay', () => {
           {
             interface: 'Records',
             method: 'Read',
-            protocol: notesProtocol,
+            module: notesModule,
           },
         ],
       },
@@ -423,11 +455,11 @@ describe('PermissionDisplay', () => {
     render(
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={{
-          [profileProtocol]     : 'configured',
-          [connectProtocol]     : 'configured',
-          [tasksProtocol]       : 'install',
-          [notesProtocol]       : 'upgrade',
+        moduleSetupStatuses={{
+          [profileModule]     : 'configured',
+          [connectModule]     : 'configured',
+          [tasksModule]       : 'install',
+          [notesModule]       : 'upgrade',
         }}
       />,
     );
@@ -438,14 +470,14 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText(/The wallet will not change these/i)).toBeInTheDocument();
     expect(screen.getByText('Will add')).toBeInTheDocument();
     expect(screen.getByText('Encryption upgrade')).toBeInTheDocument();
-    expect(screen.getAllByText(/identity\.foundation\/protocols\/profile/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/identity\.foundation\/protocols\/connect/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/identity\.foundation\/modules\/profile/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/identity\.foundation\/modules\/connect/i).length).toBeGreaterThan(0);
   });
 
   it('summarizes existing app access without repeating a separate notice', () => {
     const permissions = [{
-      protocolDefinition: {
-        protocol: tasksProtocol,
+      moduleDefinition: {
+        module: tasksModule,
         types: {},
         structure: {},
       },
@@ -453,7 +485,7 @@ describe('PermissionDisplay', () => {
         {
           interface: 'Records',
           method: 'Read',
-          protocol: tasksProtocol,
+          module: tasksModule,
         },
       ],
     }] as unknown as ConnectPermissionRequest[];
@@ -461,7 +493,7 @@ describe('PermissionDisplay', () => {
     render(
       <PermissionDisplay
         permissions={permissions}
-        protocolSetupStatuses={{ [tasksProtocol]: 'configured' }}
+        moduleSetupStatuses={{ [tasksModule]: 'configured' }}
         existingSessionCount={2}
       />,
     );

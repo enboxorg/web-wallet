@@ -8,7 +8,7 @@
 import type { MaterializedRecord } from '@enbox/browser';
 
 import { Effect } from 'effect';
-import { ProfileProtocol } from '@enbox/protocols';
+import { ProfileModule } from '@enbox/modules';
 import { DwnDateSort } from '@enbox/agent';
 
 import type { EnboxAgent, IdentityProfileData, IdentityProfileImage } from '../types';
@@ -72,7 +72,7 @@ export async function fetchProfile(
 
 export function fetchProfileEffect(did: string) {
   return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
-    const profileApi = enbox.using(ProfileProtocol);
+    const profileApi = enbox.using(ProfileModule);
 
     const profile = yield* Effect.tryPromise({
       try: async () => (await profileApi.records.query('profile', {
@@ -96,25 +96,25 @@ export function fetchProfileEffect(did: string) {
   }));
 }
 
-// ── Protocols ──────────────────────────────────────────────────────
+// ── Modules ──────────────────────────────────────────────────────
 
-/** Installed protocol definitions for the given DID. */
-export async function fetchProtocols(agent: EnboxAgent, did: string) {
+/** Installed module definitions for the given DID. */
+export async function fetchModules(agent: EnboxAgent, did: string) {
   return runEnboxPromise(
-    fetchProtocolsEffect(did).pipe(
+    fetchModulesEffect(did).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
 }
 
-export function fetchProtocolsEffect(did: string) {
+export function fetchModulesEffect(did: string) {
   return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
-    const { protocols } = yield* Effect.tryPromise({
-      try: async () => enbox.dwn.protocols.query({}),
-      catch: sdkError('protocols.query'),
+    const { modules } = yield* Effect.tryPromise({
+      try: async () => enbox.dwn.modules.query({}),
+      catch: sdkError('modules.query'),
     });
-    return protocols.map((p) => ({
-      uri: p.definition.protocol as string,
+    return modules.map((p) => ({
+      uri: p.definition.module as string,
       published: (p.definition.published ?? false) as boolean,
       definition: p.definition,
     }));
@@ -204,8 +204,8 @@ export function fetchDwnEndpointsEffect(did: string) {
 
 export interface ActivityRecord {
   id: string;
-  protocol?: string;
-  protocolPath?: string;
+  module?: string;
+  modulePath?: string;
   schema?: string;
   dataFormat?: string;
   dateCreated: string;
@@ -240,8 +240,8 @@ export function fetchActivityEffect(did: string, limit = 50) {
 
     return records.map((r) => ({
       id: r.id,
-      protocol: r.protocol,
-      protocolPath: r.protocolPath,
+      module: r.module,
+      modulePath: r.modulePath,
       schema: r.schema,
       dataFormat: r.dataFormat,
       dateCreated: r.dateCreated,

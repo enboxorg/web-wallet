@@ -3,14 +3,15 @@ import type { SyncEvent, SyncMessageDescriptor } from '@enbox/agent';
 
 import {
   isServiceConfigNoticeDelivery,
-  normalizeSyncProtocols,
-  ServiceConfigProtocolDefinition,
-  syncRegistrationCoversProtocol,
+  normalizeSyncModules,
+  ServiceConfigModuleDefinition,
+  syncRegistrationCoversModule,
 } from '@enbox/agent';
 import { useEffect, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Enbox } from '@enbox/browser';
-import { ConnectDefinition, ProfileDefinition } from '@enbox/protocols';
+import { PermissionsModule } from '@enbox/dwn-sdk-js';
+import { ConnectDefinition, ProfileDefinition } from '@enbox/modules';
 import { Effect, Stream } from 'effect';
 
 import { useAuthStore } from '@/stores/auth-store';
@@ -27,7 +28,7 @@ type PendingInvalidations = {
   activity: Set<string>;
   permissions: Set<string>;
   profiles: Set<string>;
-  protocols: Set<string>;
+  modules: Set<string>;
 };
 
 function createPendingInvalidations(): PendingInvalidations {
@@ -36,7 +37,7 @@ function createPendingInvalidations(): PendingInvalidations {
     activity    : new Set(),
     permissions : new Set(),
     profiles    : new Set(),
-    protocols   : new Set(),
+    modules     : new Set(),
   };
 }
 
@@ -67,30 +68,30 @@ function invalidateWalletEventQueries(
 }
 
 function queueIdentityDescriptor(
-  descriptor: Pick<SyncMessageDescriptor, 'interface' | 'protocol'>,
+  descriptor: Pick<SyncMessageDescriptor, 'interface' | 'module'>,
   did: string,
   pending: PendingInvalidations,
 ): void {
-  if (descriptor.protocol === ServiceConfigProtocolDefinition.protocol) {
+  if (descriptor.module === ServiceConfigModuleDefinition.module) {
     return;
   }
   pending.activity.add(did);
 
-  if (descriptor.interface === 'Protocols') {
-    pending.protocols.add(did);
+  if (descriptor.interface === 'Modules') {
+    pending.modules.add(did);
   }
 
-  if (descriptor.interface === 'Permissions') {
+  if (descriptor.module === PermissionsModule.uri) {
     pending.permissions.add(did);
   }
 
-  switch (descriptor.protocol) {
-    case ProfileDefinition.protocol:
+  switch (descriptor.module) {
+    case ProfileDefinition.module:
       pending.profiles.add(did);
       pending.identities = true;
       break;
 
-    case ConnectDefinition.protocol:
+    case ConnectDefinition.module:
       pending.permissions.add(did);
       break;
   }
@@ -98,9 +99,9 @@ function queueIdentityDescriptor(
 
 /**
  * Keep React Query caches aligned with local DWN writes, sync-applied messages,
- * and cross-tab changes. Message subscriptions are protocol-scoped for
+ * and cross-tab changes. Message subscriptions are module-scoped for
  * delegated identities because delegated MessagesSubscribe grants are scoped
- * to exactly one protocol.
+ * to exactly one module.
  */
 export function useSyncQueryInvalidation(
   identities: unknown[] | undefined,
@@ -158,7 +159,7 @@ export function useSyncQueryInvalidation(
         [pending.activity, queryKeys.identities.activity],
         [pending.permissions, queryKeys.identities.permissions],
         [pending.profiles, queryKeys.identities.profile],
-        [pending.protocols, queryKeys.identities.protocols],
+        [pending.modules, queryKeys.identities.modules],
       ] as const;
 
       for (const [dids, queryKey] of invalidations) {
@@ -235,16 +236,16 @@ export function useSyncQueryInvalidation(
         const options = await currentAgent.sync.getIdentityOptions(did);
         if (cancelled
           || options === undefined
-          || syncRegistrationCoversProtocol(options, ServiceConfigProtocolDefinition.protocol)) {
+          || syncRegistrationCoversModule(options, ServiceConfigModuleDefinition.module)) {
           return;
         }
         await currentAgent.sync.ensureIdentityOptions({
           did,
           options: {
             ...options,
-            protocols: normalizeSyncProtocols([
-              ...options.protocols,
-              ServiceConfigProtocolDefinition.protocol,
+            modules: normalizeSyncModules([
+              ...options.modules,
+              ServiceConfigModuleDefinition.module,
             ]),
           },
         });
@@ -258,14 +259,14 @@ export function useSyncQueryInvalidation(
     async function openSubscription(
       enbox: Enbox,
       did: string | undefined,
-      protocol?: string,
+      module?: string,
     ): Promise<void> {
       try {
         // The subscription handler must be supplied at dispatch time — the old
         // MessagesLiveQuery buffered dispatches until a listener attached, and
         // that buffering is gone, so a late handler would drop catch-up events.
         const { status, subscription } = await enbox.dwn.messages.subscribe({
-          ...(protocol === undefined ? {} : { filters: [{ protocol }] }),
+          ...(module === undefined ? {} : { filters: [{ module }] }),
           subscriptionHandler: (message: DwnSubscriptionMessage): void => {
             if (cancelled) {
               return;
@@ -285,7 +286,7 @@ export function useSyncQueryInvalidation(
             }
             if (message.type === 'error') {
               console.warn(
-                `Message subscription ended for ${did ?? 'the agent DID'}${protocol ? ` (${protocol})` : ''}:`,
+                `Message subscription ended for ${did ?? 'the agent DID'}${module ? ` (${module})` : ''}:`,
                 message.error,
               );
             }
@@ -299,7 +300,7 @@ export function useSyncQueryInvalidation(
 
         if (!subscription || status.code >= 300) {
           console.warn(
-            `Message subscription failed for ${did ?? 'the agent DID'}${protocol ? ` (${protocol})` : ''}: ${status.code} ${status.detail}`,
+            `Message subscription failed for ${did ?? 'the agent DID'}${module ? ` (${module})` : ''}: ${status.code} ${status.detail}`,
           );
           return;
         }
@@ -308,7 +309,7 @@ export function useSyncQueryInvalidation(
       } catch (error) {
         if (!cancelled) {
           console.warn(
-            `Unable to subscribe to messages for ${did ?? 'the agent DID'}${protocol ? ` (${protocol})` : ''}:`,
+            `Unable to subscribe to messages for ${did ?? 'the agent DID'}${module ? ` (${module})` : ''}:`,
             error,
           );
         }
@@ -332,11 +333,11 @@ export function useSyncQueryInvalidation(
         return;
       }
 
-      if (syncOptions.protocols === 'all') {
+      if (syncOptions.modules === 'all') {
         await openSubscription(enbox, did);
       } else {
         await Promise.all(
-          syncOptions.protocols.map((protocol) => openSubscription(enbox, did, protocol)),
+          syncOptions.modules.map((module) => openSubscription(enbox, did, module)),
         );
       }
     }

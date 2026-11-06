@@ -49,7 +49,7 @@ export function isRetryableNetworkError(error: unknown) {
   const text = errorText(error);
 
   if (
-    /CachedPermissions|ProtocolAuthorization|ProtocolNotFound|ComposedProtocolNotInstalled|MessageStoreUpdateMessageAndIndexesMessageNotFound|Key not found|Invalid DID|incorrect password|state mismatch/i
+    /CachedPermissions|ModuleAuthorization|ModuleNotFound|ComposedModuleNotInstalled|MessageStoreUpdateMessageAndIndexesMessageNotFound|Key not found|Invalid DID|incorrect password|state mismatch/i
       .test(text)
   ) {
     return false;

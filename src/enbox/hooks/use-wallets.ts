@@ -9,12 +9,12 @@
  * before, so this is net-new reactivity.)
  */
 
-import type { WalletData } from '@enbox/protocols';
+import type { WalletData } from '@enbox/modules';
 
 import { useMemo } from 'react';
 
 import { Enbox } from '@enbox/browser';
-import { ConnectProtocol } from '@enbox/protocols';
+import { ConnectModule } from '@enbox/modules';
 
 import { useAuthStore } from '../../stores/auth-store';
 import { useRecordsView } from './use-records-view';
@@ -42,7 +42,7 @@ export function useWallets(did: string | undefined): UseWalletsResult {
       signal.addEventListener('abort', closeEnbox, { once: true });
       try {
         return await enbox
-          .using(ConnectProtocol)
+          .using(ConnectModule)
           .records.observe('wallet', {
             materialize : true,
             pagination  : { limit: WALLET_PAGE_LIMIT },
