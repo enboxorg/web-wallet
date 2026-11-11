@@ -1,6 +1,10 @@
 import type { DwnPermissionScope } from '@enbox/agent';
 import type { ConnectPermissionRequest } from '@enbox/connect';
-import { getScopeLabel } from '@/lib/module-names';
+import {
+  getContextCompanionRootUri,
+  getScopeLabel,
+  isContextCompanionDefinition,
+} from '@/lib/module-names';
 
 export type DisplayScope = {
   interface: string;
@@ -132,6 +136,64 @@ export function formatList(items: string[]): string {
   if (items.length === 1) return items[0];
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+export type GroupedPermissionRequest = {
+  permission: ConnectPermissionRequest;
+  companion?: ConnectPermissionRequest;
+  isStandaloneCompanion: boolean;
+};
+
+/**
+ * Pair verified `@enbox/contexts` `<root>/contexts` companion requests onto
+ * their matching `<root>` domain request when both appear in the same ask.
+ * Unverified `/contexts` definitions are never paired.
+ */
+export function groupPermissionRequestsWithCompanions(
+  permissions: ConnectPermissionRequest[],
+): GroupedPermissionRequest[] {
+  const byModule = new Map<string, ConnectPermissionRequest>();
+  for (const permission of permissions) {
+    byModule.set(permission.moduleDefinition.module, permission);
+  }
+
+  const companionByRoot = new Map<string, ConnectPermissionRequest>();
+  const pairedCompanionUris = new Set<string>();
+
+  for (const permission of permissions) {
+    const uri = permission.moduleDefinition.module;
+    if (!isContextCompanionDefinition(permission.moduleDefinition)) {
+      continue;
+    }
+    const rootUri = getContextCompanionRootUri(uri);
+    const rootPermission = rootUri ? byModule.get(rootUri) : undefined;
+    if (
+      rootUri
+      && rootPermission
+      && !isContextCompanionDefinition(rootPermission.moduleDefinition)
+      && !companionByRoot.has(rootUri)
+    ) {
+      companionByRoot.set(rootUri, permission);
+      pairedCompanionUris.add(uri);
+    }
+  }
+
+  const groups: GroupedPermissionRequest[] = [];
+  for (const permission of permissions) {
+    const uri = permission.moduleDefinition.module;
+    if (pairedCompanionUris.has(uri)) {
+      continue;
+    }
+    const companion = companionByRoot.get(uri);
+    groups.push({
+      permission,
+      companion,
+      isStandaloneCompanion : companion === undefined
+        && isContextCompanionDefinition(permission.moduleDefinition),
+    });
+  }
+
+  return groups;
 }
 
 export function formatActionPhrase(actions: PermissionAction[]): string {

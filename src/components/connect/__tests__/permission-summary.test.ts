@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { ConnectPermissionRequest } from '@enbox/connect';
+import { ProfileDefinition } from '@enbox/modules';
 
+import { createCanonicalContextCompanionDefinition } from '@/lib/module-names';
 import { getConnectPermissionAskSummary } from '../permission-summary';
 
 function permissionRequest(
@@ -122,5 +124,87 @@ describe('getConnectPermissionAskSummary', () => {
     ];
 
     expect(getConnectPermissionAskSummary(permissions)).toBe('wants to view and add or edit a custom data type.');
+  });
+
+  it('pairs a verified /contexts companion with its domain module cohesively', () => {
+    const notesUri = 'https://example.com/modules/notes';
+    const notesContextsUri = `${notesUri}/contexts`;
+
+    expect(getConnectPermissionAskSummary([
+      permissionRequest(notesUri, [
+        { interface: 'Records', method: 'Read', module: notesUri },
+        { interface: 'Records', method: 'Write', module: notesUri },
+      ]),
+      {
+        moduleDefinition : createCanonicalContextCompanionDefinition(notesContextsUri),
+        permissionScopes : [
+          { interface: 'Records', method: 'Read', module: notesContextsUri },
+          { interface: 'Records', method: 'Write', module: notesContextsUri },
+        ],
+      },
+    ])).toBe('wants to view and add or edit a custom data type and its shared contexts.');
+
+    expect(getConnectPermissionAskSummary([
+      permissionRequest(notesUri, [
+        { interface: 'Records', method: 'Read', module: notesUri },
+      ]),
+      {
+        moduleDefinition : createCanonicalContextCompanionDefinition(notesContextsUri),
+        permissionScopes : [
+          { interface: 'Records', method: 'Read', module: notesContextsUri },
+          { interface: 'Records', method: 'Write', module: notesContextsUri },
+        ],
+      },
+    ])).toBe('wants to view a custom data type and view and add or edit its shared contexts.');
+  });
+
+  it('pairs a verified companion with a canonical module and handles standalone or 3+ group asks', () => {
+    const profileContextsUri = `${ProfileDefinition.module}/contexts`;
+    const pairedProfile: ConnectPermissionRequest[] = [
+      {
+        moduleDefinition : ProfileDefinition as ConnectPermissionRequest['moduleDefinition'],
+        permissionScopes : [
+          { interface: 'Records', method: 'Read', module: ProfileDefinition.module },
+        ],
+      },
+      {
+        moduleDefinition : createCanonicalContextCompanionDefinition(profileContextsUri),
+        permissionScopes : [
+          { interface: 'Records', method: 'Read', module: profileContextsUri },
+        ],
+      },
+    ];
+
+    expect(getConnectPermissionAskSummary(pairedProfile)).toBe(
+      'wants to view your Profile and its shared contexts.',
+    );
+
+    expect(getConnectPermissionAskSummary([
+      pairedProfile[1],
+    ])).toBe('wants to view shared context invitations and followed contexts.');
+
+    expect(getConnectPermissionAskSummary([
+      ...pairedProfile,
+      permissionRequest('https://example.com/modules/tasks', [
+        { interface: 'Records', method: 'Read', module: 'https://example.com/modules/tasks' },
+      ]),
+      permissionRequest('https://example.com/modules/notes', [
+        { interface: 'Records', method: 'Read', module: 'https://example.com/modules/notes' },
+      ]),
+    ])).toBe('wants access to Profile (with shared contexts), a custom data type, and 1 more.');
+  });
+
+  it('never pairs or promotes a spoofed /contexts definition', () => {
+    const notesUri = 'https://example.com/modules/notes';
+    const spoofedContextsUri = `${notesUri}/contexts`;
+
+    expect(getConnectPermissionAskSummary([
+      permissionRequest(notesUri, [
+        { interface: 'Records', method: 'Read', module: notesUri },
+      ]),
+      permissionRequest(spoofedContextsUri, [
+        { interface: 'Records', method: 'Read', module: spoofedContextsUri },
+      ]),
+    ])).toBe('wants to view a custom data type and view a custom data type.');
   });
 });

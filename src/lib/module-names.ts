@@ -1,4 +1,5 @@
 import type { DwnModuleDefinition } from '@enbox/agent';
+import { authoredModuleDefinitionsEqual } from '@enbox/dwn-sdk-js';
 
 import {
   ConnectDefinition,
@@ -51,6 +52,70 @@ export function getCanonicalModuleDefinition(uri: string): DwnModuleDefinition |
   return CANONICAL_MODULE_DEFINITIONS.get(uri);
 }
 
+/** Construct the exact `@enbox/contexts` companion definition for `moduleUri`. */
+export function createCanonicalContextCompanionDefinition(moduleUri: string): DwnModuleDefinition {
+  return {
+    module    : moduleUri,
+    published : true,
+    types     : {
+      invitation: {
+        schema      : 'https://enbox.id/schemas/context-invitation',
+        dataFormats : ['application/json'],
+      },
+      follow: {
+        schema             : 'https://enbox.id/schemas/context-follow',
+        dataFormats        : ['application/json'],
+        encryptionRequired : true,
+      },
+    },
+    structure: {
+      invitation: {
+        $immutable : true,
+        $size      : { max: 8192 },
+        $actions   : [{ who: 'anyone', can: ['create'] }],
+      },
+      follow: {
+        $immutable : true,
+        $size      : { max: 8192 },
+      },
+    },
+  };
+}
+
+/**
+ * True only when `definition` matches the exact canonical `@enbox/contexts`
+ * companion contract (open-write `invitation` inbox + encrypted `follow`
+ * journal). Never trusts a `/contexts` URI suffix alone.
+ */
+export function isContextCompanionDefinition(definition: DwnModuleDefinition): boolean {
+  if (!definition?.module) return false;
+  return authoredModuleDefinitionsEqual(
+    definition,
+    createCanonicalContextCompanionDefinition(definition.module),
+  );
+}
+
+/**
+ * Extract the conventional base module URI when a companion URI ends in
+ * `/<segment>/contexts` (for example `https://app.example/modules/notes/contexts`
+ * -> `https://app.example/modules/notes`).
+ */
+export function getContextCompanionRootUri(uri: string): string | undefined {
+  if (!uri.endsWith('/contexts')) return undefined;
+  try {
+    const parsed = new URL(uri);
+    if (parsed.search || parsed.hash) return undefined;
+    const segments = parsed.pathname.split('/').filter(Boolean);
+    if (segments.length < 2 || segments[segments.length - 1] !== 'contexts') {
+      return undefined;
+    }
+    parsed.pathname = `/${segments.slice(0, -1).join('/')}`;
+    return parsed.href;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Whether the module URI has curated wallet display metadata. */
 export function isKnownModule(uri: string): boolean {
   return uri in MODULE_REGISTRY;
@@ -63,6 +128,10 @@ export function isKnownModule(uri: string): boolean {
 export function getModuleName(uri: string): string {
   const info = MODULE_REGISTRY[uri];
   if (info) { return info.name; }
+  const companionRoot = getContextCompanionRootUri(uri);
+  if (companionRoot) {
+    return `${getModuleName(companionRoot)} Contexts`;
+  }
   // Fall back to last path segment, title-cased.
   const parts = uri.split('/');
   const last = parts[parts.length - 1] || uri;
