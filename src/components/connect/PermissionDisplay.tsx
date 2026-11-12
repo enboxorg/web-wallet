@@ -17,29 +17,33 @@ import {
   Loader2,
   Lock,
   RefreshCw,
+  Share2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ConnectPermissionRequest } from '@enbox/connect';
-import {
-  moduleDefinitionsMatch,
-  type ModuleSetupStatus,
-} from '@/features/connect/module-install';
+import type { ModuleSetupStatus } from '@/features/connect/module-install';
 import {
   formatConnectSessionDuration,
   getConnectSessionDurationOptions,
   resolveConnectSessionDurationSeconds,
 } from '@/features/connect/connect-session-duration';
-import { getCanonicalModuleDefinition, getModuleInfo } from '@/lib/module-names';
+import {
+  getModuleInfo,
+  isCanonicalModuleDefinition,
+  isContextCompanionDefinition,
+} from '@/lib/module-names';
 import { Select } from '@/components/ui/Select';
 import {
   formatActionPhrase,
+  formatModuleObjectPhrase,
   getDisplayScopes,
   getHighestPermissionRisk,
   getPermissionActions,
+  groupPermissionRequestsWithCompanions,
   isInternalConnectScope,
   mergePermissionRequestsByModule,
 } from './connect-scope-display';
-import type { DisplayScope, PermissionRisk } from './connect-scope-display';
+import type { DisplayScope, PermissionAction, PermissionRisk } from './connect-scope-display';
 
 interface PermissionDisplayProps {
   /** The permission requests from the dapp. */
@@ -74,6 +78,7 @@ type ModuleAccess = {
   name: string;
   description: string;
   isKnownModule: boolean;
+  isContextCompanion: boolean;
   displayScopes: DisplayScope[];
   paths: string[];
   hasEncryptedTypes: boolean;
@@ -183,22 +188,24 @@ function getModuleAccess(
 ): ModuleAccess[] {
   return mergePermissionRequestsByModule(permissions).map((permission) => {
     const moduleUri = permission.moduleDefinition.module;
-    const info = getModuleInfo(moduleUri);
+    const isContextCompanion = isContextCompanionDefinition(permission.moduleDefinition);
+    const info = isContextCompanion ? undefined : getModuleInfo(moduleUri);
     const paths = collectStructurePaths(
       permission.moduleDefinition.structure as Record<string, unknown> | undefined,
     );
     const hasEncryptedTypes = Object.values(permission.moduleDefinition.types ?? {})
       .some(isEncryptedType);
-    const canonicalDefinition = getCanonicalModuleDefinition(moduleUri);
-    const isCanonicalModule = canonicalDefinition !== undefined
-      && moduleDefinitionsMatch(canonicalDefinition, permission.moduleDefinition);
+    const isKnownModule = !isContextCompanion && isCanonicalModuleDefinition(permission.moduleDefinition);
 
     return {
       permission,
       moduleUri,
-      name: info.name,
-      description: info.description,
-      isKnownModule: isCanonicalModule,
+      name: isContextCompanion ? 'Shared contexts companion' : info!.name,
+      description: isContextCompanion
+        ? 'Open invitation inbox and encrypted followed-context journal'
+        : info!.description,
+      isKnownModule,
+      isContextCompanion,
       displayScopes: getDisplayScopes(permission.permissionScopes),
       paths,
       hasEncryptedTypes,
@@ -234,12 +241,119 @@ function rowRiskClasses(risk: PermissionRisk): string {
 
 function formatAccessSentence(item: ModuleAccess): string {
   const actions = getPermissionActions(item.displayScopes);
-  const objectLabel = item.isKnownModule ? `your ${item.name}` : 'a custom data type';
+  const objectLabel = formatModuleObjectPhrase({
+    isContextCompanion : item.isContextCompanion,
+    isKnownModule      : item.isKnownModule,
+    moduleName         : item.name,
+  });
   return `${capitalize(formatActionPhrase(actions))} ${objectLabel}`;
+}
+
+function moduleTitleLabel(item: ModuleAccess): string {
+  if (item.isKnownModule || item.isContextCompanion) {
+    return item.name;
+  }
+  return 'Custom module';
 }
 
 function sessionCountLabel(count: number): string {
   return count === 1 ? '1 active session' : `${count} active sessions`;
+}
+
+type AccessRowGroup = {
+  primary: ModuleAccess;
+  companion?: ModuleAccess;
+};
+
+function buildAccessRowGroups(access: ModuleAccess[]): AccessRowGroup[] {
+  const byUri = new Map(access.map((item) => [item.moduleUri, item]));
+  const groups = groupPermissionRequestsWithCompanions(access.map((item) => item.permission));
+  return groups.map((group) => ({
+    primary   : byUri.get(group.permission.moduleDefinition.module)!,
+    companion : group.companion
+      ? byUri.get(group.companion.moduleDefinition.module)
+      : undefined,
+  }));
+}
+
+function groupSharesDecryptionKeys({ primary, companion }: AccessRowGroup): boolean {
+  return (primary.hasEncryptedTypes && primary.sharesDecryptionKeys)
+    || Boolean(companion?.hasEncryptedTypes && companion.sharesDecryptionKeys);
+}
+
+function splitConnectScopes(permissionScopes: ConnectPermissionRequest['permissionScopes']): {
+  hasPrimaryScopes: boolean;
+  supportScopes: ConnectPermissionRequest['permissionScopes'];
+} {
+  return {
+    supportScopes    : permissionScopes.filter(isInternalConnectScope),
+    hasPrimaryScopes : permissionScopes.some((scope) => !isInternalConnectScope(scope)),
+  };
+}
+
+function ActionBadges({
+  actions,
+  compact = false,
+}: {
+  actions: PermissionAction[];
+  compact?: boolean;
+}) {
+  const pillSizing = compact ? 'px-2 py-0.5 text-[11px]' : 'px-2 py-1 text-xs';
+  return (
+    <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
+      {actions.map((action) => (
+        <span
+          key={action.key}
+          className={`inline-flex items-center rounded-full border ${pillSizing} font-medium ${actionBadgeClasses(action.risk)}`}
+          title={action.label}
+        >
+          {action.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function CompanionAccessCallout({
+  companion,
+  companionActions,
+  primaryActions,
+}: {
+  companion: ModuleAccess;
+  companionActions: PermissionAction[];
+  primaryActions: PermissionAction[];
+}) {
+  const { hasPrimaryScopes, supportScopes } = splitConnectScopes(companion.permission.permissionScopes);
+  const actionsDiffer = companionActions.length > 0
+    && companionActions.map((action) => action.key).join(',') !== primaryActions.map((action) => action.key).join(',');
+
+  return (
+    <div className="mt-3 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <Share2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-text-primary">
+              Shared contexts &amp; invitations
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
+              {capitalize(formatActionPhrase(companionActions))} shared context invitations and your encrypted followed-context list.
+            </p>
+            <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={companion.moduleUri}>
+              Companion module: {moduleUriLabel(companion.moduleUri)}
+            </p>
+          </div>
+        </div>
+
+        {actionsDiffer && <ActionBadges actions={companionActions} compact />}
+      </div>
+      {hasPrimaryScopes && supportScopes.length > 0 && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-text-ghost">
+          Companion grants: {supportScopes.map((scope) => `${scope.interface}.${scope.method}`).join(', ')}.
+        </p>
+      )}
+    </div>
+  );
 }
 
 function AccessRows({
@@ -250,8 +364,8 @@ function AccessRows({
   requesterLabel?: string;
 }) {
   const requesterSentenceLabel = hostLabel(requesterLabel);
-  const encryptedAccess = access.filter((item) => item.hasEncryptedTypes && item.sharesDecryptionKeys);
-  const showSharedEncryptedNote = encryptedAccess.length > 1;
+  const rowGroups = buildAccessRowGroups(access);
+  const showSharedEncryptedNote = rowGroups.filter(groupSharesDecryptionKeys).length > 1;
 
   return (
     <section className="space-y-2">
@@ -260,16 +374,17 @@ function AccessRows({
       </p>
 
       <div className="overflow-hidden rounded-xl border border-border-default bg-surface-2">
-        {access.length === 0 && (
+        {rowGroups.length === 0 && (
           <p className="px-4 py-3 text-sm text-text-secondary">No record or message access is requested.</p>
         )}
-        {access.map((item, index) => {
+        {rowGroups.map((group, index) => {
+          const { primary: item, companion } = group;
           const actions = getPermissionActions(item.displayScopes);
-          const risk = getHighestPermissionRisk(actions);
-          const supportScopes = item.permission.permissionScopes.filter(isInternalConnectScope);
-          const hasPrimaryScopes = item.permission.permissionScopes.some(
-            (scope) => !isInternalConnectScope(scope),
-          );
+          const companionActions = companion ? getPermissionActions(companion.displayScopes) : [];
+          const risk = getHighestPermissionRisk([...actions, ...companionActions]);
+          const { hasPrimaryScopes, supportScopes } = splitConnectScopes(item.permission.permissionScopes);
+          const rowHasEncryptedTypes = item.hasEncryptedTypes || Boolean(companion?.hasEncryptedTypes);
+          const rowSharesKeys = groupSharesDecryptionKeys(group);
 
           return (
             <div
@@ -281,34 +396,35 @@ function AccessRows({
                   <p className="text-sm font-semibold text-text-primary">
                     {formatAccessSentence(item)}
                   </p>
-                  {item.isKnownModule && (
+                  {(item.isKnownModule || item.isContextCompanion) && (
                     <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-secondary">
                       {item.description}
                     </p>
                   )}
-                  {!item.isKnownModule && (
+                  {item.isContextCompanion && (
+                    <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
+                      Companion module: {moduleUriLabel(item.moduleUri)}
+                    </p>
+                  )}
+                  {!item.isKnownModule && !item.isContextCompanion && (
                     <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
                       Custom module: {moduleUriLabel(item.moduleUri)}
                     </p>
                   )}
                 </div>
 
-                {actions.length > 1 && (
-                  <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
-                    {actions.map((action) => (
-                      <span
-                        key={action.key}
-                        className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${actionBadgeClasses(action.risk)}`}
-                        title={action.label}
-                      >
-                        {action.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {actions.length > 1 && <ActionBadges actions={actions} />}
               </div>
 
-              {item.hasEncryptedTypes && item.sharesDecryptionKeys && !showSharedEncryptedNote && (
+              {companion && (
+                <CompanionAccessCallout
+                  companion={companion}
+                  companionActions={companionActions}
+                  primaryActions={actions}
+                />
+              )}
+
+              {rowHasEncryptedTypes && rowSharesKeys && !showSharedEncryptedNote && (
                 <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
@@ -316,7 +432,7 @@ function AccessRows({
                   </span>
                 </p>
               )}
-              {item.hasEncryptedTypes && !item.sharesDecryptionKeys && (
+              {rowHasEncryptedTypes && !rowSharesKeys && (
                 <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>Stored encrypted. This approval does not share private decryption keys.</span>
@@ -456,7 +572,7 @@ function SetupDetailGroup({
               >
                 <div className="min-w-0">
                   <p className="truncate text-xs text-text-primary">
-                    {item.isKnownModule ? item.name : 'Custom module'}
+                    {moduleTitleLabel(item)}
                   </p>
                   {!item.isKnownModule && (
                     <p className="truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
@@ -681,7 +797,7 @@ function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
               <div key={item.moduleUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
                 <div>
                   <p className="text-sm font-medium text-text-primary">
-                    {item.isKnownModule ? item.name : 'Custom module'}
+                    {moduleTitleLabel(item)}
                   </p>
                   <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
                     {item.moduleUri}

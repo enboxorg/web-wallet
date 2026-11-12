@@ -1,6 +1,10 @@
 import type { DwnPermissionScope } from '@enbox/agent';
 import type { ConnectPermissionRequest } from '@enbox/connect';
-import { getScopeLabel } from '@/lib/module-names';
+import {
+  getContextCompanionRootUri,
+  getScopeLabel,
+  isContextCompanionDefinition,
+} from '@/lib/module-names';
 
 export type DisplayScope = {
   interface: string;
@@ -132,6 +136,81 @@ export function formatList(items: string[]): string {
   if (items.length === 1) return items[0];
   if (items.length === 2) return `${items[0]} and ${items[1]}`;
   return `${items.slice(0, -1).join(', ')}, and ${items[items.length - 1]}`;
+}
+
+export type GroupedPermissionRequest = {
+  permission: ConnectPermissionRequest;
+  companion?: ConnectPermissionRequest;
+  isStandaloneCompanion: boolean;
+};
+
+/**
+ * Pair verified `@enbox/contexts` `<root>/contexts` companion requests onto
+ * their matching `<root>` domain request when both appear in the same ask.
+ * Unverified `/contexts` definitions are never paired.
+ */
+export function groupPermissionRequestsWithCompanions(
+  permissions: ConnectPermissionRequest[],
+): GroupedPermissionRequest[] {
+  const byModule = new Map<string, ConnectPermissionRequest>();
+  const companionRequests = new WeakSet<ConnectPermissionRequest>();
+  for (const permission of permissions) {
+    byModule.set(permission.moduleDefinition.module, permission);
+    if (isContextCompanionDefinition(permission.moduleDefinition)) {
+      companionRequests.add(permission);
+    }
+  }
+
+  const companionByRoot = new Map<string, ConnectPermissionRequest>();
+  const pairedCompanionUris = new Set<string>();
+
+  for (const permission of permissions) {
+    if (!companionRequests.has(permission)) {
+      continue;
+    }
+    const uri = permission.moduleDefinition.module;
+    const rootUri = getContextCompanionRootUri(uri);
+    const rootPermission = rootUri ? byModule.get(rootUri) : undefined;
+    if (
+      rootUri
+      && rootPermission
+      && !companionRequests.has(rootPermission)
+      && !companionByRoot.has(rootUri)
+    ) {
+      companionByRoot.set(rootUri, permission);
+      pairedCompanionUris.add(uri);
+    }
+  }
+
+  const groups: GroupedPermissionRequest[] = [];
+  for (const permission of permissions) {
+    const uri = permission.moduleDefinition.module;
+    if (pairedCompanionUris.has(uri)) {
+      continue;
+    }
+    const companion = companionByRoot.get(uri);
+    groups.push({
+      permission,
+      companion,
+      isStandaloneCompanion: companion === undefined && companionRequests.has(permission),
+    });
+  }
+
+  return groups;
+}
+
+export function formatModuleObjectPhrase(options: {
+  isContextCompanion: boolean;
+  isKnownModule: boolean;
+  moduleName?: string;
+}): string {
+  if (options.isContextCompanion) {
+    return 'shared context invitations and followed contexts';
+  }
+  if (options.isKnownModule && options.moduleName) {
+    return `your ${options.moduleName}`;
+  }
+  return 'a custom data type';
 }
 
 export function formatActionPhrase(actions: PermissionAction[]): string {

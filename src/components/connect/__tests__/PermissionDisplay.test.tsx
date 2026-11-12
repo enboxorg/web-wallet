@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 
+import { createCanonicalContextCompanionDefinition } from '@/lib/module-names';
 import { PermissionDisplay } from '../PermissionDisplay';
 
 const tasksModule = 'https://example.com/modules/tasks';
@@ -502,5 +503,123 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText(/already has 2 active sessions/i)).toBeInTheDocument();
     expect(screen.getByText(/separate session with 1 hour of access/i)).toBeInTheDocument();
     expect(screen.queryByText('Existing app access')).not.toBeInTheDocument();
+  });
+
+  it('pairs a verified @enbox/contexts companion inside its domain module card while keeping technical setup transparent', () => {
+    const notesContextsModule = `${notesModule}/contexts`;
+    const permissions: ConnectPermissionRequest[] = [
+      {
+        moduleDefinition: {
+          module: notesModule,
+          published: false,
+          types: {
+            note: {
+              schema: 'https://example.com/schemas/note',
+              dataFormats: ['application/json'],
+            },
+          },
+          structure: {
+            note: {},
+          },
+        },
+        permissionScopes: [
+          { interface: 'Records', method: 'Read', module: notesModule },
+        ],
+      },
+      {
+        moduleDefinition: createCanonicalContextCompanionDefinition(notesContextsModule),
+        permissionScopes: [
+          { interface: 'Records', method: 'Read', module: notesContextsModule },
+          { interface: 'Records', method: 'Write', module: notesContextsModule },
+          { interface: 'Messages', method: 'Read', module: notesContextsModule },
+        ],
+      },
+    ];
+
+    render(
+      <PermissionDisplay
+        permissions={permissions}
+        moduleSetupStatuses={{
+          [notesModule]         : 'install',
+          [notesContextsModule] : 'install',
+        }}
+      />,
+    );
+
+    expect(screen.getByText('View a custom data type')).toBeInTheDocument();
+    expect(screen.getByText('Shared contexts & invitations')).toBeInTheDocument();
+    expect(
+      screen.getByText('View and add or edit shared context invitations and your encrypted followed-context list.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Companion module:\s*example\.com\/modules\/notes\/contexts/i),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Companion grants: Messages.Read.')).toBeInTheDocument();
+    // Even though `notes` itself is unencrypted, the paired companion's `follow` type is encrypted + Read-granted.
+    expect(screen.getByText(/Approval permanently shares decryption keys/i)).toBeInTheDocument();
+    // Distinct companion badges are shown because companion scopes (Read + Write) differ from root scopes (Read).
+    expect(screen.getByText('Add or edit')).toBeInTheDocument();
+    // Both modules remain individually listed in setup & technical details.
+    expect(screen.getAllByText('Shared contexts companion').length).toBeGreaterThan(0);
+    expect(screen.getByText('2 items')).toBeInTheDocument();
+  });
+
+  it('renders a standalone verified companion clearly without promoting unverified URI slugs', () => {
+    const companionUri = 'https://evil.example/modules/verified-account/contexts';
+    const permissions: ConnectPermissionRequest[] = [{
+      moduleDefinition: createCanonicalContextCompanionDefinition(companionUri),
+      permissionScopes: [
+        { interface: 'Records', method: 'Read', module: companionUri },
+      ],
+    }];
+
+    render(<PermissionDisplay permissions={permissions} />);
+
+    expect(
+      screen.getByText('View shared context invitations and followed contexts'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText('Open invitation inbox and encrypted followed-context journal'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Companion module:\s*evil\.example\/modules\/verified-account\/contexts/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Verified Account/i)).not.toBeInTheDocument();
+  });
+
+  it('never pairs or promotes a spoofed /contexts definition', () => {
+    const spoofedContextsUri = `${notesModule}/contexts`;
+    const permissions: ConnectPermissionRequest[] = [
+      {
+        moduleDefinition: {
+          module: notesModule,
+          types: {},
+          structure: {},
+        },
+        permissionScopes: [
+          { interface: 'Records', method: 'Read', module: notesModule },
+        ],
+      },
+      {
+        moduleDefinition: {
+          module: spoofedContextsUri,
+          types: {
+            secret: { schema: 'https://evil.example/secret' },
+          },
+          structure: {
+            secret: {},
+          },
+        },
+        permissionScopes: [
+          { interface: 'Records', method: 'Read', module: spoofedContextsUri },
+        ],
+      },
+    ];
+
+    render(<PermissionDisplay permissions={permissions} />);
+
+    expect(screen.getAllByText('View a custom data type')).toHaveLength(2);
+    expect(screen.queryByText('Shared contexts & invitations')).not.toBeInTheDocument();
+    expect(screen.getByText(/Custom module:\s*example\.com\/modules\/notes\/contexts/i)).toBeInTheDocument();
   });
 });

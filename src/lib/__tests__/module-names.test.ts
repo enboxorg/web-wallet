@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  createCanonicalContextCompanionDefinition,
   getCanonicalModuleDefinition,
+  getContextCompanionRootUri,
   getModuleInfo,
   getModuleName,
   getScopeLabel,
+  isContextCompanionDefinition,
 } from '../module-names';
 
 describe('getModuleName', () => {
@@ -80,6 +83,21 @@ describe('getModuleName', () => {
       getModuleName('https://example.com/module?version=2'),
     ).toBe('Module?Version=2');
   });
+
+  it('derives "<Base> Contexts" for conventional companion module URIs', () => {
+    expect(
+      getModuleName('https://example.com/modules/notes/contexts'),
+    ).toBe('Notes Contexts');
+    expect(
+      getModuleName('https://identity.foundation/modules/profile/contexts'),
+    ).toBe('Profile Contexts');
+  });
+
+  it('falls back to "Contexts" when /contexts has no parent path segment', () => {
+    expect(
+      getModuleName('https://example.com/contexts'),
+    ).toBe('Contexts');
+  });
 });
 
 describe('getModuleInfo', () => {
@@ -120,5 +138,57 @@ describe('getScopeLabel', () => {
     expect(getScopeLabel({ interface: 'Records', method: 'Query' })).toBe('Records.Query');
     expect(getScopeLabel({ interface: 'Records', method: 'Subscribe' })).toBe('Records.Subscribe');
     expect(getScopeLabel({ interface: 'Modules', method: 'Configure' })).toBe('Modules.Configure');
+  });
+});
+
+describe('context companion helpers', () => {
+  const companionUri = 'https://example.com/modules/notes/contexts';
+
+  it('extracts the base module URI from conventional /contexts URIs', () => {
+    expect(getContextCompanionRootUri(companionUri)).toBe('https://example.com/modules/notes');
+    expect(getContextCompanionRootUri('https://example.com/contexts')).toBeUndefined();
+    expect(getContextCompanionRootUri(`${companionUri}?v=2`)).toBeUndefined();
+    expect(getContextCompanionRootUri(`${companionUri}#frag`)).toBeUndefined();
+    expect(getContextCompanionRootUri('https://example.com/modules/notes')).toBeUndefined();
+  });
+
+  it('accepts only the exact canonical @enbox/contexts companion definition', () => {
+    const canonical = createCanonicalContextCompanionDefinition(companionUri);
+    expect(isContextCompanionDefinition(canonical)).toBe(true);
+
+    expect(isContextCompanionDefinition({
+      ...canonical,
+      published: false,
+    })).toBe(false);
+
+    expect(isContextCompanionDefinition({
+      ...canonical,
+      types: {
+        ...canonical.types,
+        follow: {
+          schema      : 'https://enbox.id/schemas/context-follow',
+          dataFormats : ['application/json'],
+        },
+      },
+    })).toBe(false);
+
+    expect(isContextCompanionDefinition({
+      ...canonical,
+      structure: {
+        ...canonical.structure,
+        follow: {
+          ...canonical.structure.follow,
+          $actions: [{ who: 'anyone', can: ['read'] }],
+        },
+      },
+    })).toBe(false);
+
+    expect(isContextCompanionDefinition({
+      ...canonical,
+      types: {
+        ...canonical.types,
+        secret: { schema: 'https://evil.example/secret' },
+      },
+    })).toBe(false);
   });
 });
