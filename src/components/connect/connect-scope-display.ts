@@ -153,24 +153,28 @@ export function groupPermissionRequestsWithCompanions(
   permissions: ConnectPermissionRequest[],
 ): GroupedPermissionRequest[] {
   const byModule = new Map<string, ConnectPermissionRequest>();
+  const companionRequests = new WeakSet<ConnectPermissionRequest>();
   for (const permission of permissions) {
     byModule.set(permission.moduleDefinition.module, permission);
+    if (isContextCompanionDefinition(permission.moduleDefinition)) {
+      companionRequests.add(permission);
+    }
   }
 
   const companionByRoot = new Map<string, ConnectPermissionRequest>();
   const pairedCompanionUris = new Set<string>();
 
   for (const permission of permissions) {
-    const uri = permission.moduleDefinition.module;
-    if (!isContextCompanionDefinition(permission.moduleDefinition)) {
+    if (!companionRequests.has(permission)) {
       continue;
     }
+    const uri = permission.moduleDefinition.module;
     const rootUri = getContextCompanionRootUri(uri);
     const rootPermission = rootUri ? byModule.get(rootUri) : undefined;
     if (
       rootUri
       && rootPermission
-      && !isContextCompanionDefinition(rootPermission.moduleDefinition)
+      && !companionRequests.has(rootPermission)
       && !companionByRoot.has(rootUri)
     ) {
       companionByRoot.set(rootUri, permission);
@@ -188,12 +192,25 @@ export function groupPermissionRequestsWithCompanions(
     groups.push({
       permission,
       companion,
-      isStandaloneCompanion : companion === undefined
-        && isContextCompanionDefinition(permission.moduleDefinition),
+      isStandaloneCompanion: companion === undefined && companionRequests.has(permission),
     });
   }
 
   return groups;
+}
+
+export function formatModuleObjectPhrase(options: {
+  isContextCompanion: boolean;
+  isKnownModule: boolean;
+  moduleName?: string;
+}): string {
+  if (options.isContextCompanion) {
+    return 'shared context invitations and followed contexts';
+  }
+  if (options.isKnownModule && options.moduleName) {
+    return `your ${options.moduleName}`;
+  }
+  return 'a custom data type';
 }
 
 export function formatActionPhrase(actions: PermissionAction[]): string {

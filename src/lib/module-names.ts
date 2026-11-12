@@ -52,6 +52,11 @@ export function getCanonicalModuleDefinition(uri: string): DwnModuleDefinition |
   return CANONICAL_MODULE_DEFINITIONS.get(uri);
 }
 
+export function isCanonicalModuleDefinition(definition: DwnModuleDefinition): boolean {
+  const canonical = CANONICAL_MODULE_DEFINITIONS.get(definition.module);
+  return canonical !== undefined && authoredModuleDefinitionsEqual(canonical, definition);
+}
+
 /** Construct the exact `@enbox/contexts` companion definition for `moduleUri`. */
 export function createCanonicalContextCompanionDefinition(moduleUri: string): DwnModuleDefinition {
   return {

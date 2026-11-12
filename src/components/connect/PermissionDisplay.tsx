@@ -21,23 +21,21 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ConnectPermissionRequest } from '@enbox/connect';
-import {
-  moduleDefinitionsMatch,
-  type ModuleSetupStatus,
-} from '@/features/connect/module-install';
+import type { ModuleSetupStatus } from '@/features/connect/module-install';
 import {
   formatConnectSessionDuration,
   getConnectSessionDurationOptions,
   resolveConnectSessionDurationSeconds,
 } from '@/features/connect/connect-session-duration';
 import {
-  getCanonicalModuleDefinition,
   getModuleInfo,
+  isCanonicalModuleDefinition,
   isContextCompanionDefinition,
 } from '@/lib/module-names';
 import { Select } from '@/components/ui/Select';
 import {
   formatActionPhrase,
+  formatModuleObjectPhrase,
   getDisplayScopes,
   getHighestPermissionRisk,
   getPermissionActions,
@@ -45,7 +43,7 @@ import {
   isInternalConnectScope,
   mergePermissionRequestsByModule,
 } from './connect-scope-display';
-import type { DisplayScope, PermissionRisk } from './connect-scope-display';
+import type { DisplayScope, PermissionAction, PermissionRisk } from './connect-scope-display';
 
 interface PermissionDisplayProps {
   /** The permission requests from the dapp. */
@@ -190,25 +188,23 @@ function getModuleAccess(
 ): ModuleAccess[] {
   return mergePermissionRequestsByModule(permissions).map((permission) => {
     const moduleUri = permission.moduleDefinition.module;
-    const info = getModuleInfo(moduleUri);
+    const isContextCompanion = isContextCompanionDefinition(permission.moduleDefinition);
+    const info = isContextCompanion ? undefined : getModuleInfo(moduleUri);
     const paths = collectStructurePaths(
       permission.moduleDefinition.structure as Record<string, unknown> | undefined,
     );
     const hasEncryptedTypes = Object.values(permission.moduleDefinition.types ?? {})
       .some(isEncryptedType);
-    const canonicalDefinition = getCanonicalModuleDefinition(moduleUri);
-    const isCanonicalModule = canonicalDefinition !== undefined
-      && moduleDefinitionsMatch(canonicalDefinition, permission.moduleDefinition);
-    const isContextCompanion = isContextCompanionDefinition(permission.moduleDefinition);
+    const isKnownModule = !isContextCompanion && isCanonicalModuleDefinition(permission.moduleDefinition);
 
     return {
       permission,
       moduleUri,
-      name: isContextCompanion ? 'Shared contexts companion' : info.name,
+      name: isContextCompanion ? 'Shared contexts companion' : info!.name,
       description: isContextCompanion
         ? 'Open invitation inbox and encrypted followed-context journal'
-        : info.description,
-      isKnownModule: isCanonicalModule,
+        : info!.description,
+      isKnownModule,
       isContextCompanion,
       displayScopes: getDisplayScopes(permission.permissionScopes),
       paths,
@@ -245,11 +241,11 @@ function rowRiskClasses(risk: PermissionRisk): string {
 
 function formatAccessSentence(item: ModuleAccess): string {
   const actions = getPermissionActions(item.displayScopes);
-  const objectLabel = item.isContextCompanion
-    ? 'shared context invitations and followed contexts'
-    : item.isKnownModule
-      ? `your ${item.name}`
-      : 'a custom data type';
+  const objectLabel = formatModuleObjectPhrase({
+    isContextCompanion : item.isContextCompanion,
+    isKnownModule      : item.isKnownModule,
+    moduleName         : item.name,
+  });
   return `${capitalize(formatActionPhrase(actions))} ${objectLabel}`;
 }
 
@@ -280,6 +276,86 @@ function buildAccessRowGroups(access: ModuleAccess[]): AccessRowGroup[] {
   }));
 }
 
+function groupSharesDecryptionKeys({ primary, companion }: AccessRowGroup): boolean {
+  return (primary.hasEncryptedTypes && primary.sharesDecryptionKeys)
+    || Boolean(companion?.hasEncryptedTypes && companion.sharesDecryptionKeys);
+}
+
+function splitConnectScopes(permissionScopes: ConnectPermissionRequest['permissionScopes']): {
+  hasPrimaryScopes: boolean;
+  supportScopes: ConnectPermissionRequest['permissionScopes'];
+} {
+  return {
+    supportScopes    : permissionScopes.filter(isInternalConnectScope),
+    hasPrimaryScopes : permissionScopes.some((scope) => !isInternalConnectScope(scope)),
+  };
+}
+
+function ActionBadges({
+  actions,
+  compact = false,
+}: {
+  actions: PermissionAction[];
+  compact?: boolean;
+}) {
+  const pillSizing = compact ? 'px-2 py-0.5 text-[11px]' : 'px-2 py-1 text-xs';
+  return (
+    <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
+      {actions.map((action) => (
+        <span
+          key={action.key}
+          className={`inline-flex items-center rounded-full border ${pillSizing} font-medium ${actionBadgeClasses(action.risk)}`}
+          title={action.label}
+        >
+          {action.label}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function CompanionAccessCallout({
+  companion,
+  companionActions,
+  primaryActions,
+}: {
+  companion: ModuleAccess;
+  companionActions: PermissionAction[];
+  primaryActions: PermissionAction[];
+}) {
+  const { hasPrimaryScopes, supportScopes } = splitConnectScopes(companion.permission.permissionScopes);
+  const actionsDiffer = companionActions.length > 0
+    && companionActions.map((action) => action.key).join(',') !== primaryActions.map((action) => action.key).join(',');
+
+  return (
+    <div className="mt-3 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2.5">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-2">
+          <Share2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-text-primary">
+              Shared contexts &amp; invitations
+            </p>
+            <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
+              {capitalize(formatActionPhrase(companionActions))} shared context invitations and your encrypted followed-context list.
+            </p>
+            <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={companion.moduleUri}>
+              Companion module: {moduleUriLabel(companion.moduleUri)}
+            </p>
+          </div>
+        </div>
+
+        {actionsDiffer && <ActionBadges actions={companionActions} compact />}
+      </div>
+      {hasPrimaryScopes && supportScopes.length > 0 && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-text-ghost">
+          Companion grants: {supportScopes.map((scope) => `${scope.interface}.${scope.method}`).join(', ')}.
+        </p>
+      )}
+    </div>
+  );
+}
+
 function AccessRows({
   access,
   requesterLabel = 'this app',
@@ -289,11 +365,7 @@ function AccessRows({
 }) {
   const requesterSentenceLabel = hostLabel(requesterLabel);
   const rowGroups = buildAccessRowGroups(access);
-  const encryptedRows = rowGroups.filter(({ primary, companion }) =>
-    (primary.hasEncryptedTypes && primary.sharesDecryptionKeys)
-    || Boolean(companion?.hasEncryptedTypes && companion.sharesDecryptionKeys)
-  );
-  const showSharedEncryptedNote = encryptedRows.length > 1;
+  const showSharedEncryptedNote = rowGroups.filter(groupSharesDecryptionKeys).length > 1;
 
   return (
     <section className="space-y-2">
@@ -305,25 +377,14 @@ function AccessRows({
         {rowGroups.length === 0 && (
           <p className="px-4 py-3 text-sm text-text-secondary">No record or message access is requested.</p>
         )}
-        {rowGroups.map(({ primary: item, companion }, index) => {
+        {rowGroups.map((group, index) => {
+          const { primary: item, companion } = group;
           const actions = getPermissionActions(item.displayScopes);
           const companionActions = companion ? getPermissionActions(companion.displayScopes) : [];
-          const companionActionsDiffer = companion !== undefined
-            && companionActions.map((action) => action.key).join(',') !== actions.map((action) => action.key).join(',');
           const risk = getHighestPermissionRisk([...actions, ...companionActions]);
-          const supportScopes = item.permission.permissionScopes.filter(isInternalConnectScope);
-          const hasPrimaryScopes = item.permission.permissionScopes.some(
-            (scope) => !isInternalConnectScope(scope),
-          );
-          const companionSupportScopes = companion
-            ? companion.permission.permissionScopes.filter(isInternalConnectScope)
-            : [];
-          const companionHasPrimaryScopes = companion
-            ? companion.permission.permissionScopes.some((scope) => !isInternalConnectScope(scope))
-            : false;
+          const { hasPrimaryScopes, supportScopes } = splitConnectScopes(item.permission.permissionScopes);
           const rowHasEncryptedTypes = item.hasEncryptedTypes || Boolean(companion?.hasEncryptedTypes);
-          const rowSharesDecryptionKeys = (item.hasEncryptedTypes && item.sharesDecryptionKeys)
-            || Boolean(companion?.hasEncryptedTypes && companion.sharesDecryptionKeys);
+          const rowSharesKeys = groupSharesDecryptionKeys(group);
 
           return (
             <div
@@ -352,62 +413,18 @@ function AccessRows({
                   )}
                 </div>
 
-                {actions.length > 1 && (
-                  <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
-                    {actions.map((action) => (
-                      <span
-                        key={action.key}
-                        className={`inline-flex items-center rounded-full border px-2 py-1 text-xs font-medium ${actionBadgeClasses(action.risk)}`}
-                        title={action.label}
-                      >
-                        {action.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {actions.length > 1 && <ActionBadges actions={actions} />}
               </div>
 
               {companion && (
-                <div className="mt-3 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2.5">
-                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="flex min-w-0 items-start gap-2">
-                      <Share2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-                      <div className="min-w-0">
-                        <p className="text-xs font-medium text-text-primary">
-                          Shared contexts &amp; invitations
-                        </p>
-                        <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
-                          {capitalize(formatActionPhrase(companionActions))} shared context invitations and your encrypted followed-context list.
-                        </p>
-                        <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={companion.moduleUri}>
-                          Companion module: {moduleUriLabel(companion.moduleUri)}
-                        </p>
-                      </div>
-                    </div>
-
-                    {companionActionsDiffer && companionActions.length > 0 && (
-                      <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
-                        {companionActions.map((action) => (
-                          <span
-                            key={action.key}
-                            className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${actionBadgeClasses(action.risk)}`}
-                            title={action.label}
-                          >
-                            {action.label}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {companionHasPrimaryScopes && companionSupportScopes.length > 0 && (
-                    <p className="mt-1.5 text-[11px] leading-relaxed text-text-ghost">
-                      Companion grants: {companionSupportScopes.map((scope) => `${scope.interface}.${scope.method}`).join(', ')}.
-                    </p>
-                  )}
-                </div>
+                <CompanionAccessCallout
+                  companion={companion}
+                  companionActions={companionActions}
+                  primaryActions={actions}
+                />
               )}
 
-              {rowHasEncryptedTypes && rowSharesDecryptionKeys && !showSharedEncryptedNote && (
+              {rowHasEncryptedTypes && rowSharesKeys && !showSharedEncryptedNote && (
                 <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>
@@ -415,7 +432,7 @@ function AccessRows({
                   </span>
                 </p>
               )}
-              {rowHasEncryptedTypes && !rowSharesDecryptionKeys && (
+              {rowHasEncryptedTypes && !rowSharesKeys && (
                 <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
                   <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                   <span>Stored encrypted. This approval does not share private decryption keys.</span>

@@ -1,9 +1,9 @@
 import type { ConnectPermissionRequest } from '@enbox/connect';
-import { getCanonicalModuleDefinition, getModuleInfo } from '@/lib/module-names';
-import { moduleDefinitionsMatch } from '@/features/connect/module-install';
+import { getModuleInfo, isCanonicalModuleDefinition } from '@/lib/module-names';
 import {
   formatActionPhrase,
   formatList,
+  formatModuleObjectPhrase,
   getDisplayScopes,
   getPermissionActions,
   groupPermissionRequestsWithCompanions,
@@ -19,22 +19,14 @@ function getPermissionActionPhrase(
   );
 }
 
-function isCanonicalModule(permission: ConnectPermissionRequest): boolean {
-  const definition = permission.moduleDefinition;
-  const canonical = getCanonicalModuleDefinition(definition.module);
-  return canonical !== undefined && moduleDefinitionsMatch(canonical, definition);
-}
-
 function getPermissionObjectPhrase(group: GroupedPermissionRequest): string {
-  if (group.isStandaloneCompanion) {
-    return 'shared context invitations and followed contexts';
-  }
-  const moduleUri = group.permission.moduleDefinition.module;
-  if (!isCanonicalModule(group.permission)) {
-    return 'a custom data type';
-  }
-
-  return `your ${getModuleInfo(moduleUri).name}`;
+  const definition = group.permission.moduleDefinition;
+  const isKnownModule = !group.isStandaloneCompanion && isCanonicalModuleDefinition(definition);
+  return formatModuleObjectPhrase({
+    isContextCompanion : group.isStandaloneCompanion,
+    isKnownModule,
+    moduleName         : isKnownModule ? getModuleInfo(definition.module).name : undefined,
+  });
 }
 
 function formatGroupAskPhrase(group: GroupedPermissionRequest): string {
@@ -55,7 +47,7 @@ function formatGroupAskPhrase(group: GroupedPermissionRequest): string {
 function isUnnamedCustomGroup(group: GroupedPermissionRequest): boolean {
   return !group.isStandaloneCompanion
     && !group.companion
-    && !isCanonicalModule(group.permission);
+    && !isCanonicalModuleDefinition(group.permission.moduleDefinition);
 }
 
 function getVisibleGroupObjectPhrases(
@@ -77,7 +69,7 @@ function getVisibleGroupObjectPhrases(
     if (group.isStandaloneCompanion) {
       return 'Shared contexts';
     }
-    const baseName = isCanonicalModule(group.permission)
+    const baseName = isCanonicalModuleDefinition(group.permission.moduleDefinition)
       ? getModuleInfo(group.permission.moduleDefinition.module).name
       : 'a custom data type';
     return group.companion ? `${baseName} (with shared contexts)` : baseName;
