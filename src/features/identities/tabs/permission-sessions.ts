@@ -250,10 +250,10 @@ function applicationGroupingKey(bundle: PermissionApprovalBundle): {
     return { key: `${identityTrust}:origin:${origin}`, origin, identityTrust };
   }
 
-  // Without an app identifier, renewals for one delegate can still be shown
-  // as one stable session. Different delegates remain isolated because a
-  // self-reported display name alone is not an application identity.
-  return { key: `${identityTrust}:legacy:${bundle.grantee}`, identityTrust };
+  // Direct grants and sessions without an origin or applicationId group by
+  // grantee so renewals for one delegate stay together while distinct
+  // delegates remain isolated regardless of self-reported display names.
+  return { key: `${identityTrust}:grantee:${bundle.grantee}`, identityTrust };
 }
 
 function buildApplicationGroups(

@@ -335,7 +335,7 @@ describe('permission session grouping', () => {
     ]));
   });
 
-  it('isolates legacy sessions that only share a self-reported app name', () => {
+  it('isolates grantee-scoped sessions that only share a self-reported app name', () => {
     const sections = buildPermissionSections([
       grant({
         id             : 'grant-a',
@@ -357,6 +357,10 @@ describe('permission session grouping', () => {
     ], new Date('2026-06-23T12:00:00.000Z'));
 
     expect(sections.applications).toHaveLength(2);
+    expect(sections.applications.map((application) => application.id)).toEqual([
+      'reported:grantee:did:dht:delegate',
+      'reported:grantee:did:dht:other-delegate',
+    ]);
     expect(sections.applications.every((application) => application.name === 'Example App')).toBe(true);
     expect(sections.applications.map((application) => application.sessions)).toEqual([
       [expect.objectContaining({ id: 'did:dht:delegate' })],

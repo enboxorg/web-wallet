@@ -30,16 +30,6 @@ const MODULE_REGISTRY: Record<string, ModuleInfo> = {
     name        : 'Preferences',
     description : 'Theme, locale, privacy, and notification preferences',
   },
-
-  // ─── Enbox modules ───────────────────────────────────────────
-  'https://enbox.id/protocols/cashu-wallet': {
-    name        : 'Cashu Wallet',
-    description : 'Private ecash wallet data including proofs, keysets, transactions, and mint settings',
-  },
-  'https://enbox.id/protocols/cashu-transfer': {
-    name        : 'Cashu Transfers',
-    description : 'Send and receive ecash transfers between identities via P2PK',
-  },
 };
 
 const CANONICAL_MODULE_DEFINITIONS = new Map<string, DwnModuleDefinition>([

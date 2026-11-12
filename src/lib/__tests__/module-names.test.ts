@@ -25,16 +25,10 @@ describe('getModuleName', () => {
     ).toBe('Connect');
   });
 
-  it('returns "Cashu Wallet" for the cashu-wallet module URI', () => {
+  it('returns "Preferences" for the preferences module URI', () => {
     expect(
-      getModuleName('https://enbox.id/protocols/cashu-wallet'),
-    ).toBe('Cashu Wallet');
-  });
-
-  it('returns "Cashu Transfers" for the cashu-transfer module URI', () => {
-    expect(
-      getModuleName('https://enbox.id/protocols/cashu-transfer'),
-    ).toBe('Cashu Transfers');
+      getModuleName('https://identity.foundation/modules/preferences'),
+    ).toBe('Preferences');
   });
 
   // ── Unknown URIs fall back to title-cased last path segment ───────
@@ -102,9 +96,9 @@ describe('getModuleName', () => {
 
 describe('getModuleInfo', () => {
   it('returns full info for a known module', () => {
-    const info = getModuleInfo('https://enbox.id/protocols/cashu-wallet');
-    expect(info.name).toBe('Cashu Wallet');
-    expect(info.description).toContain('ecash');
+    const info = getModuleInfo('https://identity.foundation/modules/profile');
+    expect(info.name).toBe('Profile');
+    expect(info.description).toContain('profile');
   });
 
   it('returns a sensible fallback for an unknown module', () => {
@@ -122,8 +116,8 @@ describe('getCanonicalModuleDefinition', () => {
     }
   });
 
-  it('does not treat display-only Cashu metadata as a pinned definition', () => {
-    expect(getCanonicalModuleDefinition('https://enbox.id/protocols/cashu-wallet')).toBeUndefined();
+  it('returns undefined for unpinned custom module URIs', () => {
+    expect(getCanonicalModuleDefinition('https://example.com/modules/notes')).toBeUndefined();
   });
 });
 

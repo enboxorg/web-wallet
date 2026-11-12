@@ -532,7 +532,7 @@ describe('connect-kernel', () => {
       expect(request).toEqual(original);
       expect(mocks.executeConnectAuthentication).not.toHaveBeenCalled();
     });
-    it('passes the transport origin separately for legacy approval and seals the original request', async () => {
+    it('passes the transport origin separately for permission-only approval and seals the original request', async () => {
       const agent = { id: 'agent-1' } as any;
       const request = connectRequest({ reply: { mode: 'post_message' } });
       const originalRequest = structuredClone(request);

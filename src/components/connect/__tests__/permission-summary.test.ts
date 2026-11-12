@@ -95,14 +95,18 @@ describe('getConnectPermissionAskSummary', () => {
     expect(getConnectPermissionAskSummary(permissions)).toBe('wants access to 2 custom data types and 1 more.');
   });
 
-  it('does not trust a known display name without a pinned definition', () => {
-    const permissions = [permissionRequest('https://enbox.id/protocols/cashu-wallet', [{
+  it('does not trust an unverified or custom module definition with a friendly display name', () => {
+    expect(getConnectPermissionAskSummary([permissionRequest('https://example.com/modules/notes', [{
       interface : 'Records',
       method    : 'Read',
-      module  : 'https://enbox.id/protocols/cashu-wallet',
-    }])];
+      module    : 'https://example.com/modules/notes',
+    }])])).toBe('wants to view a custom data type.');
 
-    expect(getConnectPermissionAskSummary(permissions)).toBe('wants to view a custom data type.');
+    expect(getConnectPermissionAskSummary([permissionRequest(ProfileDefinition.module, [{
+      interface : 'Records',
+      method    : 'Read',
+      module    : ProfileDefinition.module,
+    }])])).toBe('wants to view a custom data type.');
   });
 
   it('merges duplicate module entries before writing the headline ask', () => {
