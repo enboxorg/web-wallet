@@ -121,7 +121,7 @@ function ModuleRow({ row }: { row: ModuleRowModel }) {
                 <Badge
                   key={type.name}
                   variant="outline"
-                  className="font-mono font-normal"
+                  className="font-mono"
                   icon={type.encrypted ? <LockKeyhole aria-label="Encrypted" /> : undefined}
                   title={type.encrypted ? `${type.name} records are always encrypted` : undefined}
                 >
@@ -137,7 +137,7 @@ function ModuleRow({ row }: { row: ModuleRowModel }) {
             <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">Record paths</p>
             <div className="flex flex-wrap gap-1.5">
               {paths.map((path) => (
-                <Badge key={path} variant="outline" className="font-mono font-normal">{path}</Badge>
+                <Badge key={path} variant="outline" className="font-mono">{path}</Badge>
               ))}
             </div>
           </div>
@@ -188,7 +188,7 @@ export default function ModulesTab({ did }: ModulesTabProps) {
   const { core, apps } = useMemo(() => {
     const rows = sortRows((modules ?? []).map((module) => ({
       module,
-      display: describeModule(module.uri),
+      display: describeModule(module.uri, module.definition),
     })));
     return {
       core : rows.filter((row) => row.display.isCore),

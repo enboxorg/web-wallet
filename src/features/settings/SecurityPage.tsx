@@ -5,9 +5,9 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { AUTO_LOCK_OPTIONS, AUTO_LOCK_STORAGE_KEY, getAutoLockTimeout } from '@/lib/constants';
-import { cn } from '@/lib/utils';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { localStorageSetEffect } from '@/lib/browser-effects';
 
@@ -54,32 +54,13 @@ export default function SecurityPage() {
             </p>
           </div>
         </div>
-        <div
-          role="radiogroup"
-          aria-label="Auto-lock timeout"
-          className="mt-4 flex flex-wrap gap-1 rounded-xl bg-surface-2 p-1"
-        >
-          {AUTO_LOCK_OPTIONS.map((opt) => {
-            const selected = autoLockMs === opt.value;
-            return (
-              <button
-                key={opt.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => handleAutoLockChange(String(opt.value))}
-                className={cn(
-                  'min-h-9 flex-1 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-colors pointer-coarse:min-h-11',
-                  selected
-                    ? 'bg-surface-0 text-text-primary shadow-sm ring-1 ring-border-default'
-                    : 'text-text-tertiary hover:text-text-primary',
-                )}
-              >
-                {opt.label}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedControl
+          label="Auto-lock timeout"
+          className="mt-4"
+          options={AUTO_LOCK_OPTIONS}
+          value={autoLockMs}
+          onChange={(value) => handleAutoLockChange(String(value))}
+        />
       </Card>
 
       {/* Lock wallet now */}

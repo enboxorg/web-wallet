@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   ChevronDown,
   Monitor,
@@ -13,9 +13,10 @@ import {
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { DwnPermissionGrant } from '@enbox/agent';
+import type { DwnModuleDefinition, DwnPermissionGrant } from '@enbox/agent';
 
 import { usePermissions } from '@/enbox/hooks/use-permissions';
+import { useModules } from '@/enbox/hooks/use-modules';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { useAuthStore } from '@/stores/auth-store';
 import { Dialog } from '@/components/ui/Dialog';
@@ -32,7 +33,7 @@ import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
 import { PermissionActionChips } from '@/components/connect/PermissionActionChips';
 import { formatList } from '@/components/connect/connect-scope-display';
 import { truncateDid, cn } from '@/lib/utils';
-import { describeModule, getModuleName } from '@/lib/module-names';
+import { describeModule, getModuleName, type ModuleDisplay } from '@/lib/module-names';
 import {
   buildPermissionSections,
   type PermissionApplicationGroup,
@@ -102,11 +103,22 @@ function accessRowName(row: GrantAccessRow): string {
   return row.module ? getModuleName(row.module) : 'All data';
 }
 
-function accessRowDetail(row: GrantAccessRow): string | undefined {
+/**
+ * Installed module definitions by URI. Grants carry no definitions, and a
+ * module is only presented as a shared-contexts companion when its installed
+ * definition proves it (see describeModule).
+ */
+const ModuleDefinitionsContext = createContext<ReadonlyMap<string, DwnModuleDefinition>>(new Map());
+
+function useModuleDisplay(uri: string | undefined): ModuleDisplay | undefined {
+  const definitions = useContext(ModuleDefinitionsContext);
+  return uri ? describeModule(uri, definitions.get(uri)) : undefined;
+}
+
+function accessRowDetail(row: GrantAccessRow, display: ModuleDisplay | undefined): string | undefined {
   if (row.contextId) return 'One shared context only';
   if (row.modulePath) return `Only ${row.modulePath}`;
-  if (!row.module) return 'Not limited to one module';
-  const display = describeModule(row.module);
+  if (!display) return 'Not limited to one module';
   return display.isCore
     ? display.description
     : [display.host, display.version].filter(Boolean).join(' · ') || undefined;
@@ -126,20 +138,20 @@ function DeviceIcon({ summary, className }: { summary: SessionEnvironmentSummary
 
 function AccessRowItem({
   row,
-  inactive,
   onRevoke,
   revokeLabel,
 }: {
   row: GrantAccessRow;
-  inactive?: boolean;
   onRevoke?: () => void;
   revokeLabel?: string;
 }) {
   const nameId = useId();
   const name = accessRowName(row);
-  const detail = accessRowDetail(row);
-  const display = row.module ? describeModule(row.module) : undefined;
+  const display = useModuleDisplay(row.module);
+  const detail = accessRowDetail(row, display);
   const hasRecordAccess = row.actions.some((action) => action.kind === 'record');
+  // Expired access is shown for context but can no longer be revoked.
+  const inactive = !row.grants.some((grant) => isGrantActive(grant));
 
   return (
     <li aria-labelledby={nameId} className={cn('flex items-start gap-3 px-3 py-3', inactive && 'opacity-60')}>
@@ -166,7 +178,7 @@ function AccessRowItem({
           className="mt-2 sm:mt-0 sm:max-w-[60%] sm:justify-end"
         />
       </div>
-      {onRevoke && (
+      {onRevoke && !inactive && (
         <button
           type="button"
           onClick={onRevoke}
@@ -183,13 +195,11 @@ function AccessRowItem({
 
 function AccessList({
   rows,
-  inactive,
   onRevokeRow,
   revokeLabel,
   label,
 }: {
   rows: GrantAccessRow[];
-  inactive?: boolean;
   onRevokeRow?: (row: GrantAccessRow) => void;
   revokeLabel?: (row: GrantAccessRow) => string;
   label: string;
@@ -207,7 +217,6 @@ function AccessList({
         <AccessRowItem
           key={row.key}
           row={row}
-          inactive={inactive}
           onRevoke={onRevokeRow ? () => onRevokeRow(row) : undefined}
           revokeLabel={revokeLabel?.(row)}
         />
@@ -276,7 +285,7 @@ function SessionDetails({ sessionGroup, summary }: {
                     <li key={row.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
                       <span className="text-xs text-text-primary" title={row.module}>{accessRowName(row)}</span>
                       {(row.modulePath || row.contextId) && (
-                        <span className="text-[11px] text-text-ghost">{accessRowDetail(row)}</span>
+                        <span className="text-[11px] text-text-ghost">{accessRowDetail(row, undefined)}</span>
                       )}
                       <PermissionActionChips actions={row.actions} />
                     </li>
@@ -538,7 +547,6 @@ function ApplicationCard({
         </p>
         <AccessList
           rows={accessRows}
-          inactive={!isActive}
           label={`${application.name} data access`}
           onRevokeRow={isActive ? revokeRow : undefined}
           revokeLabel={(row) => `Revoke ${application.name} access to ${accessRowName(row)}`}
@@ -645,6 +653,11 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
   const agent = useAuthStore((state) => state.agent);
   const queryClient = useQueryClient();
   const { data: permissions, isLoading, isError, error } = usePermissions(did);
+  const { data: modules } = useModules(did);
+  const definitions = useMemo(
+    () => new Map((modules ?? []).map((module) => [module.uri, module.definition as DwnModuleDefinition])),
+    [modules],
+  );
   const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [renewTarget, setRenewTarget] = useState<RenewTarget | null>(null);
@@ -768,94 +781,96 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
   );
 
   return (
-    <div className="space-y-8">
-      {isEmpty && (
-        <EmptyState
-          icon={<Shield />}
-          title="No connected apps"
-          description="When you approve an app, it appears here with exactly what it can access. You can revoke access at any time."
-        />
-      )}
-
-      {connectedApps.length > 0 && (
-        <section className="space-y-3" aria-labelledby={connectedHeadingId}>
-          <SectionHeader
-            id={connectedHeadingId}
-            title="Connected apps"
-            count={connectedApps.length}
-            description="Apps that can access this profile right now."
+    <ModuleDefinitionsContext.Provider value={definitions}>
+      <div className="space-y-8">
+        {isEmpty && (
+          <EmptyState
+            icon={<Shield />}
+            title="No connected apps"
+            description="When you approve an app, it appears here with exactly what it can access. You can revoke access at any time."
           />
-          {connectedApps.map(renderApplication)}
-        </section>
-      )}
+        )}
 
-      {pastApps.length > 0 && (
-        <section className="space-y-3" aria-labelledby={pastHeadingId}>
-          <SectionHeader
-            id={pastHeadingId}
-            title="Past connections"
-            count={pastApps.length}
-            description="Their access has expired. Renew a device to restore it."
-          />
-          {pastApps.map(renderApplication)}
-        </section>
-      )}
+        {connectedApps.length > 0 && (
+          <section className="space-y-3" aria-labelledby={connectedHeadingId}>
+            <SectionHeader
+              id={connectedHeadingId}
+              title="Connected apps"
+              count={connectedApps.length}
+              description="Apps that can access this profile right now."
+            />
+            {connectedApps.map(renderApplication)}
+          </section>
+        )}
 
-      {standaloneGroups.length > 0 && (
-        <section className="space-y-3" aria-labelledby={otherHeadingId}>
-          <SectionHeader
-            id={otherHeadingId}
-            title="Other permissions"
-            count={standaloneGrantCount}
-            description="Grants created directly rather than through an app connection."
-          />
-          {standaloneGroups.map((group) => (
-            <StandaloneGroupCard key={group.grantee} group={group} onRevoke={setRevokeTarget} />
-          ))}
-        </section>
-      )}
+        {pastApps.length > 0 && (
+          <section className="space-y-3" aria-labelledby={pastHeadingId}>
+            <SectionHeader
+              id={pastHeadingId}
+              title="Past connections"
+              count={pastApps.length}
+              description="Their access has expired. Renew a device to restore it."
+            />
+            {pastApps.map(renderApplication)}
+          </section>
+        )}
 
-      <Dialog
-        open={!!renewTarget}
-        onClose={() => !renewing && setRenewTarget(null)}
-        title="Renew access"
-      >
-        <div className="space-y-5">
-          <p className="text-sm leading-relaxed text-text-secondary">
-            Give <strong className="text-text-primary">{shownRenew?.applicationName}</strong> a
-            fresh {formatConnectSessionDuration(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS)} session
-            on this device with the same permissions it had before? The app picks up its new
-            access on its next sync.
-          </p>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setRenewTarget(null)} disabled={renewing}>
-              Cancel
-            </Button>
-            <Button onClick={handleRenew} loading={renewing}>
-              <RefreshCw className="size-4" />
-              Renew access
-            </Button>
+        {standaloneGroups.length > 0 && (
+          <section className="space-y-3" aria-labelledby={otherHeadingId}>
+            <SectionHeader
+              id={otherHeadingId}
+              title="Other permissions"
+              count={standaloneGrantCount}
+              description="Grants created directly rather than through an app connection."
+            />
+            {standaloneGroups.map((group) => (
+              <StandaloneGroupCard key={group.grantee} group={group} onRevoke={setRevokeTarget} />
+            ))}
+          </section>
+        )}
+
+        <Dialog
+          open={!!renewTarget}
+          onClose={() => !renewing && setRenewTarget(null)}
+          title="Renew access"
+        >
+          <div className="space-y-5">
+            <p className="text-sm leading-relaxed text-text-secondary">
+              Give <strong className="text-text-primary">{shownRenew?.applicationName}</strong> a
+              fresh {formatConnectSessionDuration(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS)} session
+              on this device with the same permissions it had before? The app picks up its new
+              access on its next sync.
+            </p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="ghost" onClick={() => setRenewTarget(null)} disabled={renewing}>
+                Cancel
+              </Button>
+              <Button onClick={handleRenew} loading={renewing}>
+                <RefreshCw className="size-4" />
+                Renew access
+              </Button>
+            </div>
           </div>
-        </div>
-      </Dialog>
+        </Dialog>
 
-      <Dialog
-        open={!!revokeTarget}
-        onClose={() => !revoking && setRevokeTarget(null)}
-        title={shownRevoke?.title}
-      >
-        <div className="space-y-5">
-          <p className="text-sm leading-relaxed text-text-secondary">{shownRevoke?.body}</p>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-            <Button variant="ghost" onClick={() => setRevokeTarget(null)} disabled={revoking}>
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={handleRevoke} loading={revoking}>
-              {shownRevoke?.confirm}
-            </Button>
+        <Dialog
+          open={!!revokeTarget}
+          onClose={() => !revoking && setRevokeTarget(null)}
+          title={shownRevoke?.title}
+        >
+          <div className="space-y-5">
+            <p className="text-sm leading-relaxed text-text-secondary">{shownRevoke?.body}</p>
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <Button variant="ghost" onClick={() => setRevokeTarget(null)} disabled={revoking}>
+                Cancel
+              </Button>
+              <Button variant="danger" onClick={handleRevoke} loading={revoking}>
+                {shownRevoke?.confirm}
+              </Button>
+            </div>
           </div>
-        </div>
-      </Dialog>
-    </div>
+        </Dialog>
+      </div>
+    </ModuleDefinitionsContext.Provider>
   );
 }

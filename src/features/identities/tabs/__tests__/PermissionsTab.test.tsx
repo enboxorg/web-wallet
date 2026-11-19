@@ -5,10 +5,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { renderWithProviders } from '@/test-utils';
+import { createCanonicalContextCompanionDefinition } from '@/lib/module-names';
 import PermissionsTab from '../PermissionsTab';
 
 const mocks = vi.hoisted(() => ({
   permissions: [] as DwnPermissionGrant[],
+  modules: [] as Array<{ uri: string; published: boolean; definition: unknown }>,
   createRevocation: vi.fn(),
   renewExpiredSession: vi.fn(),
   toastSuccess: vi.fn(),
@@ -22,6 +24,10 @@ vi.mock('@/enbox/hooks/use-permissions', () => ({
     isError   : false,
     error     : null,
   }),
+}));
+
+vi.mock('@/enbox/hooks/use-modules', () => ({
+  useModules: () => ({ data: mocks.modules }),
 }));
 
 vi.mock('@/stores/auth-store', () => ({
@@ -105,6 +111,7 @@ const expiredSession: TestConnectSession = {
 describe('PermissionsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.modules = [];
     mocks.permissions = [
       permissionGrant({ id: 'grant-1', session: activeSession }),
       permissionGrant({ id: 'grant-2', session: activeSession, method: 'Write' }),
@@ -190,6 +197,50 @@ describe('PermissionsTab', () => {
     expect(chipLabels(rows[0])).toEqual(['View', 'Add or edit', 'Delete', 'Sync & setup']);
     expect(chipLabels(rows[1])).toEqual(['View']);
     expect(within(rows[0]).getByText('enbox.id · v1')).toBeInTheDocument();
+  });
+
+  it('tags shared contexts only when the installed definition proves it', () => {
+    const contextsModule = `${notesModule}/contexts`;
+    mocks.permissions = [
+      permissionGrant({ id: 'contexts-read', session: activeSession, module: contextsModule }),
+    ];
+
+    const { unmount } = renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+    // URI convention alone: named from the path, but no companion claim.
+    const access = screen.getByRole('list', { name: 'Example Notes data access' });
+    expect(within(access).getByRole('listitem', { name: 'Notes Contexts' })).toBeInTheDocument();
+    expect(screen.queryByText('Shared contexts')).not.toBeInTheDocument();
+    unmount();
+
+    mocks.modules = [{
+      uri        : contextsModule,
+      published  : true,
+      definition : createCanonicalContextCompanionDefinition(contextsModule),
+    }];
+    renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+    const row = screen.getByRole('listitem', { name: 'Notes Shared contexts' });
+    expect(within(row).getByText('Shared contexts')).toBeInTheDocument();
+  });
+
+  it('offers no revoke for direct grants that already expired', () => {
+    mocks.permissions = [{
+      id          : 'direct-expired',
+      grantee     : 'did:dht:service',
+      dateGranted : '2025-01-01T00:00:00.000Z',
+      dateExpires : '2025-02-01T00:00:00.000Z',
+      scope       : { interface: 'Records', method: 'Read', module: notesModule },
+    } as DwnPermissionGrant, {
+      id          : 'direct-active',
+      grantee     : 'did:dht:service',
+      dateGranted : '2025-01-01T00:00:00.000Z',
+      dateExpires : '2099-02-01T00:00:00.000Z',
+      scope       : { interface: 'Records', method: 'Read', module: 'https://identity.foundation/modules/profile' },
+    } as DwnPermissionGrant];
+
+    renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    expect(screen.queryByRole('button', { name: 'Revoke Notes permission' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Revoke Profile permission' })).toBeInTheDocument();
   });
 
   it('revokes every scope of one module row after confirmation', async () => {

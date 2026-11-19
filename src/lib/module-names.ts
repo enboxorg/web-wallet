@@ -239,11 +239,19 @@ export interface ModuleDisplay {
   shortUri: string;
   /** Curated wallet module (Profile, Connect, Preferences). */
   isCore: boolean;
-  /** Root module URI when this is a conventional `<root>/contexts` companion. */
+  /**
+   * Root module URI, set only when the installed definition is the exact
+   * `@enbox/contexts` companion contract — a `/contexts` URI suffix alone is
+   * never trusted.
+   */
   companionOf?: string;
 }
 
-export function describeModule(uri: string): ModuleDisplay {
+/**
+ * Display facts for a module. Pass the installed definition when available:
+ * without it a module is never presented as a shared-contexts companion.
+ */
+export function describeModule(uri: string, definition?: DwnModuleDefinition): ModuleDisplay {
   const info = MODULE_REGISTRY[uri];
   const parts = parseModuleUri(uri);
   return {
@@ -254,7 +262,9 @@ export function describeModule(uri: string): ModuleDisplay {
     version     : parts.version,
     shortUri    : parts.shortUri,
     isCore      : info !== undefined,
-    companionOf : info ? undefined : getContextCompanionRootUri(uri),
+    companionOf : !info && definition !== undefined && isContextCompanionDefinition(definition)
+      ? getContextCompanionRootUri(uri)
+      : undefined,
   };
 }
 

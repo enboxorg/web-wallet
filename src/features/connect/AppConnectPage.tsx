@@ -656,6 +656,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     ? truncateDid(connectionRequest.clientDid)
     : 'Unknown requester';
   const requesterTitle = connectionRequest?.appName?.trim() || 'Unknown app';
+  // Access sections name the requester the way the header does (never the
+  // ephemeral client DID), for both new connections and renewals.
+  const accessRequesterLabel = connectionRequest?.appName ?? 'this app';
   const hasDataAccess = permissionRequests.some((permission) => permission.permissionScopes.length > 0);
   const requestSummary = authenticationOnly
     ? 'is asking you to sign in with your profile'
@@ -879,7 +882,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 ownerLabel={refreshOwnerOption?.label}
                 ownerSupported={refreshOwnerOption !== undefined}
                 moduleSetupStatuses={moduleSetupStatuses}
-                requesterLabel={requesterLabel}
+                requesterLabel={accessRequesterLabel}
                 sessionDurationSeconds={sessionDurationSeconds}
                 requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
@@ -919,7 +922,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   <PermissionDisplay
                     permissions={connectionRequest.permissionRequests}
                     moduleSetupStatuses={moduleSetupStatuses}
-                    requesterLabel={connectionRequest.appName ?? 'this app'}
+                    requesterLabel={accessRequesterLabel}
                     sessionDurationSeconds={sessionDurationSeconds}
                     requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
                     onSessionDurationSecondsChange={setSessionDurationSeconds}
@@ -970,8 +973,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               denyDisabled={onboardBusy}
               primary={onboardingSupported ? (
                 <Button
-                  size="lg"
-                  className="flex-[2] px-4"
+                  className="min-w-0 flex-[2]"
                   onClick={handleCreateWalletAndConnect}
                   loading={onboardBusy}
                 >
@@ -980,8 +982,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 </Button>
               ) : (
                 <Button
-                  size="lg"
-                  className="flex-[2] px-4"
+                  className="min-w-0 flex-[2]"
                   onClick={() =>
                     overridableModules.length > 0 && !isRefresh
                       ? setShowOverrideConfirm(true)

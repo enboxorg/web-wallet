@@ -347,9 +347,9 @@ export function ConsentDecisionBar({
         className,
       )}
     >
-      <div className="flex gap-3">
-        <Button variant="secondary" size="lg" className="flex-1 px-4" onClick={onDeny} disabled={denyDisabled}>
-          <X className="size-4" />
+      <div className="mx-auto flex w-full max-w-lg gap-3">
+        <Button variant="secondary" className="min-w-0 flex-1" onClick={onDeny} disabled={denyDisabled}>
+          <X className="size-4 max-[359px]:hidden" />
           Deny
         </Button>
         {primary}

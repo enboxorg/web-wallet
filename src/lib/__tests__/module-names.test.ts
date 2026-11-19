@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
   createCanonicalContextCompanionDefinition,
+  describeModule,
   getCanonicalModuleDefinition,
   getContextCompanionRootUri,
   getModuleInfo,
@@ -149,6 +150,31 @@ describe('parseModuleUri', () => {
       slugs    : ['just-a-string'],
       shortUri : 'just-a-string',
     });
+  });
+});
+
+describe('describeModule', () => {
+  const companionUri = 'https://enbox.id/modules/notes/v1/contexts';
+
+  it('marks a companion only when the installed definition is the exact contexts contract', () => {
+    expect(describeModule(companionUri, createCanonicalContextCompanionDefinition(companionUri)).companionOf)
+      .toBe('https://enbox.id/modules/notes/v1');
+  });
+
+  it('never trusts a /contexts URI suffix alone', () => {
+    expect(describeModule(companionUri).companionOf).toBeUndefined();
+    expect(describeModule(companionUri, {
+      module    : companionUri,
+      published : true,
+      types     : { secret: {} },
+      structure : { secret: {} },
+    }).companionOf).toBeUndefined();
+  });
+
+  it('labels curated core modules with their description', () => {
+    const profile = describeModule('https://identity.foundation/modules/profile');
+    expect(profile).toMatchObject({ name: 'Profile', isCore: true, host: 'identity.foundation' });
+    expect(profile.description).toContain('display name');
   });
 });
 

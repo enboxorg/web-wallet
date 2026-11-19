@@ -45,8 +45,8 @@ import { collectStructurePaths, isEncryptedType } from '@/lib/module-structure';
 import { Badge } from '@/components/ui/Badge';
 import { Disclosure } from '@/components/ui/Disclosure';
 import { Monogram } from '@/components/ui/Monogram';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
-import { cn } from '@/lib/utils';
 import {
   getSortedPermissionActions,
   groupPermissionRequestsWithCompanions,
@@ -360,33 +360,13 @@ function SessionTerms({
       </div>
 
       {canChoose && (
-        <div
-          role="radiogroup"
-          aria-label="Access duration"
-          className="mt-3.5 grid auto-cols-fr grid-flow-col gap-1 rounded-xl bg-surface-2 p-1"
-        >
-          {durationOptions.map((option) => {
-            const selected = option.value === durationSeconds;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => onSessionDurationSecondsChange(option.value)}
-                className={cn(
-                  'min-h-9 rounded-lg px-2 text-xs font-medium transition-colors pointer-coarse:min-h-11',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-                  selected
-                    ? 'bg-surface-0 text-text-primary shadow-sm ring-1 ring-border-default'
-                    : 'text-text-tertiary hover:text-text-primary',
-                )}
-              >
-                {option.label}
-              </button>
-            );
-          })}
-        </div>
+        <SegmentedControl
+          label="Access duration"
+          className="mt-3.5"
+          options={durationOptions}
+          value={durationSeconds}
+          onChange={onSessionDurationSecondsChange}
+        />
       )}
 
       {existingSessionCount > 0 && (
@@ -658,7 +638,7 @@ function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
                   <p className="mb-1.5 text-xs text-text-ghost">Types</p>
                   <div className="flex flex-wrap gap-1.5">
                     {typeNames.map((typeName) => (
-                      <Badge key={typeName} variant="outline" className="font-mono font-normal">{typeName}</Badge>
+                      <Badge key={typeName} variant="outline" className="font-mono">{typeName}</Badge>
                     ))}
                   </div>
                 </div>
@@ -669,7 +649,7 @@ function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
                   <p className="mb-1.5 text-xs text-text-ghost">Record paths</p>
                   <div className="flex flex-wrap gap-1.5">
                     {item.paths.map((path) => (
-                      <Badge key={path} variant="outline" className="font-mono font-normal">{path}</Badge>
+                      <Badge key={path} variant="outline" className="font-mono">{path}</Badge>
                     ))}
                   </div>
                 </div>
@@ -685,7 +665,7 @@ function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
                     <Badge
                       key={`${scope.interface}.${scope.method}.${index}`}
                       variant="outline"
-                      className="font-mono font-normal"
+                      className="font-mono"
                     >
                       {scope.interface}.{scope.method}
                     </Badge>

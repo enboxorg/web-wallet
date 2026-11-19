@@ -556,7 +556,7 @@ export default function DWebConnectPage() {
       )}
 
       {phase === 'request' && refreshUnavailable && (
-        <div className="flex flex-1 flex-col gap-6 pb-6">
+        <div className="flex flex-1 flex-col gap-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
           <RefreshUnavailableDisplay
             appName={appName ?? origin ?? 'This app'}
             detection={refreshDetection}
@@ -691,8 +691,7 @@ export default function DWebConnectPage() {
               denyDisabled={onboardBusy}
               primary={onboardingSupported ? (
                 <Button
-                  size="lg"
-                  className="flex-[2] px-4"
+                  className="min-w-0 flex-[2]"
                   onClick={handleCreateWalletAndConnect}
                   loading={onboardBusy}
                 >
@@ -701,8 +700,7 @@ export default function DWebConnectPage() {
                 </Button>
               ) : (
                 <Button
-                  size="lg"
-                  className="flex-[2] px-4"
+                  className="min-w-0 flex-[2]"
                   onClick={() =>
                     overridableModules.length > 0 && !isRefresh
                       ? setShowOverrideConfirm(true)

@@ -1,6 +1,9 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import type { DwnModuleDefinition } from '@enbox/agent';
 import { Clock, FileText, Globe } from 'lucide-react';
 import { useAgent } from '@/enbox/hooks/use-agent';
+import { useModules } from '@/enbox/hooks/use-modules';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { fetchActivity, type ActivityRecord } from '@/enbox/queries/identity-queries';
 import { Loader } from '@/components/ui/Loader';
@@ -16,8 +19,16 @@ interface ActivityTabProps {
   did: string;
 }
 
-function ActivityRow({ item, ownerDid }: { item: ActivityRecord; ownerDid: string }) {
-  const display = item.module ? describeModule(item.module) : undefined;
+function ActivityRow({
+  item,
+  ownerDid,
+  definitions,
+}: {
+  item: ActivityRecord;
+  ownerDid: string;
+  definitions: ReadonlyMap<string, DwnModuleDefinition>;
+}) {
+  const display = item.module ? describeModule(item.module, definitions.get(item.module)) : undefined;
   const authoredByOwner = item.author === ownerDid;
 
   return (
@@ -61,6 +72,11 @@ function ActivityRow({ item, ownerDid }: { item: ActivityRecord; ownerDid: strin
 
 export default function ActivityTab({ did }: ActivityTabProps) {
   const agent = useAgent();
+  const { data: modules } = useModules(did);
+  const definitions = useMemo(
+    () => new Map((modules ?? []).map((module) => [module.uri, module.definition as DwnModuleDefinition])),
+    [modules],
+  );
 
   const { data: activity, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.identities.activity(did),
@@ -92,7 +108,7 @@ export default function ActivityTab({ did }: ActivityTabProps) {
       className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1"
     >
       {activity.map((item: ActivityRecord) => (
-        <ActivityRow key={item.id} item={item} ownerDid={did} />
+        <ActivityRow key={item.id} item={item} ownerDid={did} definitions={definitions} />
       ))}
     </ul>
   );
