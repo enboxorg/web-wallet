@@ -67,7 +67,7 @@ type ConnectSessionWithApplicationId = ConnectSessionMetadata & {
   applicationId?: unknown;
 };
 
-function getConnectSession(grant: DwnPermissionGrant): ConnectSessionMetadata | undefined {
+export function getConnectSession(grant: DwnPermissionGrant): ConnectSessionMetadata | undefined {
   const session = grant.connectSession;
   if (!session?.id || !session.createdAt || !session.expiresAt) {
     return undefined;

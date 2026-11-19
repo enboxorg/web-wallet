@@ -254,23 +254,26 @@ function AccessItemMeta({ item }: { item: ModuleAccess }) {
     );
   }
 
+  // The host is the provenance of a name the requester chose, so it never
+  // truncates: on a narrow screen the tags wrap below it instead.
   return (
-    <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
-      <span className="min-w-0 truncate" title={item.moduleUri}>{item.detail}</span>
-      <Dot />
-      <span className="shrink-0" title={THIRD_PARTY_HINT}>Third-party</span>
-      {item.isContextCompanion && (
-        <>
-          <Dot />
-          <span className="shrink-0" title={SHARED_CONTEXTS_HINT}>Shared contexts</span>
-        </>
-      )}
-      {item.hasEncryptedTypes && (
-        <>
-          <Dot />
-          <EncryptedNote keysShared={sharesKeys(item)} />
-        </>
-      )}
+    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-text-tertiary">
+      <span className="break-all text-text-secondary" title={item.moduleUri}>{item.detail}</span>
+      <span className="inline-flex flex-wrap items-center gap-x-1.5">
+        <span title={THIRD_PARTY_HINT}>Third-party</span>
+        {item.isContextCompanion && (
+          <>
+            <Dot />
+            <span title={SHARED_CONTEXTS_HINT}>Shared contexts</span>
+          </>
+        )}
+        {item.hasEncryptedTypes && (
+          <>
+            <Dot />
+            <EncryptedNote keysShared={sharesKeys(item)} />
+          </>
+        )}
+      </span>
     </p>
   );
 }

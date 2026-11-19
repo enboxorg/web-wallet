@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 import {
   AlertTriangle,
@@ -73,6 +74,7 @@ export function RenewSessionDisplay({
   split,
   now = new Date(),
 }: RenewSessionDisplayProps) {
+  const ownerHeadingId = useId();
   const display = statusDisplay(detection.status);
   const matched = detection.matchState === 'matched';
   const addsAccess = (split?.added.length ?? 0) > 0;
@@ -95,8 +97,8 @@ export function RenewSessionDisplay({
       {/* Mirrors "Approve as" on a first connection: which profile, and how
           the previous access stands. The header sentence already says what
           the request is, so this stays a single quiet row. */}
-      <section aria-labelledby="renew-owner-heading" className="space-y-2">
-        <h2 id="renew-owner-heading" className="text-[13px] font-medium text-text-secondary">
+      <section aria-labelledby={ownerHeadingId} className="space-y-2">
+        <h2 id={ownerHeadingId} className="text-[13px] font-medium text-text-secondary">
           {addsAccess ? 'Approving as' : 'Renewing as'}
         </h2>
 

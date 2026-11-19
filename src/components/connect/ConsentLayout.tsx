@@ -66,6 +66,8 @@ interface ConsentRequesterProps {
   details?: React.ReactNode;
   /** One-line purpose, e.g. "wants to connect to your profile". */
   summary: string;
+  /** Quiet context after the purpose, e.g. that this is a first connection. */
+  footnote?: React.ReactNode;
 }
 
 /**
@@ -83,22 +85,26 @@ export function ConsentRequester({
   trustLabel,
   details,
   summary,
+  footnote,
 }: ConsentRequesterProps) {
   const verified = trust === 'verified-origin';
 
   return (
     <header className="flex flex-col items-center text-center">
       <SiteIcon origin={verified ? iconOrigin : undefined} label={title} seed={seed} />
+      {/* One line: a self-reported name gets no room to stage a second
+          line that looks like wallet copy. The full name is in the tooltip. */}
       <h1
-        className="mt-4 max-w-full break-words text-xl font-semibold tracking-tight text-text-primary"
-        title={titleHint}
+        className="mt-4 max-w-full truncate text-xl font-semibold tracking-tight text-text-primary"
+        title={titleHint ?? title}
       >
         {title}
       </h1>
       <p
         className={cn(
           'mt-1.5 inline-flex max-w-full items-center gap-1.5 text-sm',
-          verified ? 'text-text-secondary' : 'font-medium text-warning',
+          // The verified address is what earns trust, so it reads at full contrast.
+          verified ? 'font-medium text-text-primary' : 'font-medium text-warning',
         )}
         title={verified ? 'Your wallet confirmed this request comes from this website.' : undefined}
       >
@@ -112,6 +118,7 @@ export function ConsentRequester({
         <div className="mt-1.5 max-w-full space-y-0.5 text-xs text-text-tertiary">{details}</div>
       )}
       <p className="mt-4 text-sm text-text-secondary">{summary}</p>
+      {footnote && <div className="mt-1 text-xs text-text-tertiary">{footnote}</div>}
     </header>
   );
 }

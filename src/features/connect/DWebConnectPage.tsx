@@ -43,7 +43,7 @@ import {
   preflightConnectRequest,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
-import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
+import { findMatchingActiveConnectSessions, hasConnectedBefore } from './existing-connect-sessions';
 import {
   detectConnectRefresh,
   refreshAddsAccess,
@@ -129,7 +129,9 @@ export default function DWebConnectPage() {
       label: id.metadata?.name ?? truncateDid(id.did.uri),
     }));
   const ownerDids = (identities ?? []).map((identity: any) => identity.did.uri as string);
-  const allPermissions = useAllPermissions(ownerDids, isRefresh);
+  // Refresh detection needs every profile's grant history; so does telling a
+  // first-time site apart from one this wallet has connected to before.
+  const allPermissions = useAllPermissions(ownerDids, true);
   const refreshDetection = detectConnectRefresh(connectRequest, allPermissions.data);
   // A refresh is only a renewal for scopes this delegate actually held; the
   // request's own claim decides nothing about its contents.
@@ -492,6 +494,13 @@ export default function DWebConnectPage() {
       : hasDataAccess ? 'wants to connect to your profile' : 'wants to connect';
   // The verified address as people read it in a browser bar: no "https://".
   const originDisplay = origin ? origin.replace(/^https:\/\//i, '') : 'Unknown website';
+  // Said only once the history has loaded, and never for a refresh. If the
+  // lookup is wrong it errs towards "first time", which only adds caution.
+  const firstConnection = !isRefresh
+    && origin !== ''
+    && !allPermissions.isPending
+    && !allPermissions.isError
+    && !hasConnectedBefore(allPermissions.data, origin);
   const showRequest = phase === 'request' && !refreshUnavailable && !(isRefresh && refreshLookupPending);
 
   // ── Render ────────────────────────────────────────────────────
@@ -590,6 +599,7 @@ export default function DWebConnectPage() {
               trust="verified-origin"
               trustLabel="Verified website address"
               summary={requestSummary}
+              footnote={firstConnection && <p>This site hasn&apos;t connected to your wallet before.</p>}
             />
 
             {authentication && (

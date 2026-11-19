@@ -1,6 +1,7 @@
 import type { DwnPermissionGrant } from '@enbox/agent';
 import {
   buildPermissionSections,
+  getConnectSession,
   type PermissionSessionGroup,
 } from '@/features/identities/tabs/permission-sessions';
 
@@ -33,5 +34,20 @@ export function findMatchingActiveConnectSessions(
 
   return buildPermissionSections(permissions, now).activeSessions.filter((sessionGroup) =>
     matchesRequestIdentity(sessionGroup.session, request),
+  );
+}
+
+/**
+ * Whether a verified origin has ever been granted access in this wallet, on
+ * any profile, including sessions that have since expired or been revoked.
+ * A look-alike site is always new, so a first connection is worth saying.
+ * Pass full grant history, not just active grants.
+ */
+export function hasConnectedBefore(
+  owners: ReadonlyArray<{ permissions: readonly DwnPermissionGrant[] }>,
+  origin: string,
+): boolean {
+  return owners.some(({ permissions }) =>
+    permissions.some((grant) => getConnectSession(grant)?.origin === origin)
   );
 }

@@ -340,6 +340,23 @@ describe('DWebConnectPage', () => {
     expect(screen.queryByText(/claimed\.example/)).not.toBeInTheDocument();
   });
 
+  it('says when a verified site has never connected to this wallet', async () => {
+    mocks.allPermissions = [{ ownerDid: 'did:dht:alice', permissions: [], revokedGrantIds: [] }];
+    render(<DWebConnectPage />);
+    expect(await screen.findByText("This site hasn't connected to your wallet before.")).toBeInTheDocument();
+  });
+
+  it('stays quiet for a site this wallet has connected to, even if that access was revoked', async () => {
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:bob',
+      permissions     : [existingSessionGrant('did:dht:bob', 'did:jwk:old-delegate')],
+      revokedGrantIds : ['grant-did:dht:bob'],
+    }];
+    render(<DWebConnectPage />);
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText(/hasn't connected to your wallet before/)).not.toBeInTheDocument();
+  });
+
   it('approves via the ceremony and posts the sealed response', async () => {
     render(<DWebConnectPage />);
 
