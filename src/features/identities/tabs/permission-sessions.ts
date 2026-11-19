@@ -1,6 +1,8 @@
 import type { ConnectSessionMetadata, DwnPermissionGrant } from '@enbox/agent';
 import { PermissionsModule } from '@enbox/dwn-sdk-js';
 
+import { sanitizeDisplayText } from '@/lib/display-text';
+
 /**
  * The connect approval ceremony stores one contextId-scoped revocation grant
  * per session grant so the delegate can self-revoke its own access. They are
@@ -285,8 +287,9 @@ function buildApplicationGroups(
       const sortedBundles = sortApprovalBundles(group.bundles);
       const representative = sortedBundles[0];
       const applicationId = getApplicationId(representative.session);
-      const name = nonEmptyString(representative.session.appName)
-        ?? applicationId
+      // App names and IDs are self-reported at connect time.
+      const name = nonEmptyString(sanitizeDisplayText(representative.session.appName))
+        ?? nonEmptyString(sanitizeDisplayText(applicationId))
         ?? group.origin
         ?? 'Unknown app';
       const byGrantee = new Map<string, PermissionApprovalBundle[]>();

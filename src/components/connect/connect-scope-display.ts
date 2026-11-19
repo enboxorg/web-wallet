@@ -207,3 +207,20 @@ export function groupPermissionRequestsWithCompanions(
 
   return groups;
 }
+
+/**
+ * The actions a row shows. Next to real data access, sync and setup are
+ * plumbing every app gets, so they move to one note under the list rather
+ * than repeating on every row. Without data access they are the capability.
+ */
+export function visibleActions(actions: PermissionAction[]): PermissionAction[] {
+  return actions.some((action) => action.kind === 'record')
+    ? actions.filter((action) => action.kind === 'record')
+    : actions;
+}
+
+/** Whether {@link visibleActions} left sync or setup out of a row. */
+export function hidesSupportActions(actions: PermissionAction[]): boolean {
+  return actions.some((action) => action.kind === 'record')
+    && actions.some((action) => action.kind === 'support');
+}

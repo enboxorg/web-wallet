@@ -336,8 +336,24 @@ describe('DWebConnectPage', () => {
     // authenticated origin, never the request's claimed clientMetadata.origin.
     expect(screen.getByRole('heading', { level: 1, name: 'Example App' })).toBeInTheDocument();
     expect(screen.getByText('app.example')).toBeInTheDocument();
-    expect(screen.getByText('(Verified website address)')).toBeInTheDocument();
+    // The browser-pinned HTTPS origin, and only that, earns the badge.
+    expect(screen.getByText('Verified')).toBeInTheDocument();
     expect(screen.queryByText(/claimed\.example/)).not.toBeInTheDocument();
+  });
+
+  it('shows a local development origin without the Verified badge', async () => {
+    mocks.transport.dappOrigin = 'http://localhost:5173';
+    render(<DWebConnectPage />);
+    expect(await screen.findByText('Local development')).toBeInTheDocument();
+    expect(screen.getByText('http://localhost:5173')).toBeInTheDocument();
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument();
+  });
+
+  it('strips symbols an app could use to fake wallet badges from its name', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({ ...connectRequest(), appName: '✅ PayPal \u202EVerified 🛡️' });
+    render(<DWebConnectPage />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'PayPal Verified' })).toBeInTheDocument();
+    expect(screen.queryByText(/✅|🛡/)).not.toBeInTheDocument();
   });
 
   it('says when a verified site has never connected to this wallet', async () => {

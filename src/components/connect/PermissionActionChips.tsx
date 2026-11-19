@@ -73,3 +73,34 @@ export function PermissionActionChips({ actions, emphasizeSupport, className }: 
     </ul>
   );
 }
+
+/**
+ * One line for the sync and setup access that list rows leave out. It names
+ * the items when only some of them include it, so it never overstates.
+ */
+export function SupportActionsNote({
+  names,
+  all,
+  className,
+}: {
+  /** Items whose rows left sync or setup out. */
+  names: string[];
+  /** Whether that is every item in the list. */
+  all: boolean;
+  className?: string;
+}) {
+  if (names.length === 0) return null;
+  const listed = names.length > 3
+    ? formatList([...names.slice(0, 2), `${names.length - 2} more`])
+    : formatList(names);
+  return (
+    <p className={cn('flex items-start gap-1.5 px-1 text-xs leading-relaxed text-text-tertiary', className)}>
+      <RefreshCw className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <span>
+        {all && names.length > 1
+          ? 'The app can also sync changes and check how each of these is set up.'
+          : `The app can also sync changes and check the setup of ${listed}.`}
+      </span>
+    </p>
+  );
+}

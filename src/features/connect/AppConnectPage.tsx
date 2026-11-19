@@ -63,6 +63,7 @@ import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
+import { sanitizeDisplayText } from '@/lib/display-text';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
   createPasskeyVault,
@@ -666,10 +667,14 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const requesterLabel = connectionRequest?.clientDid
     ? truncateDid(connectionRequest.clientDid)
     : 'Unknown requester';
-  const requesterTitle = connectionRequest?.appName?.trim() || 'Unknown app';
+  // Everything about a relay requester is self-reported; its name is shown
+  // only after removing anything that could pass for wallet UI.
+  const displayAppName = sanitizeDisplayText(connectionRequest?.appName) || undefined;
+  const requesterTitle = displayAppName ?? 'Unknown app';
+  const reportedOrigin = sanitizeDisplayText(connectionRequest?.clientMetadata?.origin, 120) || undefined;
   // Access sections name the requester the way the header does (never the
   // ephemeral client DID), for both new connections and renewals.
-  const accessRequesterLabel = connectionRequest?.appName ?? 'this app';
+  const accessRequesterLabel = displayAppName ?? 'this app';
   const hasDataAccess = permissionRequests.some((permission) => permission.permissionScopes.length > 0);
   const requestSummary = authenticationOnly
     ? 'is asking you to sign in with your profile'
@@ -839,7 +844,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       {phase === 'request' && connectionRequest && refreshUnavailable && (
         <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-8 lg:px-0 max-w-lg mx-auto w-full flex flex-col gap-6 ${standalone ? 'flex-1 justify-center pb-24' : ''}`}>
           <RefreshUnavailableDisplay
-            appName={connectionRequest.appName ?? 'This app'}
+            appName={displayAppName ?? 'This app'}
             detection={refreshDetection}
             lookupError={refreshLookupError}
             ownerSupported={refreshOwnerOption !== undefined}
@@ -868,8 +873,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               trustLabel="Unverified app"
               details={(
                 <p className="break-all">
-                  {connectionRequest.clientMetadata?.origin && (
-                    <>Says it&apos;s <span className="font-mono">{connectionRequest.clientMetadata.origin}</span> · </>
+                  {reportedOrigin && (
+                    <>Says it&apos;s <span className="font-mono">{reportedOrigin}</span> · </>
                   )}
                   Signed by <span className="font-mono" title={connectionRequest.clientDid}>{requesterLabel}</span>
                 </p>
@@ -886,7 +891,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
             {isRefresh ? (
               <RenewSessionDisplay
-                appName={connectionRequest.appName}
+                appName={displayAppName ?? 'this app'}
                 permissions={connectionRequest.permissionRequests}
                 detection={refreshDetection}
                 lookupPending={refreshLookupPending}
@@ -913,7 +918,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 ) : onboardingSupported ? (
                   <ConsentOnboardingIntro>
                     We'll set up your wallet and a fresh profile on this phone, then
-                    connect it to {connectionRequest.appName ?? 'the app'}. You can
+                    connect it to {displayAppName ?? 'the app'}. You can
                     customise your profile any time.
                   </ConsentOnboardingIntro>
                 ) : identityOptions.length > 0 ? (
@@ -1012,7 +1017,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               hint={onboardingSupported && (
                 <>
                   New here? This sets up a wallet and profile on this phone, then
-                  connects it to {connectionRequest.appName ?? 'the app'}. Nothing else to fill in.
+                  connects it to {displayAppName ?? 'the app'}. Nothing else to fill in.
                 </>
               )}
             />

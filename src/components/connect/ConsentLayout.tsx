@@ -11,12 +11,14 @@ import {
   ChevronDown,
   ChevronsUpDown,
   Info,
+  Laptop,
   ShieldAlert,
   ShieldCheck,
   Sparkles,
   X,
 } from 'lucide-react';
 
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Monogram } from '@/components/ui/Monogram';
 import { SiteIcon } from '@/components/ui/SiteIcon';
@@ -60,7 +62,14 @@ interface ConsentRequesterProps {
   iconOrigin?: string;
   /** Stable seed for the fallback tile tint (origin or client DID). */
   seed: string;
-  trust: 'verified-origin' | 'reported';
+  /**
+   * - `verified-origin`: an HTTPS origin the popup transport pinned from the
+   *   browser (opener window and message origin). Only this earns "Verified".
+   * - `local-origin`: the same pinning for an http://localhost dev origin;
+   *   real, but not a public site checked over HTTPS.
+   * - `reported`: everything about the requester is self-reported (relay).
+   */
+  trust: 'verified-origin' | 'local-origin' | 'reported';
   trustLabel: string;
   /** Supplementary self-reported facts, rendered quietly under the trust line. */
   details?: React.ReactNode;
@@ -100,20 +109,39 @@ export function ConsentRequester({
       >
         {title}
       </h1>
-      <p
-        className={cn(
-          'mt-1.5 inline-flex max-w-full items-center gap-1.5 text-sm',
-          // The verified address is what earns trust, so it reads at full contrast.
-          verified ? 'font-medium text-text-primary' : 'font-medium text-warning',
+
+      {/* The address, and a badge only the wallet draws. App-supplied names
+          are stripped of symbols and emoji, so nothing else on this screen
+          can imitate it. */}
+      <div className="mt-2 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1">
+        {trust !== 'reported' && identifier && (
+          <span className="break-all text-sm font-medium text-text-primary">{identifier}</span>
         )}
-        title={verified ? 'Your wallet confirmed this request comes from this website.' : undefined}
-      >
-        {verified
-          ? <ShieldCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
-          : <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />}
-        <span className="min-w-0 break-all">{verified ? identifier ?? trustLabel : trustLabel}</span>
-        {verified && <span className="sr-only">({trustLabel})</span>}
-      </p>
+        {trust === 'verified-origin' && (
+          <Badge
+            tone="success"
+            icon={<ShieldCheck />}
+            title={`Your browser confirmed this request comes from ${identifier ?? 'this website'}. The name and icon are provided by the app.`}
+          >
+            {trustLabel}
+          </Badge>
+        )}
+        {trust === 'local-origin' && (
+          <Badge
+            variant="outline"
+            icon={<Laptop />}
+            title="A local development address, not a public website checked over HTTPS."
+          >
+            {trustLabel}
+          </Badge>
+        )}
+        {trust === 'reported' && (
+          <Badge tone="warning" size="md" icon={<ShieldAlert />}>
+            {trustLabel}
+          </Badge>
+        )}
+      </div>
+
       {details && (
         <div className="mt-1.5 max-w-full space-y-0.5 text-xs text-text-tertiary">{details}</div>
       )}

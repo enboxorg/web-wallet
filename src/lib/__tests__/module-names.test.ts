@@ -192,6 +192,11 @@ describe('nameFromModuleUri', () => {
     expect(nameFromModuleUri('https://enbox.id/modules/stock-watchlists/v1')).toBe('Stock Watchlists');
   });
 
+  it('strips emoji and symbols a URI can spell through percent-encoding', () => {
+    expect(nameFromModuleUri('https://evil.example/modules/%E2%9C%85-verified-wallet')).toBe('Verified Wallet');
+    expect(nameFromModuleUri('https://evil.example/modules/%E2%9C%85')).toBe('evil.example');
+  });
+
   it('ignores the curated registry and the /contexts companion convention', () => {
     const profile = 'https://identity.foundation/modules/profile';
     expect(getModuleName(`${profile}/contexts`)).toBe('Profile Contexts');

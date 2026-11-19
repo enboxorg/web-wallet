@@ -44,6 +44,7 @@ import {
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions, hasConnectedBefore } from './existing-connect-sessions';
+import { sanitizeDisplayText } from '@/lib/display-text';
 import {
   detectConnectRefresh,
   refreshAddsAccess,
@@ -110,6 +111,9 @@ export default function DWebConnectPage() {
   const isPopup = useMemo(() => !!window.opener, []);
   const permissions = connectRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const appName = connectRequest?.appName;
+  // What the app calls itself, made safe to display; the raw value is only
+  // used to match earlier sessions.
+  const displayAppName = sanitizeDisplayText(appName) || undefined;
   const isRefresh = connectRequest?.requestType === 'refresh';
   const authenticationOnly = connectRequest?.requestType === 'authenticate';
   const authentication = connectRequest?.authentication;
@@ -576,7 +580,7 @@ export default function DWebConnectPage() {
       {phase === 'request' && refreshUnavailable && (
         <div className="flex flex-1 flex-col gap-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
           <RefreshUnavailableDisplay
-            appName={appName ?? origin ?? 'This app'}
+            appName={displayAppName ?? origin ?? 'This app'}
             detection={refreshDetection}
             lookupError={refreshLookupError}
             ownerSupported={refreshOwnerOption !== undefined}
@@ -591,13 +595,15 @@ export default function DWebConnectPage() {
         <div className="flex flex-1 flex-col animate-[fadeIn_0.3s_ease-out]">
           <div className="flex-1 space-y-6 pt-2 pb-6">
             <ConsentRequester
-              title={appName?.trim() || originDisplay}
-              titleHint={appName?.trim() ? `${appName.trim()} (name provided by the app)` : origin}
+              title={displayAppName ?? originDisplay}
+              titleHint={displayAppName ? `${displayAppName} (name provided by the app)` : origin}
               identifier={originDisplay}
               iconOrigin={origin || undefined}
               seed={origin || requesterLabel}
-              trust="verified-origin"
-              trustLabel="Verified website address"
+              // "Verified" only for HTTPS. The transport also accepts
+              // http://localhost for development, which isn't a checked site.
+              trust={origin.startsWith('https://') ? 'verified-origin' : 'local-origin'}
+              trustLabel={origin.startsWith('https://') ? 'Verified' : 'Local development'}
               summary={requestSummary}
               footnote={firstConnection && <p>This site hasn&apos;t connected to your wallet before.</p>}
             />
@@ -611,7 +617,7 @@ export default function DWebConnectPage() {
 
             {isRefresh ? (
               <RenewSessionDisplay
-                appName={appName ?? 'this app'}
+                appName={displayAppName ?? 'this app'}
                 permissions={permissions}
                 detection={refreshDetection}
                 lookupPending={refreshLookupPending}
@@ -638,7 +644,7 @@ export default function DWebConnectPage() {
                 ) : onboardingSupported ? (
                   <ConsentOnboardingIntro>
                     We'll set up your Enbox wallet and a fresh profile on this device,
-                    then connect it to {appName ?? requesterLabel}. You can customise
+                    then connect it to {displayAppName ?? requesterLabel}. You can customise
                     your profile any time.
                   </ConsentOnboardingIntro>
                 ) : identityOptions.length > 0 ? (
@@ -737,7 +743,7 @@ export default function DWebConnectPage() {
               hint={onboardingSupported && (
                 <>
                   New to Enbox? This sets up a wallet and profile on this device,
-                  then connects it to {appName ?? requesterLabel}. Nothing else to fill in.
+                  then connects it to {displayAppName ?? requesterLabel}. Nothing else to fill in.
                 </>
               )}
             />

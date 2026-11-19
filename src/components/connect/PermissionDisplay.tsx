@@ -53,9 +53,11 @@ import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
 import {
   getSortedPermissionActions,
   groupPermissionRequestsWithCompanions,
+  hidesSupportActions,
   mergePermissionRequestsByModule,
+  visibleActions,
 } from './connect-scope-display';
-import { PermissionActionChips } from './PermissionActionChips';
+import { PermissionActionChips, SupportActionsNote } from './PermissionActionChips';
 import { ConsentNotice } from './ConsentLayout';
 
 interface PermissionDisplayProps {
@@ -188,6 +190,14 @@ function itemActions(item: ModuleAccess) {
   })));
 }
 
+function shownActions(item: ModuleAccess) {
+  return visibleActions(itemActions(item));
+}
+
+function hidesSupport(item: ModuleAccess): boolean {
+  return hidesSupportActions(itemActions(item));
+}
+
 type AccessRowGroup = {
   primary: ModuleAccess;
   companion?: ModuleAccess;
@@ -296,7 +306,7 @@ function CompanionAccess({ companion }: { companion: ModuleAccess }) {
           </>
         )}
       </p>
-      <PermissionActionChips actions={itemActions(companion)} className="mt-1.5" />
+      <PermissionActionChips actions={shownActions(companion)} className="mt-1.5" />
     </div>
   );
 }
@@ -305,7 +315,7 @@ function CompanionAccess({ companion }: { companion: ModuleAccess }) {
 function AccessItem({ group }: { group: AccessRowGroup }) {
   const titleId = useId();
   const { primary: item, companion } = group;
-  const actions = itemActions(item);
+  const actions = shownActions(item);
   const hasRecordAccess = actions.some((action) => action.kind === 'record');
 
   return (
@@ -322,6 +332,19 @@ function AccessItem({ group }: { group: AccessRowGroup }) {
         {companion && <CompanionAccess companion={companion} />}
       </div>
     </li>
+  );
+}
+
+/** Notes that apply to the whole list, shown once under it. */
+function AccessNotes({ access }: { access: ModuleAccess[] }) {
+  return (
+    <>
+      <SupportActionsNote
+        names={[...new Set(access.filter(hidesSupport).map((item) => item.name))]}
+        all={access.every(hidesSupport)}
+      />
+      <KeySharingNotice access={access} />
+    </>
   );
 }
 
@@ -342,13 +365,13 @@ function AccessRows({
   access,
   heading,
   description,
-  showKeyNotice = true,
+  showNotes = true,
   prominent = false,
 }: {
   access: ModuleAccess[];
   heading: React.ReactNode;
   description?: React.ReactNode;
-  showKeyNotice?: boolean;
+  showNotes?: boolean;
   /** Section titles that must not be skimmed past, e.g. "New access". */
   prominent?: boolean;
 }) {
@@ -374,7 +397,7 @@ function AccessRows({
         {rowGroups.map((group) => <AccessItem key={group.primary.moduleUri} group={group} />)}
       </ul>
 
-      {showKeyNotice && <KeySharingNotice access={access} />}
+      {showNotes && <AccessNotes access={access} />}
     </section>
   );
 }
@@ -774,12 +797,12 @@ export function PermissionDisplay({
               access={section.access}
               heading={section.title}
               description={section.description}
-              showKeyNotice={false}
+              showNotes={false}
               prominent
             />
           ))}
-          {/* One key-sharing explanation for everything being approved. */}
-          <KeySharingNotice access={sections.flatMap((section) => section.access)} />
+          {/* One set of notes for everything being approved. */}
+          <AccessNotes access={sections.flatMap((section) => section.access)} />
         </>
       ) : (
         <AccessRows

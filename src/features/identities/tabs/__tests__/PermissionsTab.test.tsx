@@ -194,7 +194,9 @@ describe('PermissionsTab', () => {
     const chipLabels = (row: HTMLElement) => within(within(row).getByRole('list', { name: 'Allowed actions' }))
       .getAllByRole('listitem')
       .map((item) => item.textContent);
-    expect(chipLabels(rows[0])).toEqual(['View', 'Add or edit', 'Delete', 'Sync & setup']);
+    // Sync and setup move to one note under the list instead of every row.
+    expect(chipLabels(rows[0])).toEqual(['View', 'Add or edit', 'Delete']);
+    expect(screen.getAllByText(/also sync changes/i).length).toBeGreaterThan(0);
     expect(chipLabels(rows[1])).toEqual(['View']);
     expect(within(rows[0]).getByText('enbox.id · v1')).toBeInTheDocument();
   });
