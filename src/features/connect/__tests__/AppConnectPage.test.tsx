@@ -7,6 +7,9 @@ import AppConnectPage from '../AppConnectPage';
 import { __resetDeepLinkSessionForTests, primeConnectDeepLink } from '../connect-deep-link';
 import { useAuthStore } from '@/stores/auth-store';
 
+/** The wallet approves for 7 days unless the owner picks another duration. */
+const DEFAULT_APPROVAL_SECONDS = 7 * 24 * 60 * 60;
+
 const mocks = vi.hoisted(() => ({
   agent: {
     id: 'agent-1',
@@ -228,6 +231,20 @@ describe('AppConnectPage', () => {
     expect(mocks.fetchConnectRequest).not.toHaveBeenCalled();
   });
 
+  it('keeps the image fallback inside the viewfinder with the camera controls', async () => {
+    mocks.scannerHasCamera.mockResolvedValue(true);
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    // The fallback sits in the same control bar as the flash toggle, so it is
+    // on screen whenever the camera is, never below the fold.
+    const controls = await screen.findByTestId('scanner-controls');
+    expect(within(controls).getByRole('button', { name: 'Toggle flash' })).toBeInTheDocument();
+    expect(within(controls).getByRole('button', { name: 'Scan from image' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Scan from image' })).toHaveLength(1);
+    expect(screen.getByText('Scan the QR code shown by the app')).toBeInTheDocument();
+    expect(screen.queryByText(/No camera found/i)).not.toBeInTheDocument();
+  });
+
   it('offers sign-in without grant duration or module setup and does not publish a delegation event', async () => {
     const request = {
       ...connectRequest,
@@ -372,7 +389,7 @@ describe('AppConnectPage', () => {
       'did:dht:alice',
       connectRequest,
       '1234',
-      60 * 60,
+      DEFAULT_APPROVAL_SECONDS,
       mocks.agent,
       [],
     );
@@ -551,7 +568,7 @@ describe('AppConnectPage', () => {
     expect(await screen.findByText(/No camera found/i)).toBeInTheDocument();
   });
 
-  it('defaults to one hour even when the requester asks for longer', async () => {
+  it('defaults to 7 days even when the requester asks for longer', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue({
       ...connectRequest,
@@ -560,8 +577,11 @@ describe('AppConnectPage', () => {
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
-    expect(await screen.findByText('Access lasts 1 hour')).toBeInTheDocument();
-    expect(screen.getByRole('radio', { name: '1 hour' })).toHaveAttribute('aria-checked', 'true');
+    expect(await screen.findByText('Access lasts 7 days')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: '7 days' })).toHaveAttribute('aria-checked', 'true');
+    // Shorter and longer choices stay one tap away.
+    expect(screen.getByRole('radio', { name: '1 hour' })).toHaveAttribute('aria-checked', 'false');
+    expect(screen.getByRole('radio', { name: '30 days' })).toHaveAttribute('aria-checked', 'false');
   });
 
   it('honors a shorter requested session lifetime during relay approval', async () => {
@@ -691,7 +711,7 @@ describe('AppConnectPage', () => {
         'did:dht:bob',
         refreshRequest,
         '1234',
-        60 * 60,
+        DEFAULT_APPROVAL_SECONDS,
         mocks.agent,
         [],
       );
@@ -1039,7 +1059,7 @@ describe('AppConnectPage', () => {
           'did:dht:fresh',
           connectRequest,
           '1234',
-          60 * 60,
+          DEFAULT_APPROVAL_SECONDS,
           mocks.agent,
           [],
         );

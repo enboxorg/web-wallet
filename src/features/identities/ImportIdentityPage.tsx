@@ -186,7 +186,7 @@ export default function ImportIdentityPage() {
   const allDone = entries.length > 0 && pendingCount === 0 && lockedCount === 0 && !importing;
 
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
+    <div className="mx-auto w-full max-w-3xl space-y-7">
       <PageHeader
         title="Import profiles"
         description="Bring profiles over from exported backup files."

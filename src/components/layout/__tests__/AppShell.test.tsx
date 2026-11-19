@@ -7,8 +7,9 @@ import type { NavItem } from '../types';
 
 const mockNavigate = vi.fn();
 vi.mock('react-router', () => ({
-  useLocation: () => ({ pathname: '/identity' }),
+  useLocation: () => ({ pathname: '/identity', key: 'default' }),
   useNavigate: () => mockNavigate,
+  useNavigationType: () => 'PUSH',
 }));
 
 let mockIsDesktop = true;

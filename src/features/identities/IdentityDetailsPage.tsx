@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router';
 import { ArrowLeft, Pencil, Download, Trash2, Copy, Check, QrCode, UserX, Share2 } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
@@ -65,6 +65,22 @@ export default function IdentityDetailsPage() {
   );
 
   const [activeTab, setActiveTab] = useState(0);
+  const tabBarRef = useRef<HTMLDivElement>(null);
+
+  function selectTab(index: number) {
+    setActiveTab(index);
+    // The tab bar stays pinned while the page scrolls. If the header has
+    // already scrolled away, start the chosen tab at its top instead of
+    // wherever the previous tab was left.
+    requestAnimationFrame(() => {
+      const bar = tabBarRef.current;
+      const panel = document.getElementById(panelId(index));
+      if (!bar || !panel) return;
+      if (panel.getBoundingClientRect().top < bar.getBoundingClientRect().bottom) {
+        panel.scrollIntoView?.({ block: 'start' });
+      }
+    });
+  }
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
@@ -131,20 +147,10 @@ export default function IdentityDetailsPage() {
 
   return (
     <div className="space-y-5">
-      {/* Back link — mobile/tablet only; the sidebar handles this on desktop */}
-      <Link
-        to="/"
-        className="-ml-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-primary lg:hidden"
-        aria-label="Back to profiles"
-      >
-        <ArrowLeft className="size-4" />
-        Profiles
-      </Link>
-
       {/* Profile header */}
       <header className="surface-card overflow-hidden rounded-3xl border border-border-default bg-surface-1">
         {/* Banner, fading into the card beneath the avatar. */}
-        <div className="relative h-32 bg-surface-2 sm:h-48">
+        <div className="relative h-28 bg-surface-2 sm:h-48">
           {profile?.heroUrl ? (
             <div
               className="absolute inset-0 bg-cover bg-center"
@@ -153,11 +159,20 @@ export default function IdentityDetailsPage() {
           ) : (
             <div className="absolute inset-0 bg-[radial-gradient(120%_140%_at_0%_0%,rgba(var(--accent-rgb),0.36),transparent_58%),radial-gradient(120%_140%_at_100%_0%,rgba(var(--accent-2-rgb),0.28),transparent_60%)]" />
           )}
-          <div className="banner-scrim h-24" aria-hidden="true" />
+          <div className="banner-scrim h-20 sm:h-24" aria-hidden="true" />
+          {/* Back rides the banner on phones and tablets, where every line of
+              height counts; the sidebar covers this on desktop. */}
+          <Link
+            to="/"
+            className="absolute left-3 top-3 inline-flex size-10 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors before:absolute before:-inset-1.5 before:content-[''] hover:bg-black/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white lg:hidden"
+            aria-label="Back to profiles"
+          >
+            <ArrowLeft className="size-[18px]" aria-hidden="true" />
+          </Link>
         </div>
 
-        <div className="relative px-5 pb-6 sm:px-8 sm:pb-7">
-          <div className="-mt-14 flex items-end justify-between gap-3">
+        <div className="relative px-5 pb-5 sm:px-8 sm:pb-7">
+          <div className="-mt-11 flex items-end justify-between gap-3 sm:-mt-14">
             <Avatar
               src={profile?.avatarUrl}
               name={displayName}
@@ -185,7 +200,7 @@ export default function IdentityDetailsPage() {
             </div>
           </div>
 
-          <div className="mt-4 min-w-0">
+          <div className="mt-3 min-w-0 sm:mt-4">
             <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
               <h1 className="truncate text-[1.75rem] font-semibold leading-9 tracking-[-0.025em] text-text-primary sm:text-[2rem] sm:leading-10">
                 {displayName}
@@ -200,7 +215,7 @@ export default function IdentityDetailsPage() {
             <button
               type="button"
               onClick={handleCopyDid}
-              className="mt-4 inline-flex min-h-8 max-w-full items-center gap-2 rounded-full border border-border-default bg-surface-2 px-3 font-mono text-xs text-text-tertiary transition-colors hover:border-border-strong hover:bg-surface-3 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="mt-3 inline-flex min-h-8 max-w-full items-center gap-2 rounded-full border border-border-default bg-surface-2 px-3 font-mono text-xs text-text-tertiary sm:mt-4 transition-colors hover:border-border-strong hover:bg-surface-3 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               title="Copy profile ID"
             >
               <span className="truncate">{truncateDid(did)}</span>
@@ -214,25 +229,38 @@ export default function IdentityDetailsPage() {
         </div>
       </header>
 
-      {/* Tabs */}
-      <TabList>
-        {TABS.map((label, index) => (
-          <Tab
-            key={label}
-            id={tabId(index)}
-            panelId={panelId(index)}
-            active={activeTab === index}
-            onClick={() => setActiveTab(index)}
-            count={tabCounts[index]}
-          >
-            {label}
-          </Tab>
-        ))}
-      </TabList>
+      {/* Tabs: pinned to the top of the page once the header scrolls away, so
+          switching never means scrolling back up. Full-bleed on phones. The
+          negative offset cancels the shell's top padding (pt-6, lg:pt-10),
+          which sticky positioning would otherwise leave as a gap above. */}
+      <div
+        ref={tabBarRef}
+        data-testid="profile-tab-bar"
+        className="sticky -top-6 z-20 -mx-[var(--content-gutter)] bg-surface-0/85 px-[var(--content-gutter)] backdrop-blur-md lg:-top-10 lg:mx-0 lg:px-0"
+      >
+        <TabList>
+          {TABS.map((label, index) => (
+            <Tab
+              key={label}
+              id={tabId(index)}
+              panelId={panelId(index)}
+              active={activeTab === index}
+              onClick={() => selectTab(index)}
+              count={tabCounts[index]}
+            >
+              {label}
+            </Tab>
+          ))}
+        </TabList>
+      </div>
 
       <TabPanel id={panelId(0)} labelledBy={tabId(0)} active={activeTab === 0}>
         <div className="space-y-8">
-          <OverviewTab did={did} />
+          <OverviewTab
+            did={did}
+            onShowApps={() => selectTab(TABS.indexOf('Apps & Permissions'))}
+            onShowModules={() => selectTab(TABS.indexOf('Modules'))}
+          />
 
           <section aria-labelledby="manage-profile-heading" className="space-y-3">
             <SectionHeader id="manage-profile-heading" title="Manage profile" />

@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import DWebConnectPage from '../DWebConnectPage';
 import { useAuthStore } from '@/stores/auth-store';
 
+/** The wallet approves for 7 days unless the owner picks another duration. */
+const DEFAULT_APPROVAL_SECONDS = 7 * 24 * 60 * 60;
+
 const mocks = vi.hoisted(() => {
   const transport = {
     dappOrigin   : 'https://app.example',
@@ -388,7 +391,7 @@ describe('DWebConnectPage', () => {
       'did:dht:alice',
       expect.objectContaining({ clientDid: 'did:jwk:dapp-client', state: 'state-1' }),
       'https://app.example',
-      60 * 60,
+      DEFAULT_APPROVAL_SECONDS,
       mocks.agent,
       [],
     );
@@ -664,7 +667,7 @@ describe('DWebConnectPage', () => {
         'did:dht:bob',
         refreshRequest,
         'https://app.example',
-        60 * 60,
+        DEFAULT_APPROVAL_SECONDS,
         mocks.agent,
         [],
       );

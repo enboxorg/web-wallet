@@ -81,7 +81,7 @@ export default function SearchPage() {
   const showEmpty = !searchDid || !searchDid.startsWith('did:');
 
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
+    <div className="mx-auto w-full max-w-3xl space-y-7">
       <PageHeader
         title="Find people"
         description="Look up someone's public profile with their profile ID. They can copy it from Share on their profile."

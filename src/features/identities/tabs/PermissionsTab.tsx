@@ -30,6 +30,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
+import { ModuleUri } from '@/components/modules/ModuleUri';
 import { PermissionActionChips, SupportActionsNote } from '@/components/connect/PermissionActionChips';
 import { formatList, hidesSupportActions, visibleActions } from '@/components/connect/connect-scope-display';
 import { truncateDid, cn } from '@/lib/utils';
@@ -119,9 +120,8 @@ function accessRowDetail(row: GrantAccessRow, display: ModuleDisplay | undefined
   if (row.contextId) return 'One shared context only';
   if (row.modulePath) return `Only ${row.modulePath}`;
   if (!display) return 'Not limited to one module';
-  return display.isCore
-    ? display.description
-    : [display.host, display.version].filter(Boolean).join(' · ') || undefined;
+  // A third-party module's own URI, shown in full under its name, is its detail.
+  return display.isCore ? display.description : undefined;
 }
 
 function DeviceIcon({ summary, className }: { summary: SessionEnvironmentSummary; className?: string }) {
@@ -164,7 +164,7 @@ function AccessRowItem({
       )}
       <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-4">
         <div className="min-w-0 sm:flex-1">
-          <p id={nameId} className="flex min-w-0 items-center gap-2 text-sm font-medium text-text-primary" title={row.module}>
+          <p id={nameId} className="flex min-w-0 items-center gap-2 text-sm font-medium text-text-primary">
             <span className="truncate">
               {display?.companionOf ? getModuleName(display.companionOf) : name}
             </span>
@@ -172,8 +172,10 @@ function AccessRowItem({
               <span className="shrink-0 text-xs font-normal text-text-tertiary">Shared contexts</span>
             )}
           </p>
+          {/* Same as the approval screen: the URI is the module's identity. */}
+          {row.module && <ModuleUri uri={row.module} className="mt-0.5" />}
           {(detail || thirdParty) && (
-            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
+            <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
               {detail && <span className="min-w-0 truncate" title={detail}>{detail}</span>}
               {detail && thirdParty && <span aria-hidden="true" className="text-text-ghost">·</span>}
               {thirdParty && (
@@ -854,10 +856,10 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
         >
           <div className="space-y-5">
             <p className="text-sm leading-relaxed text-text-secondary">
-              Give <strong className="text-text-primary">{shownRenew?.applicationName}</strong> a
-              fresh {formatConnectSessionDuration(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS)} session
-              on this device with the same permissions it had before? The app picks up its new
-              access on its next sync.
+              Give <strong className="text-text-primary">{shownRenew?.applicationName}</strong> access
+              on this device for another {formatConnectSessionDuration(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS)},
+              with the same permissions it had before? The app picks up its new access on its
+              next sync.
             </p>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button variant="ghost" onClick={() => setRenewTarget(null)} disabled={renewing}>

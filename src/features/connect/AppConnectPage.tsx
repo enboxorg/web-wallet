@@ -62,7 +62,7 @@ import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
-import { copyToClipboard, truncateDid } from '@/lib/utils';
+import { cn, copyToClipboard, truncateDid } from '@/lib/utils';
 import { sanitizeDisplayText } from '@/lib/display-text';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
@@ -692,14 +692,25 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   // ── Render ───────────────────────────────────────────────────────
 
+  // On phones the live viewfinder is the page: it fills whatever height is
+  // left (in the shell, from under the app bar to the tab bar), so its
+  // controls are always on screen.
+  const viewfinderFills = phase === 'scanning' && !cameraError;
+
   return (
     // In the shell, the negative margins cancel the content gutter so the
     // camera can go full-bleed. Standalone (the bare ceremony layout) has
     // no gutter to cancel — the page is a flex column filling the screen.
-    <div className={standalone ? 'flex flex-1 flex-col' : '-mx-[var(--content-gutter)] -mt-6 lg:mx-0 lg:mt-0'}>
+    <div
+      className={cn(
+        standalone ? 'flex flex-1 flex-col' : '-mx-[var(--content-gutter)] -mt-6 lg:mx-0 lg:mt-0',
+        // In the shell, also cancel its bottom padding so the camera meets the tab bar.
+        viewfinderFills && !standalone && '-mb-10 flex flex-1 flex-col lg:mb-0 lg:block lg:flex-none',
+      )}
+    >
       {/* ─── Scanning phase ─────────────────────────────────────── */}
       {phase === 'scanning' && (
-        <div className="animate-[fadeIn_0.3s_ease-out]">
+        <div className={cn('animate-[fadeIn_0.3s_ease-out]', viewfinderFills && 'flex flex-1 flex-col lg:block')}>
           {cameraError ? (
             <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-6 py-16 text-center">
               <span className="surface-card flex size-16 items-center justify-center rounded-[20px] border border-border-default bg-surface-2 text-text-secondary">
@@ -723,7 +734,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               </Button>
             </div>
           ) : (
-            <div className="flex flex-col items-center">
+            <div className="flex flex-1 flex-col items-center">
               {/* Desktop gets a title like every other page; on phones the
                   camera is the page. */}
               <div className="mb-7 hidden w-full lg:block">
@@ -736,8 +747,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               {/* Camera viewfinder: full-bleed on phones, a framed stage on desktop.
                   Clipped, so the dimming around the target never spills onto the page. */}
               <div
-                className="relative w-full overflow-hidden bg-black lg:rounded-3xl lg:border lg:border-border-default lg:shadow-raised"
-                style={{ minHeight: 'min(70vh, 40rem)' }}
+                className="relative min-h-[22rem] w-full flex-1 overflow-hidden bg-black lg:min-h-[min(70vh,40rem)] lg:flex-none lg:rounded-3xl lg:border lg:border-border-default lg:shadow-raised"
               >
                 <video
                   ref={videoRef}
@@ -773,8 +783,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   </span>
                 </div>
 
-                {/* Floating camera controls */}
-                <div className="absolute bottom-5 left-4 right-4 z-20 flex items-center justify-between">
+                {/* Floating camera controls: flash, the image fallback, camera switch. */}
+                <div
+                  data-testid="scanner-controls"
+                  className="absolute inset-x-4 bottom-5 z-20 grid grid-cols-[2.75rem_1fr_2.75rem] items-center gap-3"
+                >
                   <button
                     type="button"
                     disabled={!hasFlash}
@@ -783,6 +796,15 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                     aria-label="Toggle flash"
                   >
                     {flashOn ? <Zap className="h-5 w-5" /> : <ZapOff className="h-5 w-5" />}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="inline-flex min-h-[44px] items-center gap-2 justify-self-center rounded-full bg-black/55 px-4 text-sm font-medium text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                  >
+                    <ImageUp className="size-4 shrink-0" aria-hidden="true" />
+                    Scan from image
                   </button>
 
                   {cameras.length > 1 && (
@@ -796,14 +818,6 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                     </button>
                   )}
                 </div>
-              </div>
-
-              {/* Upload fallback */}
-              <div className="flex flex-col items-center gap-1 py-5">
-                <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
-                  <ImageUp className="h-4 w-4" aria-hidden="true" />
-                  Scan from image
-                </Button>
               </div>
             </div>
           )}

@@ -119,7 +119,7 @@ export default function CreateIdentityPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
+    <div className="mx-auto w-full max-w-3xl space-y-7">
       <PageHeader
         title="New profile"
         description="Set up a new profile to share with apps."

@@ -79,8 +79,9 @@ export function Tab({ id, panelId, active, onClick, count, children, className }
           <span
             aria-hidden="true"
             className={cn(
-              'min-w-5 rounded-full px-1.5 py-px text-center text-[11px] font-semibold tabular-nums transition-colors',
-              active ? 'bg-accent/15 text-accent' : 'bg-surface-3 text-text-tertiary',
+              'min-w-5 rounded-full bg-surface-3 px-1.5 py-px text-center text-[11px] font-semibold tabular-nums transition-colors',
+              // Neutral either way: an accent-tinted count reads like an alert.
+              active ? 'text-text-primary' : 'text-text-tertiary',
             )}
           >
             {count}
@@ -116,7 +117,7 @@ export function TabPanel({ id, labelledBy, active, children, className }: TabPan
       role="tabpanel"
       aria-labelledby={labelledBy}
       tabIndex={0}
-      className={cn('py-5 focus-visible:outline-none', className)}
+      className={cn('scroll-mt-12 pb-5 pt-3 focus-visible:outline-none', className)}
     >
       {children}
     </div>

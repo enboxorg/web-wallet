@@ -45,7 +45,7 @@ function ActivityRow({
             {display?.name ?? 'Unknown module'}
           </span>
           {item.published && (
-            <Badge tone="accent" icon={<Globe />}>Published</Badge>
+            <Badge icon={<Globe />} title="Anyone can read this record.">Published</Badge>
           )}
         </div>
 

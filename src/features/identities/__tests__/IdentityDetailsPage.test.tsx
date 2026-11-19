@@ -215,6 +215,36 @@ describe('IdentityDetailsPage', () => {
     expect(screen.getByText('A test bio')).toBeInTheDocument();
   });
 
+  it('words each overview count for its number', () => {
+    renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
+
+    // One connected app reads "1 App", never "1 Apps".
+    expect(screen.getByRole('button', { name: /^1\s*App with access$/ })).toBeInTheDocument();
+    expect(screen.queryByText('Apps with access')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^3\s*Modules$/ })).toBeInTheDocument();
+  });
+
+  it('opens the tab an overview count comes from', async () => {
+    const { user } = renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
+
+    await user.click(screen.getByRole('button', { name: /^3\s*Modules$/ }));
+    expect(screen.getByRole('tab', { name: /modules/i })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('region', { name: 'Core modules' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('tab', { name: /overview/i }));
+    await user.click(screen.getByRole('button', { name: /App with access$/ }));
+    expect(screen.getByRole('tab', { name: /apps & permissions/i })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it('pins the tab bar and offers a way back to the profile list', () => {
+    renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
+
+    const bar = screen.getByTestId('profile-tab-bar');
+    expect(bar).toHaveClass('sticky');
+    expect(within(bar).getByRole('tablist')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Back to profiles' })).toHaveAttribute('href', '/');
+  });
+
   it('switches to modules tab when clicked', async () => {
     const { user } = renderWithProviders(<IdentityDetailsPage />, {
       initialRoute: route,

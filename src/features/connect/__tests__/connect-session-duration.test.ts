@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   getConnectSessionDurationOptions,
   formatRelativeExpiry,
   resolveConnectSessionApprovalDurationSeconds,
@@ -15,10 +16,33 @@ describe('connect session approval duration', () => {
     }]);
   });
 
-  it('keeps the wallet default while excluding choices above the request', () => {
-    expect(resolveConnectSessionApprovalDurationSeconds(24 * 60 * 60)).toBe(60 * 60);
-    expect(getConnectSessionDurationOptions(24 * 60 * 60)).toEqual([
+  it('defaults to 7 days when the request sets no limit or a longer one', () => {
+    const week = 7 * 24 * 60 * 60;
+    expect(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS).toBe(week);
+    expect(resolveConnectSessionApprovalDurationSeconds()).toBe(week);
+    expect(resolveConnectSessionApprovalDurationSeconds(90 * 24 * 60 * 60)).toBe(week);
+    expect(getConnectSessionDurationOptions()).toEqual([
       { value: 60 * 60, label: '1 hour' },
+      { value: week, label: '7 days' },
+      { value: 30 * 24 * 60 * 60, label: '30 days' },
+    ]);
+  });
+
+  it('never defaults above what the app asked for, and drops choices above it', () => {
+    const day = 24 * 60 * 60;
+    expect(resolveConnectSessionApprovalDurationSeconds(day)).toBe(day);
+    expect(getConnectSessionDurationOptions(day)).toEqual([
+      { value: 60 * 60, label: '1 hour' },
+      { value: day, label: '1 day' },
+    ]);
+  });
+
+  it('offers exactly the wallet choices when the request allows 7 days', () => {
+    const week = 7 * 24 * 60 * 60;
+    expect(resolveConnectSessionApprovalDurationSeconds(week)).toBe(week);
+    expect(getConnectSessionDurationOptions(week)).toEqual([
+      { value: 60 * 60, label: '1 hour' },
+      { value: week, label: '7 days' },
     ]);
   });
 });
