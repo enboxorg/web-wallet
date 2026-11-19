@@ -53,7 +53,7 @@ describe('Button', () => {
     expect(screen.getByRole('button').className).toContain('bg-transparent');
 
     rerender(<Button variant="danger">Danger</Button>);
-    expect(screen.getByRole('button').className).toContain('bg-error');
+    expect(screen.getByRole('button').className).toContain('bg-danger');
   });
 
   it('applies size classes', () => {

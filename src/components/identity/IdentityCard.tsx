@@ -3,6 +3,7 @@ import { Copy, Check, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { truncateDid, copyToClipboard } from '@/lib/utils';
 import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
 
 interface IdentityCardProps {
   did: string;
@@ -39,30 +40,29 @@ export function IdentityCard({
   };
 
   return (
-    <div
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={onClick ? (e: React.KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : undefined}
+    // The name is the card's real control; its ::after stretches over the
+    // whole card so the card stays click-anywhere without nesting the copy
+    // button inside another interactive element.
+    <article
       className={cn(
-        'flex flex-col overflow-hidden rounded-lg border border-border-default',
+        'group relative flex flex-col overflow-hidden rounded-2xl border border-border-default',
         'bg-surface-1 text-left w-full',
-        'transition-all duration-[var(--duration-fast)]',
-        onClick && 'cursor-pointer hover:border-border-strong hover:shadow-md hover:-translate-y-0.5',
-        'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-0',
+        'transition-[border-color,box-shadow,transform] duration-[var(--duration-base)] ease-[var(--ease-out)]',
+        onClick && 'cursor-pointer hover:border-border-strong hover:shadow-lg hover:-translate-y-0.5',
+        'has-[[data-card-action]:focus-visible]:ring-2 has-[[data-card-action]:focus-visible]:ring-accent has-[[data-card-action]:focus-visible]:ring-offset-2 has-[[data-card-action]:focus-visible]:ring-offset-surface-0',
         className,
       )}
     >
       {/* Hero banner */}
-      <div className="h-28 w-full overflow-hidden">
+      <div className="h-24 w-full overflow-hidden">
         {heroUrl ? (
           <img
             src={heroUrl}
             alt=""
-            className="h-full w-full object-cover"
+            className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
           />
         ) : (
-          <div className="h-full w-full bg-gradient-to-br from-accent-muted to-surface-2" />
+          <div className="h-full w-full bg-surface-2 bg-[radial-gradient(120%_140%_at_0%_0%,rgba(var(--accent-rgb),0.32),transparent_60%)]" />
         )}
       </div>
 
@@ -70,18 +70,27 @@ export function IdentityCard({
       <div className="relative px-4 pb-4">
         {/* Avatar overlapping hero */}
         <div className="-mt-8">
-          <Avatar src={avatarUrl} name={displayName} size="lg" />
+          <Avatar src={avatarUrl} name={displayName} size="lg" className="ring-4 ring-surface-1" />
         </div>
 
         <div className="mt-2">
           <div className="flex items-center gap-2">
-            <h3 className="text-sm font-semibold text-text-primary truncate">
-              {displayName ?? 'Unnamed'}
+            <h3 className="truncate text-base font-semibold tracking-tight text-text-primary">
+              {onClick ? (
+                <button
+                  type="button"
+                  data-card-action
+                  onClick={onClick}
+                  className="text-left after:absolute after:inset-0 after:content-[''] focus-visible:outline-none"
+                >
+                  {displayName ?? 'Unnamed'}
+                </button>
+              ) : (
+                displayName ?? 'Unnamed'
+              )}
             </h3>
             {persona && (
-              <span className="rounded-full bg-accent-muted px-2 py-0.5 text-[10px] font-medium text-accent">
-                {persona}
-              </span>
+              <Badge tone="accent">{persona}</Badge>
             )}
           </div>
           {tagline && (
@@ -96,20 +105,19 @@ export function IdentityCard({
             <button
               type="button"
               onClick={handleCopy}
-              className="shrink-0 p-1 rounded text-text-ghost hover:text-text-secondary transition-colors"
+              className="relative z-10 shrink-0 rounded p-1 text-text-ghost transition-colors hover:text-text-secondary"
               aria-label="Copy DID"
             >
               {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
             </button>
           </div>
           {appCount !== undefined && appCount > 0 && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent mt-2">
-              <Shield size={10} />
-              {appCount} {appCount === 1 ? 'app' : 'apps'}
-            </span>
+            <Badge className="mt-3" icon={<Shield />}>
+              {appCount} with access
+            </Badge>
           )}
         </div>
       </div>
-    </div>
+    </article>
   );
 }

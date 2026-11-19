@@ -244,7 +244,7 @@ describe('IdentityDetailsPage', () => {
 
     await user.click(screen.getByRole('tab', { name: /permissions/i }));
 
-    expect(screen.getByText('Connected Apps')).toBeInTheDocument();
+    expect(screen.getByText('Connected apps')).toBeInTheDocument();
     expect(screen.getByText('Example App')).toBeInTheDocument();
     expect(screen.getByText('Safari on macOS')).toBeInTheDocument();
     expect(screen.getAllByText('America/New_York').length).toBeGreaterThanOrEqual(1);

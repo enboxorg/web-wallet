@@ -38,16 +38,16 @@ export function ModuleOverrideConfirmDialog({
 
         <ul className="space-y-2">
           {modules.map((uri) => (
-            <li key={uri} className="rounded-lg border border-border-default bg-surface-1 px-3 py-2">
+            <li key={uri} className="rounded-xl border border-border-default bg-surface-2 px-3.5 py-2.5">
               <p className="text-sm font-medium text-text-primary">{getModuleName(uri)}</p>
-              <p className="mt-0.5 truncate font-mono text-[10px] text-text-ghost" title={uri}>
+              <p className="mt-0.5 truncate font-mono text-[11px] text-text-ghost" title={uri}>
                 {uri}
               </p>
             </li>
           ))}
         </ul>
 
-        <div className="flex flex-col gap-3 sm:flex-row-reverse">
+        <div className="flex flex-col gap-2 sm:flex-row-reverse">
           <Button className="w-full sm:flex-1" onClick={onConfirm}>
             <RefreshCw className="h-4 w-4" />
             Replace &amp; connect

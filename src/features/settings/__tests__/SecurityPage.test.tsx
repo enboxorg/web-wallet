@@ -65,15 +65,11 @@ describe('SecurityPage', () => {
     const user = userEvent.setup();
     render(<SecurityPage />);
 
-    const thirtyMin = screen.getByText('30 minutes');
-    await user.click(thirtyMin);
+    await user.click(screen.getByRole('radio', { name: '30 minutes' }));
 
-    // The clicked option should now have the accent class (selected)
-    expect(thirtyMin.className).toContain('bg-accent');
-
+    expect(screen.getByRole('radio', { name: '30 minutes' })).toHaveAttribute('aria-checked', 'true');
     // The default option (10 minutes) should no longer be selected
-    const tenMin = screen.getByText('10 minutes');
-    expect(tenMin.className).not.toContain('bg-accent');
+    expect(screen.getByRole('radio', { name: '10 minutes' })).toHaveAttribute('aria-checked', 'false');
   });
 
   it('clicking Lock now calls lock', async () => {

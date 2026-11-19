@@ -73,63 +73,65 @@ export function RenewSessionDisplay({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+      <section className="rounded-xl border border-border-default bg-surface-1 p-4">
         <div className="flex items-start gap-3">
-          <RefreshCw className="mt-0.5 h-5 w-5 shrink-0 text-accent" />
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/20">
+            <RefreshCw className="size-[18px]" aria-hidden="true" />
+          </span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-text-primary">
               Renew access for {appName}
             </p>
-            <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+            <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">
               Review the requested access before issuing fresh grants to the existing app delegate.
             </p>
           </div>
         </div>
 
         {lookupPending && (
-          <div className="mt-3 flex items-center gap-2 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2 text-xs text-text-secondary">
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-border-subtle bg-surface-2 px-3 py-2.5 text-xs text-text-secondary">
             <Loader2 className="h-4 w-4 animate-spin" />
             Checking the previous connection…
           </div>
         )}
 
         {!lookupPending && lookupError && (
-          <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl border border-error/30 bg-error/[0.06] px-3 py-2.5 text-xs text-error">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             The wallet could not verify the previous connection. Renewal is blocked.
           </div>
         )}
 
         {!lookupPending && !lookupError && detection.matchState === 'not-found' && (
-          <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-text-secondary">
+          <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl border border-warning/30 bg-warning/[0.06] px-3 py-2.5 text-xs text-text-secondary">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
             No previous session for this delegate was found in this wallet. Use the original wallet or start a new connection.
           </div>
         )}
 
         {!lookupPending && !lookupError && detection.matchState === 'ambiguous' && (
-          <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl border border-error/30 bg-error/[0.06] px-3 py-2.5 text-xs text-error">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             This delegate is linked to more than one profile, so the wallet cannot safely choose which one to renew.
           </div>
         )}
 
         {!lookupPending && !lookupError && detection.matchState === 'profile-mismatch' && (
-          <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl border border-error/30 bg-error/[0.06] px-3 py-2.5 text-xs text-error">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             This request names a different profile than the previous session. Renewal is blocked.
           </div>
         )}
 
         {!lookupPending && !lookupError && matched && !ownerSupported && (
-          <div role="alert" className="mt-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 px-3 py-2 text-xs text-error">
+          <div role="alert" className="mt-3 flex items-start gap-2 rounded-xl border border-error/30 bg-error/[0.06] px-3 py-2.5 text-xs text-error">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
             The app no longer supports the profile used by this connection. Renewal is blocked.
           </div>
         )}
 
         {!lookupPending && !lookupError && matched && ownerSupported && detection.pinnedOwnerDid && (
-          <div className="mt-3 space-y-2 rounded-lg border border-border-subtle bg-surface-1 px-3 py-3">
+          <div className="mt-3 space-y-2 rounded-xl border border-border-subtle bg-surface-2 px-3 py-3">
             <div className="flex items-center gap-2 text-xs text-text-secondary">
               <ShieldCheck className="h-4 w-4 shrink-0 text-accent" />
               <span>

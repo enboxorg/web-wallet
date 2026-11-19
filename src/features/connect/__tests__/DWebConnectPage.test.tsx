@@ -1,5 +1,5 @@
 import { StrictMode } from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -323,10 +323,9 @@ describe('DWebConnectPage', () => {
 
     render(<DWebConnectPage />);
 
-    expect(screen.getByTestId('dweb-connect-page')).toHaveClass(
-      'min-h-dvh',
-      'pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]',
-    );
+    expect(screen.getByTestId('dweb-connect-page')).toHaveClass('min-h-dvh');
+    // Notch clearance on top; the decision bar carries its own bottom inset.
+    expect(screen.getByRole('banner')).toHaveClass('pt-[max(1rem,env(safe-area-inset-top))]');
   });
 
   it('shows the consent UI with the transport-pinned dapp origin', async () => {
@@ -335,7 +334,8 @@ describe('DWebConnectPage', () => {
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
     // The requester label is the transport-authenticated origin, not the
     // request's claimed clientMetadata.origin.
-    expect(screen.getByText('https://app.example')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^https:\/\/\s?app\.example$/ })).toBeInTheDocument();
+    expect(screen.getByText('Origin verified')).toBeInTheDocument();
     expect(screen.queryByText('https://claimed.example')).not.toBeInTheDocument();
     expect(screen.getByText(/Reported app name:\s*Example App/i)).toBeInTheDocument();
   });
@@ -398,9 +398,8 @@ describe('DWebConnectPage', () => {
   ])('passes the wallet-selected %s duration to popup approval', async (label, seconds) => {
     render(<DWebConnectPage />);
 
-    fireEvent.change(await screen.findByLabelText('Access duration'), {
-      target: { value: String(seconds) },
-    });
+    fireEvent.click(within(await screen.findByRole('radiogroup', { name: 'Access duration' }))
+      .getByRole('radio', { name: label }));
     expect(screen.getByText(`Access lasts ${label}`)).toBeInTheDocument();
     const approve = screen.getByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
@@ -625,7 +624,7 @@ describe('DWebConnectPage', () => {
     expect(screen.getByText('Revoked')).toBeVisible();
     expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
-    expect(screen.getByText('View a custom data type')).toBeVisible();
+    expect(screen.getByRole('listitem', { name: 'Custom data type' })).toBeVisible();
     await waitFor(() => expect(renew).toBeEnabled());
     fireEvent.click(renew);
 

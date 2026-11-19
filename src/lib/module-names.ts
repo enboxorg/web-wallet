@@ -116,9 +116,106 @@ export function isKnownModule(uri: string): boolean {
   return uri in MODULE_REGISTRY;
 }
 
+/** Structural display facts parsed from a module URI. */
+export interface ModuleUriParts {
+  /** Host that namespaces the URI (e.g. `enbox.id`). A naming convention, not proof of authorship. */
+  host?: string;
+  /** Trailing version segment such as `v1` or `2.0`, when present. */
+  version?: string;
+  /** Path segments that describe the data, without version or generic `modules/` segments. */
+  slugs: string[];
+  /** Compact form for secondary display: `enbox.id/modules/notes/v1`. */
+  shortUri: string;
+}
+
+/** Path segments that only organise URIs and never describe the data. */
+const GENERIC_SEGMENTS = new Set([
+  'module', 'modules', 'protocol', 'protocols', 'schema', 'schemas',
+]);
+
+/** `v1`, `v2beta`, `v1.2.0`, or a bare dotted `1.0` / `2.0.1`. */
+const VERSION_SEGMENT = /^(v\d+(?:[._-]?[a-z0-9]+)*|\d+(?:\.\d+)+)$/i;
+
+/**
+ * Leaf segments too generic to stand alone as a name; the parent segment is
+ * kept for context (`notes/core` → "Notes Core", not "Core").
+ */
+const NON_DESCRIPTIVE_LEAVES = new Set([
+  'api', 'app', 'base', 'common', 'core', 'data', 'default', 'index', 'main', 'root', 'shared',
+]);
+
+function decodeSegment(segment: string): string {
+  try {
+    return decodeURIComponent(segment);
+  } catch {
+    return segment;
+  }
+}
+
+/** Parse a module URI into display parts without trusting any of it. */
+export function parseModuleUri(uri: string): ModuleUriParts {
+  let host: string | undefined;
+  let segments: string[];
+  let shortUri = uri;
+
+  try {
+    const url = new URL(uri);
+    if (url.protocol === 'https:' || url.protocol === 'http:') {
+      host = url.host || undefined;
+      segments = url.pathname.split('/').filter(Boolean).map(decodeSegment);
+      shortUri = `${url.host}${url.pathname.replace(/\/+$/, '')}`;
+    } else {
+      // Opaque URIs (urn:, did:, …) carry their structure in the path.
+      segments = url.pathname.split(/[/:]/).filter(Boolean).map(decodeSegment);
+    }
+  } catch {
+    segments = uri.split('/').filter(Boolean);
+  }
+
+  let version: string | undefined;
+  const slugs: string[] = [];
+  for (const segment of segments) {
+    if (VERSION_SEGMENT.test(segment)) {
+      version = segment;
+      continue;
+    }
+    if (GENERIC_SEGMENTS.has(segment.toLowerCase())) {
+      continue;
+    }
+    slugs.push(segment);
+  }
+
+  return { host, version, slugs, shortUri };
+}
+
+/** `stock-watchlists` → "Stock Watchlists", `mediaLibrary` → "Media Library". */
+export function humanizeSlug(slug: string): string {
+  return slug
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[-_.+~]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/(^|\s)(\S)/g, (_match, space: string, letter: string) => `${space}${letter.toUpperCase()}`);
+}
+
+function nameFromSlugs(slugs: string[]): string | undefined {
+  if (slugs.length === 0) return undefined;
+  const leaf = slugs[slugs.length - 1];
+  if (slugs.length > 1 && NON_DESCRIPTIVE_LEAVES.has(leaf.toLowerCase())) {
+    return humanizeSlug(`${slugs[slugs.length - 2]} ${leaf}`);
+  }
+  return humanizeSlug(leaf);
+}
+
 /**
  * Get a human-friendly name for a module URI.
- * Falls back to the last path segment if the URI is unknown.
+ *
+ * Curated names are used for wallet-known modules. Otherwise the name is
+ * derived from the most descriptive path segment, skipping version segments
+ * (`/v1`) and organisational segments (`/modules`), so
+ * `https://enbox.id/modules/stock-watchlists/v1` reads "Stock Watchlists".
+ * A derived name is display text only — pair it with {@link parseModuleUri}'s
+ * host wherever provenance matters.
  */
 export function getModuleName(uri: string): string {
   const info = MODULE_REGISTRY[uri];
@@ -127,10 +224,48 @@ export function getModuleName(uri: string): string {
   if (companionRoot) {
     return `${getModuleName(companionRoot)} Contexts`;
   }
-  // Fall back to last path segment, title-cased.
-  const parts = uri.split('/');
-  const last = parts[parts.length - 1] || uri;
-  return last.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  const { host, slugs } = parseModuleUri(uri);
+  return nameFromSlugs(slugs) ?? host ?? uri;
+}
+
+/** Everything a management view needs to label a module consistently. */
+export interface ModuleDisplay {
+  uri: string;
+  name: string;
+  /** Curated description, only for wallet-known modules. */
+  description?: string;
+  host?: string;
+  version?: string;
+  shortUri: string;
+  /** Curated wallet module (Profile, Connect, Preferences). */
+  isCore: boolean;
+  /**
+   * Root module URI, set only when the installed definition is the exact
+   * `@enbox/contexts` companion contract — a `/contexts` URI suffix alone is
+   * never trusted.
+   */
+  companionOf?: string;
+}
+
+/**
+ * Display facts for a module. Pass the installed definition when available:
+ * without it a module is never presented as a shared-contexts companion.
+ */
+export function describeModule(uri: string, definition?: DwnModuleDefinition): ModuleDisplay {
+  const info = MODULE_REGISTRY[uri];
+  const parts = parseModuleUri(uri);
+  return {
+    uri,
+    name        : getModuleName(uri),
+    description : info?.description,
+    host        : parts.host,
+    version     : parts.version,
+    shortUri    : parts.shortUri,
+    isCore      : info !== undefined,
+    companionOf : !info && definition !== undefined && isContextCompanionDefinition(definition)
+      ? getContextCompanionRootUri(uri)
+      : undefined,
+  };
 }
 
 /**

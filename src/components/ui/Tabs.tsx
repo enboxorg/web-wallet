@@ -48,32 +48,49 @@ interface TabProps {
   panelId?: string;
   active?: boolean;
   onClick?: () => void;
+  /** Optional count, shown as a quiet pill and announced as "(n)". */
+  count?: number;
   children: React.ReactNode;
   className?: string;
 }
 
-export function Tab({ id, panelId, active, onClick, children, className }: TabProps) {
+export function Tab({ id, panelId, active, onClick, count, children, className }: TabProps) {
   return (
     <button
       id={id}
+      type="button"
       role="tab"
       aria-selected={active}
       aria-controls={panelId}
       tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={cn(
-        'relative shrink-0 px-4 py-2.5 text-sm font-medium transition-colors duration-[var(--duration-fast)]',
-        'focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+        'relative inline-flex shrink-0 items-center gap-1.5 px-3 py-3 text-sm font-medium transition-colors duration-[var(--duration-fast)]',
+        'focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent rounded-t-lg',
         active
-          ? 'text-accent'
+          ? 'text-text-primary'
           : 'text-text-tertiary hover:text-text-primary',
         className,
       )}
     >
       {children}
+      {count !== undefined && count > 0 && (
+        <>
+          <span
+            aria-hidden="true"
+            className={cn(
+              'min-w-5 rounded-full px-1.5 py-px text-center text-[11px] font-semibold tabular-nums',
+              active ? 'bg-accent/15 text-accent' : 'bg-surface-3 text-text-tertiary',
+            )}
+          >
+            {count}
+          </span>
+          <span className="sr-only">({count})</span>
+        </>
+      )}
       {active && (
         <span
-          className="absolute bottom-0 left-0 right-0 h-0.5 bg-accent rounded-full"
+          className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent"
           aria-hidden="true"
         />
       )}

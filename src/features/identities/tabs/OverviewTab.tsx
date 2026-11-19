@@ -1,28 +1,58 @@
 import { Link } from 'react-router';
-import { ExternalLink, QrCode, Search } from 'lucide-react';
+import { Boxes, ChevronRight, MonitorSmartphone, PencilLine, QrCode, Search, Shield } from 'lucide-react';
 import { useProfile } from '@/enbox/hooks/use-profile';
 import { useModules } from '@/enbox/hooks/use-modules';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { Loader } from '@/components/ui/Loader';
-import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
-import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
+import { buttonClassName } from '@/components/ui/button-styles';
 import { RemoteSyncStatusPanel } from './RemoteSyncStatusPanel';
+import { buildPermissionSections, countActivePermissionApps } from './permission-sessions';
 
 interface OverviewTabProps {
   did: string;
+}
+
+function Stat({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border-default bg-surface-1 p-3.5 sm:p-4">
+      <div className="flex items-center gap-1.5 text-text-tertiary [&>svg]:size-3.5 [&>svg]:shrink-0">
+        {icon}
+        <span className="truncate text-xs">{label}</span>
+      </div>
+      <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-text-primary">{value}</p>
+    </div>
+  );
+}
+
+function QuickAction({ to, icon, title, description }: {
+  to: string;
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      to={to}
+      className="group flex items-center gap-3 rounded-xl border border-border-default bg-surface-1 p-4 text-left transition-colors hover:border-border-strong hover:bg-surface-2"
+    >
+      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent [&>svg]:size-[18px]">
+        {icon}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-medium text-text-primary">{title}</span>
+        <span className="block text-xs text-text-tertiary">{description}</span>
+      </span>
+      <ChevronRight className="size-4 shrink-0 text-text-ghost transition-transform group-hover:translate-x-0.5" />
+    </Link>
+  );
 }
 
 export default function OverviewTab({ did }: OverviewTabProps) {
   const { data: profile, isLoading, isError, error } = useProfile(did);
   const { data: modules } = useModules(did);
   const { data: permissions } = usePermissions(did);
-
-  const moduleCount = modules?.length ?? 0;
-  const granteeCount = permissions
-    ? new Set(permissions.map((p: any) => p.grantee)).size
-    : 0;
 
   if (isLoading) {
     return <Loader message="Loading profile..." />;
@@ -32,105 +62,64 @@ export default function OverviewTab({ did }: OverviewTabProps) {
     return <ErrorAlert message={error instanceof Error ? error.message : 'Failed to load data'} />;
   }
 
-  if (!profile || !profile.displayName) {
-    return (
-      <div className="space-y-6">
-        <EmptyState
-          icon={<ExternalLink />}
-          title="Set up your profile"
-          description="Add a display name, avatar, and bio to personalize this profile."
-          action={
-            <Link
-              to={`/identity/${encodeURIComponent(did)}/edit`}
-              className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-medium text-accent-text hover:bg-accent-hover transition-colors"
-            >
-              Edit Profile
-            </Link>
-          }
-        />
-        <RemoteSyncStatusPanel did={did} />
-      </div>
-    );
-  }
+  // Same definition as the Apps & Permissions tab count and the profile card.
+  const withAccess = countActivePermissionApps(permissions);
+  const { activeSessions } = buildPermissionSections(permissions);
+  const hasProfile = Boolean(profile?.displayName);
 
   return (
     <div className="space-y-6">
-      {/* Hero banner */}
-      {profile.heroUrl ? (
-        <div
-          className="h-40 rounded-lg bg-cover bg-center"
-          style={{ backgroundImage: `url(${profile.heroUrl})` }}
-        />
-      ) : (
-        <div className="h-40 rounded-lg bg-gradient-to-br from-accent/30 via-accent/10 to-surface-2" />
+      {!hasProfile && (
+        <Card className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+          <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-accent/10 text-accent">
+            <PencilLine className="size-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h3 className="text-base font-semibold text-text-primary">Set up your profile</h3>
+            <p className="mt-0.5 text-sm text-text-tertiary">
+              Add a display name, avatar, and bio to personalize this profile.
+            </p>
+          </div>
+          <Link
+            to={`/identity/${encodeURIComponent(did)}/edit`}
+            className={buttonClassName({ className: 'shrink-0' })}
+          >
+            Edit Profile
+          </Link>
+        </Card>
       )}
 
-      {/* Avatar + name */}
-      <div className="-mt-14 ml-6 flex items-end gap-4">
-        <Avatar
-          src={profile.avatarUrl}
-          name={profile.displayName}
-          size="xl"
-          className="ring-4 ring-surface-0"
-        />
-        <div className="pb-1">
-          <h2 className="text-xl font-semibold text-text-primary">
-            {profile.displayName}
-          </h2>
-          {profile.tagline && (
-            <p className="text-sm text-text-secondary">{profile.tagline}</p>
-          )}
-        </div>
-      </div>
-
-      {/* Bio */}
-      {profile.bio && (
+      {profile?.bio && (
         <Card padding="sm">
-          <p className="text-sm leading-relaxed text-text-secondary">
+          <h3 className="text-xs font-medium text-text-tertiary">About</h3>
+          <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
             {profile.bio}
           </p>
         </Card>
       )}
 
+      <div className="grid grid-cols-3 gap-3">
+        <Stat icon={<Shield />} value={withAccess} label="With access" />
+        <Stat icon={<MonitorSmartphone />} value={activeSessions.length} label="Sessions" />
+        <Stat icon={<Boxes />} value={modules?.length ?? 0} label="Modules" />
+      </div>
+
       <RemoteSyncStatusPanel did={did} />
 
-      {/* Quick stats */}
-      {profile?.displayName && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
-            <p className="text-xl font-semibold text-text-primary">{moduleCount}</p>
-            <p className="text-xs text-text-tertiary mt-0.5">Modules</p>
-          </div>
-          <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
-            <p className="text-xl font-semibold text-text-primary">{granteeCount}</p>
-            <p className="text-xs text-text-tertiary mt-0.5">Apps</p>
-          </div>
-          <div className="rounded-lg border border-border-default bg-surface-1 p-3 text-center">
-            <p className="text-xl font-semibold text-accent">Active</p>
-            <p className="text-xs text-text-tertiary mt-0.5">Status</p>
-          </div>
-        </div>
-      )}
-
-      {/* Quick action links */}
-      {profile?.displayName && (
-        <div className="flex flex-wrap gap-2">
-          <Link
-            to="/connect/app"
-            className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-1 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
-          >
-            <QrCode size={16} />
-            Connect App
-          </Link>
-          <Link
-            to="/search"
-            className="flex items-center gap-2 rounded-lg border border-border-default bg-surface-1 px-4 py-2.5 text-sm text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
-          >
-            <Search size={16} />
-            Find people
-          </Link>
-        </div>
-      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <QuickAction
+          to="/connect/app"
+          icon={<QrCode />}
+          title="Connect an app"
+          description="Scan a code to approve a new app"
+        />
+        <QuickAction
+          to="/search"
+          icon={<Search />}
+          title="Find people"
+          description="Look up a public profile by DID"
+        />
+      </div>
     </div>
   );
 }

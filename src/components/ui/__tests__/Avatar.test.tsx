@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Avatar } from '../Avatar';
 
+const FALLBACK_TINT = 'bg-[color-mix(in_srgb,var(--accent)_16%,var(--surface-2))]';
+
 describe('Avatar', () => {
   it('renders image when src is provided', () => {
     render(<Avatar src="https://example.com/photo.jpg" name="Alice" />);
@@ -56,13 +58,13 @@ describe('Avatar', () => {
     expect(container.firstChild).toHaveClass('custom-class');
   });
 
-  it('applies accent-muted background when no src', () => {
+  it('applies an opaque accent-tinted fallback when no src', () => {
     const { container } = render(<Avatar name="A" />);
-    expect(container.firstChild).toHaveClass('bg-accent-muted');
+    expect(container.firstChild).toHaveClass(FALLBACK_TINT, 'text-accent');
   });
 
-  it('does not apply accent-muted background when src is provided', () => {
+  it('does not apply the fallback tint when src is provided', () => {
     const { container } = render(<Avatar src="https://example.com/photo.jpg" name="A" />);
-    expect(container.firstChild).not.toHaveClass('bg-accent-muted');
+    expect(container.firstChild).not.toHaveClass(FALLBACK_TINT);
   });
 });

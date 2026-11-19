@@ -1,11 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, Check, X, AlertCircle, Fingerprint, ShieldCheck, Sparkles } from 'lucide-react';
+import { Globe, Check, AlertCircle, Fingerprint } from 'lucide-react';
 import { WalletPostMessageTransport } from '@enbox/browser';
 import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
 
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
+import {
+  ConsentBrandBar,
+  ConsentDecisionBar,
+  ConsentNotice,
+  ConsentOnboardingIntro,
+  ConsentOutcome,
+  ConsentPinSetup,
+  ConsentProfilePicker,
+  ConsentRequester,
+} from '@/components/connect/ConsentLayout';
 import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
@@ -13,8 +22,6 @@ import { AuthenticationDisplay } from '@/components/connect/AuthenticationDispla
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ModuleOverrideConfirmDialog } from '@/components/connect/ModuleOverrideConfirmDialog';
-import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
-import { PinInput } from '@/components/ui/PinInput';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
@@ -22,7 +29,6 @@ import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { truncateDid } from '@/lib/utils';
-import { PIN_LENGTH } from '@/lib/constants';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
   createPasskeyVault,
@@ -467,36 +473,43 @@ export default function DWebConnectPage() {
     moduleSetupStatuses,
     overrideAcknowledged ? new Set(overridableModules) : new Set(),
   );
-  const requestSummary = useMemo(
-    () => authenticationOnly ? 'Confirm your identity to sign in.' : getConnectPermissionAskSummary(permissions),
-    [authenticationOnly, permissions],
-  );
   const requesterLabel = origin || 'Unknown origin';
+  const hasDataAccess = permissions.some((permission) => permission.permissionScopes.length > 0);
+  const requestSummary = authenticationOnly
+    ? 'is asking you to sign in with your profile'
+    : isRefresh
+      ? 'wants to renew its access to your profile'
+      : hasDataAccess ? 'wants to connect to your profile' : 'wants to connect';
+  const connectionStatus = isRefresh
+    ? 'Renewing connection'
+    : existingSessions.length > 0 ? 'Returning connection' : 'First connection';
+  const showRequest = phase === 'request' && !refreshUnavailable && !(isRefresh && refreshLookupPending);
 
   // ── Render ────────────────────────────────────────────────────
 
   return (
     <div
-      className="mx-auto flex min-h-dvh max-w-md flex-col px-6 pt-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]"
+      className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 sm:px-6"
       data-testid="dweb-connect-page"
     >
-      {/* Header */}
-      <div className="mb-6 flex items-center gap-3 border-b border-border-default pb-4">
-        <Globe className="h-6 w-6 text-accent" />
-        <h1 className="text-lg font-semibold text-text-primary">DWeb Connect</h1>
-      </div>
+      <header className="pt-[max(1rem,env(safe-area-inset-top))] pb-3">
+        <ConsentBrandBar />
+      </header>
 
       {/* Not a popup */}
       {phase === 'not-popup' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <Globe className="h-12 w-12 text-text-ghost" />
-          <p className="text-sm text-text-secondary">
-            This page handles connection requests from apps.
-          </p>
-          <p className="text-xs text-text-ghost">
-            It should be opened automatically when an app requests access.
-          </p>
-        </div>
+        <ConsentOutcome
+          icon={<Globe />}
+          title="Nothing to approve here"
+          message={(
+            <>
+              <p>This page handles connection requests from apps.</p>
+              <p className="mt-1 text-xs text-text-tertiary">
+                It should be opened automatically when an app requests access.
+              </p>
+            </>
+          )}
+        />
       )}
 
       {/* Waiting */}
@@ -507,35 +520,34 @@ export default function DWebConnectPage() {
 
       {/* Done */}
       {phase === 'done' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
-            <Check className="h-8 w-8 text-success" />
-          </div>
-          <p className="text-sm font-medium text-text-primary">
-            {connectionConfirmed ? (authenticationOnly ? 'Signed in!' : 'Connected!') : 'Connection response sent'}
-          </p>
-          <p className="text-xs text-text-ghost">
-            {connectionConfirmed
-              ? 'This window will close automatically.'
-              : 'Return to the app to finish, then close this window.'}
-          </p>
-          {!connectionConfirmed && (
-            <Button variant="secondary" onClick={() => window.close()}>
+        <ConsentOutcome
+          tone="success"
+          icon={<Check />}
+          title={connectionConfirmed ? (authenticationOnly ? 'Signed in!' : 'Connected!') : 'Connection response sent'}
+          message={connectionConfirmed
+            ? 'This window will close automatically.'
+            : 'Return to the app to finish, then close this window.'}
+          action={!connectionConfirmed && (
+            <Button variant="secondary" className="w-full" onClick={() => window.close()}>
               Close
             </Button>
           )}
-        </div>
+        />
       )}
 
       {/* Error */}
       {phase === 'error' && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-          <AlertCircle className="h-10 w-10 text-error" />
-          <p className="text-sm text-error">{errorMessage}</p>
-          <Button variant="secondary" onClick={handleErrorAction}>
-            Close
-          </Button>
-        </div>
+        <ConsentOutcome
+          tone="error"
+          icon={<AlertCircle />}
+          title="Couldn't complete the request"
+          message={<p className="text-error">{errorMessage}</p>}
+          action={(
+            <Button variant="secondary" className="w-full" onClick={handleErrorAction}>
+              Close
+            </Button>
+          )}
+        />
       )}
 
       {/* Connect request UI */}
@@ -544,7 +556,7 @@ export default function DWebConnectPage() {
       )}
 
       {phase === 'request' && refreshUnavailable && (
-        <div className="flex flex-1 flex-col gap-6">
+        <div className="flex flex-1 flex-col gap-6 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
           <RefreshUnavailableDisplay
             appName={appName ?? origin ?? 'This app'}
             detection={refreshDetection}
@@ -557,211 +569,156 @@ export default function DWebConnectPage() {
         </div>
       )}
 
-      {phase === 'request' && !refreshUnavailable && !(isRefresh && refreshLookupPending) && (
-        <div className="flex flex-1 flex-col gap-6">
-          {/* Requester identity */}
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 text-text-secondary">
-                <Globe className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-base font-semibold text-text-primary">
-                  {requesterLabel}
-                </p>
-                {appName && (
-                  <p className="mt-0.5 truncate text-xs text-text-secondary">
-                    Reported app name: {appName}
-                  </p>
-                )}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
-                    {isRefresh
-                      ? 'Renewing connection'
-                      : existingSessions.length > 0 ? 'Returning connection' : 'First connection'}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <p className="text-sm leading-relaxed text-text-secondary">
-              {requestSummary}
-            </p>
-          </div>
-
-          {authentication && (
-            <AuthenticationDisplay
-              audience={authentication.audience}
-              authenticationOnly={authenticationOnly}
+      {showRequest && (
+        <div className="flex flex-1 flex-col animate-[fadeIn_0.3s_ease-out]">
+          <div className="flex-1 space-y-6 pt-2 pb-6">
+            <ConsentRequester
+              title={requesterLabel}
+              titleHint={origin}
+              seed={origin || requesterLabel}
+              trust="verified-origin"
+              trustLabel="Origin verified"
+              status={connectionStatus}
+              details={appName && <p>Reported app name: {appName}</p>}
+              summary={requestSummary}
             />
-          )}
 
-          {isRefresh ? (
-            <RenewSessionDisplay
-              appName={appName ?? 'this app'}
-              permissions={permissions}
-              detection={refreshDetection}
-              lookupPending={refreshLookupPending}
-              lookupError={refreshLookupError}
-              ownerLabel={refreshOwnerOption?.label}
-              ownerSupported={refreshOwnerOption !== undefined}
-              moduleSetupStatuses={moduleSetupStatuses}
-              requesterLabel={requesterLabel}
-              sessionDurationSeconds={sessionDurationSeconds}
-              requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
-              onSessionDurationSecondsChange={setSessionDurationSeconds}
-              onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
-            />
-          ) : (
-            <>
-              {/* Identity section */}
-              {expectedAuthenticationDid !== undefined && authenticationOwnerOption === undefined ? (
-                <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center" role="status">
-                  <p className="text-xs text-warning">
-                    {identitiesPending && !needsOnboarding
-                      ? 'Checking for the profile required by this sign-in…'
-                      : 'This sign-in requires an existing profile. Restore the wallet that owns it, or open the correct wallet, then try again.'}
-                  </p>
-                </div>
-              ) : onboardingSupported ? (
-                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-                  <div className="flex items-center gap-2 text-accent">
-                    <Sparkles size={16} />
-                    <p className="text-sm font-semibold text-text-primary">
-                      No wallet here yet — we'll make one
-                    </p>
-                  </div>
-                  <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
-                    We'll set up your Enbox wallet and a fresh profile on this device,
-                    then connect it to {appName ?? requesterLabel}. You can customise
-                    your profile any time.
-                  </p>
-                </section>
-              ) : identityOptions.length > 0 ? (
-                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
-                    Approve as
-                  </p>
-                  <Select
-                    id="dweb-connect-identity"
-                    aria-label="Approve as profile"
-                    options={identityOptions}
-                    value={nonRefreshApprovalDid}
-                    disabled={expectedAuthenticationDid !== undefined}
-                    onChange={(e) => setSelectedDid(e.target.value)}
-                  />
-                </section>
-              ) : (
-                <div className="rounded-md bg-warning/10 border border-warning/30 p-3 text-center">
-                  <p className="text-xs text-warning">
-                    No profiles here yet. Close this window, create a profile first, then try again.
-                  </p>
-                </div>
-              )}
+            {authentication && (
+              <AuthenticationDisplay
+                audience={authentication.audience}
+                authenticationOnly={authenticationOnly}
+              />
+            )}
 
-              {!authenticationOnly && (
-              <PermissionDisplay
+            {isRefresh ? (
+              <RenewSessionDisplay
+                appName={appName ?? 'this app'}
                 permissions={permissions}
+                detection={refreshDetection}
+                lookupPending={refreshLookupPending}
+                lookupError={refreshLookupError}
+                ownerLabel={refreshOwnerOption?.label}
+                ownerSupported={refreshOwnerOption !== undefined}
                 moduleSetupStatuses={moduleSetupStatuses}
-                existingSessionCount={existingSessions.length}
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={sessionDurationSeconds}
                 requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
                 onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
-                overrideAcknowledged={overrideAcknowledged}
-                onOverrideAcknowledgedChange={setOverrideAcknowledged}
               />
-              )}
+            ) : (
+              <>
+                {/* Identity section */}
+                {expectedAuthenticationDid !== undefined && authenticationOwnerOption === undefined ? (
+                  <ConsentNotice tone="warning" role="status">
+                    {identitiesPending && !needsOnboarding
+                      ? 'Checking for the profile required by this sign-in…'
+                      : 'This sign-in requires an existing profile. Restore the wallet that owns it, or open the correct wallet, then try again.'}
+                  </ConsentNotice>
+                ) : onboardingSupported ? (
+                  <ConsentOnboardingIntro>
+                    We'll set up your Enbox wallet and a fresh profile on this device,
+                    then connect it to {appName ?? requesterLabel}. You can customise
+                    your profile any time.
+                  </ConsentOnboardingIntro>
+                ) : identityOptions.length > 0 ? (
+                  <ConsentProfilePicker
+                    id="dweb-connect-identity"
+                    heading={authenticationOnly ? 'Sign in as' : 'Approve as'}
+                    options={identityOptions}
+                    value={nonRefreshApprovalDid}
+                    disabled={expectedAuthenticationDid !== undefined}
+                    onChange={setSelectedDid}
+                  />
+                ) : (
+                  <ConsentNotice tone="warning">
+                    No profiles here yet. Close this window, create a profile first, then try again.
+                  </ConsentNotice>
+                )}
 
-              <ModuleOverrideConfirmDialog
-                open={showOverrideConfirm}
-                modules={overridableModules}
-                onConfirm={() => {
-                  setShowOverrideConfirm(false);
-                  void handleApprove();
-                }}
-                onCancel={() => setShowOverrideConfirm(false)}
-              />
-            </>
-          )}
+                {!authenticationOnly && (
+                  <PermissionDisplay
+                    permissions={permissions}
+                    moduleSetupStatuses={moduleSetupStatuses}
+                    existingSessionCount={existingSessions.length}
+                    requesterLabel={requesterLabel}
+                    sessionDurationSeconds={sessionDurationSeconds}
+                    requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
+                    onSessionDurationSecondsChange={setSessionDurationSeconds}
+                    onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
+                    overrideAcknowledged={overrideAcknowledged}
+                    onOverrideAcknowledgedChange={setOverrideAcknowledged}
+                  />
+                )}
 
-          {onboardError && (
-            <p className="text-center text-sm text-error" role="alert">
-              {onboardError}
-            </p>
-          )}
+                <ModuleOverrideConfirmDialog
+                  open={showOverrideConfirm}
+                  modules={overridableModules}
+                  onConfirm={() => {
+                    setShowOverrideConfirm(false);
+                    void handleApprove();
+                  }}
+                  onCancel={() => setShowOverrideConfirm(false)}
+                />
+              </>
+            )}
+
+            {onboardError && (
+              <p className="text-center text-sm text-error" role="alert">
+                {onboardError}
+              </p>
+            )}
+          </div>
 
           {/* Actions */}
           {onboardingSupported && onboardStep !== 'idle' ? (
-            <div className="mt-auto flex flex-col items-center gap-4 rounded-xl border border-border-default bg-surface-1 p-5">
-              <div className="flex items-center gap-2 text-accent">
-                <ShieldCheck size={16} />
-                <p className="text-sm font-semibold text-text-primary">
-                  {onboardStep === 'pin-create' ? 'Create a PIN for your new wallet' : 'Confirm your PIN'}
-                </p>
-              </div>
-              <PinInput
-                key={onboardStep}
-                length={PIN_LENGTH}
+            <div className="pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]">
+              <ConsentPinSetup
+                step={onboardStep}
+                error={onboardPinError}
+                busy={onboardBusy}
                 onComplete={onboardStep === 'pin-create' ? handleOnboardPinCreated : handleOnboardPinConfirmed}
-                error={onboardStep === 'pin-confirm' && !!onboardPinError}
-                disabled={onboardBusy}
-                autoFocus
-              />
-              {onboardPinError && (
-                <p className="text-sm text-error" role="alert">{onboardPinError}</p>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={onboardBusy}
-                onClick={() => {
+                onBack={() => {
                   setOnboardPin('');
                   setOnboardPinError(null);
                   setOnboardStep(onboardStep === 'pin-confirm' ? 'pin-create' : 'idle');
                 }}
-              >
-                Back
-              </Button>
+              />
             </div>
           ) : (
-            <div className="mt-auto flex flex-col gap-3 pt-4">
-              <div className="flex gap-3">
-                <Button variant="secondary" className="flex-1" onClick={handleDeny} disabled={onboardBusy}>
-                  <X className="h-4 w-4" />
-                  Deny
+            <ConsentDecisionBar
+              onDeny={handleDeny}
+              denyDisabled={onboardBusy}
+              primary={onboardingSupported ? (
+                <Button
+                  className="min-w-0 flex-[2]"
+                  onClick={handleCreateWalletAndConnect}
+                  loading={onboardBusy}
+                >
+                  <Fingerprint className="size-4" />
+                  Create wallet & connect
                 </Button>
-                {onboardingSupported ? (
-                  <Button
-                    className="flex-[2]"
-                    onClick={handleCreateWalletAndConnect}
-                    loading={onboardBusy}
-                  >
-                    <Fingerprint className="h-4 w-4" />
-                    Create wallet & connect
-                  </Button>
-                ) : (
-                  <Button
-                    className="flex-1"
-                    onClick={() =>
-                      overridableModules.length > 0 && !isRefresh
-                        ? setShowOverrideConfirm(true)
-                        : handleApprove()
-                    }
-                    disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
-                  >
-                    <Check className="h-4 w-4" />
-                    {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
-                  </Button>
-                )}
-              </div>
-              {onboardingSupported && (
-                <p className="mx-auto max-w-xs text-center text-xs leading-relaxed text-text-tertiary">
+              ) : (
+                <Button
+                  className="min-w-0 flex-[2]"
+                  onClick={() =>
+                    overridableModules.length > 0 && !isRefresh
+                      ? setShowOverrideConfirm(true)
+                      : handleApprove()
+                  }
+                  disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
+                >
+                  <Check className="size-4" />
+                  {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
+                </Button>
+              )}
+              hint={onboardingSupported && (
+                <>
                   New to Enbox? This sets up a wallet and profile on this device,
                   then connects it to {appName ?? requesterLabel}. Nothing else to fill in.
-                </p>
+                </>
               )}
-            </div>
+            />
           )}
         </div>
       )}

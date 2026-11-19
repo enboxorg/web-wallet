@@ -1,18 +1,19 @@
 import { useState, useMemo } from 'react';
 import { Users, UserPlus, Search } from 'lucide-react';
-import { useNavigate, Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { useProfile } from '@/enbox/hooks/use-profile';
 import { IdentityCard } from '@/components/identity/IdentityCard';
 import { IdentityCardSkeleton } from '@/components/identity/IdentityCardSkeleton';
-import { Button } from '@/components/ui/Button';
+import { buttonClassName } from '@/components/ui/button-styles';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorBox } from '@/components/ui/ErrorBox';
 import { Input } from '@/components/ui/Input';
 import { Loader } from '@/components/ui/Loader';
 import { PageHeader } from '@/components/ui/PageHeader';
+import { countActivePermissionApps } from './tabs/permission-sessions';
 
 function IdentityCardWithProfile({ identity }: { identity: any }) {
   const did = identity.did.uri;
@@ -24,9 +25,8 @@ function IdentityCardWithProfile({ identity }: { identity: any }) {
     profile?.hasProfileRecord === false ||
     (profile?.hasProfileRecord === true && profile.avatarUrl === undefined);
 
-  const appCount = permissions
-    ? new Set(permissions.map((p: any) => p.grantee)).size
-    : 0;
+  // Count apps with live access, matching the profile's Apps & Permissions tab.
+  const appCount = countActivePermissionApps(permissions);
 
   if (isProfileHydrating) {
     return <IdentityCardSkeleton />;
@@ -90,11 +90,9 @@ export default function IdentitiesListPage() {
         title="Profiles"
         description="The profiles you share with your apps."
         actions={
-          <Link to="/identities/create">
-            <Button size="sm">
-              <UserPlus size={16} />
-              New profile
-            </Button>
+          <Link to="/identities/create" className={buttonClassName({ size: 'sm' })}>
+            <UserPlus size={16} />
+            New profile
           </Link>
         }
       />
@@ -113,7 +111,7 @@ export default function IdentitiesListPage() {
 
       {hasIdentities ? (
         filteredIdentities.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
             {filteredIdentities.map((identity: any) => (
               <IdentityCardWithProfile
                 key={identity.did.uri}
@@ -134,9 +132,7 @@ export default function IdentitiesListPage() {
           title="No profiles yet"
           description="Create your first profile to get started."
           action={
-            <Link to="/identities/create">
-              <Button size="md">Create your first identity</Button>
-            </Link>
+            <Link to="/identities/create" className={buttonClassName()}>Create your first identity</Link>
           }
         />
       )}

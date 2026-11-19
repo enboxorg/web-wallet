@@ -1,4 +1,4 @@
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -307,7 +307,9 @@ describe('AppConnectPage', () => {
 
     // Deep link goes straight to the consent UI...
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    expect(screen.getByText(/Reported app name:\s*meshd/i)).toBeInTheDocument();
+    // Relay requests are self-described: the reported name leads, flagged unverified.
+    expect(screen.getByRole('heading', { name: 'meshd' })).toBeInTheDocument();
+    expect(screen.getByText('Unverified app')).toBeInTheDocument();
 
     // ...via the same fetch path the scanner uses, with the fragment key
     // decoded to its 32 raw bytes.
@@ -334,7 +336,7 @@ describe('AppConnectPage', () => {
     expect(screen.getByTestId('connect-action-area')).toHaveClass(
       'sticky',
       'bottom-0',
-      'pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]',
+      'pb-[calc(1rem+env(safe-area-inset-bottom,0px))]',
     );
   });
 
@@ -561,7 +563,7 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     expect(await screen.findByText('Access lasts 1 hour')).toBeInTheDocument();
-    expect(screen.getByLabelText('Access duration')).toHaveValue(String(60 * 60));
+    expect(screen.getByRole('radio', { name: '1 hour' })).toHaveAttribute('aria-checked', 'true');
   });
 
   it('honors a shorter requested session lifetime during relay approval', async () => {
@@ -603,9 +605,8 @@ describe('AppConnectPage', () => {
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
-    fireEvent.change(await screen.findByLabelText('Access duration'), {
-      target: { value: String(seconds) },
-    });
+    fireEvent.click(within(await screen.findByRole('radiogroup', { name: 'Access duration' }))
+      .getByRole('radio', { name: label }));
     expect(screen.getByText(`Access lasts ${label}`)).toBeInTheDocument();
     const approve = screen.getByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
@@ -650,7 +651,7 @@ describe('AppConnectPage', () => {
     expect(screen.getByText('Revoked')).toBeVisible();
     expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
-    expect(screen.getByText('View a custom data type')).toBeVisible();
+    expect(screen.getByRole('listitem', { name: 'Custom data type' })).toBeVisible();
     await waitFor(() => expect(renew).toBeEnabled());
     fireEvent.click(renew);
 

@@ -2,20 +2,27 @@
  * Permission display for DWeb Connect consent screens.
  *
  * Keeps the primary surface focused on consent:
- * - what the requester can do
+ * - what the requester can do (one row per data type, one chip per action)
  * - how long access lasts
  * - where setup/module mechanics can be inspected
+ *
+ * Trust rule: curated names are used only for pinned, matching wallet module
+ * definitions. Every other module is a "Custom data type" identified by its
+ * literal URI — a requester-chosen slug is never promoted into a friendly,
+ * wallet-vouched name here.
  */
+import { useId } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
   Clock3,
   Code,
   Download,
   History,
   Loader2,
   Lock,
+  LockKeyhole,
+  Package,
   RefreshCw,
   Share2,
 } from 'lucide-react';
@@ -28,22 +35,25 @@ import {
   resolveConnectSessionDurationSeconds,
 } from '@/features/connect/connect-session-duration';
 import {
+  describeModule,
   getModuleInfo,
   isCanonicalModuleDefinition,
   isContextCompanionDefinition,
+  parseModuleUri,
 } from '@/lib/module-names';
-import { Select } from '@/components/ui/Select';
+import { collectStructurePaths, isEncryptedType } from '@/lib/module-structure';
+import { Badge } from '@/components/ui/Badge';
+import { Disclosure } from '@/components/ui/Disclosure';
+import { Monogram } from '@/components/ui/Monogram';
+import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
 import {
-  formatActionPhrase,
-  formatModuleObjectPhrase,
-  getDisplayScopes,
-  getHighestPermissionRisk,
-  getPermissionActions,
+  getSortedPermissionActions,
   groupPermissionRequestsWithCompanions,
-  isInternalConnectScope,
   mergePermissionRequestsByModule,
 } from './connect-scope-display';
-import type { DisplayScope, PermissionAction, PermissionRisk } from './connect-scope-display';
+import { PermissionActionChips } from './PermissionActionChips';
+import { ConsentNotice } from './ConsentLayout';
 
 interface PermissionDisplayProps {
   /** The permission requests from the dapp. */
@@ -70,8 +80,6 @@ interface PermissionDisplayProps {
   renewal?: boolean;
 }
 
-type ModuleDefinition = ConnectPermissionRequest['moduleDefinition'];
-
 type ModuleAccess = {
   permission: ConnectPermissionRequest;
   moduleUri: string;
@@ -79,48 +87,24 @@ type ModuleAccess = {
   description: string;
   isKnownModule: boolean;
   isContextCompanion: boolean;
-  displayScopes: DisplayScope[];
   paths: string[];
   hasEncryptedTypes: boolean;
   sharesDecryptionKeys: boolean;
   setupStatus: ModuleSetupStatus;
 };
 
-type SetupStatusDisplay = {
-  label: string;
-};
-
-const SETUP_STATUS_DISPLAY: Record<ModuleSetupStatus, SetupStatusDisplay> = {
-  checking: {
-    label : 'Checking',
-  },
-  configured: {
-    label : 'Already ready',
-  },
-  conflict: {
-    label : 'Blocked',
-  },
-  override: {
-    label : 'Version conflict',
-  },
-  install: {
-    label : 'Will add',
-  },
-  upgrade: {
-    label : 'Encryption upgrade',
-  },
-  unavailable: {
-    label : 'Needs verification',
-  },
+const SETUP_STATUS_LABELS: Record<ModuleSetupStatus, string> = {
+  checking    : 'Checking',
+  configured  : 'Already ready',
+  conflict    : 'Blocked',
+  override    : 'Version conflict',
+  install     : 'Will add',
+  upgrade     : 'Encryption upgrade',
+  unavailable : 'Needs verification',
 };
 
 function pluralize(count: number, singular: string, plural = `${singular}s`): string {
   return count === 1 ? `1 ${singular}` : `${count} ${plural}`;
-}
-
-function capitalize(value: string): string {
-  if (!value) return value;
-  return `${value[0].toUpperCase()}${value.slice(1)}`;
 }
 
 function hostLabel(value: string): string {
@@ -140,48 +124,6 @@ function moduleUriLabel(uri: string): string {
   }
 }
 
-function collectStructurePaths(
-  structure: Record<string, unknown> | undefined,
-  prefix = '',
-): string[] {
-  if (!structure) return [];
-
-  const paths: string[] = [];
-  for (const [key, value] of Object.entries(structure)) {
-    const path = prefix ? `${prefix}/${key}` : key;
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const child = value as Record<string, unknown>;
-      if (child.$ref === undefined) paths.push(path);
-      const childStructure = Object.fromEntries(
-        Object.entries(child).filter(([childKey, childValue]) =>
-          !childKey.startsWith('$')
-          && childValue
-          && typeof childValue === 'object'
-          && !Array.isArray(childValue)
-        ),
-      );
-      paths.push(...collectStructurePaths(childStructure, path));
-    }
-  }
-
-  return paths;
-}
-
-function isEncryptedType(type: unknown): boolean {
-  return Boolean(
-    type
-    && typeof type === 'object'
-    && 'encryptionRequired' in type
-    && type.encryptionRequired === true
-  );
-}
-
-function getEncryptedTypeCount(moduleDefinition: ModuleDefinition): number {
-  return Object.values(moduleDefinition.types ?? {})
-    .filter(isEncryptedType)
-    .length;
-}
-
 function getModuleAccess(
   permissions: ConnectPermissionRequest[],
   moduleSetupStatuses?: Record<string, ModuleSetupStatus>,
@@ -189,26 +131,24 @@ function getModuleAccess(
   return mergePermissionRequestsByModule(permissions).map((permission) => {
     const moduleUri = permission.moduleDefinition.module;
     const isContextCompanion = isContextCompanionDefinition(permission.moduleDefinition);
-    const info = isContextCompanion ? undefined : getModuleInfo(moduleUri);
-    const paths = collectStructurePaths(
-      permission.moduleDefinition.structure as Record<string, unknown> | undefined,
-    );
-    const hasEncryptedTypes = Object.values(permission.moduleDefinition.types ?? {})
-      .some(isEncryptedType);
     const isKnownModule = !isContextCompanion && isCanonicalModuleDefinition(permission.moduleDefinition);
+    const info = isKnownModule ? getModuleInfo(moduleUri) : undefined;
 
     return {
       permission,
       moduleUri,
-      name: isContextCompanion ? 'Shared contexts companion' : info!.name,
+      name: isContextCompanion
+        ? 'Shared contexts companion'
+        : info?.name ?? 'Custom module',
       description: isContextCompanion
         ? 'Open invitation inbox and encrypted followed-context journal'
-        : info!.description,
+        : info?.description ?? '',
       isKnownModule,
       isContextCompanion,
-      displayScopes: getDisplayScopes(permission.permissionScopes),
-      paths,
-      hasEncryptedTypes,
+      paths: collectStructurePaths(
+        permission.moduleDefinition.structure as Record<string, unknown> | undefined,
+      ),
+      hasEncryptedTypes: Object.values(permission.moduleDefinition.types ?? {}).some(isEncryptedType),
       sharesDecryptionKeys: permission.permissionScopes.some((scope) =>
         scope.interface === 'Records' && scope.method === 'Read'
       ),
@@ -217,47 +157,11 @@ function getModuleAccess(
   });
 }
 
-function actionBadgeClasses(risk: PermissionRisk): string {
-  switch (risk) {
-    case 'delete':
-      return 'border-red-500/30 bg-red-500/10 text-red-300';
-    case 'edit':
-      return 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-    default:
-      return 'border-border-subtle bg-surface-1 text-text-secondary';
-  }
-}
-
-function rowRiskClasses(risk: PermissionRisk): string {
-  switch (risk) {
-    case 'delete':
-      return 'border-l-red-500/70';
-    case 'edit':
-      return 'border-l-amber-500/70';
-    default:
-      return 'border-l-border-subtle';
-  }
-}
-
-function formatAccessSentence(item: ModuleAccess): string {
-  const actions = getPermissionActions(item.displayScopes);
-  const objectLabel = formatModuleObjectPhrase({
-    isContextCompanion : item.isContextCompanion,
-    isKnownModule      : item.isKnownModule,
-    moduleName         : item.name,
-  });
-  return `${capitalize(formatActionPhrase(actions))} ${objectLabel}`;
-}
-
-function moduleTitleLabel(item: ModuleAccess): string {
-  if (item.isKnownModule || item.isContextCompanion) {
-    return item.name;
-  }
-  return 'Custom module';
-}
-
-function sessionCountLabel(count: number): string {
-  return count === 1 ? '1 active session' : `${count} active sessions`;
+function itemActions(item: ModuleAccess) {
+  return getSortedPermissionActions(item.permission.permissionScopes.map((scope) => ({
+    interface : scope.interface,
+    method    : scope.method,
+  })));
 }
 
 type AccessRowGroup = {
@@ -276,83 +180,114 @@ function buildAccessRowGroups(access: ModuleAccess[]): AccessRowGroup[] {
   }));
 }
 
-function groupSharesDecryptionKeys({ primary, companion }: AccessRowGroup): boolean {
-  return (primary.hasEncryptedTypes && primary.sharesDecryptionKeys)
-    || Boolean(companion?.hasEncryptedTypes && companion.sharesDecryptionKeys);
+function sharesKeys(item: ModuleAccess | undefined): boolean {
+  return Boolean(item?.hasEncryptedTypes && item.sharesDecryptionKeys);
 }
 
-function splitConnectScopes(permissionScopes: ConnectPermissionRequest['permissionScopes']): {
-  hasPrimaryScopes: boolean;
-  supportScopes: ConnectPermissionRequest['permissionScopes'];
-} {
-  return {
-    supportScopes    : permissionScopes.filter(isInternalConnectScope),
-    hasPrimaryScopes : permissionScopes.some((scope) => !isInternalConnectScope(scope)),
-  };
-}
+/**
+ * The literal module URI with its descriptive segment emphasised. It stays an
+ * identifier (monospace, verbatim) — never a promoted display name.
+ */
+function ModuleUriText({ uri }: { uri: string }) {
+  const label = moduleUriLabel(uri);
+  const slug = parseModuleUri(uri).slugs.at(-1);
+  const index = slug ? label.lastIndexOf(slug) : -1;
 
-function ActionBadges({
-  actions,
-  compact = false,
-}: {
-  actions: PermissionAction[];
-  compact?: boolean;
-}) {
-  const pillSizing = compact ? 'px-2 py-0.5 text-[11px]' : 'px-2 py-1 text-xs';
   return (
-    <div className="flex shrink-0 flex-wrap gap-1.5 sm:justify-end">
-      {actions.map((action) => (
-        <span
-          key={action.key}
-          className={`inline-flex items-center rounded-full border ${pillSizing} font-medium ${actionBadgeClasses(action.risk)}`}
-          title={action.label}
-        >
-          {action.label}
-        </span>
-      ))}
-    </div>
+    <span className="block truncate font-mono text-[11px] text-text-ghost" title={uri}>
+      {index === -1 ? label : (
+        <>
+          {label.slice(0, index)}
+          <span className="text-text-secondary">{slug}</span>
+          {label.slice(index + slug!.length)}
+        </>
+      )}
+    </span>
   );
 }
 
-function CompanionAccessCallout({
-  companion,
-  companionActions,
-  primaryActions,
-}: {
-  companion: ModuleAccess;
-  companionActions: PermissionAction[];
-  primaryActions: PermissionAction[];
-}) {
-  const { hasPrimaryScopes, supportScopes } = splitConnectScopes(companion.permission.permissionScopes);
-  const actionsDiffer = companionActions.length > 0
-    && companionActions.map((action) => action.key).join(',') !== primaryActions.map((action) => action.key).join(',');
+function AccessItemGlyph({ item }: { item: ModuleAccess }) {
+  if (item.isKnownModule) {
+    return <ModuleGlyph module={describeModule(item.moduleUri)} />;
+  }
+  if (item.isContextCompanion) {
+    return <Monogram label="Shared contexts" seed={item.moduleUri} icon={<Share2 />} />;
+  }
+  return (
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-text-tertiary ring-1 ring-inset ring-border-default">
+      <Package className="size-[18px]" aria-hidden="true" />
+    </span>
+  );
+}
+
+function EncryptionNote({ item, companion }: { item: ModuleAccess; companion?: ModuleAccess }) {
+  const encrypted = item.hasEncryptedTypes || Boolean(companion?.hasEncryptedTypes);
+  if (!encrypted) return null;
+
+  return sharesKeys(item) || sharesKeys(companion) ? (
+    <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-warning">
+      <LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" />
+      Encrypted — approving shares its decryption keys
+    </p>
+  ) : (
+    <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-tertiary">
+      <LockKeyhole className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+      <span>Stored encrypted. This approval does not share private decryption keys.</span>
+    </p>
+  );
+}
+
+function AccessItem({ group }: { group: AccessRowGroup }) {
+  const titleId = useId();
+  const { primary: item, companion } = group;
+  const actions = itemActions(item);
+  const companionActions = companion ? itemActions(companion) : [];
+  const hasRecordAccess = actions.some((action) => action.kind === 'record');
+
+  const title = item.isKnownModule
+    ? item.name
+    : item.isContextCompanion ? 'Shared contexts' : 'Custom data type';
 
   return (
-    <div className="mt-3 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2.5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-start gap-2">
-          <Share2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-          <div className="min-w-0">
-            <p className="text-xs font-medium text-text-primary">
-              Shared contexts &amp; invitations
-            </p>
-            <p className="mt-0.5 text-xs leading-relaxed text-text-secondary">
-              {capitalize(formatActionPhrase(companionActions))} shared context invitations and your encrypted followed-context list.
-            </p>
-            <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={companion.moduleUri}>
-              Companion module: {moduleUriLabel(companion.moduleUri)}
-            </p>
-          </div>
-        </div>
+    <li aria-labelledby={titleId} className="flex items-start gap-3 px-4 py-3.5">
+      <AccessItemGlyph item={item} />
+      <div className="min-w-0 flex-1">
+        <p id={titleId} className="text-sm font-semibold text-text-primary">{title}</p>
+        {item.isKnownModule && (
+          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-text-tertiary">{item.description}</p>
+        )}
+        {item.isContextCompanion && (
+          <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">{item.description}</p>
+        )}
+        {!item.isKnownModule && <ModuleUriText uri={item.moduleUri} />}
 
-        {actionsDiffer && <ActionBadges actions={companionActions} compact />}
+        <PermissionActionChips
+          actions={actions}
+          emphasizeSupport={!hasRecordAccess}
+          className="mt-2.5"
+        />
+
+        {companion && (
+          <div
+            role="group"
+            aria-label="Shared contexts & invitations"
+            className="mt-3 flex items-start gap-2.5 rounded-lg bg-surface-2/70 px-3 py-2.5"
+          >
+            <Share2 className="mt-0.5 size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-medium text-text-primary">Shared contexts &amp; invitations</p>
+              <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">
+                Invitations others send you, and your encrypted list of followed contexts.
+              </p>
+              <ModuleUriText uri={companion.moduleUri} />
+              <PermissionActionChips actions={companionActions} className="mt-2" />
+            </div>
+          </div>
+        )}
+
+        <EncryptionNote item={item} companion={companion} />
       </div>
-      {hasPrimaryScopes && supportScopes.length > 0 && (
-        <p className="mt-1.5 text-[11px] leading-relaxed text-text-ghost">
-          Companion grants: {supportScopes.map((scope) => `${scope.interface}.${scope.method}`).join(', ')}.
-        </p>
-      )}
-    </div>
+    </li>
   );
 }
 
@@ -363,98 +298,28 @@ function AccessRows({
   access: ModuleAccess[];
   requesterLabel?: string;
 }) {
-  const requesterSentenceLabel = hostLabel(requesterLabel);
+  const headingId = useId();
   const rowGroups = buildAccessRowGroups(access);
-  const showSharedEncryptedNote = rowGroups.filter(groupSharesDecryptionKeys).length > 1;
+  const keySharingGroups = rowGroups.filter((group) => sharesKeys(group.primary) || sharesKeys(group.companion));
 
   return (
-    <section className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-        What {requesterSentenceLabel} will be able to do
-      </p>
+    <section className="space-y-2.5" aria-labelledby={headingId}>
+      <h2 id={headingId} className="text-xs font-medium text-text-tertiary">
+        What {hostLabel(requesterLabel)} will be able to do
+      </h2>
 
-      <div className="overflow-hidden rounded-xl border border-border-default bg-surface-2">
+      <ul className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
         {rowGroups.length === 0 && (
-          <p className="px-4 py-3 text-sm text-text-secondary">No record or message access is requested.</p>
+          <li className="px-4 py-3 text-sm text-text-secondary">No record or message access is requested.</li>
         )}
-        {rowGroups.map((group, index) => {
-          const { primary: item, companion } = group;
-          const actions = getPermissionActions(item.displayScopes);
-          const companionActions = companion ? getPermissionActions(companion.displayScopes) : [];
-          const risk = getHighestPermissionRisk([...actions, ...companionActions]);
-          const { hasPrimaryScopes, supportScopes } = splitConnectScopes(item.permission.permissionScopes);
-          const rowHasEncryptedTypes = item.hasEncryptedTypes || Boolean(companion?.hasEncryptedTypes);
-          const rowSharesKeys = groupSharesDecryptionKeys(group);
+        {rowGroups.map((group) => <AccessItem key={group.primary.moduleUri} group={group} />)}
+      </ul>
 
-          return (
-            <div
-              key={item.moduleUri}
-              className={`border-l-2 px-4 py-3 ${rowRiskClasses(risk)} ${index > 0 ? 'border-t border-t-border-subtle' : ''}`}
-            >
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-text-primary">
-                    {formatAccessSentence(item)}
-                  </p>
-                  {(item.isKnownModule || item.isContextCompanion) && (
-                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-text-secondary">
-                      {item.description}
-                    </p>
-                  )}
-                  {item.isContextCompanion && (
-                    <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
-                      Companion module: {moduleUriLabel(item.moduleUri)}
-                    </p>
-                  )}
-                  {!item.isKnownModule && !item.isContextCompanion && (
-                    <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
-                      Custom module: {moduleUriLabel(item.moduleUri)}
-                    </p>
-                  )}
-                </div>
-
-                {actions.length > 1 && <ActionBadges actions={actions} />}
-              </div>
-
-              {companion && (
-                <CompanionAccessCallout
-                  companion={companion}
-                  companionActions={companionActions}
-                  primaryActions={actions}
-                />
-              )}
-
-              {rowHasEncryptedTypes && rowSharesKeys && !showSharedEncryptedNote && (
-                <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
-                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>
-                    Approval permanently shares decryption keys for this scope. Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
-                  </span>
-                </p>
-              )}
-              {rowHasEncryptedTypes && !rowSharesKeys && (
-                <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-secondary">
-                  <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>Stored encrypted. This approval does not share private decryption keys.</span>
-                </p>
-              )}
-              {hasPrimaryScopes && supportScopes.length > 0 && (
-                <p className="mt-2 text-xs leading-relaxed text-text-secondary">
-                  Additional grants: {supportScopes.map((scope) => `${scope.interface}.${scope.method}`).join(', ')}.
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {showSharedEncryptedNote && (
-        <p className="inline-flex items-start gap-1.5 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2 text-xs leading-relaxed text-text-secondary">
-          <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span>
-            Approval permanently shares decryption keys for these scopes. Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
-          </span>
-        </p>
+      {keySharingGroups.length > 0 && (
+        <ConsentNotice tone="warning" icon={<Lock />}>
+          Approval permanently shares decryption keys for {keySharingGroups.length > 1 ? 'these scopes' : 'this scope'}.
+          {' '}Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
+        </ConsentNotice>
       )}
     </section>
   );
@@ -476,62 +341,54 @@ function SessionTerms({
   const durationSeconds = resolveConnectSessionDurationSeconds(sessionDurationSeconds);
   const durationLabel = formatConnectSessionDuration(durationSeconds);
   const durationOptions = getConnectSessionDurationOptions(requestedSessionTtlSeconds);
+  const canChoose = onSessionDurationSecondsChange !== undefined && durationOptions.length > 1;
 
   return (
-    <section className="rounded-xl border border-border-default bg-surface-2 p-4">
+    <section className="rounded-xl border border-border-default bg-surface-1 p-4">
       <div className="flex items-start gap-3">
-        <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-text-secondary ring-1 ring-inset ring-border-subtle">
+          <Clock3 className="size-[18px]" aria-hidden="true" />
+        </span>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-text-primary">
+          <p className="text-sm font-semibold text-text-primary">
             {renewal ? `New access period: ${durationLabel}` : `Access lasts ${durationLabel}`}
           </p>
-          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-            It expires automatically. You can revoke it later from this profile&apos;s Permissions tab.
+          <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">
+            It expires automatically. You can revoke it later from this profile&apos;s Apps &amp; Permissions tab.
           </p>
         </div>
       </div>
 
-      {onSessionDurationSecondsChange && durationOptions.length > 1 && (
-        <div className="mt-3">
-          <Select
-            id="connect-session-duration"
-            label="Access duration"
-            options={durationOptions.map((option) => ({
-              value : String(option.value),
-              label : option.label,
-            }))}
-            value={String(durationSeconds)}
-            onChange={(event) => onSessionDurationSecondsChange(Number(event.target.value))}
-          />
-        </div>
+      {canChoose && (
+        <SegmentedControl
+          label="Access duration"
+          className="mt-3.5"
+          options={durationOptions}
+          value={durationSeconds}
+          onChange={onSessionDurationSecondsChange}
+        />
       )}
 
       {existingSessionCount > 0 && (
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-border-subtle bg-surface-1 px-3 py-2">
-          <History className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
-          <p className="text-xs leading-relaxed text-text-secondary">
-            This requester already has {sessionCountLabel(existingSessionCount)} for this identity.
+        <p className="mt-3.5 flex items-start gap-2 border-t border-border-subtle pt-3 text-xs leading-relaxed text-text-tertiary">
+          <History className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            This requester already has {pluralize(existingSessionCount, 'active session')} for this identity.
             Approving creates a separate session with {durationLabel} of access.
-          </p>
-        </div>
+          </span>
+        </p>
       )}
     </section>
   );
 }
 
 function SetupStatusBadge({ status }: { status: ModuleSetupStatus }) {
-  const display = SETUP_STATUS_DISPLAY[status];
-  const classes = status === 'conflict'
-    ? 'border-red-500/30 bg-red-500/10 text-red-300'
-    : status === 'override'
-      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-      : 'border-border-subtle bg-surface-1 text-text-secondary';
+  const tone = status === 'conflict' ? 'danger' : status === 'override' ? 'warning' : 'neutral';
+  return <Badge tone={tone}>{SETUP_STATUS_LABELS[status]}</Badge>;
+}
 
-  return (
-    <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${classes}`}>
-      {display.label}
-    </span>
-  );
+function moduleSetupTitle(item: ModuleAccess): string {
+  return item.isKnownModule || item.isContextCompanion ? item.name : 'Custom module';
 }
 
 function SetupDetailGroup({
@@ -550,30 +407,22 @@ function SetupDetailGroup({
   return (
     <div className="rounded-lg border border-border-subtle bg-surface-1 p-3">
       <div className="flex items-start gap-2">
-        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-text-secondary" />
+        <Icon className="mt-0.5 size-4 shrink-0 text-text-tertiary" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="text-xs font-medium text-text-primary">
-              {title}
-            </p>
-            <span className="text-[10px] font-medium text-text-ghost">
-              {pluralize(items.length, 'item')}
-            </span>
+            <p className="text-xs font-medium text-text-primary">{title}</p>
+            <span className="text-[11px] text-text-ghost">{pluralize(items.length, 'item')}</span>
           </div>
-          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-            {summary}
-          </p>
+          <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">{summary}</p>
 
-          <div className="mt-2 space-y-1.5">
+          <ul className="mt-2 space-y-1.5">
             {items.map((item) => (
-              <div
+              <li
                 key={item.moduleUri}
                 className="flex flex-col gap-1 rounded-md bg-surface-2 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
-                  <p className="truncate text-xs text-text-primary">
-                    {moduleTitleLabel(item)}
-                  </p>
+                  <p className="truncate text-xs text-text-primary">{moduleSetupTitle(item)}</p>
                   {!item.isKnownModule && (
                     <p className="truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
                       {moduleUriLabel(item.moduleUri)}
@@ -581,9 +430,9 @@ function SetupDetailGroup({
                   )}
                 </div>
                 <SetupStatusBadge status={item.setupStatus} />
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </div>
     </div>
@@ -591,23 +440,16 @@ function SetupDetailGroup({
 }
 
 function SetupDetails({ access }: { access: ModuleAccess[] }) {
-  const setupChanges = access.filter((item) => item.setupStatus === 'install');
-  const encryptionUpgrades = access.filter((item) => item.setupStatus === 'upgrade');
-  const overrides = access.filter((item) => item.setupStatus === 'override');
-  const conflicts = access.filter((item) => item.setupStatus === 'conflict');
+  const by = (status: ModuleSetupStatus) => access.filter((item) => item.setupStatus === status);
   const setupChecks = access.filter((item) =>
-    item.setupStatus === 'checking'
-    || item.setupStatus === 'unavailable'
+    item.setupStatus === 'checking' || item.setupStatus === 'unavailable'
   );
-  const ready = access.filter((item) => item.setupStatus === 'configured');
 
   return (
     <section className="space-y-2">
       <div>
-        <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-          Wallet setup
-        </p>
-        <p className="mt-1 text-xs leading-relaxed text-text-secondary">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">Wallet setup</p>
+        <p className="mt-1 text-xs leading-relaxed text-text-tertiary">
           Module setup controls record authorization. New policies are installed before the app grant; an existing policy is only replaced when you explicitly override it below. Dependencies listed only for setup do not grant the app access to their records or messages.
         </p>
       </div>
@@ -616,25 +458,25 @@ function SetupDetails({ access }: { access: ModuleAccess[] }) {
         icon={Download}
         title="Will add setup"
         summary="The wallet installs this authorization policy before creating the grant."
-        items={setupChanges}
+        items={by('install')}
       />
       <SetupDetailGroup
         icon={Lock}
         title="Will upgrade encryption"
         summary="The authorization policy is unchanged; the wallet adds its current encryption keys."
-        items={encryptionUpgrades}
+        items={by('upgrade')}
       />
       <SetupDetailGroup
         icon={RefreshCw}
         title="Will replace on override"
         summary="Already installed with a different definition. With your explicit consent below, the wallet replaces it with this app's version."
-        items={overrides}
+        items={by('override')}
       />
       <SetupDetailGroup
         icon={AlertTriangle}
         title="Setup conflict"
         summary="The wallet will not replace an existing owner module during a connection."
-        items={conflicts}
+        items={by('conflict')}
       />
       <SetupDetailGroup
         icon={setupChecks.some((item) => item.setupStatus === 'unavailable') ? AlertTriangle : Loader2}
@@ -646,7 +488,7 @@ function SetupDetails({ access }: { access: ModuleAccess[] }) {
         icon={CheckCircle2}
         title="Already ready"
         summary="The wallet will not change these."
-        items={ready}
+        items={by('configured')}
       />
     </section>
   );
@@ -656,17 +498,9 @@ function ModuleConflictNotice({ access }: { access: ModuleAccess[] }) {
   if (!access.some((item) => item.setupStatus === 'conflict')) return null;
 
   return (
-    <section role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
-        <div>
-          <p className="text-sm font-medium text-red-200">Module setup conflict</p>
-          <p className="mt-1 text-xs leading-relaxed text-red-200/80">
-            A requested module conflicts with this profile&apos;s protected or invalid setup and can&apos;t be approved. The wallet will not replace a core module during a connection.
-          </p>
-        </div>
-      </div>
-    </section>
+    <ConsentNotice role="alert" tone="error" title="Module setup conflict">
+      A requested module conflicts with this profile&apos;s protected or invalid setup and can&apos;t be approved. The wallet will not replace a core module during a connection.
+    </ConsentNotice>
   );
 }
 
@@ -691,44 +525,36 @@ function ModuleOverrideNotice({
   const many = overrides.length > 1;
 
   return (
-    <section className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3">
-      <div className="flex items-start gap-2">
-        <RefreshCw className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-amber-200">
-            {pluralize(overrides.length, 'module')} installed with a different definition
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-amber-200/80">
-            This app asks to use a changed version of {many ? 'modules' : 'a module'} you already
-            have installed. Approving replaces your installed definition with the app&apos;s version on
-            this profile and its DWN endpoints. The change is kept even if the rest of the connection
-            fails.
-          </p>
-          <ul className="mt-2 space-y-1">
-            {overrides.map((item) => (
-              <li
-                key={item.moduleUri}
-                className="min-w-0 truncate font-mono text-[10px] text-amber-200/70"
-                title={item.moduleUri}
-              >
-                {moduleUriLabel(item.moduleUri)}
-              </li>
-            ))}
-          </ul>
-          <label className="mt-3 flex items-start gap-2 text-xs leading-relaxed text-amber-100">
-            <input
-              type="checkbox"
-              className="mt-0.5 h-4 w-4 shrink-0 accent-amber-400"
-              checked={overrideAcknowledged}
-              onChange={(event) => onOverrideAcknowledgedChange?.(event.target.checked)}
-            />
-            <span>
-              Replace my installed module {many ? 'definitions' : 'definition'} with this app&apos;s version.
-            </span>
-          </label>
-        </div>
-      </div>
-    </section>
+    <ConsentNotice
+      tone="warning"
+      icon={<RefreshCw />}
+      title={`${pluralize(overrides.length, 'module')} installed with a different definition`}
+    >
+      <p>
+        This app asks to use a changed version of {many ? 'modules' : 'a module'} you already
+        have installed. Approving replaces your installed definition with the app&apos;s version on
+        this profile and its DWN endpoints. The change is kept even if the rest of the connection
+        fails.
+      </p>
+      <ul className="mt-2 space-y-1">
+        {overrides.map((item) => (
+          <li key={item.moduleUri} className="min-w-0 truncate font-mono text-[11px] text-text-tertiary" title={item.moduleUri}>
+            {moduleUriLabel(item.moduleUri)}
+          </li>
+        ))}
+      </ul>
+      <label className="mt-3 flex cursor-pointer items-start gap-2.5 rounded-lg border border-warning/25 bg-surface-1 px-3 py-2.5 text-xs leading-relaxed text-text-primary">
+        <input
+          type="checkbox"
+          className="mt-0.5 size-4 shrink-0 accent-[var(--color-warning)]"
+          checked={overrideAcknowledged}
+          onChange={(event) => onOverrideAcknowledgedChange?.(event.target.checked)}
+        />
+        <span>
+          Replace my installed module {many ? 'definitions' : 'definition'} with this app&apos;s version.
+        </span>
+      </label>
+    </ConsentNotice>
   );
 }
 
@@ -742,141 +568,123 @@ function ModuleSetupUnavailableNotice({
   if (!access.some((item) => item.setupStatus === 'unavailable')) return null;
 
   return (
-    <section role="alert" className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3">
-      <div className="flex items-start gap-2">
-        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-warning">Module setup could not be verified</p>
-          <p className="mt-1 text-xs leading-relaxed text-text-secondary">
-            Approval remains blocked until the wallet can check the selected profile&apos;s local module state.
-          </p>
-          {onRetry && (
-            <button
-              type="button"
-              className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-warning hover:underline"
-              onClick={onRetry}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Retry check
-            </button>
-          )}
-        </div>
-      </div>
-    </section>
+    <ConsentNotice role="alert" tone="warning" title="Module setup could not be verified">
+      <p>Approval remains blocked until the wallet can check the selected profile&apos;s local module state.</p>
+      {onRetry && (
+        <button
+          type="button"
+          className="mt-2 inline-flex items-center gap-1.5 font-medium text-warning hover:underline"
+          onClick={onRetry}
+        >
+          <RefreshCw className="size-3.5" />
+          Retry check
+        </button>
+      )}
+    </ConsentNotice>
   );
 }
 
 function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
   return (
-    <details
+    <Disclosure
       data-testid="technical-setup-details"
-      className="group rounded-xl border border-border-default bg-surface-2 p-4"
+      className="rounded-xl border border-border-default bg-surface-1"
+      summaryClassName="px-4 py-3.5 text-text-tertiary hover:text-text-primary"
+      summary={(
+        <>
+          <Code className="size-3.5" aria-hidden="true" />
+          Technical &amp; setup details
+        </>
+      )}
+      contentClassName="space-y-5 border-t border-border-subtle px-4 py-4"
     >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-xs font-medium text-text-secondary hover:text-text-primary">
-        <span className="inline-flex items-center gap-1.5">
-          <Code className="h-3.5 w-3.5" />
-          Technical & setup details
-        </span>
-        <ChevronDown className="h-4 w-4 text-text-ghost transition-transform group-open:rotate-180" />
-      </summary>
+      <SetupDetails access={access} />
 
-      <div className="mt-4 space-y-5">
-        <SetupDetails access={access} />
+      <section className="space-y-4">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">Module details</p>
 
-        <section className="space-y-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-text-ghost">
-            Module details
-          </p>
+        {access.map((item) => {
+          const typeNames = Object.keys(item.permission.moduleDefinition.types ?? {});
+          const encryptedTypeCount = Object.values(item.permission.moduleDefinition.types ?? {})
+            .filter(isEncryptedType).length;
+          const moduleJson = JSON.stringify(item.permission.moduleDefinition, null, 2);
 
-          {access.map((item) => {
-            const typeNames = Object.keys(item.permission.moduleDefinition.types ?? {});
-            const encryptedTypeCount = getEncryptedTypeCount(item.permission.moduleDefinition);
-            const moduleJson = JSON.stringify(item.permission.moduleDefinition, null, 2);
+          return (
+            <div key={item.moduleUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
+              <div>
+                <p className="text-sm font-medium text-text-primary">{moduleSetupTitle(item)}</p>
+                <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
+                  {item.moduleUri}
+                </p>
+              </div>
 
-            return (
-              <div key={item.moduleUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
-                <div>
-                  <p className="text-sm font-medium text-text-primary">
-                    {moduleTitleLabel(item)}
-                  </p>
-                  <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
-                    {item.moduleUri}
-                  </p>
+              <dl className="grid grid-cols-3 gap-2 text-xs">
+                <div className="min-w-0">
+                  <dt className="text-text-ghost">Types</dt>
+                  <dd className="mt-1 text-text-primary">{pluralize(typeNames.length, 'type')}</dd>
                 </div>
+                <div className="min-w-0">
+                  <dt className="text-text-ghost">Record paths</dt>
+                  <dd className="mt-1 text-text-primary">{pluralize(item.paths.length, 'path')}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="text-text-ghost">Encrypted types</dt>
+                  <dd className="mt-1 text-text-primary">{pluralize(encryptedTypeCount, 'type')}</dd>
+                </div>
+              </dl>
 
-                <dl className="grid gap-2 text-xs sm:grid-cols-3">
-                  <div className="min-w-0">
-                    <dt className="text-text-ghost">Types</dt>
-                    <dd className="mt-1 text-text-primary">{pluralize(typeNames.length, 'type')}</dd>
-                  </div>
-                  <div className="min-w-0">
-                    <dt className="text-text-ghost">Record paths</dt>
-                    <dd className="mt-1 text-text-primary">{pluralize(item.paths.length, 'path')}</dd>
-                  </div>
-                  <div className="min-w-0">
-                    <dt className="text-text-ghost">Encrypted types</dt>
-                    <dd className="mt-1 text-text-primary">{pluralize(encryptedTypeCount, 'type')}</dd>
-                  </div>
-                </dl>
-
-                {typeNames.length > 0 && (
-                  <div>
-                    <p className="mb-1.5 text-xs text-text-ghost">Types</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {typeNames.map((typeName) => (
-                        <span
-                          key={typeName}
-                          className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
-                        >
-                          {typeName}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {item.paths.length > 0 && (
-                  <div>
-                    <p className="mb-1.5 text-xs text-text-ghost">Record paths</p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {item.paths.map((path) => (
-                        <span
-                          key={path}
-                          className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
-                        >
-                          {path}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
+              {typeNames.length > 0 && (
                 <div>
-                  <p className="mb-1.5 text-xs text-text-ghost">Granted scopes</p>
-                  {item.permission.permissionScopes.length === 0 && (
-                    <p className="text-xs text-text-secondary">None. This module is included only for setup.</p>
-                  )}
+                  <p className="mb-1.5 text-xs text-text-ghost">Types</p>
                   <div className="flex flex-wrap gap-1.5">
-                    {item.permission.permissionScopes.map((scope, index) => (
-                      <span
-                        key={`${scope.interface}.${scope.method}.${index}`}
-                        className="rounded-full border border-border-subtle px-2 py-0.5 font-mono text-[10px] text-text-secondary"
-                      >
-                        {scope.interface}.{scope.method}
-                      </span>
+                    {typeNames.map((typeName) => (
+                      <Badge key={typeName} variant="outline" className="font-mono">{typeName}</Badge>
                     ))}
                   </div>
                 </div>
+              )}
 
-                <pre className="max-h-72 overflow-auto rounded-md bg-surface-1 p-3 font-mono text-[11px] leading-relaxed text-text-tertiary">
-                  {moduleJson}
-                </pre>
+              {item.paths.length > 0 && (
+                <div>
+                  <p className="mb-1.5 text-xs text-text-ghost">Record paths</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {item.paths.map((path) => (
+                      <Badge key={path} variant="outline" className="font-mono">{path}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <p className="mb-1.5 text-xs text-text-ghost">Granted scopes</p>
+                {item.permission.permissionScopes.length === 0 && (
+                  <p className="text-xs text-text-secondary">None. This module is included only for setup.</p>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {item.permission.permissionScopes.map((scope, index) => (
+                    <Badge
+                      key={`${scope.interface}.${scope.method}.${index}`}
+                      variant="outline"
+                      className="font-mono"
+                    >
+                      {scope.interface}.{scope.method}
+                    </Badge>
+                  ))}
+                </div>
               </div>
-            );
-          })}
-        </section>
-      </div>
-    </details>
+
+              <pre
+                tabIndex={0}
+                aria-label={`${moduleSetupTitle(item)} definition`}
+                className="max-h-72 overflow-auto rounded-lg bg-surface-2 p-3 font-mono text-[11px] leading-relaxed text-text-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              >
+                {moduleJson}
+              </pre>
+            </div>
+          );
+        })}
+      </section>
+    </Disclosure>
   );
 }
 
@@ -899,7 +707,10 @@ export function PermissionDisplay({
 
   return (
     <div className="space-y-4">
-      <AccessRows access={access.filter(item => item.permission.permissionScopes.length > 0)} requesterLabel={requesterLabel} />
+      <AccessRows
+        access={access.filter((item) => item.permission.permissionScopes.length > 0)}
+        requesterLabel={requesterLabel}
+      />
       <ModuleConflictNotice access={access} />
       <ModuleOverrideNotice
         access={access}

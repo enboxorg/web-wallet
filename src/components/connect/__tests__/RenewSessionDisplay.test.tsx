@@ -50,7 +50,7 @@ describe('RenewSessionDisplay', () => {
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Previous access expires in 2 hours')).toBeInTheDocument();
     expect(screen.getByText('New access period: 1 hour')).toBeInTheDocument();
-    expect(screen.getByText('View a custom data type')).toBeVisible();
+    expect(screen.getByRole('listitem', { name: 'Custom data type' })).toBeVisible();
     expect(screen.queryByText(/separate session/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
   });

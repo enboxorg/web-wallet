@@ -1,26 +1,82 @@
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Clock, Globe, FileText, User, Link2 } from 'lucide-react';
+import type { DwnModuleDefinition } from '@enbox/agent';
+import { Clock, FileText, Globe } from 'lucide-react';
 import { useAgent } from '@/enbox/hooks/use-agent';
+import { useModules } from '@/enbox/hooks/use-modules';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { fetchActivity, type ActivityRecord } from '@/enbox/queries/identity-queries';
 import { Loader } from '@/components/ui/Loader';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
+import { Badge } from '@/components/ui/Badge';
+import { Monogram } from '@/components/ui/Monogram';
+import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
+import { describeModule } from '@/lib/module-names';
 import { truncateDid, formatRelativeTime } from '@/lib/utils';
-
-function getModuleIcon(module?: string) {
-  if (!module) return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
-  if (module.includes('profile')) return <User className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
-  if (module.includes('connect')) return <Link2 className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
-  return <FileText className="mt-0.5 h-4 w-4 shrink-0 text-text-ghost" />;
-}
 
 interface ActivityTabProps {
   did: string;
 }
 
+function ActivityRow({
+  item,
+  ownerDid,
+  definitions,
+}: {
+  item: ActivityRecord;
+  ownerDid: string;
+  definitions: ReadonlyMap<string, DwnModuleDefinition>;
+}) {
+  const display = item.module ? describeModule(item.module, definitions.get(item.module)) : undefined;
+  const authoredByOwner = item.author === ownerDid;
+
+  return (
+    <li className="flex items-start gap-3 px-4 py-3">
+      {display ? (
+        <ModuleGlyph module={display} size="sm" />
+      ) : (
+        <Monogram label="Record" icon={<FileText />} size="sm" />
+      )}
+
+      <div className="min-w-0 flex-1">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium text-text-primary" title={item.module}>
+            {display?.name ?? 'Unknown module'}
+          </span>
+          {item.published && (
+            <Badge tone="accent" icon={<Globe />}>Published</Badge>
+          )}
+        </div>
+
+        {item.modulePath && (
+          <p className="mt-0.5 truncate font-mono text-xs text-text-tertiary">{item.modulePath}</p>
+        )}
+
+        <p className="mt-1 truncate text-xs text-text-ghost">
+          {authoredByOwner ? 'By you' : <>By <span className="font-mono" title={item.author}>{truncateDid(item.author)}</span></>}
+        </p>
+      </div>
+
+      <time
+        dateTime={item.dateCreated}
+        title={new Date(item.dateCreated).toLocaleString()}
+        className="flex shrink-0 items-center gap-1 text-xs text-text-ghost"
+      >
+        <Clock className="size-3" aria-hidden="true" />
+        {formatRelativeTime(item.dateCreated)}
+      </time>
+    </li>
+  );
+}
+
 export default function ActivityTab({ did }: ActivityTabProps) {
   const agent = useAgent();
+  const { data: modules } = useModules(did);
+  const definitions = useMemo(
+    () => new Map((modules ?? []).map((module) => [module.uri, module.definition as DwnModuleDefinition])),
+    [modules],
+  );
 
   const { data: activity, isLoading, isError, error } = useQuery({
     queryKey: queryKeys.identities.activity(did),
@@ -47,49 +103,13 @@ export default function ActivityTab({ did }: ActivityTabProps) {
   }
 
   return (
-    <div className="space-y-1">
+    <ul
+      aria-label="Recent activity"
+      className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1"
+    >
       {activity.map((item: ActivityRecord) => (
-        <div
-          key={item.id}
-          className="flex items-start gap-3 rounded-[var(--radius-md)] border border-border-default bg-surface-1 px-4 py-3"
-        >
-          {/* Icon */}
-          {getModuleIcon(item.module)}
-
-          {/* Content */}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="truncate text-sm font-medium text-text-primary">
-                {item.module
-                  ? item.module.split('/').pop() || 'Unknown'
-                  : 'Unknown'}
-              </span>
-              {item.published && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-                  <Globe className="h-3 w-3" />
-                  Published
-                </span>
-              )}
-            </div>
-
-            {item.modulePath && (
-              <p className="mt-0.5 truncate font-mono text-xs text-text-tertiary">
-                {item.modulePath}
-              </p>
-            )}
-
-            <div className="mt-1 flex items-center gap-3 text-xs text-text-ghost">
-              <span className="flex items-center gap-1">
-                <Clock className="h-3 w-3" />
-                {formatRelativeTime(item.dateCreated)}
-              </span>
-              <span className="truncate">
-                {truncateDid(item.author)}
-              </span>
-            </div>
-          </div>
-        </div>
+        <ActivityRow key={item.id} item={item} ownerDid={did} definitions={definitions} />
       ))}
-    </div>
+    </ul>
   );
 }
