@@ -4,12 +4,13 @@ import {
   CheckCircle2,
   Clock3,
   Loader2,
+  PlusCircle,
   RefreshCw,
   ShieldCheck,
 } from 'lucide-react';
 
 import type { ModuleSetupStatus } from '@/features/connect/module-install';
-import type { ConnectRefreshDetection } from '@/features/connect/connect-refresh';
+import type { ConnectRefreshDetection, RefreshAccessSplit } from '@/features/connect/connect-refresh';
 import { formatRelativeExpiry } from '@/features/connect/connect-session-duration';
 import { truncateDid } from '@/lib/utils';
 
@@ -29,6 +30,11 @@ interface RenewSessionDisplayProps {
   requestedSessionTtlSeconds?: number;
   onSessionDurationSecondsChange?: (seconds: number) => void;
   onRetryModuleSetup?: () => void;
+  /**
+   * What the delegate actually held before, from the wallet's own grants.
+   * When anything is new, the screen is about adding access, not renewing.
+   */
+  split?: RefreshAccessSplit;
   now?: Date;
 }
 
@@ -66,24 +72,33 @@ export function RenewSessionDisplay({
   requestedSessionTtlSeconds,
   onSessionDurationSecondsChange,
   onRetryModuleSetup,
+  split,
   now = new Date(),
 }: RenewSessionDisplayProps) {
   const display = statusDisplay(detection.status);
   const matched = detection.matchState === 'matched';
+  const addsAccess = (split?.added.length ?? 0) > 0;
+  const renewsAccess = split?.renewed.some((request) => request.permissionScopes.length > 0) ?? false;
 
   return (
     <div className="space-y-4">
       <section className="rounded-xl border border-border-default bg-surface-1 p-4">
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/20">
-            <RefreshCw className="size-[18px]" aria-hidden="true" />
+            {addsAccess
+              ? <PlusCircle className="size-[18px]" aria-hidden="true" />
+              : <RefreshCw className="size-[18px]" aria-hidden="true" />}
           </span>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold text-text-primary">
-              Renew access for {appName}
+              {addsAccess ? `New access for ${appName}` : `Renew access for ${appName}`}
             </p>
             <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">
-              Review the requested access before issuing fresh grants to the existing app delegate.
+              {addsAccess
+                ? renewsAccess
+                  ? 'This connection is asking for access it never had, and to renew the access it already had. Review both before allowing it.'
+                  : 'This connection is asking for access it never had. Review it before allowing it.'
+                : 'Review the requested access before issuing fresh grants to the existing app delegate.'}
             </p>
           </div>
         </div>
@@ -135,7 +150,7 @@ export function RenewSessionDisplay({
             <div className="flex items-center gap-2 text-xs text-text-secondary">
               <ShieldCheck className="h-4 w-4 shrink-0 text-accent" />
               <span>
-                Renewing as <strong className="font-medium text-text-primary">{ownerLabel ?? truncateDid(detection.pinnedOwnerDid)}</strong>
+                {addsAccess ? 'Approving as' : 'Renewing as'} <strong className="font-medium text-text-primary">{ownerLabel ?? truncateDid(detection.pinnedOwnerDid)}</strong>
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
@@ -172,6 +187,19 @@ export function RenewSessionDisplay({
         onSessionDurationSecondsChange={onSessionDurationSecondsChange}
         onRetryModuleSetup={onRetryModuleSetup}
         renewal
+        accessSections={addsAccess && split ? [
+          {
+            id          : 'added',
+            title       : 'New access',
+            description : `${appName} hasn't had this before.`,
+            permissions : split.added,
+          },
+          {
+            id          : 'renewed',
+            title       : 'Renewing existing access',
+            permissions : split.renewed,
+          },
+        ] : undefined}
       />
     </div>
   );

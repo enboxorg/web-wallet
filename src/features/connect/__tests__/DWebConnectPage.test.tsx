@@ -640,6 +640,86 @@ describe('DWebConnectPage', () => {
     });
   });
 
+  it('treats a "refresh" that asks for a module the delegate never had as new access', async () => {
+    const delegateDid = 'did:jwk:existing-delegate';
+    const bills = 'https://example.com/modules/bills';
+    const refreshRequest = {
+      ...connectRequest(),
+      requestType: 'refresh',
+      delegateDid,
+      permissionRequests: [
+        permissionRequest,
+        {
+          moduleDefinition: { module: bills, published: false, types: { bill: {} }, structure: { bill: {} } },
+          permissionScopes: [
+            { interface: 'Records', method: 'Read', module: bills },
+            { interface: 'Records', method: 'Write', module: bills },
+          ],
+        },
+      ],
+    };
+    mocks.identities = [{ did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } }];
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:bob',
+      permissions     : [existingSessionGrant('did:dht:bob', delegateDid)],
+      revokedGrantIds : [],
+    }];
+    mocks.transport.awaitRequest.mockResolvedValue(refreshRequest);
+
+    render(<DWebConnectPage />);
+
+    // The wallet compares against the delegate's real grants, not the request's claim.
+    const allow = await screen.findByRole('button', { name: 'Allow access' });
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.getByText(/wants to add Bills and renew its existing access/)).toBeInTheDocument();
+    expect(screen.getByText('Adding access')).toBeInTheDocument();
+    expect(screen.getByText(/Approving as/)).toHaveTextContent('Approving as Bob');
+
+    // New access is listed first, then what is being renewed.
+    const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
+    expect(headings.indexOf('New access')).toBeGreaterThanOrEqual(0);
+    expect(headings.indexOf('New access')).toBeLessThan(headings.indexOf('Renewing existing access'));
+    const newAccess = screen.getByRole('region', { name: 'New access' });
+    expect(within(newAccess).getByRole('listitem', { name: 'Bills' })).toBeInTheDocument();
+    expect(within(newAccess).queryByRole('listitem', { name: 'Tasks' })).not.toBeInTheDocument();
+    const renewed = screen.getByRole('region', { name: 'Renewing existing access' });
+    expect(within(renewed).getByRole('listitem', { name: 'Tasks' })).toBeInTheDocument();
+
+    await waitFor(() => expect(allow).toBeEnabled());
+  });
+
+  it('calls out a widened scope on a module the delegate already had', async () => {
+    const delegateDid = 'did:jwk:existing-delegate';
+    const tasks = 'https://example.com/modules/tasks';
+    mocks.identities = [{ did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } }];
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:bob',
+      permissions     : [existingSessionGrant('did:dht:bob', delegateDid)],
+      revokedGrantIds : [],
+    }];
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      requestType: 'refresh',
+      delegateDid,
+      permissionRequests: [{
+        ...permissionRequest,
+        permissionScopes: [
+          { interface: 'Records', method: 'Read', module: tasks },
+          { interface: 'Records', method: 'Delete', module: tasks },
+        ],
+      }],
+    });
+
+    render(<DWebConnectPage />);
+
+    expect(await screen.findByRole('button', { name: 'Allow access' })).toBeInTheDocument();
+    expect(screen.getByText(/wants to add Tasks/)).toBeInTheDocument();
+    const newAccess = screen.getByRole('region', { name: 'New access' });
+    expect(within(within(newAccess).getByRole('listitem', { name: 'Tasks' })).getByText('Delete')).toBeInTheDocument();
+    const renewed = screen.getByRole('region', { name: 'Renewing existing access' });
+    expect(within(within(renewed).getByRole('listitem', { name: 'Tasks' })).queryByText('Delete')).not.toBeInTheDocument();
+  });
+
   it('blocks popup renewal when the request names a different previous profile', async () => {
     const delegateDid = 'did:jwk:existing-delegate';
     mocks.allPermissions = [{

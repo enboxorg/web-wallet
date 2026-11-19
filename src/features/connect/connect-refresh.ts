@@ -1,10 +1,12 @@
 import type { DwnPermissionGrant } from '@enbox/agent';
-import type { ConnectRequest } from '@enbox/connect';
+import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
 
 import {
   buildPermissionSections,
   type PermissionSessionGroup,
 } from '@/features/identities/tabs/permission-sessions';
+import { formatList } from '@/components/connect/connect-scope-display';
+import { nameForRequestedModule } from '@/lib/module-names';
 
 export const CONNECT_REFRESH_MAX_EXPIRING_SOON_SECONDS = 60 * 60;
 export const CONNECT_REFRESH_EXPIRING_SOON_LIFETIME_RATIO = 0.1;
@@ -169,4 +171,82 @@ export function detectConnectRefresh(
     pinnedOwnerDid: latest.ownerDid,
     expiresAt,
   };
+}
+
+type ScopeShape = {
+  interface: string;
+  method: string;
+  module?: string;
+  modulePath?: string;
+  contextId?: string;
+};
+
+/**
+ * Whether an earlier grant covered a requested scope. Path- and
+ * context-limited grants only cover the identical path or context; anything
+ * uncertain counts as not covered, so it is shown as new access.
+ */
+function grantCovers(granted: ScopeShape, requested: ScopeShape): boolean {
+  if (granted.interface !== requested.interface || granted.method !== requested.method) return false;
+  if (granted.module !== undefined && granted.module !== requested.module) return false;
+  if (granted.modulePath !== undefined && granted.modulePath !== requested.modulePath) return false;
+  if (granted.contextId !== undefined && granted.contextId !== requested.contextId) return false;
+  return true;
+}
+
+export interface RefreshAccessSplit {
+  /** Scopes this delegate never held, grouped by module: new access. */
+  added: ConnectPermissionRequest[];
+  /** Scopes it held before, whether active, expiring, expired or revoked. */
+  renewed: ConnectPermissionRequest[];
+}
+
+/**
+ * Split a refresh request by what the delegate actually held before. The
+ * request's own claim to be a refresh says nothing about its contents, so
+ * anything never granted to this delegate is new access, not a renewal.
+ */
+export function splitRefreshAccess(
+  requests: readonly ConnectPermissionRequest[],
+  previousGrants: readonly DwnPermissionGrant[],
+): RefreshAccessSplit {
+  const previousScopes = previousGrants.map((grant) => grant.scope as ScopeShape);
+  const added: ConnectPermissionRequest[] = [];
+  const renewed: ConnectPermissionRequest[] = [];
+
+  for (const request of requests) {
+    const scopes = request.permissionScopes as ScopeShape[];
+    const held = scopes.filter((scope) => previousScopes.some((granted) => grantCovers(granted, scope)));
+    const fresh = scopes.filter((scope) => !held.includes(scope));
+
+    if (fresh.length > 0) {
+      added.push({ ...request, permissionScopes: fresh as ConnectPermissionRequest['permissionScopes'] });
+    }
+    // Setup-only entries (no scopes) stay with the renewal: they grant nothing.
+    if (held.length > 0 || scopes.length === 0) {
+      renewed.push({ ...request, permissionScopes: held as ConnectPermissionRequest['permissionScopes'] });
+    }
+  }
+
+  return { added, renewed };
+}
+
+/** Whether a split asks for anything the delegate never held. */
+export function refreshAddsAccess(split: RefreshAccessSplit | undefined): boolean {
+  return (split?.added.length ?? 0) > 0;
+}
+
+/**
+ * The requester line for a refresh, from what the wallet found rather than
+ * what the request claims: "wants to add Bills and Budgets" when anything is
+ * new, otherwise "wants to renew its access to your profile".
+ */
+export function refreshRequestSummary(split: RefreshAccessSplit | undefined): string {
+  if (!split || !refreshAddsAccess(split)) return 'wants to renew its access to your profile';
+  const names = [...new Set(split.added.map((request) => nameForRequestedModule(request.moduleDefinition)))];
+  const listed = names.length > 3
+    ? formatList([...names.slice(0, 2), `${names.length - 2} more`])
+    : formatList(names);
+  const renews = split.renewed.some((request) => request.permissionScopes.length > 0);
+  return `wants to add ${listed}${renews ? ' and renew its existing access' : ''}`;
 }
