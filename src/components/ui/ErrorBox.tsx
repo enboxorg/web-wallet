@@ -9,11 +9,11 @@ interface ErrorBoxProps {
 export function ErrorBox({ message, className }: ErrorBoxProps) {
   return (
     <div className={cn(
-      'flex items-start gap-3 rounded-lg border border-error/30 bg-error/5 p-4',
+      'flex items-start gap-3 rounded-2xl border border-error/30 bg-error/[0.07] p-4',
       className,
     )} role="alert">
       <AlertCircle className="h-5 w-5 text-error shrink-0 mt-0.5" />
-      <p className="text-sm text-error">{message}</p>
+      <p className="text-sm leading-relaxed text-error">{message}</p>
     </div>
   );
 }

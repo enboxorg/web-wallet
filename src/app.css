@@ -34,6 +34,11 @@
   --surface-3: var(--gray-800);
   --surface-code: var(--gray-850);
   --surface-glass: rgba(14, 16, 17, 0.72);
+  /* A control lifted off a well (selected segment, active chip). */
+  --surface-raised: var(--gray-750);
+  /* Text fields: a shade above whatever they sit on, pressed in at the top. */
+  --field-bg: rgba(255, 255, 255, 0.035);
+  --field-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
 
   /* ---- Text hierarchy ----
      Every level meets WCAG AA (>= 4.5:1) for small text on surfaces 0–2;
@@ -134,6 +139,29 @@
   --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
   --shadow-glow: 0 0 40px rgba(var(--accent-rgb), 0.12);
 
+  /* ---- Depth ----
+     Raised surfaces read as lit from above: a faint sheen and a top edge
+     highlight, over a soft contact shadow. Popovers and dialogs sit higher. */
+  --sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0) 56%);
+  --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.055);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.45), 0 18px 36px -24px rgba(0, 0, 0, 0.9);
+  --shadow-raised: 0 2px 4px rgba(0, 0, 0, 0.4), 0 28px 56px -24px rgba(0, 0, 0, 0.95);
+  --shadow-pop: 0 0 0 1px rgba(255, 255, 255, 0.04), 0 32px 80px -20px rgba(0, 0, 0, 0.9),
+    0 8px 24px -8px rgba(0, 0, 0, 0.6);
+  --shadow-accent-rest: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 16px -8px rgba(var(--accent-rgb), 0.5);
+  --shadow-accent: 0 1px 2px rgba(0, 0, 0, 0.35), 0 10px 28px -8px rgba(var(--accent-rgb), 0.65);
+  --lit-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0) 62%);
+  --lit-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.3);
+
+  /* ---- Ambient backdrop ----
+     Two soft washes of light (the accent and its companion hue) behind a
+     fading dot grid. Decorative only: text never sits on the bright part. */
+  --ambient-a: rgba(var(--accent-rgb), 0.13);
+  --ambient-b: rgba(var(--accent-2-rgb), 0.09);
+  --ambient-hero: rgba(var(--accent-rgb), 0.13);
+  --grid-dot: rgba(255, 255, 255, 0.055);
+  --scrim: rgba(4, 5, 6, 0.66);
+
   /* ---- Transitions ---- */
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -170,6 +198,9 @@
   --accent-subtle: rgba(255, 107, 138, 0.06);
   --accent-text: var(--gray-950);
   --accent-gradient: linear-gradient(135deg, #ff6b8a, #ffb3c6);
+  /* Companion hue for ambient light and brand gradients (violet beside rose). */
+  --accent-2: #9d8cff;
+  --accent-2-rgb: 157, 140, 255;
 }
 
 /* ---- blue product accent ---- */
@@ -181,17 +212,21 @@
   --accent-subtle: rgba(59, 130, 246, 0.06);
   --accent-text: var(--white);
   --accent-gradient: linear-gradient(135deg, #3b82f6, #93c5fd);
+  --accent-2: #2dd4bf;
+  --accent-2-rgb: 45, 212, 191;
 }
 
 /* Blue light mode accent */
 [data-product='blue'][data-theme='light'] {
-  --accent: #2563eb;
-  --accent-rgb: 37, 99, 235;
-  --accent-hover: #1d4ed8;
-  --accent-muted: rgba(37, 99, 235, 0.1);
-  --accent-subtle: rgba(37, 99, 235, 0.05);
+  --accent: #1d4ed8;
+  --accent-rgb: 29, 78, 216;
+  --accent-hover: #1e40af;
+  --accent-muted: rgba(29, 78, 216, 0.1);
+  --accent-subtle: rgba(29, 78, 216, 0.05);
   --accent-text: var(--white);
-  --accent-gradient: linear-gradient(135deg, #2563eb, #60a5fa);
+  --accent-gradient: linear-gradient(135deg, #1d4ed8, #60a5fa);
+  --accent-2: #0d9488;
+  --accent-2-rgb: 13, 148, 136;
 }
 
 /* ============================================================
@@ -204,12 +239,18 @@
   --warm-100: #f0ece7;
   --warm-200: #e3dfd9;
 
-  --surface-0: var(--warm-white);
-  --surface-1: var(--warm-50);
-  --surface-2: var(--warm-100);
-  --surface-3: var(--warm-200);
+  /* In light mode elevation reads as brightness: the page is the warm
+     tint and raised surfaces (cards, the sidebar, dialogs) sit above it in
+     warm white. Surfaces 2 and 3 are insets and hover states on top. */
+  --surface-0: #f6f2ec;
+  --surface-1: var(--warm-white);
+  --surface-2: #f2eee7;
+  --surface-3: #e7e2d9;
   --surface-code: var(--warm-50);
-  --surface-glass: rgba(255, 252, 249, 0.72);
+  --surface-glass: rgba(246, 242, 236, 0.78);
+  --surface-raised: var(--warm-white);
+  --field-bg: #fffefc;
+  --field-shadow: inset 0 1px 2px rgba(60, 45, 20, 0.07);
 
   --text-primary: #1a1816;
   --text-secondary: #49443d;
@@ -226,6 +267,23 @@
   --shadow-lg: 0 8px 32px rgba(40, 30, 15, 0.12);
   --shadow-glow: 0 0 40px rgba(var(--accent-rgb), 0.08);
 
+  --sheen: none;
+  --edge-highlight: inset 0 1px 0 0 rgba(255, 255, 255, 0.9);
+  --shadow-card: 0 1px 2px rgba(60, 45, 20, 0.05), 0 14px 32px -22px rgba(60, 45, 20, 0.3);
+  --shadow-raised: 0 2px 6px rgba(60, 45, 20, 0.06), 0 26px 52px -26px rgba(60, 45, 20, 0.36);
+  --shadow-pop: 0 0 0 1px rgba(60, 45, 20, 0.05), 0 32px 80px -24px rgba(60, 45, 20, 0.38),
+    0 8px 24px -10px rgba(60, 45, 20, 0.18);
+  --shadow-accent-rest: 0 1px 2px rgba(60, 45, 20, 0.12), 0 6px 16px -8px rgba(var(--accent-rgb), 0.45);
+  --shadow-accent: 0 1px 2px rgba(60, 45, 20, 0.12), 0 10px 26px -8px rgba(var(--accent-rgb), 0.55);
+  --lit-sheen: linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(255, 255, 255, 0) 62%);
+  --lit-edge: inset 0 1px 0 0 rgba(255, 255, 255, 0.22);
+
+  --ambient-a: rgba(var(--accent-rgb), 0.1);
+  --ambient-b: rgba(var(--accent-2-rgb), 0.1);
+  --ambient-hero: rgba(var(--accent-rgb), 0.1);
+  --grid-dot: rgba(80, 60, 30, 0.1);
+  --scrim: rgba(30, 24, 16, 0.42);
+
   --scrollbar-thumb: var(--gray-300);
 
   --color-success: #065f46;
@@ -233,14 +291,17 @@
   --color-error: #b91c1c;
   --color-info: #1d4ed8;
 
-  /* authd light accent — deep enough for AA as text and under white text */
-  --accent: #bd2c4d;
-  --accent-rgb: 189, 44, 77;
-  --accent-hover: #a5253f;
-  --accent-muted: rgba(189, 44, 77, 0.1);
-  --accent-subtle: rgba(189, 44, 77, 0.05);
+  /* authd light accent — deep enough for AA as text (including on its own
+     tint over the page) and under white text */
+  --accent: #b3264a;
+  --accent-rgb: 179, 38, 74;
+  --accent-hover: #9c2040;
+  --accent-muted: rgba(179, 38, 74, 0.1);
+  --accent-subtle: rgba(179, 38, 74, 0.05);
   --accent-text: var(--white);
-  --accent-gradient: linear-gradient(135deg, #bd2c4d, #e0708e);
+  --accent-gradient: linear-gradient(135deg, #b3264a, #e0708e);
+  --accent-2: #6d5bd0;
+  --accent-2-rgb: 109, 91, 208;
 }
 
 /* ============================================================
@@ -255,6 +316,8 @@
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
   --color-surface-glass: var(--surface-glass);
+  --color-surface-raised: var(--surface-raised);
+  --color-field: var(--field-bg);
 
   /* Text */
   --color-text-primary: var(--text-primary);
@@ -268,6 +331,8 @@
   --color-accent-muted: var(--accent-muted);
   --color-accent-subtle: var(--accent-subtle);
   --color-accent-text: var(--accent-text);
+  --color-accent-2: var(--accent-2);
+  --color-scrim: var(--scrim);
 
   /* Status */
   --color-success: var(--color-success);
@@ -296,6 +361,11 @@
   --shadow-md: var(--shadow-md);
   --shadow-lg: var(--shadow-lg);
   --shadow-glow: var(--shadow-glow);
+  --shadow-card: var(--shadow-card);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-pop: var(--shadow-pop);
+  --inset-shadow-field: var(--field-shadow);
+  --inset-shadow-edge: var(--edge-highlight);
 
   /* Fonts */
   --font-sans: var(--font-sans);
@@ -336,6 +406,13 @@
     background: var(--surface-0);
     overflow-x: hidden;
     overscroll-behavior: contain;
+    /* Inter's optical-size axis: display cuts for headings, text cuts for body. */
+    font-optical-sizing: auto;
+    font-feature-settings: 'calt', 'ss03';
+  }
+
+  h1, h2, h3 {
+    text-wrap: balance;
   }
 
   /* Prevent double-tap zoom on interactive elements */
@@ -393,6 +470,119 @@
    ============================================================ */
 
 @layer components {
+  /* ---- Raised surface ----
+     Cards, panels and list containers. Sets Tailwind's shadow variables so
+     ring utilities (focus rings, has-[...] rings) still compose on top. */
+  .surface-card {
+    background-image: var(--sheen);
+    --tw-inset-shadow: var(--edge-highlight);
+    --tw-shadow: var(--shadow-card);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
+  /* ---- Solid accent control ----
+     The primary button: accent fill lit from above, resting on its own glow. */
+  .btn-lit {
+    background-image: var(--lit-sheen);
+    --tw-inset-shadow: var(--lit-edge);
+    --tw-shadow: var(--shadow-accent-rest);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow), var(--tw-shadow);
+  }
+  .btn-lit:hover:not(:disabled) {
+    --tw-shadow: var(--shadow-accent);
+  }
+  .btn-lit:disabled {
+    --tw-shadow: 0 0 #0000;
+    --tw-inset-shadow: 0 0 #0000;
+  }
+
+  /* Quiet raised control: secondary buttons, icon buttons, chips. */
+  .btn-raised {
+    --tw-inset-shadow: var(--edge-highlight);
+    --tw-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow),
+      var(--tw-ring-shadow), var(--tw-shadow);
+  }
+
+  /* ---- Eyebrow ----
+     Small mono caps for section labels: the terminal-native voice of the
+     brand, kept at AA contrast. */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    line-height: 1rem;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  /* ---- Ambient backdrop ----
+     Decorative light behind a page region. The element becomes its own
+     stacking context so the layers sit above its background and below its
+     content. */
+  .ambient {
+    position: relative;
+    isolation: isolate;
+  }
+  .ambient::before,
+  .ambient::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+  }
+  .ambient::before {
+    background:
+      radial-gradient(56rem 30rem at 0% 0%, var(--ambient-a), transparent 62%),
+      radial-gradient(46rem 26rem at 100% 0%, var(--ambient-b), transparent 60%);
+  }
+  .ambient::after {
+    background-image: radial-gradient(var(--grid-dot) 1px, transparent 1px);
+    background-size: 22px 22px;
+    -webkit-mask-image: linear-gradient(180deg, #000, transparent 30rem);
+    mask-image: linear-gradient(180deg, #000, transparent 30rem);
+  }
+
+  /* Centre-stage variant for the lock, welcome and ceremony screens. */
+  .ambient-hero::before {
+    background:
+      radial-gradient(min(40rem, 130vw) 24rem at 50% 10%, var(--ambient-hero), transparent 68%),
+      radial-gradient(min(52rem, 160vw) 28rem at 50% 115%, var(--ambient-b), transparent 62%);
+  }
+  .ambient-hero::after {
+    -webkit-mask-image: radial-gradient(ellipse 60% 55% at 50% 22%, #000, transparent 78%);
+    mask-image: radial-gradient(ellipse 60% 55% at 50% 22%, #000, transparent 78%);
+  }
+
+  /* Banner scrim: melts the bottom of a profile banner into the dark card
+     beneath it. On light cards a fade to white reads as haze, so the banner
+     keeps a clean edge there instead. */
+  .banner-scrim {
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    background: linear-gradient(to top, var(--surface-1), transparent);
+    pointer-events: none;
+  }
+  [data-theme='light'] .banner-scrim {
+    display: none;
+  }
+
+  /* Children rise in one after another (lists of cards). */
+  .stagger > * {
+    animation: rise-in 460ms var(--ease-out) both;
+  }
+  .stagger > *:nth-child(2) { animation-delay: 50ms; }
+  .stagger > *:nth-child(3) { animation-delay: 100ms; }
+  .stagger > *:nth-child(4) { animation-delay: 150ms; }
+  .stagger > *:nth-child(5) { animation-delay: 200ms; }
+  .stagger > *:nth-child(6) { animation-delay: 250ms; }
+  .stagger > *:nth-child(n + 7) { animation-delay: 300ms; }
+
   /* Deterministic tinted tile (apps, data types). The hue comes from the
      element's --mono-h custom property, set from a stable string hash. */
   .monogram {
@@ -443,6 +633,57 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Slow breath for the brand halo behind the lock and welcome screens. */
+@keyframes halo-breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.035);
+  }
+}
+
+/* The scan line sweeping the QR viewfinder. */
+@keyframes scan-sweep {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  12%,
+  88% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(var(--scan-travel, 12rem));
+    opacity: 0;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 

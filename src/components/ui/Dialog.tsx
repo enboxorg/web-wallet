@@ -88,16 +88,16 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   const exiting = !open && animating;
 
   const backdropClasses = cn(
-    'absolute inset-0 bg-black/60 backdrop-blur-[2px] transition-opacity',
+    'absolute inset-0 bg-scrim backdrop-blur-md transition-opacity',
     entering ? 'opacity-100 duration-200 ease-out' : '',
     exiting ? 'opacity-0 duration-150 ease-in' : '',
     animating && open ? 'opacity-0' : '',
   );
 
   const panelClasses = cn(
-    'relative w-full max-w-lg border border-border-default bg-surface-1 shadow-lg transition-all',
-    'rounded-t-2xl px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]',
-    'sm:rounded-2xl sm:p-6',
+    'surface-card relative w-full max-w-lg border border-border-default bg-surface-1 shadow-pop transition-all',
+    'rounded-t-3xl px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]',
+    'sm:rounded-3xl sm:p-7',
     entering ? 'opacity-100 translate-y-0 sm:scale-100 duration-200 ease-out' : '',
     exiting ? 'opacity-0 translate-y-6 sm:translate-y-0 sm:scale-95 duration-150 ease-in' : '',
     animating && open ? 'opacity-0 translate-y-6 sm:translate-y-0 sm:scale-95' : '',
@@ -129,7 +129,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
         {title && (
           <h2
             id={titleId}
-            className="mb-3 text-lg font-semibold tracking-tight text-text-primary"
+            className="mb-3 text-xl font-semibold tracking-tight text-text-primary"
           >
             {title}
           </h2>

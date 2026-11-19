@@ -58,29 +58,30 @@ export function ChipInput({
       {label && (
         <label
           htmlFor={inputId}
-          className="text-sm font-medium text-text-secondary"
+          className="text-[13px] font-medium text-text-secondary"
         >
           {label}
         </label>
       )}
       <div
         className={cn(
-          'flex flex-wrap items-center gap-2 rounded-md border border-border-default',
-          'bg-surface-1 px-3 py-2',
-          'focus-within:ring-2 focus-within:ring-accent focus-within:border-transparent',
+          'flex min-h-11 flex-wrap items-center gap-2 rounded-xl border border-border-default',
+          'bg-field px-2.5 py-2 inset-shadow-field',
+          'transition-[border-color,box-shadow] duration-[var(--duration-base)] hover:border-border-strong',
+          'focus-within:border-accent focus-within:ring-4 focus-within:ring-accent/15',
         )}
         onClick={() => inputRef.current?.focus()}
       >
         {values.map((value, index) => (
           <span
             key={value}
-            className="inline-flex items-center gap-1 rounded-full bg-surface-2 border border-border-default px-2.5 py-0.5 text-xs text-text-primary"
+            className="inline-flex items-center gap-0.5 rounded-lg border border-border-default bg-surface-3 py-0.5 pl-2.5 pr-0.5 font-mono text-xs text-text-primary"
           >
             {value}
             <button
               type="button"
               onClick={() => removeChip(index)}
-              className="inline-flex items-center justify-center rounded-full hover:bg-surface-3 min-w-[28px] min-h-[28px] p-1"
+              className="inline-flex min-h-[28px] min-w-[28px] items-center justify-center rounded-md p-1 text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-primary"
               aria-label={`Remove ${value}`}
             >
               <X className="h-3 w-3" />
@@ -95,7 +96,7 @@ export function ChipInput({
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder={values.length === 0 ? placeholder : ''}
-          className="min-w-[80px] flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-ghost outline-none"
+          className="min-w-[80px] flex-1 bg-transparent px-1.5 text-sm text-text-primary placeholder:text-text-ghost outline-none"
         />
       </div>
     </div>

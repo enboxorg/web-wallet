@@ -34,7 +34,7 @@ test.describe('Wallet Setup (first visit)', () => {
     // The PIN input has global keyboard capture
     await page.keyboard.type('1');
     // First digit should show a filled dot
-    const filledDots = page.locator('[class*="rounded-full"][class*="bg-text-primary"]');
+    const filledDots = page.getByTestId('pin-dot');
     await expect(filledDots).toHaveCount(1);
   });
 

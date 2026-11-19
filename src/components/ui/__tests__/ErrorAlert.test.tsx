@@ -28,7 +28,7 @@ describe('ErrorAlert', () => {
   it('has error styling classes', () => {
     render(<ErrorAlert message="Error" />);
     const alert = screen.getByRole('alert');
-    expect(alert).toHaveClass('rounded-lg');
+    expect(alert).toHaveClass('rounded-2xl');
   });
 
   it('renders the message inside a paragraph', () => {

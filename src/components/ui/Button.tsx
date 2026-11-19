@@ -21,6 +21,7 @@ export function Button({
       type={type}
       className={buttonClassName({ variant, size, className })}
       disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
     >
       {loading && (

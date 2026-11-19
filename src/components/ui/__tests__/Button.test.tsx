@@ -58,7 +58,7 @@ describe('Button', () => {
 
   it('applies size classes', () => {
     const { rerender } = render(<Button size="sm">Small</Button>);
-    expect(screen.getByRole('button').className).toContain('text-xs');
+    expect(screen.getByRole('button').className).toContain('text-[13px]');
 
     rerender(<Button size="lg">Large</Button>);
     expect(screen.getByRole('button').className).toContain('py-3');

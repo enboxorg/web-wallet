@@ -43,7 +43,7 @@ export function AvatarUpload({
     <button
       type="button"
       onClick={() => inputRef.current?.click()}
-      className={cn('group relative cursor-pointer', className)}
+      className={cn('group relative cursor-pointer rounded-full ring-4 ring-surface-0 focus-visible:outline-none focus-visible:ring-accent', className)}
       aria-label="Upload avatar"
     >
       <Avatar src={src} name={name} size={size} />
@@ -51,14 +51,14 @@ export function AvatarUpload({
         className={cn(
           'absolute inset-0 flex items-center justify-center rounded-full',
           'bg-black/50 opacity-0 group-hover:opacity-100',
-          'transition-opacity duration-[var(--duration-fast)]',
+          'transition-opacity duration-[var(--duration-base)]',
         )}
       >
         <Camera className="h-5 w-5 text-white" />
       </div>
       {/* Always-visible camera badge for touch devices */}
-      <span className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-surface-glass backdrop-blur-sm p-1.5 text-text-secondary shadow-md pointer-events-none">
-        <Camera size={12} />
+      <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full border border-border-default bg-surface-2 text-text-secondary shadow-md">
+        <Camera size={13} />
       </span>
       <input
         ref={inputRef}

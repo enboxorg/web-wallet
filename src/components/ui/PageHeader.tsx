@@ -23,16 +23,16 @@ export function PageHeader({ title, description, backTo, onBack, actions, classN
                 event.preventDefault();
               }
             }}
-            className="-ml-2.5 shrink-0 rounded-xl p-2.5 text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
+            className="btn-raised -ml-0.5 mr-1.5 mt-0.5 shrink-0 rounded-xl border border-border-default bg-surface-2 p-2 text-text-secondary transition-colors hover:border-border-strong hover:bg-surface-3 hover:text-text-primary sm:mt-1"
             aria-label="Back"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="size-[18px]" />
           </Link>
         )}
         <div className="min-w-0">
-          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">{title}</h1>
+          <h1 className="text-[1.75rem] font-semibold leading-9 tracking-[-0.025em] text-text-primary sm:text-[2rem] sm:leading-10">{title}</h1>
           {description && (
-            <p className="mt-1 text-sm text-text-tertiary">{description}</p>
+            <p className="mt-1.5 max-w-xl text-[15px] leading-relaxed text-text-tertiary">{description}</p>
           )}
         </div>
       </div>
