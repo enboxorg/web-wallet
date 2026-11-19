@@ -32,7 +32,8 @@ import PermissionsTab from './tabs/PermissionsTab';
 import ActivityTab from './tabs/ActivityTab';
 import { countActivePermissionApps } from './tabs/permission-sessions';
 
-const TABS = ['Overview', 'Modules', 'Wallets', 'Apps & Permissions', 'Activity'] as const;
+// Day-to-day first: what apps can do and what changed; setup details last.
+const TABS = ['Overview', 'Apps & Permissions', 'Activity', 'Modules', 'Wallets'] as const;
 const tabId = (i: number) => `identity-tab-${i}`;
 const panelId = (i: number) => `identity-panel-${i}`;
 
@@ -50,9 +51,9 @@ export default function IdentityDetailsPage() {
 
   const tabCounts = useMemo<Array<number | undefined>>(() => [
     undefined,
-    modules?.length ?? 0,
-    undefined,
     countActivePermissionApps(permissions),
+    undefined,
+    modules?.length ?? 0,
     undefined,
   ], [modules, permissions]);
 
@@ -273,16 +274,16 @@ export default function IdentityDetailsPage() {
         </div>
       </TabPanel>
       <TabPanel id={panelId(1)} labelledBy={tabId(1)} active={activeTab === 1}>
-        <ModulesTab did={did} />
-      </TabPanel>
-      <TabPanel id={panelId(2)} labelledBy={tabId(2)} active={activeTab === 2}>
-        <WalletsTab did={did} />
-      </TabPanel>
-      <TabPanel id={panelId(3)} labelledBy={tabId(3)} active={activeTab === 3}>
         <PermissionsTab did={did} />
       </TabPanel>
-      <TabPanel id={panelId(4)} labelledBy={tabId(4)} active={activeTab === 4}>
+      <TabPanel id={panelId(2)} labelledBy={tabId(2)} active={activeTab === 2}>
         <ActivityTab did={did} />
+      </TabPanel>
+      <TabPanel id={panelId(3)} labelledBy={tabId(3)} active={activeTab === 3}>
+        <ModulesTab did={did} />
+      </TabPanel>
+      <TabPanel id={panelId(4)} labelledBy={tabId(4)} active={activeTab === 4}>
+        <WalletsTab did={did} />
       </TabPanel>
 
       {/* Share DID QR dialog */}

@@ -266,9 +266,16 @@ describe('IdentityDetailsPage', () => {
     const overviewTab = screen.getByRole('tab', { name: /overview/i });
     overviewTab.focus();
 
-    // ArrowRight should move to the next tab (Modules)
+    // ArrowRight should move to the next tab (Apps & Permissions)
     await user.keyboard('{ArrowRight}');
-    expect(screen.getByRole('tab', { name: /modules/i })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: /apps & permissions/i })).toHaveFocus();
+  });
+
+  it('orders tabs by day-to-day use, setup details last', () => {
+    renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
+    expect(screen.getAllByRole('tab').map((tab) => tab.textContent?.replace(/\d+\(\d+\)$/, '').trim())).toEqual([
+      'Overview', 'Apps & Permissions', 'Activity', 'Modules', 'Wallets',
+    ]);
   });
 
   it('shows delete and export buttons', () => {
