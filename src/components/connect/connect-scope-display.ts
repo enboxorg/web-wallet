@@ -1,4 +1,3 @@
-import type { DwnPermissionScope } from '@enbox/agent';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 import {
   getContextCompanionRootUri,
@@ -13,67 +12,67 @@ export type DisplayScope = {
 
 export type PermissionRisk = 'view' | 'edit' | 'delete' | 'other';
 
+/**
+ * `record` actions touch the user's records; `support` actions are the
+ * plumbing an app needs to sync and check setup; `other` is anything the
+ * wallet has no curated wording for (shown verbatim).
+ */
+export type PermissionActionKind = 'record' | 'support' | 'other';
+
 export type PermissionAction = {
   key: string;
   label: string;
   phrase: string;
   risk: PermissionRisk;
+  kind: PermissionActionKind;
+  /** Exact DWN scope, for tooltips and technical disclosure. */
+  scope: string;
 };
 
-const RECORD_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key'>> = {
+const RECORD_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key' | 'scope'>> = {
   Read: {
     label  : 'View',
     phrase : 'view',
     risk   : 'view',
+    kind   : 'record',
   },
   Write: {
     label  : 'Add or edit',
     phrase : 'add or edit',
     risk   : 'edit',
+    kind   : 'record',
   },
   Delete: {
     label  : 'Delete',
     phrase : 'delete',
     risk   : 'delete',
+    kind   : 'record',
   },
 };
 
-const SUPPORT_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key'>> = {
+const SUPPORT_PERMISSION_ACTIONS: Record<string, Omit<PermissionAction, 'key' | 'scope'>> = {
   'Messages.Read': {
-    label  : 'View messages',
-    phrase : 'view messages from',
+    label  : 'Sync changes',
+    phrase : 'sync changes from',
     risk   : 'view',
+    kind   : 'support',
   },
   'Modules.Query': {
     label  : 'Inspect setup',
     phrase : 'inspect setup for',
     risk   : 'view',
+    kind   : 'support',
   },
 };
 
-export function isInternalConnectScope(scope: DwnPermissionScope): boolean {
-  return (
-    (scope?.interface === 'Modules' && scope?.method === 'Query')
-    || (scope?.interface === 'Messages' && scope?.method === 'Read')
-  );
-}
-
-export function getDisplayScopes(
-  permissionScopes: ConnectPermissionRequest['permissionScopes'],
-): DisplayScope[] {
-  const scopes = new Map<string, DisplayScope>();
-  const supportScopes = new Map<string, DisplayScope>();
-
-  for (const scope of permissionScopes) {
-    const scopeInterface = scope.interface;
-    const method = scope.method;
-    const key = `${scopeInterface}.${method}`;
-    const target = isInternalConnectScope(scope) ? supportScopes : scopes;
-    target.set(key, { interface: scopeInterface, method });
-  }
-
-  return [...(scopes.size > 0 ? scopes : supportScopes).values()];
-}
+/** Stable reading order: view → edit → delete, then sync/setup, then the rest. */
+const ACTION_ORDER = [
+  'Records.Read',
+  'Records.Write',
+  'Records.Delete',
+  'Messages.Read',
+  'Modules.Query',
+];
 
 export function mergePermissionRequestsByModule(
   permissions: ConnectPermissionRequest[],
@@ -111,6 +110,7 @@ export function getPermissionActions(scopes: DisplayScope[]): PermissionAction[]
       return {
         ...action,
         key,
+        scope: key,
       };
     }
 
@@ -120,15 +120,24 @@ export function getPermissionActions(scopes: DisplayScope[]): PermissionAction[]
       label,
       phrase : label,
       risk   : 'other',
+      kind   : 'other',
+      scope  : key,
     };
   });
 }
 
-export function getHighestPermissionRisk(actions: PermissionAction[]): PermissionRisk {
-  if (actions.some((action) => action.risk === 'delete')) return 'delete';
-  if (actions.some((action) => action.risk === 'edit')) return 'edit';
-  if (actions.some((action) => action.risk === 'view')) return 'view';
-  return 'other';
+/** De-duplicate scopes and order them for display. */
+export function getSortedPermissionActions(scopes: DisplayScope[]): PermissionAction[] {
+  const unique = new Map<string, DisplayScope>();
+  for (const scope of scopes) {
+    unique.set(`${scope.interface}.${scope.method}`, scope);
+  }
+  const rank = (key: string): number => {
+    const index = ACTION_ORDER.indexOf(key);
+    return index === -1 ? ACTION_ORDER.length : index;
+  };
+  return getPermissionActions([...unique.values()])
+    .sort((left, right) => rank(left.key) - rank(right.key) || left.key.localeCompare(right.key));
 }
 
 export function formatList(items: string[]): string {
@@ -197,25 +206,4 @@ export function groupPermissionRequestsWithCompanions(
   }
 
   return groups;
-}
-
-export function formatModuleObjectPhrase(options: {
-  isContextCompanion: boolean;
-  isKnownModule: boolean;
-  moduleName?: string;
-}): string {
-  if (options.isContextCompanion) {
-    return 'shared context invitations and followed contexts';
-  }
-  if (options.isKnownModule && options.moduleName) {
-    return `your ${options.moduleName}`;
-  }
-  return 'a custom data type';
-}
-
-export function formatActionPhrase(actions: PermissionAction[]): string {
-  const phrases = actions.length > 0
-    ? actions.map((action) => action.phrase)
-    : ['use'];
-  return formatList(phrases);
 }

@@ -1,40 +1,46 @@
-import { useId, useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  Check,
   ChevronDown,
-  Clock3,
-  Copy,
-  Globe2,
-  Info,
+  Monitor,
   MonitorSmartphone,
-  Power,
   RefreshCw,
   Shield,
   ShieldCheck,
+  Smartphone,
+  Tablet,
   Trash2,
   TriangleAlert,
 } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import type { DwnPermissionGrant } from '@enbox/agent';
+
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { queryKeys } from '@/enbox/queries/query-keys';
 import { useAuthStore } from '@/stores/auth-store';
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
+import { Badge } from '@/components/ui/Badge';
+import { CopyButton } from '@/components/ui/CopyButton';
+import { Disclosure } from '@/components/ui/Disclosure';
 import { Loader } from '@/components/ui/Loader';
+import { Monogram } from '@/components/ui/Monogram';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
-import { truncateDid, copyToClipboard } from '@/lib/utils';
-import { getModuleName, getScopeLabel } from '@/lib/module-names';
-import type { DwnPermissionGrant } from '@enbox/agent';
+import { SectionHeader } from '@/components/ui/SectionHeader';
+import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
+import { PermissionActionChips } from '@/components/connect/PermissionActionChips';
+import { formatList } from '@/components/connect/connect-scope-display';
+import { truncateDid, cn } from '@/lib/utils';
+import { describeModule, getModuleName } from '@/lib/module-names';
 import {
   buildPermissionSections,
-  type PermissionApprovalBundle,
   type PermissionApplicationGroup,
   type PermissionGranteeGroup,
   type PermissionSessionGroup,
 } from './permission-sessions';
-import { describeConnectSession } from './permission-session-display';
+import { groupGrantAccess, isGrantActive, type GrantAccessRow } from './permission-access';
+import { describeConnectSession, type SessionEnvironmentSummary } from './permission-session-display';
 import { renewExpiredSession } from './renew-session';
 import {
   CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
@@ -46,14 +52,22 @@ interface PermissionsTabProps {
   did: string;
 }
 
-type RevokeTarget =
-  | { kind: 'grant'; grant: DwnPermissionGrant }
-  | { kind: 'session'; session: PermissionSessionGroup };
+/** Everything the confirmation dialog needs; grants are re-filtered to active ones on confirm. */
+interface RevokeTarget {
+  title: string;
+  body: ReactNode;
+  confirm: string;
+  success: string;
+  grants: DwnPermissionGrant[];
+}
 
 interface RenewTarget {
   applicationName: string;
   session: PermissionSessionGroup;
 }
+
+/** Expired sessions render inline per app, capped so heavy renewal history can't flood the card. */
+const MAX_VISIBLE_EXPIRED_SESSIONS = 3;
 
 function formatDateTime(value: string | undefined): string {
   if (!value) return 'Unknown';
@@ -66,400 +80,359 @@ function formatDateTime(value: string | undefined): string {
   }).format(date);
 }
 
-function grantCountLabel(count: number): string {
-  return count === 1 ? '1 permission' : `${count} permissions`;
+function pluralize(count: number, singular: string, plural = `${singular}s`): string {
+  return `${count} ${count === 1 ? singular : plural}`;
 }
 
-/** Expired sessions render inline per app, capped so heavy renewal history can't flood the card. */
-const MAX_VISIBLE_EXPIRED_SESSIONS = 3;
-
-function sessionCountLabel(count: number): string {
-  return count === 1 ? '1 session' : `${count} sessions`;
-}
-
-function applicationCountLabel(count: number): string {
-  return count === 1 ? '1 app' : `${count} apps`;
-}
-
-function grantScopeLabel(grant: DwnPermissionGrant): string | undefined {
-  const scopeInterface = grant.scope?.interface;
-  const method = grant.scope?.method;
-  if (!scopeInterface) return undefined;
-  if (!method) return scopeInterface;
-  return getScopeLabel({ interface: scopeInterface, method });
-}
-
-function revokeTargetGrants(target: RevokeTarget): DwnPermissionGrant[] {
-  return target.kind === 'session'
-    ? target.session.grants.filter((grant) => {
-      const expiresAt = new Date(grant.dateExpires).getTime();
-      return Number.isFinite(expiresAt) && expiresAt > Date.now();
-    })
-    : [target.grant];
-}
-
-function revokeDialogCopy(target: RevokeTarget | null): {
-  title: string;
-  body: string;
-  confirm: string;
-} {
-  if (target?.kind === 'session') {
-    return {
-      title   : 'Revoke session',
-      body    : 'Revoke this session? The app will lose every active permission from its approval history on this device.',
-      confirm : 'Revoke session',
-    };
+function hostOf(origin: string | undefined): string | undefined {
+  if (!origin) return undefined;
+  try {
+    const url = new URL(origin);
+    return url.protocol === 'https:' || url.protocol === 'http:' ? url.host : origin;
+  } catch {
+    return origin;
   }
-
-  return {
-    title   : 'Revoke permission',
-    body    : 'Revoke this permission? The app will no longer be able to access this module.',
-    confirm : 'Revoke',
-  };
 }
 
-function PermissionGrantRow({
-  grant,
+function activeGrants(grants: DwnPermissionGrant[]): DwnPermissionGrant[] {
+  return grants.filter((grant) => isGrantActive(grant));
+}
+
+function accessRowName(row: GrantAccessRow): string {
+  return row.module ? getModuleName(row.module) : 'All data';
+}
+
+function accessRowDetail(row: GrantAccessRow): string | undefined {
+  if (row.contextId) return 'One shared context only';
+  if (row.modulePath) return `Only ${row.modulePath}`;
+  if (!row.module) return 'Not limited to one module';
+  const display = describeModule(row.module);
+  return display.isCore
+    ? display.description
+    : [display.host, display.version].filter(Boolean).join(' · ') || undefined;
+}
+
+function DeviceIcon({ summary, className }: { summary: SessionEnvironmentSummary; className?: string }) {
+  const device = summary.device ?? '';
+  const Icon = /iPhone|Android/i.test(device)
+    ? Smartphone
+    : /iPad/i.test(device)
+      ? Tablet
+      : summary.device ? Monitor : MonitorSmartphone;
+  return <Icon className={className} aria-hidden="true" />;
+}
+
+// ── Access rows ─────────────────────────────────────────────────────
+
+function AccessRowItem({
+  row,
+  inactive,
   onRevoke,
+  revokeLabel,
 }: {
-  grant: DwnPermissionGrant;
-  onRevoke?: (grant: DwnPermissionGrant) => void;
+  row: GrantAccessRow;
+  inactive?: boolean;
+  onRevoke?: () => void;
+  revokeLabel?: string;
 }) {
-  const module = grant.scope?.module;
-  const scopeLabel = grantScopeLabel(grant);
-  const moduleLabel = module ? getModuleName(module) : 'All modules';
-  const revokeLabel = scopeLabel
-    ? `Revoke ${moduleLabel} ${scopeLabel} permission`
-    : `Revoke ${moduleLabel} permission`;
+  const nameId = useId();
+  const name = accessRowName(row);
+  const detail = accessRowDetail(row);
+  const display = row.module ? describeModule(row.module) : undefined;
+  const hasRecordAccess = row.actions.some((action) => action.kind === 'record');
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[var(--radius-md)] bg-surface-2 px-3 py-2">
-      <span
-        className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary"
-        title={module}
-      >
-        {moduleLabel}
-      </span>
-      {scopeLabel && (
-        <span className="rounded-full bg-accent/10 px-2 py-0.5 text-xs font-medium text-accent">
-          {scopeLabel}
-        </span>
+    <li aria-labelledby={nameId} className={cn('flex items-start gap-3 px-3 py-3', inactive && 'opacity-60')}>
+      {display ? (
+        <ModuleGlyph module={display} size="sm" />
+      ) : (
+        <Monogram label={name} icon={<TriangleAlert />} size="sm" />
       )}
+      <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-4">
+        <div className="min-w-0 sm:flex-1">
+          <p id={nameId} className="flex min-w-0 items-center gap-2 text-sm font-medium text-text-primary" title={row.module}>
+            <span className="truncate">
+              {display?.companionOf ? getModuleName(display.companionOf) : name}
+            </span>
+            {display?.companionOf && <Badge tone="info">Shared contexts</Badge>}
+          </p>
+          {detail && (
+            <p className="truncate text-xs text-text-tertiary" title={detail}>{detail}</p>
+          )}
+        </div>
+        <PermissionActionChips
+          actions={row.actions}
+          emphasizeSupport={!hasRecordAccess}
+          className="mt-2 sm:mt-0 sm:max-w-[60%] sm:justify-end"
+        />
+      </div>
       {onRevoke && (
         <button
           type="button"
-          onClick={() => onRevoke(grant)}
-          className="ml-auto inline-flex items-center justify-center rounded-md p-1 text-text-ghost transition-colors hover:bg-error/10 hover:text-error"
-          aria-label={revokeLabel}
-          title="Revoke"
+          onClick={onRevoke}
+          className="-mr-1 inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-text-ghost transition-colors hover:bg-error/10 hover:text-error focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent pointer-coarse:size-11"
+          aria-label={revokeLabel ?? `Revoke ${name} access`}
+          title="Revoke access"
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <Trash2 className="size-4" />
         </button>
       )}
-    </div>
+    </li>
   );
 }
 
-function CopyDidButton({
-  did,
-  copiedDid,
-  onCopy,
+function AccessList({
+  rows,
+  inactive,
+  onRevokeRow,
+  revokeLabel,
   label,
 }: {
-  did: string;
-  copiedDid: string | null;
-  onCopy: (did: string) => void;
+  rows: GrantAccessRow[];
+  inactive?: boolean;
+  onRevokeRow?: (row: GrantAccessRow) => void;
+  revokeLabel?: (row: GrantAccessRow) => string;
   label: string;
 }) {
+  if (rows.length === 0) {
+    return <p className="text-xs text-text-tertiary">No data access.</p>;
+  }
+
   return (
-    <button
-      type="button"
-      onClick={() => onCopy(did)}
-      className="text-text-ghost hover:text-text-secondary"
+    <ul
       aria-label={label}
-      title={label}
+      className="divide-y divide-border-subtle overflow-hidden rounded-lg border border-border-subtle bg-surface-0/40"
     >
-      {copiedDid === did ? (
-        <Check className="h-3.5 w-3.5 text-success" />
-      ) : (
-        <Copy className="h-3.5 w-3.5" />
-      )}
-    </button>
+      {rows.map((row) => (
+        <AccessRowItem
+          key={row.key}
+          row={row}
+          inactive={inactive}
+          onRevoke={onRevokeRow ? () => onRevokeRow(row) : undefined}
+          revokeLabel={revokeLabel?.(row)}
+        />
+      ))}
+    </ul>
   );
 }
 
-function SessionMetadataItem({
-  icon,
-  label,
-  value,
-}: {
-  icon: ReactNode;
-  label: string;
-  value: string | undefined;
-}) {
-  if (!value) return null;
+// ── Sessions (devices) ──────────────────────────────────────────────
 
+function Fact({ label, value }: { label: string; value: string | undefined }) {
+  if (!value) return null;
   return (
-    <div className="flex min-w-0 items-center gap-1.5 text-xs text-text-ghost">
-      <span className="shrink-0 text-text-ghost">{icon}</span>
-      <span className="shrink-0 text-text-tertiary">{label}</span>
-      <span className="truncate text-text-secondary" title={value}>{value}</span>
+    <div className="flex min-w-0 gap-2">
+      <dt className="w-24 shrink-0 text-text-ghost">{label}</dt>
+      <dd className="min-w-0 truncate text-text-secondary" title={value}>{value}</dd>
     </div>
   );
 }
 
-function isGrantActive(grant: DwnPermissionGrant): boolean {
-  const expiresAt = new Date(grant.dateExpires).getTime();
-  return Number.isFinite(expiresAt) && expiresAt > Date.now();
-}
-
-function ApprovalBundleDisclosure({
-  bundle,
-  onRevokeGrant,
-}: {
-  bundle: PermissionApprovalBundle;
-  onRevokeGrant: (grant: DwnPermissionGrant) => void;
-}) {
-  const approvedAt = formatDateTime(bundle.dateGranted);
-
-  return (
-    <details
-      aria-label={`Permission bundle approved ${approvedAt}`}
-      className="group rounded-[var(--radius-md)] border border-border-default bg-surface-1 px-3 py-2"
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-text-secondary hover:text-text-primary">
-        <span className="inline-flex min-w-0 items-center gap-1.5">
-          <Shield className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">Permission bundle · {approvedAt}</span>
-        </span>
-        <span
-          className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-            bundle.active
-              ? 'bg-success/10 text-success'
-              : 'bg-surface-3 text-text-ghost'
-          }`}
-        >
-          {bundle.active ? 'Active' : 'Expired'}
-        </span>
-        <span className="ml-auto text-text-ghost">
-          {grantCountLabel(bundle.grants.length)}
-        </span>
-        <ChevronDown className="h-4 w-4 shrink-0 text-text-ghost transition-transform group-open:rotate-180" />
-      </summary>
-
-      <div className="mt-2 space-y-2">
-        <p className="text-xs text-text-ghost">
-          Access expires {formatDateTime(bundle.dateExpires)}
-        </p>
-        {bundle.grants.map((grant, index) => (
-          <PermissionGrantRow
-            key={grant.id ?? index}
-            grant={grant}
-            onRevoke={isGrantActive(grant) ? onRevokeGrant : undefined}
-          />
-        ))}
-      </div>
-    </details>
-  );
-}
-
-function SessionCard({
-  sessionGroup,
-  applicationName,
-  copiedDid,
-  onCopy,
-  onRevokeGrant,
-  onRevokeSession,
-}: {
+function SessionDetails({ sessionGroup, summary }: {
   sessionGroup: PermissionSessionGroup;
-  applicationName: string;
-  copiedDid: string | null;
-  onCopy: (did: string) => void;
-  onRevokeGrant: (grant: DwnPermissionGrant) => void;
-  onRevokeSession: (session: PermissionSessionGroup) => void;
+  summary: SessionEnvironmentSummary;
 }) {
-  const summary = describeConnectSession(sessionGroup.session);
-  const headingId = useId();
-  const revokeSessionLabel = `Revoke ${summary.title} session for ${applicationName}`;
-
   return (
-    <article
-      aria-labelledby={headingId}
-      className="rounded-[var(--radius-lg)] border border-border-default bg-surface-2 p-4"
-    >
-      <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex min-w-0 items-center gap-2">
-          <MonitorSmartphone className="h-4 w-4 shrink-0 text-accent" />
-          <h5 id={headingId} className="truncate text-sm font-semibold text-text-primary">
-            {summary.title}
-          </h5>
-          <span
-            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-              sessionGroup.active
-                ? 'bg-success/10 text-success'
-                : 'bg-surface-3 text-text-ghost'
-            }`}
-          >
-            {sessionGroup.active ? 'Active' : 'Expired'}
-          </span>
-        </div>
-
-        {sessionGroup.active && (
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => onRevokeSession(sessionGroup)}
-            className="shrink-0"
-            aria-label={revokeSessionLabel}
-          >
-            <Power className="h-3.5 w-3.5" />
-            Revoke session
-          </Button>
-        )}
-      </div>
-
-      <div className="mb-3 grid gap-2 sm:grid-cols-2">
-        <SessionMetadataItem
-          icon={<Clock3 className="h-3.5 w-3.5" />}
-          label="Approved"
-          value={formatDateTime(sessionGroup.dateGranted)}
-        />
+    <div className="space-y-4">
+      <dl className="grid gap-x-6 gap-y-1.5 text-xs sm:grid-cols-2">
+        <Fact label="Approved" value={formatDateTime(sessionGroup.dateGranted)} />
         {sessionGroup.bundles.length > 1 && (
-          <SessionMetadataItem
-            icon={<Clock3 className="h-3.5 w-3.5" />}
-            label="Last renewed"
-            value={formatDateTime(sessionGroup.lastRenewed)}
-          />
+          <Fact label="Last renewed" value={formatDateTime(sessionGroup.lastRenewed)} />
         )}
-        <SessionMetadataItem
-          icon={<Clock3 className="h-3.5 w-3.5" />}
-          label={sessionGroup.active ? 'Access available until' : 'Access expired'}
+        <Fact
+          label={sessionGroup.active ? 'Access until' : 'Expired'}
           value={formatDateTime(sessionGroup.dateExpires)}
         />
-        <SessionMetadataItem
-          icon={<MonitorSmartphone className="h-3.5 w-3.5" />}
-          label="Device"
-          value={summary.device}
-        />
-        <SessionMetadataItem
-          icon={<Globe2 className="h-3.5 w-3.5" />}
-          label="Browser"
-          value={summary.browser}
-        />
-        <SessionMetadataItem
-          icon={<Clock3 className="h-3.5 w-3.5" />}
-          label="Time zone"
-          value={summary.timezone}
-        />
-        <SessionMetadataItem
-          icon={<Globe2 className="h-3.5 w-3.5" />}
-          label="Transport"
-          value={summary.transport}
-        />
+        <Fact label="Device" value={summary.device} />
+        <Fact label="Browser" value={summary.browser} />
+        <Fact label="Time zone" value={summary.timezone} />
+        <Fact label="Connection" value={summary.transport} />
+      </dl>
+
+      <div className="space-y-2">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">
+          Approval history
+        </p>
+        <ol className="space-y-2" aria-label={`Approval history for ${summary.title}`}>
+          {sessionGroup.bundles.map((bundle) => {
+            const rows = groupGrantAccess(bundle.grants);
+            return (
+              <li
+                key={bundle.id}
+                aria-label={`Approval on ${formatDateTime(bundle.dateGranted)}`}
+                className="rounded-lg border border-border-subtle bg-surface-1 px-3 py-2.5"
+              >
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                  <span className="font-medium text-text-secondary">{formatDateTime(bundle.dateGranted)}</span>
+                  <Badge tone={bundle.active ? 'success' : 'neutral'}>
+                    {bundle.active ? 'Active' : 'Expired'}
+                  </Badge>
+                  <span className="ml-auto text-text-ghost">
+                    {bundle.active ? 'Until' : 'Ended'} {formatDateTime(bundle.dateExpires)}
+                  </span>
+                </div>
+                <ul className="mt-2 space-y-1.5">
+                  {rows.map((row) => (
+                    <li key={row.key} className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-xs text-text-primary" title={row.module}>{accessRowName(row)}</span>
+                      {(row.modulePath || row.contextId) && (
+                        <span className="text-[11px] text-text-ghost">{accessRowDetail(row)}</span>
+                      )}
+                      <PermissionActionChips actions={row.actions} />
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            );
+          })}
+        </ol>
       </div>
 
-      <details className="group mb-3 rounded-[var(--radius-md)] bg-surface-1 px-3 py-2">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-xs font-medium text-text-secondary hover:text-text-primary">
-          <span className="inline-flex items-center gap-1.5">
-            <Info className="h-3.5 w-3.5" />
-            Latest connection details
-          </span>
-          <ChevronDown className="h-4 w-4 text-text-ghost transition-transform group-open:rotate-180" />
-        </summary>
-
-        <dl className="mt-2 grid gap-2 text-xs">
+      <div className="space-y-2">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">
+          Technical details
+        </p>
+        <dl className="grid gap-1.5 text-xs">
           <div className="grid gap-1 sm:grid-cols-[7rem_1fr]">
             <dt className="text-text-ghost">Delegate DID</dt>
-            <dd className="flex min-w-0 items-center gap-1.5">
+            <dd className="flex min-w-0 items-center gap-1">
               <span className="truncate font-mono text-text-secondary" title={sessionGroup.grantee}>
                 {truncateDid(sessionGroup.grantee)}
               </span>
-              <CopyDidButton
-                did={sessionGroup.grantee}
-                copiedDid={copiedDid}
-                onCopy={onCopy}
-                label="Copy delegate DID"
-              />
+              <CopyButton value={sessionGroup.grantee} label="Copy delegate DID" />
             </dd>
           </div>
           {summary.technicalDetails.map((detail) => (
             <div key={detail.label} className="grid gap-1 sm:grid-cols-[7rem_1fr]">
               <dt className="text-text-ghost">{detail.label}</dt>
-              <dd className="min-w-0 break-words font-mono text-text-secondary">
-                {detail.value}
-              </dd>
+              <dd className="min-w-0 break-words font-mono text-text-secondary">{detail.value}</dd>
             </div>
           ))}
         </dl>
-      </details>
-
-      <div className="space-y-2" aria-label={`Approval history for ${summary.title}`}>
-        {sessionGroup.bundles.map((bundle) => (
-          <ApprovalBundleDisclosure
-            key={bundle.id}
-            bundle={bundle}
-            onRevokeGrant={onRevokeGrant}
-          />
-        ))}
       </div>
-    </article>
+    </div>
   );
 }
 
-function ExpiredSessionRow({
+function SessionRow({
   sessionGroup,
   applicationName,
+  onRevoke,
   onRenew,
 }: {
   sessionGroup: PermissionSessionGroup;
   applicationName: string;
+  onRevoke: (session: PermissionSessionGroup) => void;
   onRenew: (session: PermissionSessionGroup) => void;
 }) {
   const summary = describeConnectSession(sessionGroup.session);
+  const headingId = useId();
+  const status = sessionGroup.active
+    ? `Expires ${formatRelativeExpiry(sessionGroup.dateExpires)}`
+    : `Expired ${formatRelativeExpiry(sessionGroup.dateExpires)}`;
+  const approved = sessionGroup.dateGranted
+    ? `approved ${formatRelativeExpiry(sessionGroup.dateGranted)}`
+    : undefined;
 
   return (
-    <li className="flex items-center gap-2 rounded-[var(--radius-md)] bg-surface-2/60 px-3 py-1.5 text-xs opacity-70">
-      <MonitorSmartphone className="h-3 w-3 shrink-0 text-text-ghost" />
-      <span className="min-w-0 truncate text-text-tertiary" title={summary.title}>
-        {summary.title}
-      </span>
-      <span className="shrink-0 text-text-ghost">
-        Expired {formatRelativeExpiry(sessionGroup.dateExpires)}
-      </span>
-      <button
-        type="button"
-        onClick={() => onRenew(sessionGroup)}
-        className="ml-auto inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 font-medium text-text-tertiary transition-colors hover:bg-accent/10 hover:text-accent"
-        aria-label={`Renew ${summary.title} session for ${applicationName}`}
-        title="Renew access"
+    <li
+      aria-labelledby={headingId}
+      className={cn(
+        'rounded-lg border border-border-subtle bg-surface-0/40',
+        !sessionGroup.active && 'bg-transparent',
+      )}
+    >
+      <div className="flex items-center gap-3 px-3 py-2.5">
+        <span
+          className={cn(
+            'flex size-8 shrink-0 items-center justify-center rounded-lg bg-surface-2',
+            sessionGroup.active ? 'text-text-secondary' : 'text-text-ghost',
+          )}
+        >
+          <DeviceIcon summary={summary} className="size-4" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <h5
+              id={headingId}
+              className={cn(
+                'truncate text-sm font-medium',
+                sessionGroup.active ? 'text-text-primary' : 'text-text-tertiary',
+              )}
+            >
+              {summary.title}
+            </h5>
+            {sessionGroup.active && (
+              <span className="size-1.5 shrink-0 rounded-full bg-success" aria-label="Active" role="img" />
+            )}
+          </div>
+          <p className="truncate text-xs text-text-tertiary">
+            {[status, approved].filter(Boolean).join(' · ')}
+          </p>
+        </div>
+        {sessionGroup.active ? (
+          <Button
+            variant="danger-ghost"
+            size="sm"
+            onClick={() => onRevoke(sessionGroup)}
+            className="shrink-0"
+            aria-label={`Revoke ${summary.title} session for ${applicationName}`}
+          >
+            Revoke
+          </Button>
+        ) : (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => onRenew(sessionGroup)}
+            className="shrink-0"
+            aria-label={`Renew ${summary.title} session for ${applicationName}`}
+            title="Renew access"
+          >
+            <RefreshCw className="size-3.5" />
+            Renew
+          </Button>
+        )}
+      </div>
+      <Disclosure
+        className="border-t border-border-subtle"
+        summaryClassName="px-3 py-2 text-text-tertiary hover:text-text-primary"
+        summary="Details"
+        contentClassName="px-3 pb-3 pt-1"
       >
-        <RefreshCw className="h-3 w-3" />
-        Renew
-      </button>
+        <SessionDetails sessionGroup={sessionGroup} summary={summary} />
+      </Disclosure>
     </li>
+  );
+}
+
+// ── Application card ────────────────────────────────────────────────
+
+function TrustLabel({ trust }: { trust: PermissionApplicationGroup['identityTrust'] }) {
+  return trust === 'verified-origin' ? (
+    <span className="inline-flex items-center gap-1 text-success">
+      <ShieldCheck className="size-3.5" aria-hidden="true" />
+      Website origin verified
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-warning">
+      <TriangleAlert className="size-3.5" aria-hidden="true" />
+      App identity not verified by wallet
+    </span>
   );
 }
 
 function ApplicationCard({
   application,
-  copiedDid,
-  onCopy,
-  onRevokeGrant,
-  onRevokeSession,
+  onRevoke,
   onRenewSession,
 }: {
   application: PermissionApplicationGroup;
-  copiedDid: string | null;
-  onCopy: (did: string) => void;
-  onRevokeGrant: (grant: DwnPermissionGrant) => void;
-  onRevokeSession: (session: PermissionSessionGroup) => void;
+  onRevoke: (target: RevokeTarget) => void;
   onRenewSession: (session: PermissionSessionGroup) => void;
 }) {
   const headingId = useId();
   const [showAllExpired, setShowAllExpired] = useState(false);
-  const activeLabel = application.activeSessionCount === 1
-    ? '1 active'
-    : `${application.activeSessionCount} active`;
   const activeSessions = application.sessions.filter((session) => session.active);
   // Most recently expired first, so the rows read as a rewind of usage.
   const expiredSessions = [...application.sessions.filter((session) => !session.active)]
@@ -467,179 +440,232 @@ function ApplicationCard({
   const visibleExpiredSessions = showAllExpired
     ? expiredSessions
     : expiredSessions.slice(0, MAX_VISIBLE_EXPIRED_SESSIONS);
+  const isActive = activeSessions.length > 0;
+
+  // What the app can do now (active sessions), or could do before it expired.
+  const accessRows = groupGrantAccess(
+    isActive
+      ? activeSessions.flatMap((session) => activeGrants(session.grants))
+      : application.sessions.flatMap((session) => session.grants),
+  );
+
+  const host = hostOf(application.origin);
+  const showOrigin = host !== undefined && host !== application.name;
+  const showAppId = application.applicationId !== undefined
+    && application.applicationId !== application.name
+    && application.applicationId !== application.origin;
+  const latestExpiry = application.sessions
+    .map((session) => session.dateExpires)
+    .sort()
+    .at(-1);
+
+  const status = isActive
+    ? `${pluralize(activeSessions.length, 'device')} connected`
+    : latestExpiry ? `Access expired ${formatRelativeExpiry(latestExpiry)}` : 'Access expired';
+
+  const revokeAll = (): void => onRevoke({
+    title   : `Disconnect ${application.name}?`,
+    body    : (
+      <>
+        <strong className="text-text-primary">{application.name}</strong> will immediately lose
+        access to this profile on {pluralize(activeSessions.length, 'device')}. You can connect it
+        again later.
+      </>
+    ),
+    confirm : 'Disconnect',
+    success : `${application.name} disconnected`,
+    grants  : activeSessions.flatMap((session) => session.grants),
+  });
+
+  const revokeRow = (row: GrantAccessRow): void => {
+    const name = accessRowName(row);
+    const verbs = formatList(row.actions.filter((action) => action.kind === 'record').map((action) => action.phrase));
+    onRevoke({
+      title   : `Remove ${name} access?`,
+      body    : (
+        <>
+          <strong className="text-text-primary">{application.name}</strong> will no longer be able
+          to {verbs || 'use'} your {name} data on any device. Other access stays as it is.
+        </>
+      ),
+      confirm : 'Remove access',
+      success : 'Permission revoked',
+      grants  : row.grants,
+    });
+  };
 
   return (
     <article
       aria-labelledby={headingId}
-      className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-4"
+      className="overflow-hidden rounded-xl border border-border-default bg-surface-1"
     >
-      <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 space-y-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <Globe2 className="h-4 w-4 shrink-0 text-accent" />
+      <header className="flex items-start gap-3 p-4 sm:p-5">
+        <Monogram label={application.name} seed={application.origin ?? application.id} />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
             <h4 id={headingId} className="truncate text-base font-semibold text-text-primary">
               {application.name}
             </h4>
+            <Badge tone={isActive ? 'success' : 'neutral'}>{isActive ? 'Active' : 'Expired'}</Badge>
           </div>
-
-          {application.origin && application.origin !== application.name && (
-            <p className="truncate text-xs text-text-secondary" title={application.origin}>
-              {application.origin}
-            </p>
-          )}
-
-          {application.applicationId && application.applicationId !== application.name && (
-            <p className="truncate font-mono text-xs text-text-ghost" title={application.applicationId}>
+          <p className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-tertiary">
+            {showOrigin && <span className="truncate" title={application.origin}>{host}</span>}
+            <TrustLabel trust={application.identityTrust} />
+          </p>
+          {showAppId && (
+            <p className="mt-1 truncate font-mono text-[11px] text-text-ghost" title={application.applicationId}>
               App ID: {application.applicationId}
             </p>
           )}
-
-          <p
-            className={`inline-flex items-center gap-1.5 text-xs ${
-              application.identityTrust === 'verified-origin'
-                ? 'text-success'
-                : 'text-warning'
-            }`}
-          >
-            {application.identityTrust === 'verified-origin' ? (
-              <ShieldCheck className="h-3.5 w-3.5" aria-hidden="true" />
-            ) : (
-              <TriangleAlert className="h-3.5 w-3.5" aria-hidden="true" />
-            )}
-            {application.identityTrust === 'verified-origin'
-              ? 'Website origin verified'
-              : 'App identity not verified by wallet'}
-          </p>
+          <p className="mt-1 text-xs text-text-ghost">{status}</p>
         </div>
+        {isActive && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={revokeAll}
+            className="shrink-0"
+            aria-label={`Disconnect ${application.name}`}
+          >
+            Disconnect
+          </Button>
+        )}
+      </header>
 
-        <span className="shrink-0 text-xs text-text-ghost">
-          {sessionCountLabel(application.sessions.length)} · {activeLabel}
-        </span>
+      <div className="space-y-2 border-t border-border-subtle px-4 py-4 sm:px-5">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">
+          {isActive ? 'Can access' : 'Had access to'}
+        </p>
+        <AccessList
+          rows={accessRows}
+          inactive={!isActive}
+          label={`${application.name} data access`}
+          onRevokeRow={isActive ? revokeRow : undefined}
+          revokeLabel={(row) => `Revoke ${application.name} access to ${accessRowName(row)}`}
+        />
       </div>
 
-      <div className="space-y-3">
-        {activeSessions.map((sessionGroup) => (
-          <SessionCard
-            key={`${sessionGroup.grantee}:${sessionGroup.id}`}
-            sessionGroup={sessionGroup}
-            applicationName={application.name}
-            copiedDid={copiedDid}
-            onCopy={onCopy}
-            onRevokeGrant={onRevokeGrant}
-            onRevokeSession={onRevokeSession}
-          />
-        ))}
+      <div className="space-y-2 border-t border-border-subtle px-4 py-4 sm:px-5">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">Devices</p>
+        <ul className="space-y-2" aria-label={`Devices for ${application.name}`}>
+          {[...activeSessions, ...visibleExpiredSessions].map((sessionGroup) => (
+            <SessionRow
+              key={`${sessionGroup.grantee}:${sessionGroup.id}`}
+              sessionGroup={sessionGroup}
+              applicationName={application.name}
+              onRenew={onRenewSession}
+              onRevoke={(session) => {
+                const title = describeConnectSession(session.session).title;
+                onRevoke({
+                  title   : 'Revoke session',
+                  body    : (
+                    <>
+                      Sign <strong className="text-text-primary">{application.name}</strong> out
+                      of {title}? It loses every active permission from this device&apos;s approval
+                      history. Other devices keep their access.
+                    </>
+                  ),
+                  confirm : 'Revoke session',
+                  success : 'Session revoked',
+                  grants  : session.grants,
+                });
+              }}
+            />
+          ))}
+        </ul>
 
-        {expiredSessions.length > 0 && (
-          <div className="space-y-1.5">
-            <ul
-              className="space-y-1.5"
-              aria-label={`Expired sessions for ${application.name}`}
-            >
-              {visibleExpiredSessions.map((sessionGroup) => (
-                <ExpiredSessionRow
-                  key={`${sessionGroup.grantee}:${sessionGroup.id}`}
-                  sessionGroup={sessionGroup}
-                  applicationName={application.name}
-                  onRenew={onRenewSession}
-                />
-              ))}
-            </ul>
-
-            {expiredSessions.length > MAX_VISIBLE_EXPIRED_SESSIONS && (
-              <button
-                type="button"
-                onClick={() => setShowAllExpired((value) => !value)}
-                aria-expanded={showAllExpired}
-                className="inline-flex items-center gap-1 px-1 text-[11px] font-medium text-text-ghost transition-colors hover:text-text-secondary"
-              >
-                <ChevronDown
-                  className={`h-3 w-3 transition-transform ${showAllExpired ? 'rotate-180' : ''}`}
-                />
-                {showAllExpired
-                  ? 'Show fewer expired sessions'
-                  : `Show all ${expiredSessions.length} expired sessions`}
-              </button>
-            )}
-          </div>
+        {expiredSessions.length > MAX_VISIBLE_EXPIRED_SESSIONS && (
+          <button
+            type="button"
+            onClick={() => setShowAllExpired((value) => !value)}
+            aria-expanded={showAllExpired}
+            className="inline-flex items-center gap-1 rounded-md px-1 py-1 text-xs font-medium text-text-tertiary transition-colors hover:text-text-primary"
+          >
+            <ChevronDown
+              className={cn('size-3.5 transition-transform', showAllExpired && 'rotate-180')}
+            />
+            {showAllExpired
+              ? 'Show fewer expired sessions'
+              : `Show all ${expiredSessions.length} expired sessions`}
+          </button>
         )}
       </div>
     </article>
   );
 }
 
+// ── Grants created outside Connect ──────────────────────────────────
+
 function StandaloneGroupCard({
   group,
-  copiedDid,
-  onCopy,
-  onRevokeGrant,
+  onRevoke,
 }: {
   group: PermissionGranteeGroup;
-  copiedDid: string | null;
-  onCopy: (did: string) => void;
-  onRevokeGrant: (grant: DwnPermissionGrant) => void;
+  onRevoke: (target: RevokeTarget) => void;
 }) {
+  const rows = groupGrantAccess(group.grants);
+  const label = truncateDid(group.grantee);
+
   return (
-    <div className="rounded-[var(--radius-lg)] border border-border-default bg-surface-1 p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Shield className="h-4 w-4 shrink-0 text-accent" />
-        <span className="font-mono text-sm text-text-primary">
-          {truncateDid(group.grantee)}
-        </span>
-        <CopyDidButton
-          did={group.grantee}
-          copiedDid={copiedDid}
-          onCopy={onCopy}
-          label="Copy DID"
+    <article
+      aria-label={`Grants to ${label}`}
+      className="overflow-hidden rounded-xl border border-border-default bg-surface-1"
+    >
+      <header className="flex items-center gap-3 px-4 py-3 sm:px-5">
+        <Monogram label={group.grantee.replace(/^did:[^:]+:/, '')} seed={group.grantee} icon={<Shield />} size="sm" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-1">
+            <span className="truncate font-mono text-sm text-text-primary" title={group.grantee}>{label}</span>
+            <CopyButton value={group.grantee} label="Copy DID" />
+          </div>
+          <p className="text-xs text-text-ghost">Granted outside an app connection</p>
+        </div>
+      </header>
+      <div className="border-t border-border-subtle px-4 py-4 sm:px-5">
+        <AccessList
+          rows={rows}
+          label={`Access granted to ${label}`}
+          onRevokeRow={(row) => onRevoke({
+            title   : 'Revoke permission',
+            body    : `Revoke ${label}'s access to ${accessRowName(row)}? It will no longer be able to access this data.`,
+            confirm : 'Revoke',
+            success : 'Permission revoked',
+            grants  : row.grants,
+          })}
+          revokeLabel={(row) => `Revoke ${accessRowName(row)} permission`}
         />
       </div>
-
-      <div className="space-y-2">
-        {group.grants.map((grant, index) => (
-          <PermissionGrantRow
-            key={grant.id ?? index}
-            grant={grant}
-            onRevoke={onRevokeGrant}
-          />
-        ))}
-      </div>
-    </div>
+    </article>
   );
 }
 
-function SectionHeader({
-  id,
-  title,
-  countLabel,
-}: {
-  id: string;
-  title: string;
-  countLabel: string;
-}) {
-  return (
-    <div className="flex items-center justify-between">
-      <h3 id={id} className="text-sm font-semibold text-text-primary">{title}</h3>
-      <span className="text-xs text-text-ghost">{countLabel}</span>
-    </div>
-  );
-}
+// ── Tab ─────────────────────────────────────────────────────────────
 
 export default function PermissionsTab({ did }: PermissionsTabProps) {
   const agent = useAuthStore((state) => state.agent);
   const queryClient = useQueryClient();
   const { data: permissions, isLoading, isError, error } = usePermissions(did);
-  const [copiedDid, setCopiedDid] = useState<string | null>(null);
   const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
   const [revoking, setRevoking] = useState(false);
   const [renewTarget, setRenewTarget] = useState<RenewTarget | null>(null);
+  // Keep the last dialog copy on screen while the dialog animates closed.
+  const lastRevokeTarget = useRef<RevokeTarget | null>(null);
+  const lastRenewTarget = useRef<RenewTarget | null>(null);
+  if (revokeTarget) lastRevokeTarget.current = revokeTarget;
+  if (renewTarget) lastRenewTarget.current = renewTarget;
+  const shownRevoke = revokeTarget ?? lastRevokeTarget.current;
+  const shownRenew = renewTarget ?? lastRenewTarget.current;
   const [renewing, setRenewing] = useState(false);
-  const connectedAppsHeadingId = useId();
-  const otherPermissionsHeadingId = useId();
+  const connectedHeadingId = useId();
+  const pastHeadingId = useId();
+  const otherHeadingId = useId();
 
-  const {
-    applications,
-    standaloneGroups,
-  } = useMemo(() => buildPermissionSections(permissions), [permissions]);
+  const { applications, standaloneGroups } = useMemo(
+    () => buildPermissionSections(permissions),
+    [permissions],
+  );
+  const connectedApps = applications.filter((application) => application.activeSessionCount > 0);
+  const pastApps = applications.filter((application) => application.activeSessionCount === 0);
 
   if (isLoading) {
     return <Loader message="Loading permissions..." />;
@@ -651,11 +677,16 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
 
   const isEmpty = applications.length === 0 && standaloneGroups.length === 0;
 
+  const invalidate = (): Promise<unknown> => Promise.allSettled([
+    queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(did) }),
+    queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(did) }),
+  ]);
+
   const handleRevoke = async (): Promise<void> => {
     if (!revokeTarget) return;
-    const grants = revokeTargetGrants(revokeTarget);
+    const grants = activeGrants(revokeTarget.grants);
     if (grants.length === 0) {
-      toast.error('This session no longer has active permissions.');
+      toast.error('This access has already ended.');
       setRevokeTarget(null);
       return;
     }
@@ -677,10 +708,7 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
       );
 
       if (revokedCount > 0) {
-        await Promise.allSettled([
-          queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(did) }),
-          queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(did) }),
-        ]);
+        await invalidate();
         setRevokeTarget(null);
 
         if (failedResults.length > 0) {
@@ -689,7 +717,7 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
             + `${failedResults.length} could not be revoked; try again.`,
           );
         } else {
-          toast.success(revokeTarget.kind === 'session' ? 'Session revoked' : 'Permission revoked');
+          toast.success(revokeTarget.success);
         }
         return;
       }
@@ -705,14 +733,6 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     }
   };
 
-  const handleCopy = async (value: string): Promise<void> => {
-    const ok = await copyToClipboard(value);
-    if (ok) {
-      setCopiedDid(value);
-      setTimeout(() => setCopiedDid(null), 2000);
-    }
-  };
-
   const handleRenew = async (): Promise<void> => {
     if (!renewTarget) return;
     setRenewing(true);
@@ -721,10 +741,7 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
         throw new Error('Unlock the wallet before renewing access.');
       }
       await renewExpiredSession(agent, did, renewTarget.session);
-      await Promise.allSettled([
-        queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(did) }),
-        queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(did) }),
-      ]);
+      await invalidate();
       toast.success(
         `${renewTarget.applicationName} access renewed — the app picks it up on its next sync.`,
       );
@@ -736,59 +753,64 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
     }
   };
 
-  const dialogCopy = revokeDialogCopy(revokeTarget);
   const standaloneGrantCount = standaloneGroups.reduce(
     (sum, group) => sum + group.grants.length,
     0,
   );
 
+  const renderApplication = (application: PermissionApplicationGroup): ReactNode => (
+    <ApplicationCard
+      key={application.id}
+      application={application}
+      onRevoke={setRevokeTarget}
+      onRenewSession={(session) => setRenewTarget({ applicationName: application.name, session })}
+    />
+  );
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {isEmpty && (
         <EmptyState
           icon={<Shield />}
-          title="No permissions granted"
-          description="Permission grants from apps and services will appear here."
+          title="No connected apps"
+          description="When you approve an app, it appears here with exactly what it can access. You can revoke access at any time."
         />
       )}
 
-      {applications.length > 0 && (
-        <section className="space-y-3" aria-labelledby={connectedAppsHeadingId}>
+      {connectedApps.length > 0 && (
+        <section className="space-y-3" aria-labelledby={connectedHeadingId}>
           <SectionHeader
-            id={connectedAppsHeadingId}
-            title="Connected Apps"
-            countLabel={applicationCountLabel(applications.length)}
+            id={connectedHeadingId}
+            title="Connected apps"
+            count={connectedApps.length}
+            description="Apps that can access this profile right now."
           />
-          {applications.map((application) => (
-            <ApplicationCard
-              key={application.id}
-              application={application}
-              copiedDid={copiedDid}
-              onCopy={handleCopy}
-              onRevokeGrant={(grant) => setRevokeTarget({ kind: 'grant', grant })}
-              onRevokeSession={(session) => setRevokeTarget({ kind: 'session', session })}
-              onRenewSession={(session) =>
-                setRenewTarget({ applicationName: application.name, session })}
-            />
-          ))}
+          {connectedApps.map(renderApplication)}
+        </section>
+      )}
+
+      {pastApps.length > 0 && (
+        <section className="space-y-3" aria-labelledby={pastHeadingId}>
+          <SectionHeader
+            id={pastHeadingId}
+            title="Past connections"
+            count={pastApps.length}
+            description="Their access has expired. Renew a device to restore it."
+          />
+          {pastApps.map(renderApplication)}
         </section>
       )}
 
       {standaloneGroups.length > 0 && (
-        <section className="space-y-3" aria-labelledby={otherPermissionsHeadingId}>
+        <section className="space-y-3" aria-labelledby={otherHeadingId}>
           <SectionHeader
-            id={otherPermissionsHeadingId}
-            title="Other Permissions"
-            countLabel={grantCountLabel(standaloneGrantCount)}
+            id={otherHeadingId}
+            title="Other permissions"
+            count={standaloneGrantCount}
+            description="Grants created directly rather than through an app connection."
           />
           {standaloneGroups.map((group) => (
-            <StandaloneGroupCard
-              key={group.grantee}
-              group={group}
-              copiedDid={copiedDid}
-              onCopy={handleCopy}
-              onRevokeGrant={(grant) => setRevokeTarget({ kind: 'grant', grant })}
-            />
+            <StandaloneGroupCard key={group.grantee} group={group} onRevoke={setRevokeTarget} />
           ))}
         </section>
       )}
@@ -798,28 +820,19 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
         onClose={() => !renewing && setRenewTarget(null)}
         title="Renew access"
       >
-        <div className="space-y-4">
-          <p className="text-sm text-text-secondary">
-            Give <strong className="text-text-primary">{renewTarget?.applicationName}</strong> a
+        <div className="space-y-5">
+          <p className="text-sm leading-relaxed text-text-secondary">
+            Give <strong className="text-text-primary">{shownRenew?.applicationName}</strong> a
             fresh {formatConnectSessionDuration(CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS)} session
             on this device with the same permissions it had before? The app picks up its new
             access on its next sync.
           </p>
-          <div className="flex justify-end gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setRenewTarget(null)}
-              disabled={renewing}
-            >
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setRenewTarget(null)} disabled={renewing}>
               Cancel
             </Button>
-            <Button
-              size="sm"
-              onClick={handleRenew}
-              loading={renewing}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
+            <Button onClick={handleRenew} loading={renewing}>
+              <RefreshCw className="size-4" />
               Renew access
             </Button>
           </div>
@@ -829,28 +842,16 @@ export default function PermissionsTab({ did }: PermissionsTabProps) {
       <Dialog
         open={!!revokeTarget}
         onClose={() => !revoking && setRevokeTarget(null)}
-        title={dialogCopy.title}
+        title={shownRevoke?.title}
       >
-        <div className="space-y-4">
-          <p className="text-sm text-text-secondary">
-            {dialogCopy.body}
-          </p>
-          <div className="flex justify-end gap-3">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setRevokeTarget(null)}
-              disabled={revoking}
-            >
+        <div className="space-y-5">
+          <p className="text-sm leading-relaxed text-text-secondary">{shownRevoke?.body}</p>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => setRevokeTarget(null)} disabled={revoking}>
               Cancel
             </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={handleRevoke}
-              loading={revoking}
-            >
-              {dialogCopy.confirm}
+            <Button variant="danger" onClick={handleRevoke} loading={revoking}>
+              {shownRevoke?.confirm}
             </Button>
           </div>
         </div>

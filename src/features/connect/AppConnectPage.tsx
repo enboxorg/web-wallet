@@ -4,16 +4,12 @@ import Scanner from 'qr-scanner';
 import {
   CameraOff,
   Check,
-  X,
   Zap,
   ZapOff,
-  Link2,
   Copy,
   ImageUp,
   SwitchCamera,
   Fingerprint,
-  ShieldCheck,
-  Sparkles,
 } from 'lucide-react';
 import {
   parseWalletConnectUri,
@@ -28,10 +24,8 @@ import {
 } from './connect-deep-link';
 
 import { Button } from '@/components/ui/Button';
-import { Select } from '@/components/ui/Select';
 import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
-import { PinInput } from '@/components/ui/PinInput';
 import {
   PermissionDisplay,
 } from '@/components/connect/PermissionDisplay';
@@ -39,7 +33,15 @@ import { AuthenticationDisplay } from '@/components/connect/AuthenticationDispla
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ModuleOverrideConfirmDialog } from '@/components/connect/ModuleOverrideConfirmDialog';
-import { getConnectPermissionAskSummary } from '@/components/connect/permission-summary';
+import {
+  ConsentDecisionBar,
+  ConsentNotice,
+  ConsentOnboardingIntro,
+  ConsentOutcome,
+  ConsentPinSetup,
+  ConsentProfilePicker,
+  ConsentRequester,
+} from '@/components/connect/ConsentLayout';
 import {
   getOverridableModules,
   moduleSetupAllowsApproval,
@@ -61,7 +63,6 @@ import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
 import { copyToClipboard, truncateDid } from '@/lib/utils';
-import { PIN_LENGTH } from '@/lib/constants';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
   createPasskeyVault,
@@ -649,12 +650,18 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     setFlashOn(scannerRef.current?.isFlashOn() ?? false);
   }
 
+  // Relay requests carry no transport-verified origin: everything about the
+  // requester is self-reported except the signing client DID.
   const requesterLabel = connectionRequest?.clientDid
     ? truncateDid(connectionRequest.clientDid)
     : 'Unknown requester';
-  const requestSummary = connectionRequest
-    ? authenticationOnly ? 'Confirm your identity to sign in.' : getConnectPermissionAskSummary(permissionRequests)
-    : '';
+  const requesterTitle = connectionRequest?.appName?.trim() || 'Unknown app';
+  const hasDataAccess = permissionRequests.some((permission) => permission.permissionScopes.length > 0);
+  const requestSummary = authenticationOnly
+    ? 'is asking you to sign in with your profile'
+    : isRefresh
+      ? 'wants to renew its access to your profile'
+      : hasDataAccess ? 'wants to connect to your profile' : 'wants to connect';
 
   async function handleCopyPin() {
     const copied = await copyToClipboard(pin);
@@ -828,239 +835,172 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       )}
 
       {/* ─── Request phase ──────────────────────────────────────── */}
-      {/* Standalone: the consent content scrolls; the decision stays in a
-          sticky bar at the bottom so it is always one thumb-reach away. */}
+      {/* The consent content scrolls; the decision stays in a sticky bar at
+          the bottom so it is always one thumb-reach away. */}
       {phase === 'request' && connectionRequest && !refreshUnavailable && !(isRefresh && refreshLookupPending) && (
-        <div className={`animate-[fadeIn_0.3s_ease-out] ${standalone ? 'flex flex-1 flex-col' : ''}`}>
-        <div className={`px-6 pt-6 lg:px-0 max-w-lg mx-auto w-full space-y-6 ${standalone ? 'flex-1 pb-4' : ''}`}>
-          {/* Requester identity */}
-          <div className="space-y-3">
-            <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 text-text-secondary">
-                <Link2 className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p
-                  className="truncate text-base font-semibold text-text-primary"
-                  title={connectionRequest.clientDid}
-                >
-                  {requesterLabel}
-                </p>
-                {connectionRequest.appName && (
-                  <p className="mt-0.5 truncate text-xs text-text-secondary">
-                    Reported app name: {connectionRequest.appName}
-                  </p>
-                )}
-                {connectionRequest.clientMetadata?.origin && (
-                  <p className="mt-0.5 font-mono text-[10px] text-text-ghost">
-                    Reported origin: {connectionRequest.clientMetadata.origin}
-                  </p>
-                )}
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <span className="rounded-full border border-border-subtle bg-surface-2 px-2 py-0.5 text-[10px] font-medium text-text-secondary">
-                    Signed relay request
-                  </span>
-                </div>
-              </div>
-            </div>
-            <p className="text-sm leading-relaxed text-text-secondary">
-              {requestSummary}
-            </p>
-          </div>
-
-          {authentication && (
-            <AuthenticationDisplay
-              audience={authentication.audience}
-              authenticationOnly={authenticationOnly}
-            />
-          )}
-
-          {isRefresh ? (
-            <RenewSessionDisplay
-              appName={connectionRequest.appName}
-              permissions={connectionRequest.permissionRequests}
-              detection={refreshDetection}
-              lookupPending={refreshLookupPending}
-              lookupError={refreshLookupError}
-              ownerLabel={refreshOwnerOption?.label}
-              ownerSupported={refreshOwnerOption !== undefined}
-              moduleSetupStatuses={moduleSetupStatuses}
-              requesterLabel={requesterLabel}
-              sessionDurationSeconds={sessionDurationSeconds}
-              requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
-              onSessionDurationSecondsChange={setSessionDurationSeconds}
-              onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
-            />
-          ) : (
-            <>
-              {/* Identity section */}
-              {expectedAuthenticationDid !== undefined && authenticationOwnerOption === undefined ? (
-                <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center" role="status">
-                  <p className="text-xs text-warning">
-                    {identitiesPending && !needsOnboarding
-                      ? 'Checking for the profile required by this sign-in…'
-                      : 'This sign-in requires an existing profile. Restore the wallet that owns it, or open the correct wallet, then try again.'}
-                  </p>
-                </div>
-              ) : onboardingSupported ? (
-                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-                  <div className="flex items-center gap-2 text-accent">
-                    <Sparkles size={16} />
-                    <p className="text-sm font-semibold text-text-primary">
-                      No wallet here yet — we'll make one
+        <div className={`flex flex-col animate-[fadeIn_0.3s_ease-out] ${standalone ? 'flex-1' : ''}`}>
+          <div className={`mx-auto w-full max-w-lg space-y-6 px-5 pt-6 pb-6 sm:px-6 lg:px-0 ${standalone ? 'flex-1' : ''}`}>
+            <ConsentRequester
+              title={requesterTitle}
+              titleHint={connectionRequest.clientDid}
+              seed={connectionRequest.clientMetadata?.origin ?? connectionRequest.appName ?? connectionRequest.clientDid}
+              trust="reported"
+              trustLabel="Unverified app"
+              status="Signed relay request"
+              details={(
+                <>
+                  {connectionRequest.clientMetadata?.origin && (
+                    <p className="break-all">
+                      Reported origin: <span className="font-mono">{connectionRequest.clientMetadata.origin}</span>
                     </p>
-                  </div>
-                  <p className="mt-1.5 text-xs leading-relaxed text-text-secondary">
-                    We'll set up your wallet and a fresh profile on this phone, then
-                    connect it to {connectionRequest.appName ?? 'the app'}. You can
-                    customise your profile any time.
+                  )}
+                  <p>
+                    Signed by <span className="font-mono" title={connectionRequest.clientDid}>{requesterLabel}</span>
                   </p>
-                </section>
-              ) : identityOptions.length > 0 ? (
-                <section className="rounded-xl border border-border-default bg-surface-2 p-4">
-                  <p className="mb-2 text-xs font-medium uppercase tracking-wider text-text-ghost">
-                    Approve as
-                  </p>
-                  <Select
-                    id="app-connect-identity"
-                    aria-label="Approve as profile"
-                    options={identityOptions}
-                    value={nonRefreshApprovalDid}
-                    disabled={expectedAuthenticationDid !== undefined}
-                    onChange={(e) => setSelectedDid(e.target.value)}
-                  />
-                </section>
-              ) : (
-                <div className="rounded-lg bg-warning/10 border border-warning/30 p-3 text-center">
-                  <p className="text-xs text-warning">
-                    None of your profiles are supported by this app's request.
-                  </p>
-                </div>
+                </>
               )}
+              summary={requestSummary}
+            />
 
-              {!authenticationOnly && (
-              <PermissionDisplay
+            {authentication && (
+              <AuthenticationDisplay
+                audience={authentication.audience}
+                authenticationOnly={authenticationOnly}
+              />
+            )}
+
+            {isRefresh ? (
+              <RenewSessionDisplay
+                appName={connectionRequest.appName}
                 permissions={connectionRequest.permissionRequests}
+                detection={refreshDetection}
+                lookupPending={refreshLookupPending}
+                lookupError={refreshLookupError}
+                ownerLabel={refreshOwnerOption?.label}
+                ownerSupported={refreshOwnerOption !== undefined}
                 moduleSetupStatuses={moduleSetupStatuses}
                 requesterLabel={requesterLabel}
                 sessionDurationSeconds={sessionDurationSeconds}
                 requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
                 onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
-                overrideAcknowledged={overrideAcknowledged}
-                onOverrideAcknowledgedChange={setOverrideAcknowledged}
               />
-              )}
+            ) : (
+              <>
+                {/* Identity section */}
+                {expectedAuthenticationDid !== undefined && authenticationOwnerOption === undefined ? (
+                  <ConsentNotice tone="warning" role="status">
+                    {identitiesPending && !needsOnboarding
+                      ? 'Checking for the profile required by this sign-in…'
+                      : 'This sign-in requires an existing profile. Restore the wallet that owns it, or open the correct wallet, then try again.'}
+                  </ConsentNotice>
+                ) : onboardingSupported ? (
+                  <ConsentOnboardingIntro>
+                    We'll set up your wallet and a fresh profile on this phone, then
+                    connect it to {connectionRequest.appName ?? 'the app'}. You can
+                    customise your profile any time.
+                  </ConsentOnboardingIntro>
+                ) : identityOptions.length > 0 ? (
+                  <ConsentProfilePicker
+                    id="app-connect-identity"
+                    heading={authenticationOnly ? 'Sign in as' : 'Approve as'}
+                    options={identityOptions}
+                    value={nonRefreshApprovalDid}
+                    disabled={expectedAuthenticationDid !== undefined}
+                    onChange={setSelectedDid}
+                  />
+                ) : (
+                  <ConsentNotice tone="warning">
+                    None of your profiles are supported by this app's request.
+                  </ConsentNotice>
+                )}
 
-              <ModuleOverrideConfirmDialog
-                open={showOverrideConfirm}
-                modules={overridableModules}
-                onConfirm={() => {
-                  setShowOverrideConfirm(false);
-                  void handleApprove();
-                }}
-                onCancel={() => setShowOverrideConfirm(false)}
-              />
-            </>
-          )}
+                {!authenticationOnly && (
+                  <PermissionDisplay
+                    permissions={connectionRequest.permissionRequests}
+                    moduleSetupStatuses={moduleSetupStatuses}
+                    requesterLabel={connectionRequest.appName ?? 'this app'}
+                    sessionDurationSeconds={sessionDurationSeconds}
+                    requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
+                    onSessionDurationSecondsChange={setSessionDurationSeconds}
+                    onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
+                    overrideAcknowledged={overrideAcknowledged}
+                    onOverrideAcknowledgedChange={setOverrideAcknowledged}
+                  />
+                )}
 
-          {onboardError && (
-            <p className="text-center text-sm text-error" role="alert">
-              {onboardError}
-            </p>
-          )}
-        </div>
+                <ModuleOverrideConfirmDialog
+                  open={showOverrideConfirm}
+                  modules={overridableModules}
+                  onConfirm={() => {
+                    setShowOverrideConfirm(false);
+                    void handleApprove();
+                  }}
+                  onCancel={() => setShowOverrideConfirm(false)}
+                />
+              </>
+            )}
 
-        {/* Action area: sticky bar for the standalone decision buttons;
-            the PIN card stays in flow (its autofocus pulls it into view). */}
-        <div
-          data-testid="connect-action-area"
-          className={
-            standalone && !(onboardingSupported && onboardStep !== 'idle')
-              ? 'sticky bottom-0 z-20 border-t border-border-subtle bg-surface-0/90 backdrop-blur-md px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))]'
-              : 'px-6 pt-6 pb-6 lg:px-0'
-          }
-        >
-          <div className="max-w-lg mx-auto w-full">
-          {/* Action buttons — stacked on mobile */}
+            {onboardError && (
+              <p className="text-center text-sm text-error" role="alert">
+                {onboardError}
+              </p>
+            )}
+          </div>
+
+          {/* The PIN card stays in flow (its autofocus pulls it into view). */}
           {onboardingSupported && onboardStep !== 'idle' ? (
-            <div className="flex flex-col items-center gap-4 rounded-xl border border-border-default bg-surface-1 p-5">
-              <div className="flex items-center gap-2 text-accent">
-                <ShieldCheck size={16} />
-                <p className="text-sm font-semibold text-text-primary">
-                  {onboardStep === 'pin-create' ? 'Create a PIN for your new wallet' : 'Confirm your PIN'}
-                </p>
-              </div>
-              <PinInput
-                key={onboardStep}
-                length={PIN_LENGTH}
+            <div className="mx-auto w-full max-w-lg px-5 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))] sm:px-6 lg:px-0">
+              <ConsentPinSetup
+                step={onboardStep}
+                error={onboardPinError}
+                busy={onboardBusy}
                 onComplete={onboardStep === 'pin-create' ? handleOnboardPinCreated : handleOnboardPinConfirmed}
-                error={onboardStep === 'pin-confirm' && !!onboardPinError}
-                disabled={onboardBusy}
-                autoFocus
-              />
-              {onboardPinError && (
-                <p className="text-sm text-error" role="alert">{onboardPinError}</p>
-              )}
-              <Button
-                variant="ghost"
-                size="sm"
-                disabled={onboardBusy}
-                onClick={() => {
+                onBack={() => {
                   setOnboardPin('');
                   setOnboardPinError(null);
                   setOnboardStep(onboardStep === 'pin-confirm' ? 'pin-create' : 'idle');
                 }}
-              >
-                Back
-              </Button>
+              />
             </div>
           ) : (
-            <div className="flex flex-col gap-3">
-              <div className="flex flex-col gap-3 sm:flex-row sm:gap-3">
+            <ConsentDecisionBar
+              className="px-5 sm:px-6"
+              onDeny={handleDeny}
+              denyDisabled={onboardBusy}
+              primary={onboardingSupported ? (
                 <Button
-                  variant="secondary"
-                  className="w-full min-h-[44px] sm:flex-1"
-                  onClick={handleDeny}
-                  disabled={onboardBusy}
+                  size="lg"
+                  className="flex-[2] px-4"
+                  onClick={handleCreateWalletAndConnect}
+                  loading={onboardBusy}
                 >
-                  <X className="h-4 w-4" />
-                  Deny
+                  <Fingerprint className="size-4" />
+                  Create wallet & connect
                 </Button>
-                {onboardingSupported ? (
-                  <Button
-                    className="w-full min-h-[44px] sm:flex-[2]"
-                    onClick={handleCreateWalletAndConnect}
-                    loading={onboardBusy}
-                  >
-                    <Fingerprint className="h-4 w-4" />
-                    Create wallet & connect
-                  </Button>
-                ) : (
-                  <Button
-                    className="w-full min-h-[44px] sm:flex-1"
-                    onClick={() =>
-                      overridableModules.length > 0 && !isRefresh
-                        ? setShowOverrideConfirm(true)
-                        : handleApprove()
-                    }
-                    disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
-                  >
-                    <Check className="h-4 w-4" />
-                    {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
-                  </Button>
-                )}
-              </div>
-              {onboardingSupported && (
-                <p className="mx-auto max-w-xs text-center text-xs leading-relaxed text-text-tertiary">
+              ) : (
+                <Button
+                  size="lg"
+                  className="flex-[2] px-4"
+                  onClick={() =>
+                    overridableModules.length > 0 && !isRefresh
+                      ? setShowOverrideConfirm(true)
+                      : handleApprove()
+                  }
+                  disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
+                >
+                  <Check className="size-4" />
+                  {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
+                </Button>
+              )}
+              hint={onboardingSupported && (
+                <>
                   New here? This sets up a wallet and profile on this phone, then
                   connects it to {connectionRequest.appName ?? 'the app'}. Nothing else to fill in.
-                </p>
+                </>
               )}
-            </div>
+            />
           )}
-          </div>
-        </div>
         </div>
       )}
 
@@ -1102,22 +1042,20 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
       {/* ─── Confirmed phase ──────────────────────────────────── */}
       {phase === 'connected' && (
-        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-12 lg:px-0 max-w-lg mx-auto w-full ${standalone ? 'flex-1 flex flex-col justify-center pb-24' : ''}`}>
-          <div className="flex flex-col items-center gap-4 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-success/10">
-              <Check className="h-8 w-8 text-success" />
-            </div>
-            <p className="text-base font-semibold text-text-primary">{authenticationOnly ? 'Signed in!' : 'Connected!'}</p>
-            <p className="text-sm text-text-secondary">
-              The requesting application confirmed the connection.
-            </p>
-            <Button className="w-full min-h-[44px] mt-2" onClick={finishRelayCeremony}>
-              Done
-            </Button>
-          </div>
+        <div className={`mx-auto w-full max-w-lg px-6 lg:px-0 animate-[fadeIn_0.3s_ease-out] ${standalone ? 'flex flex-1 flex-col pb-24' : ''}`}>
+          <ConsentOutcome
+            tone="success"
+            icon={<Check />}
+            title={authenticationOnly ? 'Signed in!' : 'Connected!'}
+            message="The requesting application confirmed the connection."
+            action={(
+              <Button className="w-full" onClick={finishRelayCeremony}>
+                Done
+              </Button>
+            )}
+          />
         </div>
       )}
-
 
     </div>
   );

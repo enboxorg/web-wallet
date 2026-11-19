@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 
@@ -9,6 +9,12 @@ const tasksModule = 'https://example.com/modules/tasks';
 const notesModule = 'https://example.com/modules/notes';
 const profileModule = 'https://identity.foundation/modules/profile';
 const connectModule = 'https://identity.foundation/modules/connect';
+
+/** Chip labels of the n-th "Allowed actions" list inside `scope`. */
+function chips(scope: HTMLElement, index = 0): string[] {
+  const list = within(scope).getAllByRole('list', { name: 'Allowed actions' })[index];
+  return within(list).getAllByRole('listitem').map((item) => item.textContent ?? '');
+}
 
 describe('PermissionDisplay', () => {
   it('keeps installation-only providers in setup details without presenting data permissions', () => {
@@ -21,8 +27,10 @@ describe('PermissionDisplay', () => {
       permissionScopes: [{ interface: 'Records', method: 'Read', module: tasksModule }],
     }];
     render(<PermissionDisplay permissions={permissions} />);
-    expect(screen.getAllByText('View a custom data type')).toHaveLength(1);
-    expect(screen.queryByText('Use a custom data type')).not.toBeInTheDocument();
+    const rows = screen.getAllByRole('listitem', { name: 'Custom data type' });
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByTitle(tasksModule)).toBeInTheDocument();
+    expect(chips(rows[0])).toEqual(['View']);
     expect(screen.getByText(/Dependencies listed only for setup do not grant the app access/)).toBeInTheDocument();
     expect(screen.getAllByText(provider).length).toBeGreaterThan(0);
   });
@@ -83,13 +91,14 @@ describe('PermissionDisplay', () => {
 
     expect(screen.getByText(/will be able to do/i)).toBeInTheDocument();
     expect(screen.getByText('Access lasts 1 hour')).toBeInTheDocument();
-    expect(screen.getByText('View, add or edit, and delete a custom data type')).toBeInTheDocument();
-    expect(screen.getByText(/Custom module:\s*example\.com\/modules\/demo/i)).toBeInTheDocument();
-    expect(screen.getByText('View')).toBeInTheDocument();
-    expect(screen.getByText('Add or edit')).toBeInTheDocument();
-    expect(screen.getByText('Delete')).toBeInTheDocument();
+    const row = screen.getByRole('listitem', { name: 'Custom data type' });
+    expect(within(row).getByTitle('https://example.com/modules/demo'))
+      .toHaveTextContent('example.com/modules/demo');
+    // Record access leads; sync + setup plumbing collapses into one quiet chip.
+    expect(chips(row)).toEqual(['View', 'Add or edit', 'Delete', 'Sync & setup']);
+    expect(within(row).getByTitle('Messages.Read, Modules.Query')).toBeInTheDocument();
     expect(screen.queryByText('Query')).not.toBeInTheDocument();
-    expect(screen.getByText('Additional grants: Modules.Query, Messages.Read.')).toBeInTheDocument();
+    // Every granted scope stays disclosed verbatim in the technical details.
     expect(screen.getAllByText('Modules.Query')).toHaveLength(1);
     expect(screen.getAllByText('Messages.Read')).toHaveLength(1);
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
@@ -111,7 +120,9 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
-    expect(screen.getByText('View messages from a custom data type')).toBeInTheDocument();
+    const row = screen.getByRole('listitem', { name: 'Custom data type' });
+    // With no record access, the support scope *is* the capability and is shown plainly.
+    expect(chips(row)).toEqual(['Sync changes']);
     expect(screen.getByText('Messages.Read')).toBeInTheDocument();
   });
 
@@ -133,13 +144,15 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
-    expect(screen.getByText('View a custom data type')).toBeInTheDocument();
-    expect(screen.getByText(/Custom module:\s*evil\.example\/modules\/verified-account/i)).toBeInTheDocument();
+    // The wallet's own label leads; the requester's URI is shown verbatim as an identifier.
+    const row = screen.getByRole('listitem', { name: 'Custom data type' });
+    expect(within(row).getByTitle('https://evil.example/modules/verified-account'))
+      .toHaveTextContent('evil.example/modules/verified-account');
+    expect(chips(row)).toEqual(['View']);
     expect(screen.getAllByText('Custom module').length).toBeGreaterThan(0);
     expect(screen.queryByText('Module at https://evil.example/modules/verified-account')).not.toBeInTheDocument();
-    expect(screen.queryByText('Verified Account')).not.toBeInTheDocument();
-    expect(screen.queryByText('View your Verified Account')).not.toBeInTheDocument();
-    expect(screen.queryByText('View')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Verified Account/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('listitem', { name: /verified/i })).not.toBeInTheDocument();
   });
 
   it('shows a single encrypted-data explanation for multiple encrypted rows', () => {
@@ -244,12 +257,10 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
-    expect(screen.getByText('View and add or edit a custom data type')).toBeInTheDocument();
-    expect(screen.queryByText('View a custom data type')).not.toBeInTheDocument();
-    expect(screen.queryByText('Add or edit a custom data type')).not.toBeInTheDocument();
-    expect(screen.getAllByText(/Custom module:\s*example\.com\/modules\/tasks/i)).toHaveLength(1);
-    expect(screen.getByText('View')).toBeInTheDocument();
-    expect(screen.getByText('Add or edit')).toBeInTheDocument();
+    const rows = screen.getAllByRole('listitem', { name: 'Custom data type' });
+    expect(rows).toHaveLength(1);
+    expect(within(rows[0]).getByTitle(tasksModule)).toBeInTheDocument();
+    expect(chips(rows[0])).toEqual(['View', 'Add or edit']);
   });
 
   it('shows wallet-owned module setup and an advanced module definition view', () => {
@@ -546,19 +557,15 @@ describe('PermissionDisplay', () => {
       />,
     );
 
-    expect(screen.getByText('View a custom data type')).toBeInTheDocument();
-    expect(screen.getByText('Shared contexts & invitations')).toBeInTheDocument();
-    expect(
-      screen.getByText('View and add or edit shared context invitations and your encrypted followed-context list.'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Companion module:\s*example\.com\/modules\/notes\/contexts/i),
-    ).toBeInTheDocument();
-    expect(screen.getByText('Companion grants: Messages.Read.')).toBeInTheDocument();
+    // One card for the domain module, with its companion nested inside.
+    const row = screen.getByRole('listitem', { name: 'Custom data type' });
+    expect(screen.getAllByRole('listitem', { name: 'Custom data type' })).toHaveLength(1);
+    expect(chips(row, 0)).toEqual(['View']);
+    const companion = within(row).getByRole('group', { name: 'Shared contexts & invitations' });
+    expect(within(companion).getByTitle(notesContextsModule)).toBeInTheDocument();
+    expect(chips(companion)).toEqual(['View', 'Add or edit', 'Sync changes']);
     // Even though `notes` itself is unencrypted, the paired companion's `follow` type is encrypted + Read-granted.
     expect(screen.getByText(/Approval permanently shares decryption keys/i)).toBeInTheDocument();
-    // Distinct companion badges are shown because companion scopes (Read + Write) differ from root scopes (Read).
-    expect(screen.getByText('Add or edit')).toBeInTheDocument();
     // Both modules remain individually listed in setup & technical details.
     expect(screen.getAllByText('Shared contexts companion').length).toBeGreaterThan(0);
     expect(screen.getByText('2 items')).toBeInTheDocument();
@@ -575,15 +582,12 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
+    const row = screen.getByRole('listitem', { name: 'Shared contexts' });
+    expect(chips(row)).toEqual(['View']);
     expect(
-      screen.getByText('View shared context invitations and followed contexts'),
+      within(row).getByText('Open invitation inbox and encrypted followed-context journal'),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText('Open invitation inbox and encrypted followed-context journal'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Companion module:\s*evil\.example\/modules\/verified-account\/contexts/i),
-    ).toBeInTheDocument();
+    expect(within(row).getByTitle(companionUri)).toBeInTheDocument();
     expect(screen.queryByText(/Verified Account/i)).not.toBeInTheDocument();
   });
 
@@ -618,8 +622,9 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
-    expect(screen.getAllByText('View a custom data type')).toHaveLength(2);
-    expect(screen.queryByText('Shared contexts & invitations')).not.toBeInTheDocument();
-    expect(screen.getByText(/Custom module:\s*example\.com\/modules\/notes\/contexts/i)).toBeInTheDocument();
+    expect(screen.getAllByRole('listitem', { name: 'Custom data type' })).toHaveLength(2);
+    expect(screen.queryByRole('group', { name: 'Shared contexts & invitations' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('listitem', { name: 'Shared contexts' })).not.toBeInTheDocument();
+    expect(screen.getAllByTitle(spoofedContextsUri).length).toBeGreaterThan(0);
   });
 });
