@@ -41,7 +41,7 @@ export default function SecurityPage() {
   }, [lock]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    <div className="mx-auto w-full max-w-2xl space-y-5">
       <PageHeader
         title="Security"
         description="Manage wallet security settings."

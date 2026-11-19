@@ -231,6 +231,20 @@ describe('AppConnectPage', () => {
     expect(mocks.fetchConnectRequest).not.toHaveBeenCalled();
   });
 
+  it('keeps the image fallback inside the viewfinder with the camera controls', async () => {
+    mocks.scannerHasCamera.mockResolvedValue(true);
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    // The fallback sits in the same control bar as the flash toggle, so it is
+    // on screen whenever the camera is, never below the fold.
+    const controls = await screen.findByTestId('scanner-controls');
+    expect(within(controls).getByRole('button', { name: 'Toggle flash' })).toBeInTheDocument();
+    expect(within(controls).getByRole('button', { name: 'Scan from image' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Scan from image' })).toHaveLength(1);
+    expect(screen.getByText('Scan the QR code shown by the app')).toBeInTheDocument();
+    expect(screen.queryByText(/No camera found/i)).not.toBeInTheDocument();
+  });
+
   it('offers sign-in without grant duration or module setup and does not publish a delegation event', async () => {
     const request = {
       ...connectRequest,

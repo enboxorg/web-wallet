@@ -7,23 +7,69 @@ import { Loader } from '@/components/ui/Loader';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { Card } from '@/components/ui/Card';
 import { buttonClassName } from '@/components/ui/button-styles';
+import { cn } from '@/lib/utils';
 import { RemoteSyncStatusPanel } from './RemoteSyncStatusPanel';
 import { buildPermissionSections, countActivePermissionApps } from './permission-sessions';
 
 interface OverviewTabProps {
   did: string;
+  /** Open the Apps & Permissions tab, where the app and session counts are listed. */
+  onShowApps?: () => void;
+  /** Open the Modules tab. */
+  onShowModules?: () => void;
 }
 
-function Stat({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
-  return (
-    <div className="surface-card min-w-0 rounded-2xl border border-border-default bg-surface-1 p-4 sm:p-5">
-      <p className="text-[2rem] font-semibold leading-none tabular-nums tracking-[-0.03em] text-text-primary sm:text-4xl">{value}</p>
-      <div className="mt-2.5 flex items-start gap-1.5 text-text-tertiary [&>svg]:mt-px [&>svg]:size-3.5 [&>svg]:shrink-0">
+/** "1 App", "3 Apps": the number is shown separately, so only the noun changes. */
+function countNoun(count: number, singular: string, plural: string): string {
+  return count === 1 ? singular : plural;
+}
+
+/**
+ * A headline number. With `onClick` the whole tile is a button that opens the
+ * tab the number comes from.
+ */
+function Stat({ icon, value, label, onClick }: {
+  icon: React.ReactNode;
+  value: number;
+  label: string;
+  onClick?: () => void;
+}) {
+  const tile = 'surface-card min-w-0 rounded-2xl border border-border-default bg-surface-1 p-4 text-left sm:p-5';
+  const body = (
+    <>
+      <span className="flex items-start justify-between gap-2">
+        <span className="text-[2rem] font-semibold leading-none tabular-nums tracking-[-0.03em] text-text-primary sm:text-4xl">{value}</span>
+        {onClick && (
+          <ChevronRight
+            className="mt-1 size-4 shrink-0 text-text-ghost transition-[color,transform] duration-[var(--duration-base)] group-hover:translate-x-0.5 group-hover:text-text-secondary"
+            aria-hidden="true"
+          />
+        )}
+      </span>
+      <span className="mt-2.5 flex items-start gap-1.5 text-text-tertiary [&>svg]:mt-px [&>svg]:size-3.5 [&>svg]:shrink-0">
         {icon}
         {/* Wraps rather than truncating on narrow phones. */}
         <span className="text-xs leading-tight sm:text-[13px]">{label}</span>
-      </div>
-    </div>
+      </span>
+    </>
+  );
+
+  if (!onClick) {
+    return <div className={cn(tile, 'flex flex-col')}>{body}</div>;
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        tile,
+        'group flex flex-col transition-[border-color,background-color] duration-[var(--duration-base)]',
+        'hover:border-border-strong hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+      )}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -50,7 +96,7 @@ function QuickAction({ to, icon, title, description }: {
   );
 }
 
-export default function OverviewTab({ did }: OverviewTabProps) {
+export default function OverviewTab({ did, onShowApps, onShowModules }: OverviewTabProps) {
   const { data: profile, isLoading, isError, error } = useProfile(did);
   const { data: modules } = useModules(did);
   const { data: permissions } = usePermissions(did);
@@ -67,6 +113,7 @@ export default function OverviewTab({ did }: OverviewTabProps) {
   const withAccess = countActivePermissionApps(permissions);
   const { activeSessions } = buildPermissionSections(permissions);
   const hasProfile = Boolean(profile?.displayName);
+  const moduleCount = modules?.length ?? 0;
 
   return (
     <div className="space-y-6">
@@ -100,9 +147,24 @@ export default function OverviewTab({ did }: OverviewTabProps) {
       )}
 
       <div className="grid grid-cols-3 gap-3">
-        <Stat icon={<Shield />} value={withAccess} label="Apps with access" />
-        <Stat icon={<MonitorSmartphone />} value={activeSessions.length} label="Active sessions" />
-        <Stat icon={<Boxes />} value={modules?.length ?? 0} label="Modules" />
+        <Stat
+          icon={<Shield />}
+          value={withAccess}
+          label={countNoun(withAccess, 'App with access', 'Apps with access')}
+          onClick={onShowApps}
+        />
+        <Stat
+          icon={<MonitorSmartphone />}
+          value={activeSessions.length}
+          label={countNoun(activeSessions.length, 'Active session', 'Active sessions')}
+          onClick={onShowApps}
+        />
+        <Stat
+          icon={<Boxes />}
+          value={moduleCount}
+          label={countNoun(moduleCount, 'Module', 'Modules')}
+          onClick={onShowModules}
+        />
       </div>
 
       <RemoteSyncStatusPanel did={did} />

@@ -83,7 +83,7 @@ export default function BackupPage() {
   const identityCount = identities?.length ?? 0;
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    <div className="mx-auto w-full max-w-2xl space-y-5">
       <PageHeader
         title="Backup & Recovery"
         description="Back up your wallet and manage recovery options."

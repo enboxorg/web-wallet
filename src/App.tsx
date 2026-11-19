@@ -406,7 +406,8 @@ function AnimatedRoutes() {
 
   return (
     <Suspense fallback={<Loader message="Loading..." />}>
-      <div key={routeKey} className="animate-[fadeIn_0.2s_ease-out]">
+      {/* A flex column so a page can take the full height of the shell. */}
+      <div key={routeKey} className="flex flex-1 flex-col animate-[fadeIn_0.2s_ease-out]">
         <Routes>
           {routes.map((route) => (
             <Route

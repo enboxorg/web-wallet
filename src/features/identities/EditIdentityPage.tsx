@@ -183,7 +183,7 @@ export default function EditIdentityPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-7">
+    <div className="mx-auto w-full max-w-3xl space-y-7">
       <PageHeader
         title="Edit profile"
         description="Update how you appear to apps and people."
