@@ -30,6 +30,7 @@ import { Button } from '@/components/ui/Button';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { ErrorBoundary } from '@/components/ui/ErrorBoundary';
 import { AppShell } from '@/components/layout/AppShell';
+import { AuthLayout } from '@/components/layout/AuthLayout';
 import { DragDropOverlay } from '@/components/layout/DragDropOverlay';
 import { UnlockScreen } from '@/features/auth/UnlockScreen';
 import { WelcomeScreen } from '@/features/auth/WelcomeScreen';
@@ -114,16 +115,14 @@ function FirstIdentityGate({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="flex min-h-dvh items-center justify-center bg-surface-0 px-4 animate-[fadeIn_0.3s_ease-out]">
-      <div className="w-full max-w-md">
-        <SetupIdentityStep
-          seed={seed}
-          onCreateIdentity={handleCreate}
-          onSkip={onDone}
-          isLoading={isCreating}
-        />
-      </div>
-    </div>
+    <AuthLayout width="md">
+      <SetupIdentityStep
+        seed={seed}
+        onCreateIdentity={handleCreate}
+        onSkip={onDone}
+        isLoading={isCreating}
+      />
+    </AuthLayout>
   );
 }
 
@@ -249,15 +248,15 @@ function AuthGate() {
   if (!initialized) {
     if (error) {
       return (
-        <div className="flex min-h-dvh items-center justify-center bg-surface-0 px-4">
-          <div className="flex w-full max-w-sm flex-col gap-6">
-            <div className="flex flex-col items-center gap-4 text-center">
+        <AuthLayout>
+          <div className="flex w-full flex-col gap-6">
+            <div className="flex flex-col items-center gap-8 text-center">
               <EnboxLogo />
               <div>
-                <h1 className="text-xl font-semibold text-text-primary">
+                <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                   Could not initialise wallet
                 </h1>
-                <p className="mt-2 text-sm text-text-secondary">
+                <p className="mt-2 text-[15px] leading-relaxed text-text-secondary">
                   The wallet could not finish starting. You can safely try again.
                 </p>
               </div>
@@ -267,7 +266,7 @@ function AuthGate() {
               Try again
             </Button>
           </div>
-        </div>
+        </AuthLayout>
       );
     }
     return <Loader message="Initialising wallet..." fullScreen />;
@@ -279,9 +278,11 @@ function AuthGate() {
   // Returning-but-locked users still unlock first (the branch below).
   if (location.pathname === '/dweb-connect' && (unlocked || firstTime)) {
     return (
-      <Suspense fallback={<Loader message="Loading..." />}>
-        <DWebConnectPage />
-      </Suspense>
+      <div className="ambient ambient-hero min-h-dvh">
+        <Suspense fallback={<Loader message="Loading..." />}>
+          <DWebConnectPage />
+        </Suspense>
+      </div>
     );
   }
 
@@ -308,8 +309,8 @@ function AuthGate() {
     // browser chrome never hides the actions, safe-area padding for
     // notches and home indicators.
     return (
-      <div className="flex min-h-dvh flex-col">
-        <header className="sticky top-0 z-30 border-b border-border-subtle bg-surface-0/85 pb-3 backdrop-blur-md pt-[max(1rem,env(safe-area-inset-top))]">
+      <div className="ambient ambient-hero flex min-h-dvh flex-col">
+        <header className="sticky top-0 z-30 border-b border-border-subtle bg-surface-glass pb-3 backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)] pt-[max(1rem,env(safe-area-inset-top))]">
           <ConsentBrandBar />
         </header>
         <main className="flex flex-1 flex-col">
@@ -432,8 +433,12 @@ export default function App() {
           toastOptions={{
             style: {
               background: 'var(--surface-2)',
+              backgroundImage: 'var(--sheen)',
               color: 'var(--text-primary)',
               border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-xl)',
+              boxShadow: 'var(--edge-highlight), var(--shadow-pop)',
+              fontFamily: 'var(--font-sans)',
             },
           }}
         />

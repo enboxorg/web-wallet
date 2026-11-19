@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Sidebar } from '../Sidebar';
 import type { NavItem } from '../types';
@@ -87,13 +87,12 @@ describe('Sidebar', () => {
     expect(screen.queryByText('Connect')).not.toBeInTheDocument();
   });
 
-  it('shows only icon-only logo ("b") in mini mode', () => {
+  it('shows only the brand mark, without the wordmark, in mini mode', () => {
     renderSidebar({ mini: true });
     const sidebar = screen.getByTestId('sidebar');
-    // Should contain "b" but not the full "enbox"
-    const logoContainer = sidebar.querySelector('.text-xl');
-    expect(logoContainer).toBeTruthy();
-    expect(logoContainer!.textContent).toBe('b');
+    expect(sidebar).not.toHaveTextContent('enbox');
+    expect(within(sidebar).queryByTestId('enbox-wordmark')).not.toBeInTheDocument();
+    expect(within(sidebar).getByTestId('enbox-mark')).toBeInTheDocument();
   });
 
   it('applies mini width class in mini mode', () => {

@@ -89,23 +89,23 @@ export function SetupIdentityStep({
   const ready = !!avatarBlob && !!bannerBlob;
 
   return (
-    <div className="flex flex-col items-center gap-6 w-full animate-[fadeIn_0.3s_ease-out]">
-      <div className="flex flex-col items-center gap-1">
+    <div className="flex w-full flex-col items-center gap-7 animate-[fadeIn_0.3s_ease-out]">
+      <div className="flex flex-col items-center gap-2 text-center">
         <div className="flex items-center gap-2 text-accent">
-          <Sparkles size={18} />
-          <h1 className="text-2xl font-semibold text-text-primary">
+          <Sparkles size={20} />
+          <h1 className="text-[1.75rem] font-semibold leading-tight tracking-[-0.025em] text-text-primary">
             Create your profile
           </h1>
         </div>
-        <p className="text-sm text-text-secondary text-center">
+        <p className="max-w-xs text-[15px] leading-relaxed text-text-secondary">
           We've generated a look for you. Customise it or jump right in.
         </p>
       </div>
 
       {/* Preview card */}
-      <div className="w-full max-w-sm rounded-xl border border-border-default bg-surface-1 overflow-hidden shadow-md">
+      <div className="surface-card w-full max-w-sm overflow-hidden rounded-3xl border border-border-default bg-surface-1 shadow-raised">
         {/* Banner */}
-        <div className="relative h-28 bg-surface-2 group">
+        <div className="group relative h-32 bg-surface-2">
           {bannerUrl ? (
             <img
               src={bannerUrl}
@@ -113,8 +113,9 @@ export function SetupIdentityStep({
               className="w-full h-full object-cover"
             />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-accent-muted to-surface-2" />
+            <div className="h-full w-full bg-[radial-gradient(120%_140%_at_0%_0%,rgba(var(--accent-rgb),0.34),transparent_60%),radial-gradient(120%_140%_at_100%_0%,rgba(var(--accent-2-rgb),0.26),transparent_62%)]" />
           )}
+          <div className="banner-scrim h-16" aria-hidden="true" />
           <button
             type="button"
             onClick={() => bannerInputRef.current?.click()}
@@ -134,7 +135,7 @@ export function SetupIdentityStep({
           <button
             type="button"
             onClick={() => bannerInputRef.current?.click()}
-            className="absolute bottom-2 right-2 rounded-full bg-surface-glass backdrop-blur-sm p-2 text-text-secondary hover:text-text-primary transition-colors shadow-md"
+            className="absolute right-3 top-3 inline-flex size-9 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label="Change banner"
           >
             <ImagePlus size={16} />
@@ -149,10 +150,10 @@ export function SetupIdentityStep({
         </div>
 
         {/* Avatar + Name */}
-        <div className="px-4 pb-4">
-          <div className="flex items-end gap-3 -mt-8">
+        <div className="relative px-5 pb-5">
+          <div className="-mt-9 flex items-end gap-3.5">
             {/* Avatar */}
-            <div className="relative group shrink-0">
+            <div className="group relative shrink-0 rounded-full ring-4 ring-surface-1">
               <Avatar src={avatarUrl} name={displayName} size="lg" />
               <button
                 type="button"
@@ -170,8 +171,8 @@ export function SetupIdentityStep({
                 />
               </button>
               {/* Always-visible camera badge for touch devices */}
-              <span className="absolute -bottom-0.5 -right-0.5 flex items-center justify-center rounded-full bg-surface-glass backdrop-blur-sm p-1.5 text-text-secondary shadow-md pointer-events-none">
-                <Camera size={12} />
+              <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex size-7 items-center justify-center rounded-full border border-border-default bg-surface-2 text-text-secondary shadow-md">
+                <Camera size={13} />
               </span>
               <input
                 ref={avatarInputRef}
@@ -191,9 +192,9 @@ export function SetupIdentityStep({
                   onChange={(e) => setDisplayName(e.target.value)}
                   placeholder="Your name"
                   className={cn(
-                    'w-full bg-transparent text-lg font-semibold text-text-primary',
-                    'border-b border-transparent focus:border-accent',
-                    'outline-none transition-colors py-0.5 pr-6',
+                    'w-full bg-transparent text-lg font-semibold tracking-tight text-text-primary',
+                    'border-b border-border-default hover:border-border-strong focus:border-accent',
+                    'outline-none transition-colors py-1 pr-6',
                     'placeholder:text-text-ghost',
                   )}
                 />
@@ -208,12 +209,13 @@ export function SetupIdentityStep({
       </div>
 
       {/* Actions */}
-      <div className="flex flex-col gap-2 w-full max-w-sm">
+      <div className="flex w-full max-w-sm flex-col gap-2">
         <Button
           onClick={handleCreate}
           loading={isLoading}
           disabled={!ready}
           className="w-full"
+          size="lg"
         >
           Create profile
         </Button>

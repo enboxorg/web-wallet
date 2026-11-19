@@ -1,7 +1,8 @@
 import { useState, useCallback } from 'react';
+import { ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { AuthLayout } from '@/components/layout/AuthLayout';
 import { copyToClipboard } from '@/lib/utils';
-import { cn } from '@/lib/utils';
 
 export interface SeedPhraseBackupProps {
   phrase: string;
@@ -21,21 +22,17 @@ export function SeedPhraseBackup({ phrase, onDone }: SeedPhraseBackupProps) {
   }, [phrase]);
 
   return (
-    <div
-      className={cn(
-        'flex min-h-dvh items-center justify-center bg-surface-0 px-4',
-        'animate-[fadeIn_0.3s_ease-out]',
-      )}
-    >
-      <div className="flex w-full max-w-md flex-col items-center gap-6">
-        <div className="flex flex-col items-center gap-2">
-          <h1 className="text-2xl font-semibold text-text-primary">
+    <AuthLayout width="md">
+      <div className="flex w-full flex-col items-center gap-6">
+        <div className="flex flex-col items-center gap-2 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
             Back up your recovery phrase
           </h1>
         </div>
 
-        <div className="w-full rounded-lg border border-warning/30 bg-warning/5 p-4">
-          <p className="text-sm text-warning text-center">
+        <div className="flex w-full items-start gap-3 rounded-2xl border border-warning/30 bg-warning/[0.07] p-4">
+          <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+          <p className="text-sm leading-relaxed text-warning">
             Write these words down and store them safely. They restore your wallet
             vault and can recover profiles synced to your network.
           </p>
@@ -50,9 +47,9 @@ export function SeedPhraseBackup({ phrase, onDone }: SeedPhraseBackupProps) {
             <div
               key={i}
               role="listitem"
-              className="flex items-center gap-2 rounded-md bg-surface-1 px-3 py-2 border border-border-default"
+              className="flex items-center gap-2 rounded-xl border border-border-default bg-field px-3 py-2.5 inset-shadow-field"
             >
-              <span className="text-xs text-text-tertiary w-5 text-right">
+              <span className="w-5 text-right font-mono text-[11px] tabular-nums text-text-ghost">
                 {i + 1}.
               </span>
               <span className="font-mono text-sm text-text-primary">
@@ -62,7 +59,7 @@ export function SeedPhraseBackup({ phrase, onDone }: SeedPhraseBackupProps) {
           ))}
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:justify-center">
           <Button variant="secondary" onClick={handleCopy}>
             {copied ? 'Copied!' : 'Copy'}
           </Button>
@@ -71,6 +68,6 @@ export function SeedPhraseBackup({ phrase, onDone }: SeedPhraseBackupProps) {
           </Button>
         </div>
       </div>
-    </div>
+    </AuthLayout>
   );
 }

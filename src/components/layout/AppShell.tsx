@@ -58,7 +58,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
 
       {/* Main content column */}
       <div
-        className="flex min-h-0 min-w-0 flex-1 flex-col"
+        className="ambient flex min-h-0 min-w-0 flex-1 flex-col"
         data-testid="app-shell-content"
       >
         <OfflineBanner />
@@ -67,7 +67,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
 
         {/* Scrollable content area */}
         <main
-          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6 lg:py-10"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] pt-6 pb-10 lg:pt-10 lg:pb-16"
           data-testid="main-content"
         >
           <div className="mx-auto max-w-[var(--content-width)]">

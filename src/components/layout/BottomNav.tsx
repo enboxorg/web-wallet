@@ -44,9 +44,10 @@ export function BottomNav({
             type="button"
             onClick={() => onNavigate(item.path)}
             className={cn(
-              'flex flex-col items-center justify-center gap-1',
-              'min-h-14 flex-1 pt-2 pb-1.5',
-              'transition-colors duration-[var(--duration-fast)]',
+              'group flex flex-col items-center justify-center gap-1',
+              'min-h-[3.75rem] flex-1 pt-2 pb-1.5',
+              'transition-colors duration-[var(--duration-base)]',
+              'focus-visible:outline-none',
               active
                 ? 'text-accent'
                 : 'text-text-ghost hover:text-text-secondary',
@@ -55,14 +56,18 @@ export function BottomNav({
           >
             <span
               className={cn(
-                'relative flex h-8 w-14 items-center justify-center rounded-full transition-colors',
-                active ? 'bg-accent-muted' : 'bg-transparent',
+                'relative flex h-8 w-16 items-center justify-center rounded-full',
+                'transition-[background-color,box-shadow,transform] duration-[var(--duration-base)] ease-[var(--ease-out)]',
+                'group-active:scale-95 group-focus-visible:ring-2 group-focus-visible:ring-accent',
+                active
+                  ? 'bg-accent-muted ring-1 ring-inset ring-accent/20'
+                  : 'bg-transparent',
               )}
               aria-hidden="true"
             >
               {item.icon}
               {item.badge && (
-                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-error" />
+                <span className="absolute right-3 top-0.5 size-2 rounded-full bg-error ring-2 ring-surface-0" />
               )}
             </span>
             <span className={cn('text-[11px] leading-tight', active ? 'font-semibold' : 'font-medium')}>

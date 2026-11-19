@@ -19,8 +19,8 @@ import {
   type WalletAuthMethod,
 } from '@/lib/passkeys';
 import type { WalletRestoreOptions } from '@/enbox/types';
+import { AuthLayout } from '@/components/layout/AuthLayout';
 import { EnboxLogo } from './EnboxLogo';
-import { cn } from '@/lib/utils';
 
 export interface RestoreWalletPageProps {
   onRestore: (
@@ -156,29 +156,23 @@ export function RestoreWalletPage({
   }, [allowEndpointSelection, passkeyAvailable, step, onBack]);
 
   if (isLoading && !localLoading) {
-    return <Loader message="Restoring your wallet..." />;
+    return <Loader message="Restoring your wallet..." fullScreen />;
   }
 
   const progress = getStepProgress(step, authMethod, passkeyAvailable, allowEndpointSelection);
   const displayedError = localError ?? error;
 
   return (
-    <div
-      className={cn(
-        'flex min-h-dvh items-center justify-center bg-surface-0 px-4',
-        'animate-[fadeIn_0.3s_ease-out]',
-      )}
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-    >
-      <div className="flex w-full max-w-sm flex-col items-center gap-8">
-        <EnboxLogo size="lg" />
+    <AuthLayout align="start">
+      <div className="flex w-full flex-col items-center gap-8">
+        <EnboxLogo size="sm" />
 
         <StepIndicator current={progress.current} total={progress.total} />
 
         {step === 'phrase' && (
           <div className="flex flex-col items-center gap-6 w-full">
             <div className="flex flex-col items-center gap-2">
-              <h1 className="text-2xl font-semibold text-text-primary">
+              <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                 Restore your wallet
               </h1>
               <p className="text-sm text-text-secondary text-center">
@@ -200,7 +194,7 @@ export function RestoreWalletPage({
         {step === 'endpoints' && (
           <div className="flex w-full flex-col items-center gap-6">
             <div className="flex flex-col items-center gap-2 text-center">
-              <h1 className="text-2xl font-semibold text-text-primary">
+              <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                 Recovery servers
               </h1>
               <p className="text-sm text-text-secondary">
@@ -252,7 +246,7 @@ export function RestoreWalletPage({
         {step === 'security-method' && (
           <div className="flex w-full flex-col items-center gap-6">
             <div className="flex flex-col items-center gap-2 text-center">
-              <h1 className="text-2xl font-semibold text-text-primary">
+              <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                 Secure Wallet
               </h1>
               <p className="text-sm text-text-secondary">
@@ -309,7 +303,7 @@ export function RestoreWalletPage({
         {step === 'create-pin' && (
           <div className="flex flex-col items-center gap-6">
             <div className="flex flex-col items-center gap-2">
-              <h1 className="text-2xl font-semibold text-text-primary">
+              <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                 Create PIN
               </h1>
               <p className="text-sm text-text-secondary">
@@ -338,7 +332,7 @@ export function RestoreWalletPage({
         {step === 'confirm-pin' && (
           <div className="flex flex-col items-center gap-6">
             <div className="flex flex-col items-center gap-2">
-              <h1 className="text-2xl font-semibold text-text-primary">
+              <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                 Confirm PIN
               </h1>
               <p className="text-sm text-text-secondary">
@@ -371,7 +365,7 @@ export function RestoreWalletPage({
           </div>
         )}
       </div>
-    </div>
+    </AuthLayout>
   );
 }
 
