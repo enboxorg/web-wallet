@@ -1,8 +1,12 @@
 import type { DwnPermissionGrant } from '@enbox/agent';
 import { describe, expect, it } from 'vitest';
 
+import type { ConnectPermissionRequest } from '@enbox/connect';
+
 import {
   detectConnectRefresh,
+  refreshRequestSummary,
+  splitRefreshAccess,
   type OwnerPermissionGrants,
 } from '../connect-refresh';
 
@@ -283,5 +287,89 @@ describe('connect refresh detection', () => {
 
     expect(detection.matchState).toBe('ambiguous');
     expect(detection.pinnedOwnerDid).toBeUndefined();
+  });
+});
+
+describe('splitRefreshAccess', () => {
+  const tasks = 'https://example.com/modules/tasks';
+  const bills = 'https://example.com/modules/bills';
+  const scope = (module: string, method: string, extra: Record<string, string> = {}) =>
+    ({ interface: 'Records', method, module, ...extra });
+  const request = (module: string, scopes: ReturnType<typeof scope>[]) =>
+    ({ moduleDefinition: { module, types: {}, structure: {} }, permissionScopes: scopes }) as unknown as ConnectPermissionRequest;
+  const held = (module: string, method: string, extra: Record<string, string> = {}) =>
+    ({ ...grant(), scope: scope(module, method, extra) }) as DwnPermissionGrant;
+  const methods = (requests: ConnectPermissionRequest[]) =>
+    requests.map((item) => `${item.moduleDefinition.module.split('/').at(-1)}:${item.permissionScopes.map((s) => s.method).join('+')}`);
+
+  it('treats everything the delegate held before as a renewal', () => {
+    const split = splitRefreshAccess([request(tasks, [scope(tasks, 'Read')])], [held(tasks, 'Read')]);
+    expect(split.added).toEqual([]);
+    expect(methods(split.renewed)).toEqual(['tasks:Read']);
+  });
+
+  it('reports modules the delegate never had as new access, whatever the request claims', () => {
+    const split = splitRefreshAccess(
+      [request(tasks, [scope(tasks, 'Read')]), request(bills, [scope(bills, 'Read'), scope(bills, 'Write')])],
+      [held(tasks, 'Read')],
+    );
+    expect(methods(split.added)).toEqual(['bills:Read+Write']);
+    expect(methods(split.renewed)).toEqual(['tasks:Read']);
+  });
+
+  it('splits a module whose request widens what was granted', () => {
+    const split = splitRefreshAccess(
+      [request(tasks, [scope(tasks, 'Read'), scope(tasks, 'Delete')])],
+      [held(tasks, 'Read')],
+    );
+    expect(methods(split.added)).toEqual(['tasks:Delete']);
+    expect(methods(split.renewed)).toEqual(['tasks:Read']);
+  });
+
+  it('never lets a path- or context-limited grant cover broader access', () => {
+    const split = splitRefreshAccess(
+      [request(tasks, [scope(tasks, 'Read')]), request(bills, [scope(bills, 'Read', { contextId: 'ctx-2' })])],
+      [held(tasks, 'Read', { modulePath: 'list' }), held(bills, 'Read', { contextId: 'ctx-1' })],
+    );
+    expect(methods(split.added)).toEqual(['tasks:Read', 'bills:Read']);
+    expect(split.renewed).toEqual([]);
+  });
+
+  it('lets a module-wide grant cover a narrower request', () => {
+    const split = splitRefreshAccess(
+      [request(tasks, [scope(tasks, 'Read', { modulePath: 'list' })])],
+      [held(tasks, 'Read')],
+    );
+    expect(split.added).toEqual([]);
+  });
+
+  it('keeps setup-only modules with the renewal, since they grant nothing', () => {
+    const split = splitRefreshAccess([request(bills, [])], []);
+    expect(split.added).toEqual([]);
+    expect(split.renewed).toHaveLength(1);
+  });
+});
+
+describe('refreshRequestSummary', () => {
+  const request = (slug: string, scopes = 1) => ({
+    moduleDefinition : { module: `https://example.com/modules/${slug}`, types: {}, structure: {} },
+    permissionScopes : Array.from({ length: scopes }, () => ({ interface: 'Records', method: 'Read', module: `https://example.com/modules/${slug}` })),
+  }) as unknown as ConnectPermissionRequest;
+
+  it('says renew only when nothing is new', () => {
+    expect(refreshRequestSummary({ added: [], renewed: [request('tasks')] })).toBe('wants to renew its access to your profile');
+    expect(refreshRequestSummary(undefined)).toBe('wants to renew its access to your profile');
+  });
+
+  it('names what is being added, and mentions the renewal when there is one', () => {
+    expect(refreshRequestSummary({ added: [request('bills'), request('budgets')], renewed: [] }))
+      .toBe('wants to add Bills and Budgets');
+    expect(refreshRequestSummary({ added: [request('bills')], renewed: [request('tasks')] }))
+      .toBe('wants to add Bills and renew its existing access');
+  });
+
+  it('keeps long lists short', () => {
+    const added = ['bills', 'budgets', 'receipts', 'payees'].map((slug) => request(slug));
+    expect(refreshRequestSummary({ added, renewed: [] })).toBe('wants to add Bills, Budgets, and 2 more');
   });
 });

@@ -311,3 +311,18 @@ export function getScopeLabel(scope: { interface: string; method: string }): str
 
   return `${scope.interface}.${method}`;
 }
+
+/**
+ * Short name for a requested module, as the consent rows label it: curated
+ * names only for pinned, matching definitions; a verified contexts companion
+ * by its root ("Notes shared contexts"); anything else from its own URI.
+ */
+export function nameForRequestedModule(definition: DwnModuleDefinition): string {
+  const uri = definition.module;
+  if (isContextCompanionDefinition(definition)) {
+    const root = getContextCompanionRootUri(uri);
+    return `${root ? getModuleName(root) : nameFromModuleUri(uri)} shared contexts`;
+  }
+  if (isCanonicalModuleDefinition(definition)) return MODULE_REGISTRY[uri].name;
+  return nameFromModuleUri(uri);
+}

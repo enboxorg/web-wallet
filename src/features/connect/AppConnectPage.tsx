@@ -74,7 +74,12 @@ import {
   preflightConnectRequest,
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
-import { detectConnectRefresh } from './connect-refresh';
+import {
+  detectConnectRefresh,
+  refreshAddsAccess,
+  refreshRequestSummary,
+  splitRefreshAccess,
+} from './connect-refresh';
 import {
   CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   resolveConnectSessionApprovalDurationSeconds,
@@ -185,6 +190,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const ownerDids = (identities ?? []).map((identity: any) => identity.did.uri as string);
   const allPermissions = useAllPermissions(ownerDids, isRefresh);
   const refreshDetection = detectConnectRefresh(connectionRequest, allPermissions.data);
+  // A refresh is only a renewal for scopes this delegate actually held; the
+  // request's own claim decides nothing about its contents.
+  const refreshSplit = isRefresh && refreshDetection.matchState === 'matched' && connectionRequest
+    ? splitRefreshAccess(connectionRequest.permissionRequests, refreshDetection.matchedSession?.grants ?? [])
+    : undefined;
   const refreshOwnerOption = identityOptions.find((option) =>
     option.value === refreshDetection.pinnedOwnerDid
   );
@@ -664,7 +674,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const requestSummary = authenticationOnly
     ? 'is asking you to sign in with your profile'
     : isRefresh
-      ? 'wants to renew its access to your profile'
+      ? refreshRequestSummary(refreshSplit)
       : hasDataAccess ? 'wants to connect to your profile' : 'wants to connect';
 
   async function handleCopyPin() {
@@ -894,6 +904,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 requestedSessionTtlSeconds={connectionRequest.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
                 onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
+                split={refreshSplit}
               />
             ) : (
               <>
@@ -998,7 +1009,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
                 >
                   <Check className="size-4" />
-                  {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
+                  {isRefresh
+                    ? refreshAddsAccess(refreshSplit) ? 'Allow access' : 'Renew access'
+                    : authenticationOnly ? 'Sign in' : 'Approve'}
                 </Button>
               )}
               hint={onboardingSupported && (

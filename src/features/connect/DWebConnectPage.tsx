@@ -44,7 +44,12 @@ import {
   validateConnectPermissionSemantics,
 } from './connect-request-preflight';
 import { findMatchingActiveConnectSessions } from './existing-connect-sessions';
-import { detectConnectRefresh } from './connect-refresh';
+import {
+  detectConnectRefresh,
+  refreshAddsAccess,
+  refreshRequestSummary,
+  splitRefreshAccess,
+} from './connect-refresh';
 import {
   CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   resolveConnectSessionApprovalDurationSeconds,
@@ -126,6 +131,11 @@ export default function DWebConnectPage() {
   const ownerDids = (identities ?? []).map((identity: any) => identity.did.uri as string);
   const allPermissions = useAllPermissions(ownerDids, isRefresh);
   const refreshDetection = detectConnectRefresh(connectRequest, allPermissions.data);
+  // A refresh is only a renewal for scopes this delegate actually held; the
+  // request's own claim decides nothing about its contents.
+  const refreshSplit = isRefresh && refreshDetection.matchState === 'matched'
+    ? splitRefreshAccess(permissions, refreshDetection.matchedSession?.grants ?? [])
+    : undefined;
   const refreshOwnerOption = identityOptions.find((option) =>
     option.value === refreshDetection.pinnedOwnerDid
   );
@@ -478,10 +488,10 @@ export default function DWebConnectPage() {
   const requestSummary = authenticationOnly
     ? 'is asking you to sign in with your profile'
     : isRefresh
-      ? 'wants to renew its access to your profile'
+      ? refreshRequestSummary(refreshSplit)
       : hasDataAccess ? 'wants to connect to your profile' : 'wants to connect';
   const connectionStatus = isRefresh
-    ? 'Renewing connection'
+    ? refreshAddsAccess(refreshSplit) ? 'Adding access' : 'Renewing connection'
     : existingSessions.length > 0 ? 'Returning connection' : 'First connection';
   const showRequest = phase === 'request' && !refreshUnavailable && !(isRefresh && refreshLookupPending);
 
@@ -605,6 +615,7 @@ export default function DWebConnectPage() {
                 requestedSessionTtlSeconds={connectRequest?.requestedSessionTtlSeconds}
                 onSessionDurationSecondsChange={setSessionDurationSeconds}
                 onRetryModuleSetup={() => setModuleSetupRetryKey((key) => key + 1)}
+                split={refreshSplit}
               />
             ) : (
               <>
@@ -709,7 +720,9 @@ export default function DWebConnectPage() {
                   disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
                 >
                   <Check className="size-4" />
-                  {isRefresh ? 'Renew access' : authenticationOnly ? 'Sign in' : 'Approve'}
+                  {isRefresh
+                    ? refreshAddsAccess(refreshSplit) ? 'Allow access' : 'Renew access'
+                    : authenticationOnly ? 'Sign in' : 'Approve'}
                 </Button>
               )}
               hint={onboardingSupported && (

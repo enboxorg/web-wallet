@@ -622,6 +622,39 @@ describe('AppConnectPage', () => {
     ));
   });
 
+  it('shows new access in a relay "refresh" for modules the delegate never had', async () => {
+    const bills = 'https://example.com/modules/bills';
+    const refreshRequest = {
+      ...connectRequest,
+      appName: 'Briand',
+      requestType: 'refresh',
+      permissionRequests: [
+        ...connectRequest.permissionRequests,
+        {
+          moduleDefinition: { module: bills, published: false, types: { bill: {} }, structure: { bill: {} } },
+          permissionScopes: [{ interface: 'Records', method: 'Read', module: bills }],
+        },
+      ],
+    };
+    mocks.identities = [{ did: { uri: 'did:dht:bob' }, metadata: { name: 'Bob' } }];
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:bob',
+      permissions     : [existingSessionGrant('did:dht:bob', connectRequest.delegateDid)],
+      revokedGrantIds : [],
+    }];
+    mocks.fetchConnectRequest.mockResolvedValue(refreshRequest);
+    setPageUrl(DEEP_LINK_FRAGMENT);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    expect(await screen.findByRole('button', { name: 'Allow access' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
+    expect(screen.getByText(/wants to add Bills and renew its existing access/)).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'New access' })).getByRole('listitem', { name: 'Bills' })).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Renewing existing access' })).getByRole('listitem', { name: 'Wireguard Mesh' }))
+      .toBeInTheDocument();
+  });
+
   it('renews a fully revoked session with the exact delegate owner', async () => {
     const refreshRequest = {
       ...connectRequest,

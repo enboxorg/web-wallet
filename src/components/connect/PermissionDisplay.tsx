@@ -82,6 +82,19 @@ interface PermissionDisplayProps {
   onOverrideAcknowledgedChange?: (value: boolean) => void;
   /** Render session terms as a renewal rather than a first approval. */
   renewal?: boolean;
+  /**
+   * Show the access as separate titled lists (e.g. new access, then renewed
+   * access) instead of one. Setup, terms and technical details still cover
+   * all of `permissions`.
+   */
+  accessSections?: AccessSection[];
+}
+
+export interface AccessSection {
+  id: string;
+  title: React.ReactNode;
+  description?: React.ReactNode;
+  permissions: ConnectPermissionRequest[];
 }
 
 type ModuleAccess = {
@@ -303,22 +316,47 @@ function AccessItem({ group }: { group: AccessRowGroup }) {
   );
 }
 
+function KeySharingNotice({ access }: { access: ModuleAccess[] }) {
+  const keySharingGroups = buildAccessRowGroups(access)
+    .filter((group) => sharesKeys(group.primary) || sharesKeys(group.companion));
+  if (keySharingGroups.length === 0) return null;
+
+  return (
+    <ConsentNotice tone="warning" icon={<Lock />}>
+      Approval shares decryption keys for {keySharingGroups.length > 1 ? 'these scopes' : 'this scope'}.
+      {' '}Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
+    </ConsentNotice>
+  );
+}
+
 function AccessRows({
   access,
-  requesterLabel = 'this app',
+  heading,
+  description,
+  showKeyNotice = true,
+  prominent = false,
 }: {
   access: ModuleAccess[];
-  requesterLabel?: string;
+  heading: React.ReactNode;
+  description?: React.ReactNode;
+  showKeyNotice?: boolean;
+  /** Section titles that must not be skimmed past, e.g. "New access". */
+  prominent?: boolean;
 }) {
   const headingId = useId();
   const rowGroups = buildAccessRowGroups(access);
-  const keySharingGroups = rowGroups.filter((group) => sharesKeys(group.primary) || sharesKeys(group.companion));
 
   return (
     <section className="space-y-2.5" aria-labelledby={headingId}>
-      <h2 id={headingId} className="text-xs font-medium text-text-tertiary">
-        What {hostLabel(requesterLabel)} will be able to do
-      </h2>
+      <div>
+        <h2
+          id={headingId}
+          className={prominent ? 'text-sm font-semibold text-text-primary' : 'text-xs font-medium text-text-tertiary'}
+        >
+          {heading}
+        </h2>
+        {description && <p className="mt-0.5 text-xs text-text-tertiary">{description}</p>}
+      </div>
 
       <ul className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
         {rowGroups.length === 0 && (
@@ -327,12 +365,7 @@ function AccessRows({
         {rowGroups.map((group) => <AccessItem key={group.primary.moduleUri} group={group} />)}
       </ul>
 
-      {keySharingGroups.length > 0 && (
-        <ConsentNotice tone="warning" icon={<Lock />}>
-          Approval shares decryption keys for {keySharingGroups.length > 1 ? 'these scopes' : 'this scope'}.
-          {' '}Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
-        </ConsentNotice>
-      )}
+      {showKeyNotice && <KeySharingNotice access={access} />}
     </section>
   );
 }
@@ -712,17 +745,39 @@ export function PermissionDisplay({
   overrideAcknowledged = false,
   onOverrideAcknowledgedChange,
   renewal,
+  accessSections,
 }: PermissionDisplayProps) {
   if (permissions.length === 0) return null;
 
   const access = getModuleAccess(permissions, moduleSetupStatuses);
+  const withScopes = (items: ModuleAccess[]) => items.filter((item) => item.permission.permissionScopes.length > 0);
+  const sections = accessSections
+    ?.map((section) => ({ ...section, access: withScopes(getModuleAccess(section.permissions, moduleSetupStatuses)) }))
+    .filter((section) => section.access.length > 0);
 
   return (
     <div className="space-y-4">
-      <AccessRows
-        access={access.filter((item) => item.permission.permissionScopes.length > 0)}
-        requesterLabel={requesterLabel}
-      />
+      {sections ? (
+        <>
+          {sections.map((section) => (
+            <AccessRows
+              key={section.id}
+              access={section.access}
+              heading={section.title}
+              description={section.description}
+              showKeyNotice={false}
+              prominent
+            />
+          ))}
+          {/* One key-sharing explanation for everything being approved. */}
+          <KeySharingNotice access={sections.flatMap((section) => section.access)} />
+        </>
+      ) : (
+        <AccessRows
+          access={withScopes(access)}
+          heading={<>What {hostLabel(requesterLabel ?? 'this app')} will be able to do</>}
+        />
+      )}
       <ModuleConflictNotice access={access} />
       <ModuleOverrideNotice
         access={access}
