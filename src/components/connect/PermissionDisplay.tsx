@@ -6,10 +6,10 @@
  * - how long access lasts
  * - where setup/module mechanics can be inspected
  *
- * Trust rule: curated names are used only for pinned, matching wallet module
- * definitions. Every other module is a "Custom data type" identified by its
- * literal URI — a requester-chosen slug is never promoted into a friendly,
- * wallet-vouched name here.
+ * Trust rule: curated names, descriptions and icons are used only for pinned,
+ * matching wallet module definitions. Every other module is named from its own
+ * URI and always shown with the host that namespaces it, so the name reads as
+ * "what <host> calls this data", never as a wallet-vouched label.
  */
 import { useId } from 'react';
 import {
@@ -22,7 +22,6 @@ import {
   Loader2,
   Lock,
   LockKeyhole,
-  Package,
   RefreshCw,
   Share2,
 } from 'lucide-react';
@@ -36,15 +35,18 @@ import {
 } from '@/features/connect/connect-session-duration';
 import {
   describeModule,
+  getContextCompanionRootUri,
   getModuleInfo,
+  getModuleName,
   isCanonicalModuleDefinition,
   isContextCompanionDefinition,
-  parseModuleUri,
+  nameFromModuleUri,
+  type ModuleDisplay,
 } from '@/lib/module-names';
 import { collectStructurePaths, isEncryptedType } from '@/lib/module-structure';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
 import { Disclosure } from '@/components/ui/Disclosure';
-import { Monogram } from '@/components/ui/Monogram';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
 import {
@@ -83,8 +85,12 @@ interface PermissionDisplayProps {
 type ModuleAccess = {
   permission: ConnectPermissionRequest;
   moduleUri: string;
+  /** Curated name for pinned modules; otherwise named from the URI itself. */
   name: string;
-  description: string;
+  /** Curated description for pinned modules; otherwise the URI's host. */
+  detail: string;
+  /** Glyph facts: core icons only for pinned, matching definitions. */
+  glyph: ModuleDisplay;
   isKnownModule: boolean;
   isContextCompanion: boolean;
   paths: string[];
@@ -129,20 +135,24 @@ function getModuleAccess(
   moduleSetupStatuses?: Record<string, ModuleSetupStatus>,
 ): ModuleAccess[] {
   return mergePermissionRequestsByModule(permissions).map((permission) => {
-    const moduleUri = permission.moduleDefinition.module;
-    const isContextCompanion = isContextCompanionDefinition(permission.moduleDefinition);
-    const isKnownModule = !isContextCompanion && isCanonicalModuleDefinition(permission.moduleDefinition);
+    const definition = permission.moduleDefinition;
+    const moduleUri = definition.module;
+    const isContextCompanion = isContextCompanionDefinition(definition);
+    const isKnownModule = !isContextCompanion && isCanonicalModuleDefinition(definition);
     const info = isKnownModule ? getModuleInfo(moduleUri) : undefined;
+    const companionRoot = isContextCompanion ? getContextCompanionRootUri(moduleUri) : undefined;
+    const display = describeModule(moduleUri, definition);
+    // A verified companion is labelled by its root (plus a "Shared contexts"
+    // tag); anything else unpinned is named from its own URI.
+    const name = info?.name
+      ?? (companionRoot ? getModuleName(companionRoot) : nameFromModuleUri(moduleUri));
 
     return {
       permission,
       moduleUri,
-      name: isContextCompanion
-        ? 'Shared contexts companion'
-        : info?.name ?? 'Custom module',
-      description: isContextCompanion
-        ? 'Open invitation inbox and encrypted followed-context journal'
-        : info?.description ?? '',
+      name,
+      detail : info?.description ?? display.host ?? display.shortUri,
+      glyph  : { ...display, name, isCore: isKnownModule },
       isKnownModule,
       isContextCompanion,
       paths: collectStructurePaths(
@@ -185,55 +195,73 @@ function sharesKeys(item: ModuleAccess | undefined): boolean {
 }
 
 /**
- * The literal module URI with its descriptive segment emphasised. It stays an
- * identifier (monospace, verbatim) — never a promoted display name.
+ * Encryption marker for a row. The key-sharing consequence is spelled out once
+ * in the notice under the list, so the row only needs a compact tag.
  */
-function ModuleUriText({ uri }: { uri: string }) {
-  const label = moduleUriLabel(uri);
-  const slug = parseModuleUri(uri).slugs.at(-1);
-  const index = slug ? label.lastIndexOf(slug) : -1;
-
+function EncryptedBadge({ keysShared }: { keysShared: boolean }) {
+  const explanation = keysShared
+    ? 'Approving shares its decryption keys.'
+    : 'This approval does not share private decryption keys.';
   return (
-    <span className="block truncate font-mono text-[11px] text-text-ghost" title={uri}>
-      {index === -1 ? label : (
-        <>
-          {label.slice(0, index)}
-          <span className="text-text-secondary">{slug}</span>
-          {label.slice(index + slug!.length)}
-        </>
-      )}
-    </span>
+    <Badge
+      tone={keysShared ? 'warning' : 'neutral'}
+      variant={keysShared ? 'soft' : 'outline'}
+      icon={<LockKeyhole />}
+      title={`Stored encrypted. ${explanation}`}
+    >
+      Encrypted<span className="sr-only">. {explanation}</span>
+    </Badge>
   );
 }
 
-function AccessItemGlyph({ item }: { item: ModuleAccess }) {
-  if (item.isKnownModule) {
-    return <ModuleGlyph module={describeModule(item.moduleUri)} />;
-  }
-  if (item.isContextCompanion) {
-    return <Monogram label="Shared contexts" seed={item.moduleUri} icon={<Share2 />} />;
-  }
+/**
+ * Name + provenance on one line. An unpinned module's name is only what its
+ * URI says, so its host never truncates away before the name does.
+ */
+function AccessItemTitle({ item, titleId }: { item: ModuleAccess; titleId: string }) {
+  const curated = item.isKnownModule;
   return (
-    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-text-tertiary ring-1 ring-inset ring-border-default">
-      <Package className="size-[18px]" aria-hidden="true" />
-    </span>
+    <div className="flex min-h-5 min-w-0 items-center gap-2">
+      <p className="flex min-w-0 flex-1 items-baseline gap-2">
+        <span
+          id={titleId}
+          className={cn('text-sm font-semibold text-text-primary', curated ? 'shrink-0' : 'min-w-0 truncate')}
+        >
+          {item.name}
+        </span>
+        <span
+          className={cn('text-xs text-text-tertiary', curated ? 'min-w-0 truncate' : 'max-w-[60%] shrink-0 truncate')}
+          title={curated ? item.detail : item.moduleUri}
+        >
+          {item.detail}
+        </span>
+      </p>
+      {item.isContextCompanion && <Badge tone="info" title={SHARED_CONTEXTS_HINT}>Shared contexts</Badge>}
+      {item.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(item)} />}
+    </div>
   );
 }
 
-function EncryptionNote({ item, companion }: { item: ModuleAccess; companion?: ModuleAccess }) {
-  const encrypted = item.hasEncryptedTypes || Boolean(companion?.hasEncryptedTypes);
-  if (!encrypted) return null;
+const SHARED_CONTEXTS_HINT = 'Invitations others send you, and your encrypted list of followed contexts.';
 
-  return sharesKeys(item) || sharesKeys(companion) ? (
-    <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-warning">
-      <LockKeyhole className="size-3.5 shrink-0" aria-hidden="true" />
-      Encrypted — approving shares its decryption keys
-    </p>
-  ) : (
-    <p className="mt-2 inline-flex items-start gap-1.5 text-xs leading-relaxed text-text-tertiary">
-      <LockKeyhole className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-      <span>Stored encrypted. This approval does not share private decryption keys.</span>
-    </p>
+/** A verified contexts companion, folded into its root module's row. */
+function CompanionAccess({ companion }: { companion: ModuleAccess }) {
+  return (
+    <div
+      role="group"
+      aria-label="Shared contexts & invitations"
+      className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border-subtle pt-2.5"
+    >
+      <span
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary"
+        title={SHARED_CONTEXTS_HINT}
+      >
+        <Share2 className="size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
+        Shared contexts
+      </span>
+      {companion.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(companion)} />}
+      <PermissionActionChips actions={itemActions(companion)} />
+    </div>
   );
 }
 
@@ -241,51 +269,19 @@ function AccessItem({ group }: { group: AccessRowGroup }) {
   const titleId = useId();
   const { primary: item, companion } = group;
   const actions = itemActions(item);
-  const companionActions = companion ? itemActions(companion) : [];
   const hasRecordAccess = actions.some((action) => action.kind === 'record');
 
-  const title = item.isKnownModule
-    ? item.name
-    : item.isContextCompanion ? 'Shared contexts' : 'Custom data type';
-
   return (
-    <li aria-labelledby={titleId} className="flex items-start gap-3 px-4 py-3.5">
-      <AccessItemGlyph item={item} />
+    <li aria-labelledby={titleId} className="flex items-start gap-2.5 px-3 py-3">
+      <ModuleGlyph module={item.glyph} size="sm" />
       <div className="min-w-0 flex-1">
-        <p id={titleId} className="text-sm font-semibold text-text-primary">{title}</p>
-        {item.isKnownModule && (
-          <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-text-tertiary">{item.description}</p>
-        )}
-        {item.isContextCompanion && (
-          <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">{item.description}</p>
-        )}
-        {!item.isKnownModule && <ModuleUriText uri={item.moduleUri} />}
-
+        <AccessItemTitle item={item} titleId={titleId} />
         <PermissionActionChips
           actions={actions}
           emphasizeSupport={!hasRecordAccess}
-          className="mt-2.5"
+          className="mt-1.5"
         />
-
-        {companion && (
-          <div
-            role="group"
-            aria-label="Shared contexts & invitations"
-            className="mt-3 flex items-start gap-2.5 rounded-lg bg-surface-2/70 px-3 py-2.5"
-          >
-            <Share2 className="mt-0.5 size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
-            <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium text-text-primary">Shared contexts &amp; invitations</p>
-              <p className="mt-0.5 text-xs leading-relaxed text-text-tertiary">
-                Invitations others send you, and your encrypted list of followed contexts.
-              </p>
-              <ModuleUriText uri={companion.moduleUri} />
-              <PermissionActionChips actions={companionActions} className="mt-2" />
-            </div>
-          </div>
-        )}
-
-        <EncryptionNote item={item} companion={companion} />
+        {companion && <CompanionAccess companion={companion} />}
       </div>
     </li>
   );
@@ -317,7 +313,7 @@ function AccessRows({
 
       {keySharingGroups.length > 0 && (
         <ConsentNotice tone="warning" icon={<Lock />}>
-          Approval permanently shares decryption keys for {keySharingGroups.length > 1 ? 'these scopes' : 'this scope'}.
+          Approval shares decryption keys for {keySharingGroups.length > 1 ? 'these scopes' : 'this scope'}.
           {' '}Expiry stops authorized DWN access, but matching ciphertext obtained now or later can still be decrypted.
         </ConsentNotice>
       )}
@@ -388,7 +384,7 @@ function SetupStatusBadge({ status }: { status: ModuleSetupStatus }) {
 }
 
 function moduleSetupTitle(item: ModuleAccess): string {
-  return item.isKnownModule || item.isContextCompanion ? item.name : 'Custom module';
+  return item.isContextCompanion ? `${item.name} shared contexts` : item.name;
 }
 
 function SetupDetailGroup({
