@@ -2,7 +2,12 @@ import {
   CONNECT_SESSION_MAX_TTL_SECONDS,
 } from '@enbox/agent';
 
-export const CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS = 60 * 60;
+/**
+ * How long an approval lasts unless the owner picks something else. A request
+ * that asks for less still gets less: the default never exceeds what the app
+ * asked for.
+ */
+export const CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 export const CONNECT_SESSION_DURATION_OPTIONS = [
   { value: 60 * 60, label: '1 hour' },

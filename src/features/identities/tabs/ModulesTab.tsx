@@ -106,7 +106,7 @@ function ModuleRow({ row }: { row: ModuleRowModel }) {
         <div className="space-y-1.5">
           <p className="text-[11px] font-medium uppercase tracking-wider text-text-ghost">Module URI</p>
           <div className="flex min-w-0 items-center gap-1 rounded-lg bg-surface-2 py-1 pl-3 pr-1">
-            <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-secondary" title={module.uri}>
+            <code className="min-w-0 flex-1 py-1 wrap-anywhere font-mono text-xs leading-relaxed text-text-secondary">
               {module.uri}
             </code>
             <CopyButton value={module.uri} label={`Copy ${display.name} module URI`} />

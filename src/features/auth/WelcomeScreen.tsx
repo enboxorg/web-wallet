@@ -132,9 +132,8 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
               <h1 className="bg-gradient-to-b from-text-primary to-text-secondary bg-clip-text text-[2rem] font-semibold leading-tight tracking-[-0.03em] text-transparent sm:text-[2.5rem]">
                 Own your identity
               </h1>
-              <p className="max-w-xs text-[15px] leading-relaxed text-text-secondary">
+              <p className="max-w-xs text-balance text-[15px] leading-relaxed text-text-secondary">
                 One profile for all your apps, kept on your device.
-                No email, no password — just you.
               </p>
             </div>
 

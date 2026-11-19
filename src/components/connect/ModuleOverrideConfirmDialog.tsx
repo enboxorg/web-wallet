@@ -9,6 +9,7 @@ import { RefreshCw } from 'lucide-react';
 
 import { Dialog } from '@/components/ui/Dialog';
 import { Button } from '@/components/ui/Button';
+import { ModuleUri } from '@/components/modules/ModuleUri';
 import { getModuleName } from '@/lib/module-names';
 
 interface ModuleOverrideConfirmDialogProps {
@@ -40,9 +41,7 @@ export function ModuleOverrideConfirmDialog({
           {modules.map((uri) => (
             <li key={uri} className="rounded-xl border border-border-default bg-surface-2 px-3.5 py-2.5">
               <p className="text-sm font-medium text-text-primary">{getModuleName(uri)}</p>
-              <p className="mt-0.5 truncate font-mono text-[11px] text-text-ghost" title={uri}>
-                {uri}
-              </p>
+              <ModuleUri uri={uri} className="mt-0.5" />
             </li>
           ))}
         </ul>

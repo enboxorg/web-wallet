@@ -198,7 +198,9 @@ describe('PermissionsTab', () => {
     expect(chipLabels(rows[0])).toEqual(['View', 'Add or edit', 'Delete']);
     expect(screen.getAllByText(/also sync changes/i).length).toBeGreaterThan(0);
     expect(chipLabels(rows[1])).toEqual(['View']);
-    expect(within(rows[0]).getByText('enbox.id · v1')).toBeInTheDocument();
+    // Each row shows its module URI in full, as the approval screen did.
+    expect(within(rows[0]).getByTestId('module-uri')).toHaveTextContent(notesModule);
+    expect(within(rows[1]).getByTestId('module-uri')).toHaveTextContent('https://identity.foundation/modules/profile');
   });
 
   it('tags shared contexts only when the installed definition proves it', () => {
@@ -294,7 +296,7 @@ describe('PermissionsTab', () => {
     }));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/fresh 1 hour session/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/for another 7 days/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: 'Renew access' }));
 
     await waitFor(() => {

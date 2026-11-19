@@ -16,6 +16,11 @@ function chips(scope: HTMLElement, index = 0): string[] {
   return within(list).getAllByRole('listitem').map((item) => item.textContent ?? '');
 }
 
+/** The module URIs written out in full inside `scope`, in order. */
+function shownUris(scope: HTMLElement): string[] {
+  return within(scope).queryAllByTestId('module-uri').map((element) => element.textContent ?? '');
+}
+
 describe('PermissionDisplay', () => {
   it('keeps installation-only providers in setup details without presenting data permissions', () => {
     const provider = 'https://example.com/modules/shared-roles';
@@ -29,10 +34,10 @@ describe('PermissionDisplay', () => {
     render(<PermissionDisplay permissions={permissions} />);
     const rows = screen.getAllByRole('listitem', { name: 'Tasks' });
     expect(rows).toHaveLength(1);
-    expect(within(rows[0]).getByTitle(tasksModule)).toHaveTextContent('example.com');
+    expect(shownUris(rows[0])).toEqual([tasksModule]);
     expect(chips(rows[0])).toEqual(['View']);
     expect(screen.getByText(/Dependencies listed only for setup do not grant the app access/)).toBeInTheDocument();
-    expect(screen.getAllByText(provider).length).toBeGreaterThan(0);
+    expect(shownUris(screen.getByTestId('technical-setup-details'))).toContain(provider);
   });
 
   it('labels setup-only requests and excludes referenced roots from local record paths', () => {
@@ -90,9 +95,9 @@ describe('PermissionDisplay', () => {
     render(<PermissionDisplay permissions={permissions} />);
 
     expect(screen.getByText(/will be able to do/i)).toBeInTheDocument();
-    expect(screen.getByText('Access lasts 1 hour')).toBeInTheDocument();
+    expect(screen.getByText('Access lasts 7 days')).toBeInTheDocument();
     const row = screen.getByRole('listitem', { name: 'Demo' });
-    expect(within(row).getByTitle('https://example.com/modules/demo')).toHaveTextContent('example.com');
+    expect(shownUris(row)).toEqual(['https://example.com/modules/demo']);
     // Record access leads; sync + setup plumbing becomes one note under the list.
     expect(chips(row)).toEqual(['View', 'Add or edit', 'Delete']);
     expect(screen.getAllByText('The app can also sync changes and check the setup of Demo.')).toHaveLength(1);
@@ -159,7 +164,7 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText('Messages.Read')).toBeInTheDocument();
   });
 
-  it('names unknown modules from their own URI, always beside the namespacing host', () => {
+  it('names unknown modules from their own URI, always beside that URI in full', () => {
     const permissions = [{
       moduleDefinition: {
         module: 'https://evil.example/modules/verified-account',
@@ -177,10 +182,11 @@ describe('PermissionDisplay', () => {
 
     render(<PermissionDisplay permissions={permissions} />);
 
-    // The name is only what the URI says, so the host that namespaces it is always shown with it.
+    // The name is only what the URI says, so the whole URI is always shown with it,
+    // with the host that namespaces it marked.
     const row = screen.getByRole('listitem', { name: 'Verified Account' });
-    expect(within(row).getByTitle('https://evil.example/modules/verified-account'))
-      .toHaveTextContent('evil.example');
+    expect(shownUris(row)).toEqual(['https://evil.example/modules/verified-account']);
+    expect(within(row).getByText('evil.example')).toHaveClass('text-text-primary');
     expect(within(row).getByText('Third-party')).toBeInTheDocument();
     expect(chips(row)).toEqual(['View']);
     expect(screen.queryByText('Module at https://evil.example/modules/verified-account')).not.toBeInTheDocument();
@@ -196,7 +202,7 @@ describe('PermissionDisplay', () => {
     render(<PermissionDisplay permissions={permissions} />);
 
     const row = screen.getByRole('listitem', { name: 'Profile' });
-    expect(within(row).getByTitle(profileModule)).toHaveTextContent('identity.foundation');
+    expect(shownUris(row)).toEqual([profileModule]);
     expect(within(row).getByText('Third-party')).toBeInTheDocument();
     expect(screen.queryByText(/Public profile data/i)).not.toBeInTheDocument();
   });
@@ -221,7 +227,9 @@ describe('PermissionDisplay', () => {
     expect(within(builtIn).getByText(/Public profile data/i)).toBeInTheDocument();
     expect(within(builtIn).queryByText('Third-party')).not.toBeInTheDocument();
     expect(within(thirdParty).getByText('Third-party')).toBeInTheDocument();
-    expect(within(thirdParty).getByTitle('https://evil.example/modules/profile')).toHaveTextContent('evil.example');
+    // Both show their URI in full, so the two "Profile" rows can be told apart.
+    expect(shownUris(builtIn)).toEqual([profileModule]);
+    expect(shownUris(thirdParty)).toEqual(['https://evil.example/modules/profile']);
   });
 
   it('shows a single encrypted-data explanation for multiple encrypted rows', () => {
@@ -336,7 +344,7 @@ describe('PermissionDisplay', () => {
 
     const rows = screen.getAllByRole('listitem', { name: 'Tasks' });
     expect(rows).toHaveLength(1);
-    expect(within(rows[0]).getByTitle(tasksModule)).toBeInTheDocument();
+    expect(shownUris(rows[0])).toEqual([tasksModule]);
     expect(chips(rows[0])).toEqual(['View', 'Add or edit']);
   });
 
@@ -587,9 +595,9 @@ describe('PermissionDisplay', () => {
       />,
     );
 
-    expect(screen.getByText('Access lasts 1 hour')).toBeInTheDocument();
+    expect(screen.getByText('Access lasts 7 days')).toBeInTheDocument();
     expect(screen.getByText(/already has 2 active sessions/i)).toBeInTheDocument();
-    expect(screen.getByText(/separate session with 1 hour of access/i)).toBeInTheDocument();
+    expect(screen.getByText(/separate session with 7 days of access/i)).toBeInTheDocument();
     expect(screen.queryByText('Existing app access')).not.toBeInTheDocument();
   });
 
@@ -647,11 +655,14 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText(/Approval shares decryption keys/i)).toBeInTheDocument();
     // Both modules remain individually listed in setup & technical details.
     expect(screen.getAllByText('Notes shared contexts').length).toBeGreaterThan(0);
-    expect(screen.getAllByTitle(notesContextsModule).length).toBeGreaterThan(0);
+    expect(shownUris(screen.getByTestId('technical-setup-details'))).toContain(notesContextsModule);
+    // The row names both modules it covers: the domain module, then its companion.
+    expect(shownUris(row)).toEqual([notesModule, notesContextsModule]);
+    expect(shownUris(companion)).toEqual([notesContextsModule]);
     expect(screen.getByText('2 items')).toBeInTheDocument();
   });
 
-  it('labels a standalone verified companion by its root module and host', () => {
+  it('labels a standalone verified companion by its root module and shows its own URI', () => {
     const companionUri = 'https://evil.example/modules/verified-account/contexts';
     const permissions: ConnectPermissionRequest[] = [{
       moduleDefinition: createCanonicalContextCompanionDefinition(companionUri),
@@ -666,7 +677,7 @@ describe('PermissionDisplay', () => {
     expect(chips(row)).toEqual(['View']);
     expect(within(row).getByText('Shared contexts')).toBeInTheDocument();
     expect(within(row).getByText('Third-party')).toBeInTheDocument();
-    expect(within(row).getByTitle(companionUri)).toHaveTextContent('evil.example');
+    expect(shownUris(row)).toEqual([companionUri]);
   });
 
   it('never pairs or promotes a spoofed /contexts definition', () => {
@@ -705,6 +716,6 @@ describe('PermissionDisplay', () => {
     expect(screen.getByRole('listitem', { name: 'Contexts' })).toBeInTheDocument();
     expect(screen.queryByRole('group', { name: 'Shared contexts & invitations' })).not.toBeInTheDocument();
     expect(screen.queryByText('Shared contexts')).not.toBeInTheDocument();
-    expect(screen.getAllByTitle(spoofedContextsUri).length).toBeGreaterThan(0);
+    expect(shownUris(screen.getByRole('listitem', { name: 'Contexts' }))).toEqual([spoofedContextsUri]);
   });
 });

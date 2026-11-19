@@ -415,6 +415,14 @@
     text-wrap: balance;
   }
 
+  /* Identifiers (profile IDs, module URIs, endpoints) have to read character
+     for character, so the mono face never swaps in its coding ligatures —
+     "://" stays three plain characters. */
+  code, kbd, pre, samp, .font-mono, .eyebrow {
+    font-variant-ligatures: none;
+    font-feature-settings: 'calt' 0, 'liga' 0;
+  }
+
   /* Prevent double-tap zoom on interactive elements */
   button, a, [role="tab"], [role="button"] {
     touch-action: manipulation;

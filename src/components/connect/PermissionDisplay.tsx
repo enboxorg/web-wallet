@@ -8,9 +8,9 @@
  *
  * Trust rule: curated names, descriptions and icons are used only for pinned,
  * matching wallet module definitions. Every other module is named from its own
- * URI and always shown with the host that namespaces it, so the name reads as
- * "what <host> calls this data", never as a wallet-vouched label. Modules are
- * keyed by URI, not name, so every unpinned module is tagged Third-party.
+ * URI, so the name reads as "what its author calls this data", never as a
+ * wallet-vouched label. Modules are keyed by URI, not name, so every row shows
+ * its module URI in full and every unpinned module is tagged Third-party.
  */
 import { useId } from 'react';
 import {
@@ -50,6 +50,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Disclosure } from '@/components/ui/Disclosure';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
+import { ModuleUri } from '@/components/modules/ModuleUri';
 import {
   getSortedPermissionActions,
   groupPermissionRequestsWithCompanions,
@@ -103,8 +104,8 @@ type ModuleAccess = {
   moduleUri: string;
   /** Curated name for pinned modules; otherwise named from the URI itself. */
   name: string;
-  /** Curated description for pinned modules; otherwise the URI's host. */
-  detail: string;
+  /** Curated description, only for pinned modules. */
+  description?: string;
   /** Glyph facts: core icons only for pinned, matching definitions. */
   glyph: ModuleDisplay;
   isKnownModule: boolean;
@@ -137,15 +138,6 @@ function hostLabel(value: string): string {
   }
 }
 
-function moduleUriLabel(uri: string): string {
-  try {
-    const url = new URL(uri);
-    return `${url.host}${url.pathname}`;
-  } catch {
-    return uri;
-  }
-}
-
 function getModuleAccess(
   permissions: ConnectPermissionRequest[],
   moduleSetupStatuses?: Record<string, ModuleSetupStatus>,
@@ -167,8 +159,8 @@ function getModuleAccess(
       permission,
       moduleUri,
       name,
-      detail : info?.description ?? display.host ?? display.shortUri,
-      glyph  : { ...display, name, isCore: isKnownModule },
+      description : info?.description,
+      glyph       : { ...display, name, isCore: isKnownModule },
       isKnownModule,
       isContextCompanion,
       paths: collectStructurePaths(
@@ -245,45 +237,40 @@ function EncryptedNote({ keysShared }: { keysShared: boolean }) {
 }
 
 /**
- * One quiet line under the name. For a module named from its own URI the
- * host leads, so provenance is read first; "Third-party" says it isn't one of
- * the wallet's built-in definitions. Plain words, not pills.
+ * One quiet line under the module URI: what a built-in module holds, or
+ * "Third-party" for anything that isn't one of the wallet's own definitions.
+ * Plain words, not pills.
  */
 function AccessItemMeta({ item }: { item: ModuleAccess }) {
   if (item.isKnownModule) {
     return (
-      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
+      <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
         {item.hasEncryptedTypes && (
           <>
             <EncryptedNote keysShared={sharesKeys(item)} />
             <Dot />
           </>
         )}
-        <span className="min-w-0 truncate" title={item.detail}>{item.detail}</span>
+        <span className="min-w-0 truncate" title={item.description}>{item.description}</span>
       </p>
     );
   }
 
-  // The host is the provenance of a name the requester chose, so it never
-  // truncates: on a narrow screen the tags wrap below it instead.
   return (
-    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-text-tertiary">
-      <span className="break-all text-text-secondary" title={item.moduleUri}>{item.detail}</span>
-      <span className="inline-flex flex-wrap items-center gap-x-1.5">
-        <span title={THIRD_PARTY_HINT}>Third-party</span>
-        {item.isContextCompanion && (
-          <>
-            <Dot />
-            <span title={SHARED_CONTEXTS_HINT}>Shared contexts</span>
-          </>
-        )}
-        {item.hasEncryptedTypes && (
-          <>
-            <Dot />
-            <EncryptedNote keysShared={sharesKeys(item)} />
-          </>
-        )}
-      </span>
+    <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-text-tertiary">
+      <span title={THIRD_PARTY_HINT}>Third-party</span>
+      {item.isContextCompanion && (
+        <>
+          <Dot />
+          <span title={SHARED_CONTEXTS_HINT}>Shared contexts</span>
+        </>
+      )}
+      {item.hasEncryptedTypes && (
+        <>
+          <Dot />
+          <EncryptedNote keysShared={sharesKeys(item)} />
+        </>
+      )}
     </p>
   );
 }
@@ -306,12 +293,18 @@ function CompanionAccess({ companion }: { companion: ModuleAccess }) {
           </>
         )}
       </p>
-      <PermissionActionChips actions={shownActions(companion)} className="mt-1.5" />
+      {/* A companion is its own module, so it shows its own URI. */}
+      <ModuleUri uri={companion.moduleUri} className="mt-1" />
+      <PermissionActionChips actions={shownActions(companion)} className="mt-2" />
     </div>
   );
 }
 
-/** Name, then provenance, then what the app may do: three quiet lines. */
+/**
+ * Name, the module URI in full, a line of context, then what the app may do.
+ * The URI is the module's identity, so it is never shortened or hidden behind
+ * a tooltip.
+ */
 function AccessItem({ group }: { group: AccessRowGroup }) {
   const titleId = useId();
   const { primary: item, companion } = group;
@@ -323,11 +316,12 @@ function AccessItem({ group }: { group: AccessRowGroup }) {
       <ModuleGlyph module={item.glyph} size="sm" />
       <div className="min-w-0 flex-1">
         <p id={titleId} className="truncate text-sm font-semibold text-text-primary">{item.name}</p>
+        <ModuleUri uri={item.moduleUri} className="mt-0.5" />
         <AccessItemMeta item={item} />
         <PermissionActionChips
           actions={actions}
           emphasizeSupport={!hasRecordAccess}
-          className="mt-2"
+          className="mt-2.5"
         />
         {companion && <CompanionAccess companion={companion} />}
       </div>
@@ -500,11 +494,7 @@ function SetupDetailGroup({
               >
                 <div className="min-w-0">
                   <p className="truncate text-xs text-text-primary">{moduleSetupTitle(item)}</p>
-                  {!item.isKnownModule && (
-                    <p className="truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
-                      {moduleUriLabel(item.moduleUri)}
-                    </p>
-                  )}
+                  <ModuleUri uri={item.moduleUri} className="mt-0.5" />
                 </div>
                 <SetupStatusBadge status={item.setupStatus} />
               </li>
@@ -613,10 +603,10 @@ function ModuleOverrideNotice({
         this profile and its DWN endpoints. The change is kept even if the rest of the connection
         fails.
       </p>
-      <ul className="mt-2 space-y-1">
+      <ul className="mt-2 space-y-1.5">
         {overrides.map((item) => (
-          <li key={item.moduleUri} className="min-w-0 truncate font-mono text-[11px] text-text-tertiary" title={item.moduleUri}>
-            {moduleUriLabel(item.moduleUri)}
+          <li key={item.moduleUri} className="min-w-0">
+            <ModuleUri uri={item.moduleUri} />
           </li>
         ))}
       </ul>
@@ -690,9 +680,7 @@ function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
             <div key={item.moduleUri} className="space-y-3 border-t border-border-subtle pt-4 first:border-t-0 first:pt-0">
               <div>
                 <p className="text-sm font-medium text-text-primary">{moduleSetupTitle(item)}</p>
-                <p className="mt-1 truncate font-mono text-[10px] text-text-ghost" title={item.moduleUri}>
-                  {item.moduleUri}
-                </p>
+                <ModuleUri uri={item.moduleUri} className="mt-1" />
               </div>
 
               <dl className="grid grid-cols-3 gap-2 text-xs">

@@ -48,7 +48,7 @@ describe('RenewSessionDisplay', () => {
     expect(within(screen.getByRole('region', { name: 'Renewing as' })).getByText('Alice')).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Previous access expires in 2 hours')).toBeInTheDocument();
-    expect(screen.getByText('New access period: 1 hour')).toBeInTheDocument();
+    expect(screen.getByText('New access period: 7 days')).toBeInTheDocument();
     expect(screen.getByRole('listitem', { name: 'Tasks' })).toBeVisible();
     expect(screen.queryByText(/separate session/i)).not.toBeInTheDocument();
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
