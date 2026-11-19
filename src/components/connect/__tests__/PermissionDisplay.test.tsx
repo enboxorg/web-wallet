@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { ConnectPermissionRequest } from '@enbox/connect';
 
-import { createCanonicalContextCompanionDefinition } from '@/lib/module-names';
+import { createCanonicalContextCompanionDefinition, getCanonicalModuleDefinition } from '@/lib/module-names';
 import { PermissionDisplay } from '../PermissionDisplay';
 
 const tasksModule = 'https://example.com/modules/tasks';
@@ -147,6 +147,7 @@ describe('PermissionDisplay', () => {
     const row = screen.getByRole('listitem', { name: 'Verified Account' });
     expect(within(row).getByTitle('https://evil.example/modules/verified-account'))
       .toHaveTextContent('evil.example');
+    expect(within(row).getByText('Third-party')).toBeInTheDocument();
     expect(chips(row)).toEqual(['View']);
     expect(screen.queryByText('Module at https://evil.example/modules/verified-account')).not.toBeInTheDocument();
     expect(within(row).queryByText('Shared contexts')).not.toBeInTheDocument();
@@ -162,7 +163,31 @@ describe('PermissionDisplay', () => {
 
     const row = screen.getByRole('listitem', { name: 'Profile' });
     expect(within(row).getByTitle(profileModule)).toHaveTextContent('identity.foundation');
+    expect(within(row).getByText('Third-party')).toBeInTheDocument();
     expect(screen.queryByText(/Public profile data/i)).not.toBeInTheDocument();
+  });
+
+  it('tags every module that is not a built-in definition as third-party', () => {
+    const profile = getCanonicalModuleDefinition(profileModule)!;
+    const permissions = [
+      {
+        moduleDefinition : profile,
+        permissionScopes : [{ interface: 'Records', method: 'Read', module: profileModule }],
+      },
+      {
+        moduleDefinition : { module: 'https://evil.example/modules/profile', types: {}, structure: {} },
+        permissionScopes : [{ interface: 'Records', method: 'Read', module: 'https://evil.example/modules/profile' }],
+      },
+    ] as unknown as ConnectPermissionRequest[];
+
+    render(<PermissionDisplay permissions={permissions} />);
+
+    // Same name, different module URI: only the built-in definition goes untagged.
+    const [builtIn, thirdParty] = screen.getAllByRole('listitem', { name: 'Profile' });
+    expect(within(builtIn).getByText(/Public profile data/i)).toBeInTheDocument();
+    expect(within(builtIn).queryByText('Third-party')).not.toBeInTheDocument();
+    expect(within(thirdParty).getByText('Third-party')).toBeInTheDocument();
+    expect(within(thirdParty).getByTitle('https://evil.example/modules/profile')).toHaveTextContent('evil.example');
   });
 
   it('shows a single encrypted-data explanation for multiple encrypted rows', () => {
@@ -605,6 +630,7 @@ describe('PermissionDisplay', () => {
     const row = screen.getByRole('listitem', { name: 'Verified Account' });
     expect(chips(row)).toEqual(['View']);
     expect(within(row).getByText('Shared contexts')).toBeInTheDocument();
+    expect(within(row).getByText('Third-party')).toBeInTheDocument();
     expect(within(row).getByTitle(companionUri)).toHaveTextContent('evil.example');
   });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test-utils';
 import {
   createMockIdentity,
@@ -26,6 +26,7 @@ const mockProfile = createMockProfile({
 const mockModules = [
   createMockModule({ uri: 'https://identity.foundation/modules/profile' }),
   createMockModule({ uri: 'https://identity.foundation/modules/connect' }),
+  createMockModule({ uri: 'https://enbox.id/modules/notes/v1' }),
 ];
 
 const mockPermissions = [
@@ -197,8 +198,8 @@ describe('IdentityDetailsPage', () => {
 
   it('renders module count in tab label', () => {
     renderWithProviders(<IdentityDetailsPage />, { initialRoute: route });
-    // With 2 modules, the label should be "Modules (2)"
-    expect(screen.getByRole('tab', { name: /modules \(2\)/i })).toBeInTheDocument();
+    // With 3 modules, the label should be "Modules (3)"
+    expect(screen.getByRole('tab', { name: /modules \(3\)/i })).toBeInTheDocument();
   });
 
   it('renders app count in tab label', () => {
@@ -224,6 +225,10 @@ describe('IdentityDetailsPage', () => {
     // Should show module human-friendly names (catalog data, not UI copy)
     expect(screen.getByText('Profile')).toBeInTheDocument();
     expect(screen.getByText('Connect')).toBeInTheDocument();
+    // Anything that isn't a built-in definition is grouped as third-party.
+    const thirdParty = screen.getByRole('region', { name: 'Third-party modules' });
+    expect(within(thirdParty).getByText('Notes')).toBeInTheDocument();
+    expect(within(screen.getByRole('region', { name: 'Core modules' })).queryByText('Notes')).not.toBeInTheDocument();
   });
 
   it('switches to permissions tab and shows grantee', async () => {

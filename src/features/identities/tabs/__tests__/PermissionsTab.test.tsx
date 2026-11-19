@@ -222,6 +222,19 @@ describe('PermissionsTab', () => {
     expect(within(row).getByText('Shared contexts')).toBeInTheDocument();
   });
 
+  it('tags module access that is not a built-in definition as third-party', () => {
+    mocks.permissions = [
+      permissionGrant({ id: 'profile-read', session: activeSession }),
+      permissionGrant({ id: 'notes-read', session: activeSession, module: notesModule }),
+    ];
+
+    renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    const access = screen.getByRole('list', { name: 'Example Notes data access' });
+    expect(within(within(access).getByRole('listitem', { name: 'Notes' })).getByText('Third-party')).toBeInTheDocument();
+    expect(within(within(access).getByRole('listitem', { name: 'Profile' })).queryByText('Third-party')).not.toBeInTheDocument();
+  });
+
   it('offers no revoke for direct grants that already expired', () => {
     mocks.permissions = [{
       id          : 'direct-expired',
