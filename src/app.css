@@ -12,7 +12,7 @@
 
 :root {
   /* ---- Neutrals ---- */
-  --gray-950: #000000;
+  --gray-950: #08090a;
   --gray-900: #0e1011;
   --gray-850: #131618;
   --gray-800: #1a1d20;
@@ -35,11 +35,13 @@
   --surface-code: var(--gray-850);
   --surface-glass: rgba(14, 16, 17, 0.72);
 
-  /* ---- Text hierarchy ---- */
+  /* ---- Text hierarchy ----
+     Every level meets WCAG AA (>= 4.5:1) for small text on surfaces 0–2;
+     hierarchy comes from the ladder, not from dropping below legibility. */
   --text-primary: var(--gray-50);
-  --text-secondary: var(--gray-300);
-  --text-tertiary: var(--gray-400);
-  --text-ghost: var(--gray-500);
+  --text-secondary: #b6bec8;
+  --text-tertiary: #949eaa;
+  --text-ghost: #7d8794;
   --text-code: var(--gray-100);
 
   /* ---- Borders ---- */
@@ -58,6 +60,10 @@
   --color-warning: #fbbf24;
   --color-error: #f87171;
   --color-info: #60a5fa;
+  /* Solid destructive buttons carry white text: keep this deep enough for
+     WCAG AA in both themes (the bright status red is for text and tints). */
+  --danger-solid: #dc2626;
+  --danger-solid-hover: #b91c1c;
 
   /* ---- Typography ---- */
   --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI',
@@ -206,9 +212,9 @@
   --surface-glass: rgba(255, 252, 249, 0.72);
 
   --text-primary: #1a1816;
-  --text-secondary: #5c564e;
-  --text-tertiary: #7a746b;
-  --text-ghost: #9e9890;
+  --text-secondary: #49443d;
+  --text-tertiary: #5f5951;
+  --text-ghost: #6f695f;
   --text-code: #2d2a26;
 
   --border-subtle: rgba(80, 60, 30, 0.06);
@@ -222,19 +228,19 @@
 
   --scrollbar-thumb: var(--gray-300);
 
-  --color-success: #059669;
-  --color-warning: #d97706;
-  --color-error: #dc2626;
-  --color-info: #2563eb;
+  --color-success: #065f46;
+  --color-warning: #92400e;
+  --color-error: #b91c1c;
+  --color-info: #1d4ed8;
 
-  /* authd light accent */
-  --accent: #d43a5c;
-  --accent-rgb: 212, 58, 92;
-  --accent-hover: #bf3250;
-  --accent-muted: rgba(212, 58, 92, 0.1);
-  --accent-subtle: rgba(212, 58, 92, 0.05);
+  /* authd light accent — deep enough for AA as text and under white text */
+  --accent: #bd2c4d;
+  --accent-rgb: 189, 44, 77;
+  --accent-hover: #a5253f;
+  --accent-muted: rgba(189, 44, 77, 0.1);
+  --accent-subtle: rgba(189, 44, 77, 0.05);
   --accent-text: var(--white);
-  --accent-gradient: linear-gradient(135deg, #d43a5c, #e87a98);
+  --accent-gradient: linear-gradient(135deg, #bd2c4d, #e0708e);
 }
 
 /* ============================================================
@@ -268,6 +274,8 @@
   --color-warning: var(--color-warning);
   --color-error: var(--color-error);
   --color-info: var(--color-info);
+  --color-danger: var(--danger-solid);
+  --color-danger-hover: var(--danger-solid-hover);
 
   /* Borders */
   --color-border-subtle: var(--border-subtle);
@@ -377,6 +385,25 @@
   }
   a:hover {
     color: var(--accent-hover);
+  }
+}
+
+/* ============================================================
+   COMPONENT HELPERS
+   ============================================================ */
+
+@layer components {
+  /* Deterministic tinted tile (apps, data types). The hue comes from the
+     element's --mono-h custom property, set from a stable string hash. */
+  .monogram {
+    background: hsl(var(--mono-h, 220) 80% 62% / 0.14);
+    color: hsl(var(--mono-h, 220) 85% 74%);
+    box-shadow: inset 0 0 0 1px hsl(var(--mono-h, 220) 80% 62% / 0.22);
+  }
+  [data-theme='light'] .monogram {
+    background: hsl(var(--mono-h, 220) 70% 50% / 0.12);
+    color: hsl(var(--mono-h, 220) 65% 30%);
+    box-shadow: inset 0 0 0 1px hsl(var(--mono-h, 220) 60% 40% / 0.18);
   }
 }
 

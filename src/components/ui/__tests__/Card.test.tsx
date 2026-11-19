@@ -38,8 +38,8 @@ describe('Card', () => {
     expect(container.firstChild).toHaveClass('border', 'border-border-default', 'bg-surface-1');
   });
 
-  it('has rounded-lg class', () => {
+  it('has rounded-xl class', () => {
     const { container } = render(<Card>Content</Card>);
-    expect(container.firstChild).toHaveClass('rounded-lg');
+    expect(container.firstChild).toHaveClass('rounded-xl');
   });
 });

@@ -80,23 +80,27 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
 
   if (!visible) return null;
 
-  // Enter: opacity-0 scale-95 -> opacity-100 scale-100  (200ms ease-out)
-  // Exit:  opacity-100 scale-100 -> opacity-0 scale-95   (150ms ease-in)
+  // Phones get a bottom sheet (thumb-reachable actions); larger screens a
+  // centred modal.
+  // Enter: sheet slides up / modal scales in (200ms ease-out)
+  // Exit:  reverse (150ms ease-in)
   const entering = open && !animating;
   const exiting = !open && animating;
 
   const backdropClasses = cn(
-    'absolute inset-0 bg-black/60 transition-opacity',
+    'absolute inset-0 bg-black/60 backdrop-blur-[2px] transition-opacity',
     entering ? 'opacity-100 duration-200 ease-out' : '',
     exiting ? 'opacity-0 duration-150 ease-in' : '',
     animating && open ? 'opacity-0' : '',
   );
 
   const panelClasses = cn(
-    'relative w-full max-w-lg rounded-xl bg-surface-2 p-6 shadow-lg transition-all',
-    entering ? 'opacity-100 scale-100 duration-200 ease-out' : '',
-    exiting ? 'opacity-0 scale-95 duration-150 ease-in' : '',
-    animating && open ? 'opacity-0 scale-95' : '',
+    'relative w-full max-w-lg border border-border-default bg-surface-1 shadow-lg transition-all',
+    'rounded-t-2xl px-5 pt-3 pb-[calc(1.25rem+env(safe-area-inset-bottom,0px))]',
+    'sm:rounded-2xl sm:p-6',
+    entering ? 'opacity-100 translate-y-0 sm:scale-100 duration-200 ease-out' : '',
+    exiting ? 'opacity-0 translate-y-6 sm:translate-y-0 sm:scale-95 duration-150 ease-in' : '',
+    animating && open ? 'opacity-0 translate-y-6 sm:translate-y-0 sm:scale-95' : '',
     className,
   );
 
@@ -105,7 +109,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   return createPortal(
     <div
       ref={dialogRef}
-      className="fixed inset-0 z-[var(--z-modal)] flex items-start justify-center overflow-y-auto p-4 pt-[15vh] sm:items-center sm:pt-4"
+      className="fixed inset-0 z-[var(--z-modal)] flex items-end justify-center overflow-y-auto sm:items-center sm:p-4"
       role="dialog"
       aria-modal="true"
       aria-labelledby={title ? titleId : undefined}
@@ -121,10 +125,11 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
 
       {/* Panel */}
       <div className={panelClasses}>
+        <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-border-strong sm:hidden" aria-hidden="true" />
         {title && (
           <h2
             id={titleId}
-            className="mb-4 text-lg font-semibold text-text-primary"
+            className="mb-3 text-lg font-semibold tracking-tight text-text-primary"
           >
             {title}
           </h2>

@@ -13,8 +13,8 @@ interface PageHeaderProps {
 
 export function PageHeader({ title, description, backTo, onBack, actions, className }: PageHeaderProps) {
   return (
-    <div className={cn('flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between', className)}>
-      <div className="flex items-start gap-3">
+    <div className={cn('flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between', className)}>
+      <div className="flex min-w-0 items-start gap-2">
         {backTo && (
           <Link
             to={backTo}
@@ -23,20 +23,20 @@ export function PageHeader({ title, description, backTo, onBack, actions, classN
                 event.preventDefault();
               }
             }}
-            className="mt-0.5 rounded-lg p-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors"
+            className="-ml-2.5 shrink-0 rounded-xl p-2.5 text-text-secondary transition-colors hover:bg-surface-2 hover:text-text-primary"
             aria-label="Back"
           >
             <ArrowLeft className="h-5 w-5" />
           </Link>
         )}
-        <div>
-          <h1 className="text-2xl font-semibold text-text-primary">{title}</h1>
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold tracking-tight text-text-primary">{title}</h1>
           {description && (
-            <p className="mt-1 text-sm text-text-secondary">{description}</p>
+            <p className="mt-1 text-sm text-text-tertiary">{description}</p>
           )}
         </div>
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
     </div>
   );
 }

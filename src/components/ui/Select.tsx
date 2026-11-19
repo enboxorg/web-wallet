@@ -17,7 +17,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="text-sm font-medium text-text-secondary"
+            className="text-xs font-medium text-text-secondary"
           >
             {label}
           </label>
@@ -27,13 +27,13 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             id={selectId}
             className={cn(
-              'w-full rounded-lg bg-surface-1 px-4 py-2.5 text-sm text-text-primary',
-              'border border-border-default',
-              'transition-colors duration-[var(--duration-fast)]',
-              'focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
+              'w-full min-h-11 rounded-xl bg-surface-1 px-4 py-2.5 text-sm text-text-primary',
+              'border border-border-default hover:border-border-strong',
+              'transition-[border-color,box-shadow] duration-[var(--duration-fast)]',
+              'focus:outline-none focus:border-accent focus:ring-4 focus:ring-accent/15',
               'disabled:opacity-50 disabled:cursor-not-allowed',
               'appearance-none pr-9',
-              error && 'border-error focus:ring-error',
+              error && 'border-error focus:border-error focus:ring-error/15',
               className,
             )}
             aria-invalid={error ? true : undefined}

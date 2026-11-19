@@ -23,7 +23,8 @@ export function Avatar({ src, name, size = 'md', className }: AvatarProps) {
         'relative shrink-0 rounded-full border border-border-default overflow-hidden',
         'flex items-center justify-center',
         sizeStyles[size],
-        !src && 'bg-accent-muted text-accent font-semibold',
+        // Opaque fallback so banners and backgrounds never bleed through.
+        !src && 'bg-[color-mix(in_srgb,var(--accent)_16%,var(--surface-2))] text-accent font-semibold',
         className,
       )}
     >
