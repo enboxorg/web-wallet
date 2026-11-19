@@ -54,11 +54,11 @@ export function SeedPhraseInput({ onSubmit, disabled, className }: SeedPhraseInp
         placeholder="Enter your recovery phrase (12 or 24 words separated by spaces)"
         rows={4}
         className={cn(
-          'w-full rounded-lg bg-surface-1 px-4 py-3 font-mono text-sm text-text-primary',
-          'border border-border-default',
+          'w-full rounded-xl bg-field px-4 py-3 font-mono text-sm leading-relaxed text-text-primary inset-shadow-field',
+          'border border-border-default hover:border-border-strong',
           'placeholder:text-text-ghost',
-          'transition-colors duration-[var(--duration-fast)]',
-          'focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
+          'transition-[border-color,box-shadow] duration-[var(--duration-base)]',
+          'focus:outline-none focus:border-accent focus:ring-4 focus:ring-accent/15',
           'disabled:opacity-50 disabled:cursor-not-allowed',
           'resize-none',
         )}
@@ -76,9 +76,9 @@ export function SeedPhraseInput({ onSubmit, disabled, className }: SeedPhraseInp
             <div
               key={i}
               role="listitem"
-              className="flex items-center gap-2 rounded-md bg-surface-1 px-3 py-2 border border-border-default"
+              className="flex items-center gap-2 rounded-xl border border-border-default bg-field px-3 py-2.5 inset-shadow-field"
             >
-              <span className="text-xs text-text-tertiary w-5 text-right">
+              <span className="w-5 text-right font-mono text-[11px] tabular-nums text-text-ghost">
                 {i + 1}.
               </span>
               <span className="font-mono text-sm text-text-primary">

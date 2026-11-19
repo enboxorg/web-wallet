@@ -194,7 +194,7 @@ export function PinInput({
       ref={containerRef}
       onClick={handleContainerClick}
       className={cn(
-        'flex gap-3 justify-center cursor-text',
+        'flex gap-3 justify-center cursor-text rounded-2xl',
         error && 'animate-[shake_0.4s_ease-in-out]',
         complete && 'animate-[pulse-glow_0.3s_ease-out]',
       )}
@@ -203,13 +203,15 @@ export function PinInput({
         <div
           key={i}
           className={cn(
-            'relative flex h-14 w-12 items-center justify-center rounded-lg transition-colors',
-            'bg-surface-1',
+            'relative flex h-16 w-14 items-center justify-center rounded-2xl bg-field inset-shadow-field',
+            'transition-[border-color,box-shadow,background-color] duration-[var(--duration-base)]',
+            // The cell being typed into carries the focus ring.
+            'focus-within:ring-4',
             error
-              ? 'border border-error'
+              ? 'border border-error focus-within:ring-error/15'
               : values[i]
-                ? 'border border-accent'
-                : 'border border-border-default',
+                ? 'border border-accent/70 focus-within:border-accent focus-within:ring-accent/15'
+                : 'border border-border-default focus-within:border-accent focus-within:ring-accent/15',
             disabled && 'opacity-50 cursor-not-allowed',
           )}
         >
@@ -229,7 +231,8 @@ export function PinInput({
           {/* Dot indicator */}
           {values[i] && (
             <span
-              className="absolute h-3 w-3 rounded-full bg-text-primary pointer-events-none"
+              data-testid="pin-dot"
+              className="pointer-events-none absolute size-3 rounded-full bg-accent shadow-[0_0_12px_rgba(var(--accent-rgb),0.6)] animate-[pop-in_160ms_var(--ease-spring)]"
               aria-hidden="true"
             />
           )}

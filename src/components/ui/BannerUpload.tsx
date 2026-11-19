@@ -39,7 +39,7 @@ export function BannerUpload({
   return (
     <div
       className={cn(
-        'group relative h-40 md:h-52 w-full overflow-hidden rounded-lg',
+        'group relative h-40 w-full overflow-hidden rounded-3xl md:h-56',
         'border border-border-default',
         !src && 'border-dashed',
         className,
@@ -60,14 +60,14 @@ export function BannerUpload({
       <div
         className={cn(
           'absolute inset-0 flex items-center justify-center gap-2',
-          'bg-black/40 opacity-0 group-hover:opacity-100',
-          'transition-opacity duration-[var(--duration-fast)]',
+          'bg-black/40 opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+          'transition-opacity duration-[var(--duration-base)]',
         )}
       >
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
-          className="rounded-md bg-surface-1/80 px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-2"
+          className="inline-flex size-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
           aria-label="Upload banner"
         >
           <Upload className="h-4 w-4" />
@@ -76,7 +76,7 @@ export function BannerUpload({
           <button
             type="button"
             onClick={onClear}
-            className="rounded-md bg-surface-1/80 px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface-2"
+            className="inline-flex size-10 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             aria-label="Remove banner"
           >
             <X className="h-4 w-4" />
@@ -88,7 +88,7 @@ export function BannerUpload({
       <button
         type="button"
         onClick={() => inputRef.current?.click()}
-        className="absolute bottom-2 right-2 rounded-full bg-surface-glass backdrop-blur-sm p-2 text-text-secondary hover:text-text-primary transition-colors shadow-md"
+        className="absolute bottom-3 right-3 inline-flex size-9 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
         aria-label="Change banner"
       >
         <ImagePlus size={16} />

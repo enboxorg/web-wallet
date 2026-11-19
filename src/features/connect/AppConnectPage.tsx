@@ -702,15 +702,17 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         <div className="animate-[fadeIn_0.3s_ease-out]">
           {cameraError ? (
             <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-6 py-16 text-center">
-              <CameraOff className="h-12 w-12 text-text-ghost" aria-hidden="true" />
-              <div className="space-y-1.5">
-                <h1 className="text-lg font-semibold text-text-primary">Connect an app</h1>
-                <p className="text-sm text-text-secondary">
+              <span className="surface-card flex size-16 items-center justify-center rounded-[20px] border border-border-default bg-surface-2 text-text-secondary">
+                <CameraOff className="size-7" aria-hidden="true" />
+              </span>
+              <div className="space-y-2">
+                <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Connect an app</h1>
+                <p className="text-[15px] leading-relaxed text-text-secondary">
                   When an app offers to connect with Enbox, it shows a QR code. Scan it to choose
                   which profile to use and what the app can access.
                 </p>
               </div>
-              <p className="text-sm text-text-tertiary">
+              <p className="text-sm leading-relaxed text-text-tertiary">
                 {cameraError === 'none'
                   ? 'No camera found on this device. Upload a screenshot or photo of the code instead.'
                   : 'Couldn’t start the camera. Allow camera access in your browser, or upload an image of the code instead.'}
@@ -722,35 +724,62 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             </div>
           ) : (
             <div className="flex flex-col items-center">
-              {/* Full-bleed camera viewfinder */}
-              <div className="relative w-full bg-black" style={{ minHeight: '70vh' }}>
+              {/* Desktop gets a title like every other page; on phones the
+                  camera is the page. */}
+              <div className="mb-7 hidden w-full lg:block">
+                <h1 className="text-[2rem] font-semibold leading-10 tracking-[-0.025em] text-text-primary">Connect an app</h1>
+                <p className="mt-1.5 max-w-xl text-[15px] leading-relaxed text-text-tertiary">
+                  Scan the QR code an app shows you to choose which profile it gets and what it can access.
+                </p>
+              </div>
+
+              {/* Camera viewfinder: full-bleed on phones, a framed stage on desktop.
+                  Clipped, so the dimming around the target never spills onto the page. */}
+              <div
+                className="relative w-full overflow-hidden bg-black lg:rounded-3xl lg:border lg:border-border-default lg:shadow-raised"
+                style={{ minHeight: 'min(70vh, 40rem)' }}
+              >
                 <video
                   ref={videoRef}
                   playsInline
                   muted
-                  className="h-full w-full object-cover absolute inset-0"
-                  style={{ minHeight: '70vh' }}
+                  className="absolute inset-0 h-full w-full object-cover"
                 />
 
                 {/* Loading state */}
                 {!cameraReady && (
-                  <div className="absolute inset-0 flex items-center justify-center z-20">
+                  <div className="absolute inset-0 z-20 flex items-center justify-center">
                     <Loader message="Starting camera..." />
                   </div>
                 )}
 
-                {/* Scan target overlay */}
-                <div className="absolute inset-0 pointer-events-none z-10">
-                  <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-52 w-52 rounded-2xl border-2 border-white/80 shadow-[0_0_0_9999px_rgba(0,0,0,0.4)]" />
+                {/* Scan target: dimmed surround, corner brackets, a sweeping line. */}
+                <div className="pointer-events-none absolute inset-0 z-10" aria-hidden="true">
+                  <div className="absolute left-1/2 top-1/2 size-56 -translate-x-1/2 -translate-y-1/2 rounded-[1.75rem] shadow-[0_0_0_9999px_rgba(0,0,0,0.5)]">
+                    <span className="absolute -left-0.5 -top-0.5 size-9 rounded-tl-[1.75rem] border-l-[3px] border-t-[3px] border-white" />
+                    <span className="absolute -right-0.5 -top-0.5 size-9 rounded-tr-[1.75rem] border-r-[3px] border-t-[3px] border-white" />
+                    <span className="absolute -bottom-0.5 -left-0.5 size-9 rounded-bl-[1.75rem] border-b-[3px] border-l-[3px] border-white" />
+                    <span className="absolute -bottom-0.5 -right-0.5 size-9 rounded-br-[1.75rem] border-b-[3px] border-r-[3px] border-white" />
+                    {cameraReady && (
+                      <span className="absolute inset-x-4 top-4 h-0.5 rounded-full bg-accent shadow-[0_0_16px_2px_rgba(var(--accent-rgb),0.8)] [--scan-travel:11.875rem] animate-[scan-sweep_2.6s_ease-in-out_infinite]" />
+                    )}
+                  </div>
+                </div>
+
+                {/* Instruction, riding the top of the stage */}
+                <div className="pointer-events-none absolute inset-x-0 top-5 z-20 flex justify-center px-4">
+                  <span className="inline-flex items-center rounded-full bg-black/55 px-4 py-2 text-sm font-medium text-white ring-1 ring-inset ring-white/15 backdrop-blur-md">
+                    Scan the QR code shown by the app
+                  </span>
                 </div>
 
                 {/* Floating camera controls */}
-                <div className="absolute bottom-6 left-4 right-4 flex justify-between items-center z-20">
+                <div className="absolute bottom-5 left-4 right-4 z-20 flex items-center justify-between">
                   <button
                     type="button"
                     disabled={!hasFlash}
                     onClick={toggleFlash}
-                    className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm text-white transition-colors hover:bg-black/70 disabled:opacity-30"
+                    className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-40"
                     aria-label="Toggle flash"
                   >
                     {flashOn ? <Zap className="h-5 w-5" /> : <ZapOff className="h-5 w-5" />}
@@ -760,7 +789,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                     <button
                       type="button"
                       onClick={handleCameraSwitch}
-                      className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-full bg-black/50 backdrop-blur-sm text-white transition-colors hover:bg-black/70"
+                      className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-inset ring-white/15 backdrop-blur-md transition-colors hover:bg-black/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
                       aria-label="Switch camera"
                     >
                       <SwitchCamera className="h-5 w-5" />
@@ -769,22 +798,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                 </div>
               </div>
 
-              {/* Instruction pill */}
-              <div className="py-4">
-                <span className="inline-flex items-center rounded-full bg-surface-2 px-4 py-2 text-sm text-text-secondary">
-                  Scan the QR code shown by the app
-                </span>
+              {/* Upload fallback */}
+              <div className="flex flex-col items-center gap-1 py-5">
+                <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                  <ImageUp className="h-4 w-4" aria-hidden="true" />
+                  Scan from image
+                </Button>
               </div>
-
-              {/* Upload fallback link */}
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="mb-4 text-sm font-medium text-accent hover:underline min-h-[44px] inline-flex items-center gap-1.5"
-              >
-                <ImageUp className="h-4 w-4" />
-                Scan from image
-              </button>
             </div>
           )}
 
@@ -1031,13 +1051,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
           <div className="flex flex-col items-center gap-6 text-center">
             {/* Glowing PIN display */}
             <div className="relative">
-              <div className="absolute -inset-4 rounded-2xl bg-accent/20 blur-xl animate-pulse" />
-              <p className="relative text-5xl font-bold tracking-[0.4em] text-text-primary tabular-nums">
+              <div className="absolute -inset-6 rounded-[2rem] bg-accent/20 blur-2xl animate-pulse" aria-hidden="true" />
+              <p className="surface-card relative rounded-3xl border border-border-default bg-surface-1 py-5 pl-[calc(2rem+0.4em)] pr-8 font-mono text-5xl font-semibold tabular-nums tracking-[0.4em] text-text-primary">
                 {pin}
               </p>
             </div>
 
-            <p className="text-sm text-text-secondary">
+            <p className="text-[15px] text-text-secondary">
               Enter this PIN in the requesting application
             </p>
 

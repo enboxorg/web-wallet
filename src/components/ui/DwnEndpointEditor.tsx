@@ -43,9 +43,10 @@ export function DwnEndpointEditor({
               placeholder="https://dwn.example"
               autoComplete="url"
               className={cn(
-                'min-h-11 min-w-0 flex-1 rounded-md border border-border-default bg-surface-1 px-3 py-2',
-                'text-sm text-text-primary placeholder:text-text-ghost outline-none',
-                'focus:border-transparent focus:ring-2 focus:ring-accent',
+                'min-h-11 min-w-0 flex-1 rounded-xl border border-border-default bg-field px-3.5 py-2 inset-shadow-field',
+                'font-mono text-[13px] text-text-primary placeholder:text-text-ghost outline-none',
+                'transition-[border-color,box-shadow] duration-[var(--duration-base)] hover:border-border-strong',
+                'focus:border-accent focus:ring-4 focus:ring-accent/15',
               )}
             />
             <button
@@ -54,7 +55,7 @@ export function DwnEndpointEditor({
               aria-label={`Remove DWN endpoint ${index + 1}`}
               title="Remove endpoint"
               className={cn(
-                'inline-flex size-11 shrink-0 items-center justify-center rounded-md text-text-tertiary',
+                'inline-flex size-11 shrink-0 items-center justify-center rounded-xl text-text-tertiary transition-colors',
                 'hover:bg-surface-2 hover:text-error focus:outline-none focus:ring-2 focus:ring-accent',
               )}
             >

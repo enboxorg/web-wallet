@@ -4,8 +4,8 @@ import { PinInput } from '@/components/ui/PinInput';
 import { Button } from '@/components/ui/Button';
 import { Loader } from '@/components/ui/Loader';
 import { PIN_LENGTH } from '@/lib/constants';
+import { AuthLayout } from '@/components/layout/AuthLayout';
 import { EnboxLogo } from './EnboxLogo';
-import { cn } from '@/lib/utils';
 
 export interface UnlockScreenProps {
   onUnlock: (pin: string) => Promise<void>;
@@ -159,38 +159,34 @@ export function UnlockScreen({
     : 'Forgot PIN? Restore from recovery phrase';
 
   return (
-    <div
-      className={cn(
-        'flex min-h-dvh items-center justify-center bg-surface-0 px-4',
-        'animate-[fadeIn_0.3s_ease-out]',
-      )}
-      style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
-    >
-      <div className="flex w-full max-w-sm flex-col items-center gap-8">
-        <EnboxLogo size="lg" />
+    <AuthLayout>
+      <div className="flex w-full flex-col items-center gap-9">
+        <EnboxLogo halo />
 
-        <div className="flex flex-col items-center gap-2">
-          <h1 className="text-2xl font-semibold text-text-primary">
+        <div className="relative flex flex-col items-center gap-2 text-center">
+          <h1 className="text-[1.75rem] font-semibold leading-tight tracking-[-0.025em] text-text-primary">
             Unlock your wallet
           </h1>
-          <p className="text-sm text-text-secondary">
+          <p className="text-[15px] text-text-secondary">
             {subtitle}
           </p>
         </div>
 
-        {renderUnlockControl()}
+        <div className="relative flex w-full flex-col items-center">
+          {renderUnlockControl()}
+        </div>
 
         {onForgotPin && (
           <button
             type="button"
             onClick={onForgotPin}
             disabled={busy}
-            className="mt-2 text-sm text-text-tertiary transition-colors hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+            className="relative min-h-9 rounded-lg px-3 text-sm text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
             {restoreLabel}
           </button>
         )}
       </div>
-    </div>
+    </AuthLayout>
   );
 }

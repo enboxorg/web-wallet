@@ -29,6 +29,7 @@ import {
   isPasskeyVaultUnsupportedError,
   markPinAuthMethod,
 } from '@/lib/passkeys';
+import { AuthLayout } from '@/components/layout/AuthLayout';
 import { EnboxLogo } from './EnboxLogo';
 import { cn } from '@/lib/utils';
 
@@ -119,22 +120,19 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
   const working = busy || isLoading;
 
   return (
-    <div
-      className="flex min-h-dvh items-center justify-center bg-surface-0 px-4 py-10 animate-[fadeIn_0.3s_ease-out]"
-      style={{ paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 2.5rem)' }}
-    >
-      <div className="flex w-full max-w-sm flex-col items-center gap-8">
-        <EnboxLogo size="lg" />
+    <AuthLayout>
+      <div className="flex w-full flex-col items-center gap-9">
+        <EnboxLogo halo />
 
         {working && statusMessage ? (
-          <Loader message={statusMessage} />
+          <Loader message={statusMessage} className="relative" />
         ) : step === 'welcome' ? (
-          <div className="flex w-full flex-col items-center gap-6">
-            <div className="flex flex-col items-center gap-2 text-center">
-              <h1 className="text-2xl font-semibold text-text-primary">
+          <div className="relative flex w-full flex-col items-center gap-7">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <h1 className="bg-gradient-to-b from-text-primary to-text-secondary bg-clip-text text-[2rem] font-semibold leading-tight tracking-[-0.03em] text-transparent sm:text-[2.5rem]">
                 Own your identity
               </h1>
-              <p className="max-w-xs text-sm leading-relaxed text-text-secondary">
+              <p className="max-w-xs text-[15px] leading-relaxed text-text-secondary">
                 One profile for all your apps, kept on your device.
                 No email, no password — just you.
               </p>
@@ -170,7 +168,7 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
               <button
                 type="button"
                 onClick={() => setShowAdvanced((v) => !v)}
-                className="mx-auto flex items-center gap-1 text-xs text-text-tertiary transition-colors hover:text-text-secondary"
+                className="mx-auto flex min-h-9 items-center gap-1 rounded-lg px-3 text-xs font-medium text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-secondary"
                 aria-expanded={showAdvanced}
               >
                 Network options
@@ -179,7 +177,7 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
                 />
               </button>
               {showAdvanced && (
-                <div className="mt-3 rounded-xl border border-border-default bg-surface-1 p-4 animate-[fadeIn_0.2s_ease-out]">
+                <div className="surface-card mt-3 rounded-2xl border border-border-default bg-surface-1 p-4 text-left animate-[fadeIn_0.2s_ease-out]">
                   <p className="mb-3 text-xs leading-relaxed text-text-tertiary">
                     Your wallet syncs with these decentralised web nodes. DWN operators can observe
                     your DID and traffic metadata.
@@ -195,15 +193,15 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
             </div>
           </div>
         ) : (
-          <div className="flex w-full flex-col items-center gap-6">
+          <div className="relative flex w-full flex-col items-center gap-7">
             <div className="flex flex-col items-center gap-2 text-center">
               <div className="flex items-center gap-2 text-accent">
-                <ShieldCheck size={18} />
-                <h1 className="text-2xl font-semibold text-text-primary">
+                <ShieldCheck size={20} />
+                <h1 className="text-2xl font-semibold tracking-tight text-text-primary">
                   {step === 'pin-create' ? 'Create a PIN' : 'Confirm your PIN'}
                 </h1>
               </div>
-              <p className="text-sm text-text-secondary">
+              <p className="max-w-xs text-[15px] leading-relaxed text-text-secondary">
                 {step === 'pin-create'
                   ? 'Passkeys are unavailable here, so secure your wallet with a PIN instead.'
                   : 'Enter your PIN again to confirm.'}
@@ -239,6 +237,6 @@ export function WelcomeScreen({ onSetup, isLoading, error, onSwitchToRestore }: 
           </div>
         )}
       </div>
-    </div>
+    </AuthLayout>
   );
 }

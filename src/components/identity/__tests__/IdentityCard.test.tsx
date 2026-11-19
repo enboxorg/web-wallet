@@ -51,6 +51,6 @@ describe('IdentityCard', () => {
 
   it('applies hover classes when clickable', () => {
     render(<IdentityCard did={longDid} onClick={() => {}} />);
-    expect(screen.getByRole('article')).toHaveClass('hover:border-border-strong', 'hover:shadow-lg');
+    expect(screen.getByRole('article')).toHaveClass('hover:border-border-strong', 'hover:shadow-raised');
   });
 });

@@ -17,7 +17,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
         {label && (
           <label
             htmlFor={selectId}
-            className="text-xs font-medium text-text-secondary"
+            className="text-[13px] font-medium text-text-secondary"
           >
             {label}
           </label>
@@ -27,9 +27,9 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ref={ref}
             id={selectId}
             className={cn(
-              'w-full min-h-11 rounded-xl bg-surface-1 px-4 py-2.5 text-sm text-text-primary',
+              'w-full min-h-11 rounded-xl bg-field px-4 py-2.5 text-sm text-text-primary inset-shadow-field',
               'border border-border-default hover:border-border-strong',
-              'transition-[border-color,box-shadow] duration-[var(--duration-fast)]',
+              'transition-[border-color,box-shadow] duration-[var(--duration-base)]',
               'focus:outline-none focus:border-accent focus:ring-4 focus:ring-accent/15',
               'disabled:opacity-50 disabled:cursor-not-allowed',
               'appearance-none pr-9',
@@ -47,7 +47,7 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
             ))}
           </select>
           <ChevronDown
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-secondary"
+            className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-tertiary"
             aria-hidden="true"
           />
         </div>

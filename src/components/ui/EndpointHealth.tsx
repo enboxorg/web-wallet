@@ -27,7 +27,7 @@ export function EndpointHealth({ url, className }: EndpointHealthProps) {
   return (
     <span
       className={cn(
-        'inline-flex items-center gap-1.5 text-xs',
+        'inline-flex items-center gap-1.5 text-xs font-medium',
         status === 'checking' && 'text-text-ghost',
         status === 'ok' && 'text-success',
         status === 'error' && 'text-error',
@@ -38,7 +38,7 @@ export function EndpointHealth({ url, className }: EndpointHealthProps) {
       <span className={cn(
         'h-1.5 w-1.5 rounded-full',
         status === 'checking' && 'bg-text-ghost animate-pulse',
-        status === 'ok' && 'bg-success',
+        status === 'ok' && 'bg-success shadow-[0_0_8px_var(--color-success)]',
         status === 'error' && 'bg-error',
       )} />
       {status === 'checking' ? 'Checking...' : status === 'ok' ? 'Online' : 'Unreachable'}

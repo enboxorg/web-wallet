@@ -25,8 +25,8 @@ export function OfflineBanner() {
   if (!browserOffline && !syncOffline) return null;
 
   return (
-    <div className="flex items-center justify-center gap-2 bg-warning/10 border-b border-warning/25 py-2 px-4 text-xs text-warning">
-      <WifiOff size={14} />
+    <div className="relative z-10 flex items-center justify-center gap-2 border-b border-warning/25 bg-warning/10 px-4 py-2 text-xs font-medium text-warning">
+      <WifiOff size={14} className="shrink-0" aria-hidden="true" />
       <span>
         {browserOffline
           ? "You're offline. Changes will sync when you reconnect."

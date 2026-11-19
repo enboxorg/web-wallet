@@ -16,13 +16,13 @@ interface OverviewTabProps {
 
 function Stat({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
   return (
-    <div className="min-w-0 rounded-xl border border-border-default bg-surface-1 p-3.5 sm:p-4">
-      <div className="flex items-start gap-1.5 text-text-tertiary [&>svg]:mt-px [&>svg]:size-3.5 [&>svg]:shrink-0">
+    <div className="surface-card min-w-0 rounded-2xl border border-border-default bg-surface-1 p-4 sm:p-5">
+      <p className="text-[2rem] font-semibold leading-none tabular-nums tracking-[-0.03em] text-text-primary sm:text-4xl">{value}</p>
+      <div className="mt-2.5 flex items-start gap-1.5 text-text-tertiary [&>svg]:mt-px [&>svg]:size-3.5 [&>svg]:shrink-0">
         {icon}
         {/* Wraps rather than truncating on narrow phones. */}
-        <span className="text-xs leading-tight">{label}</span>
+        <span className="text-xs leading-tight sm:text-[13px]">{label}</span>
       </div>
-      <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-text-primary">{value}</p>
     </div>
   );
 }
@@ -36,14 +36,14 @@ function QuickAction({ to, icon, title, description }: {
   return (
     <Link
       to={to}
-      className="group flex items-center gap-3 rounded-xl border border-border-default bg-surface-1 p-4 text-left transition-colors hover:border-border-strong hover:bg-surface-2"
+      className="surface-card group flex items-center gap-3.5 rounded-2xl border border-border-default bg-surface-1 p-4 text-left transition-[border-color,background-color] duration-[var(--duration-base)] hover:border-border-strong hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
     >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent [&>svg]:size-[18px]">
+      <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/15 [&>svg]:size-5">
         {icon}
       </span>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-medium text-text-primary">{title}</span>
-        <span className="block text-xs text-text-tertiary">{description}</span>
+        <span className="mt-0.5 block text-[13px] text-text-tertiary">{description}</span>
       </span>
       <ChevronRight className="size-4 shrink-0 text-text-ghost transition-transform group-hover:translate-x-0.5" />
     </Link>
@@ -91,9 +91,9 @@ export default function OverviewTab({ did }: OverviewTabProps) {
       )}
 
       {profile?.bio && (
-        <Card padding="sm">
-          <h3 className="text-xs font-medium text-text-tertiary">About</h3>
-          <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-text-secondary">
+        <Card>
+          <h3 className="eyebrow">About</h3>
+          <p className="mt-2 max-w-3xl whitespace-pre-wrap text-pretty text-[15px] leading-relaxed text-text-secondary">
             {profile.bio}
           </p>
         </Card>

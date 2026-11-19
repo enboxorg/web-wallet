@@ -65,11 +65,11 @@ export function Tab({ id, panelId, active, onClick, count, children, className }
       tabIndex={active ? 0 : -1}
       onClick={onClick}
       className={cn(
-        'relative inline-flex shrink-0 items-center gap-1.5 px-3 py-3 text-sm font-medium transition-colors duration-[var(--duration-fast)]',
+        'relative inline-flex shrink-0 items-center gap-2 px-3.5 pb-3.5 pt-3 text-sm transition-colors duration-[var(--duration-base)]',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent rounded-t-lg',
         active
-          ? 'text-text-primary'
-          : 'text-text-tertiary hover:text-text-primary',
+          ? 'font-semibold text-text-primary'
+          : 'font-medium text-text-tertiary hover:text-text-primary',
         className,
       )}
     >
@@ -79,7 +79,7 @@ export function Tab({ id, panelId, active, onClick, count, children, className }
           <span
             aria-hidden="true"
             className={cn(
-              'min-w-5 rounded-full px-1.5 py-px text-center text-[11px] font-semibold tabular-nums',
+              'min-w-5 rounded-full px-1.5 py-px text-center text-[11px] font-semibold tabular-nums transition-colors',
               active ? 'bg-accent/15 text-accent' : 'bg-surface-3 text-text-tertiary',
             )}
           >
@@ -88,9 +88,10 @@ export function Tab({ id, panelId, active, onClick, count, children, className }
           <span className="sr-only">({count})</span>
         </>
       )}
+      {/* The marker: a lit accent rule under the active tab. */}
       {active && (
         <span
-          className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent"
+          className="absolute inset-x-3 -bottom-px h-0.5 rounded-full bg-accent shadow-[0_0_14px_1px_rgba(var(--accent-rgb),0.55)] animate-[fadeIn_0.2s_ease-out]"
           aria-hidden="true"
         />
       )}
@@ -115,7 +116,7 @@ export function TabPanel({ id, labelledBy, active, children, className }: TabPan
       role="tabpanel"
       aria-labelledby={labelledBy}
       tabIndex={0}
-      className={cn('py-4', className)}
+      className={cn('py-5 focus-visible:outline-none', className)}
     >
       {children}
     </div>

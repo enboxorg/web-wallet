@@ -15,7 +15,7 @@ import { ChangePinDialog } from './ChangePinDialog';
 
 function SettingIcon({ children }: { children: React.ReactNode }) {
   return (
-    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-text-secondary [&>svg]:size-[18px]">
+    <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/15 [&>svg]:size-5">
       {children}
     </span>
   );
@@ -41,16 +41,17 @@ export default function SecurityPage() {
   }, [lock]);
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="mx-auto max-w-2xl space-y-5">
       <PageHeader
         title="Security"
         description="Manage wallet security settings."
         backTo="/settings"
+        className="pb-2"
       />
 
       {/* Auto-lock timeout */}
-      <Card>
-        <div className="flex items-start gap-3">
+      <Card padding="lg">
+        <div className="flex items-start gap-3.5">
           <SettingIcon><Clock /></SettingIcon>
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-text-primary">Auto-lock timeout</h2>
@@ -61,7 +62,7 @@ export default function SecurityPage() {
         </div>
         <SegmentedControl
           label="Auto-lock timeout"
-          className="mt-4"
+          className="mt-5"
           options={AUTO_LOCK_OPTIONS}
           value={autoLockMs}
           onChange={(value) => handleAutoLockChange(String(value))}
@@ -69,9 +70,9 @@ export default function SecurityPage() {
       </Card>
 
       {/* Lock wallet now */}
-      <Card>
+      <Card padding="lg">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
+          <div className="flex items-start gap-3.5">
             <SettingIcon><Lock /></SettingIcon>
             <div>
               <h2 className="text-base font-semibold text-text-primary">Lock wallet</h2>
@@ -87,9 +88,9 @@ export default function SecurityPage() {
       </Card>
 
       {usesPin && (
-        <Card>
+        <Card padding="lg">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-3.5">
               <SettingIcon><KeySquare /></SettingIcon>
               <div>
                 <h2 className="text-base font-semibold text-text-primary">Change PIN</h2>

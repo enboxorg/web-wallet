@@ -15,7 +15,7 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
         {label && (
           <label
             htmlFor={textareaId}
-            className="text-sm font-medium text-text-secondary"
+            className="text-[13px] font-medium text-text-secondary"
           >
             {label}
           </label>
@@ -24,14 +24,14 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(
           ref={ref}
           id={textareaId}
           className={cn(
-            'w-full rounded-lg bg-surface-1 px-4 py-2.5 text-sm text-text-primary',
-            'border border-border-default',
+            'w-full rounded-xl bg-field px-4 py-3 text-sm leading-relaxed text-text-primary inset-shadow-field',
+            'border border-border-default hover:border-border-strong',
             'placeholder:text-text-ghost',
-            'transition-colors duration-[var(--duration-fast)]',
-            'focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent',
+            'transition-[border-color,box-shadow] duration-[var(--duration-base)]',
+            'focus:outline-none focus:border-accent focus:ring-4 focus:ring-accent/15',
             'disabled:opacity-50 disabled:cursor-not-allowed',
-            'min-h-20 resize-y',
-            error && 'border-error focus:ring-error',
+            'min-h-24 resize-y',
+            error && 'border-error focus:border-error focus:ring-error/15',
             className,
           )}
           aria-invalid={error ? true : undefined}

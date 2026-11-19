@@ -1,4 +1,5 @@
 import { Lock, Moon, PanelLeftClose, PanelLeftOpen, Sun } from 'lucide-react';
+import { EnboxMarkTile, Wordmark } from '@/components/brand/Brand';
 import { cn } from '@/lib/utils';
 import { isNavItemActive } from './nav-active';
 import type { NavItem } from './types';
@@ -33,53 +34,49 @@ export function Sidebar({
   // Group items by section, preserving insertion order
   const sections = groupBySection(items);
 
-  const footerButton = cn(
-    'flex w-full items-center gap-3 rounded-lg text-sm font-medium',
+  // Quiet square controls for theme and collapse; Lock gets a labelled button.
+  const iconButton = cn(
+    'inline-flex size-9 shrink-0 items-center justify-center rounded-[10px]',
     'text-text-tertiary hover:bg-surface-2 hover:text-text-primary',
-    'transition-colors duration-[var(--duration-fast)]',
-    mini ? 'justify-center py-2.5' : 'px-3 py-2',
+    'transition-colors duration-[var(--duration-base)]',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
   );
   const themeLabel = `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`;
+  const miniLabel = mini ? 'Expand sidebar' : 'Collapse sidebar';
 
   return (
     <aside
       className={cn(
-        'flex h-full shrink-0 flex-col border-r border-border-subtle bg-surface-1',
-        'transition-[width] duration-[200ms] ease-[var(--ease-out)]',
+        'relative z-10 flex h-full shrink-0 flex-col border-r border-border-subtle bg-surface-1 bg-(image:--sheen)',
+        'transition-[width] duration-[240ms] ease-[var(--ease-out)]',
         mini ? 'w-[var(--sidebar-mini-width)]' : 'w-[var(--sidebar-width)]',
         className,
       )}
       data-testid="sidebar"
     >
-      {/* Logo */}
+      {/* Brand */}
       <div
         className={cn(
-          'flex h-16 shrink-0 items-center',
-          mini ? 'justify-center px-0' : 'px-6',
+          'flex h-[4.5rem] shrink-0 items-center gap-3',
+          mini ? 'justify-center px-0' : 'px-5',
         )}
       >
-        <span className="select-none text-xl font-bold tracking-tight text-text-primary">
-          {mini ? (
-            <span className="text-accent">b</span>
-          ) : (
-            <>
-              en<span className="text-accent">b</span>ox
-            </>
-          )}
-        </span>
+        <EnboxMarkTile size="sm" />
+        {!mini && <Wordmark className="text-xl" />}
       </div>
 
       {/* Nav sections */}
-      <nav className={cn('flex-1 overflow-y-auto py-2', mini ? 'px-2' : 'px-3')} aria-label="Main navigation">
+      <nav className="flex-1 overflow-y-auto px-3 pb-2 pt-1" aria-label="Main navigation">
         {sections.map(({ section, items: sectionItems }) => (
-          <div key={section ?? '__ungrouped'} className="mb-4">
+          <div key={section ?? '__ungrouped'} className="mb-5">
             {section && !mini && (
-              <div className="px-3 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wider text-text-ghost">
+              <div className="eyebrow px-3 pb-2 pt-1">
                 {section}
               </div>
             )}
+            {section && mini && <div className="mx-2 mb-3 h-px bg-border-subtle" aria-hidden="true" />}
 
-            <div className="space-y-0.5">
+            <div className="space-y-1">
               {sectionItems.map((item) => {
                 const active = isNavItemActive(currentPath, item);
                 return (
@@ -89,15 +86,23 @@ export function Sidebar({
                     onClick={() => onNavigate(item.path)}
                     title={mini ? item.label : undefined}
                     className={cn(
-                      'flex w-full items-center gap-3 rounded-lg text-sm font-medium',
-                      'transition-colors duration-[var(--duration-fast)]',
-                      mini ? 'justify-center py-2.5' : 'px-3 py-2',
+                      'group relative flex w-full items-center gap-3 rounded-xl text-sm',
+                      'transition-colors duration-[var(--duration-base)]',
+                      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                      mini ? 'justify-center py-2.5' : 'px-3 py-2.5',
                       active
-                        ? 'bg-accent-muted text-accent'
-                        : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary',
+                        ? 'bg-accent-muted font-semibold text-accent'
+                        : 'font-medium text-text-secondary hover:bg-surface-2 hover:text-text-primary',
                     )}
                     aria-current={active ? 'page' : undefined}
                   >
+                    {/* Marker on the sidebar's edge for the current page. */}
+                    {active && (
+                      <span
+                        className="absolute -left-3 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-accent shadow-[0_0_12px_rgba(var(--accent-rgb),0.6)]"
+                        aria-hidden="true"
+                      />
+                    )}
                     <span className="relative size-5 shrink-0 [&>svg]:size-5" aria-hidden="true">
                       {item.icon}
                       {item.badge && (
@@ -113,29 +118,30 @@ export function Sidebar({
         ))}
       </nav>
 
-      {/* Footer actions */}
-      <div className={cn('space-y-0.5 border-t border-border-subtle py-3', mini ? 'px-2' : 'px-3')}>
+      {/* Footer: appearance and layout on one side, the lock on the other. */}
+      <div
+        className={cn('flex items-center gap-1 border-t border-border-subtle p-3', mini && 'flex-col')}
+      >
         {onToggleTheme && (
           <button
             type="button"
             onClick={onToggleTheme}
-            title={mini ? themeLabel : undefined}
+            title={themeLabel}
             aria-label={themeLabel}
-            className={footerButton}
+            className={iconButton}
           >
             {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
-            {!mini && <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
           </button>
         )}
         {onToggleMini && (
           <button
             type="button"
             onClick={onToggleMini}
-            title={mini ? 'Expand sidebar' : 'Collapse sidebar'}
-            className={footerButton}
+            title={miniLabel}
+            aria-label={miniLabel}
+            className={iconButton}
           >
             {mini ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
-            {mini ? <span className="sr-only">Expand sidebar</span> : <span>Collapse</span>}
           </button>
         )}
         {onLock && (
@@ -143,9 +149,18 @@ export function Sidebar({
             type="button"
             onClick={onLock}
             title="Lock wallet"
-            className={footerButton}
+            className={cn(
+              mini
+                ? iconButton
+                : cn(
+                  'btn-raised ml-auto inline-flex h-9 items-center gap-2 rounded-[10px] border border-border-default bg-surface-2 px-3',
+                  'text-[13px] font-medium text-text-secondary hover:border-border-strong hover:bg-surface-3 hover:text-text-primary',
+                  'transition-colors duration-[var(--duration-base)]',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                ),
+            )}
           >
-            <Lock size={18} aria-hidden="true" />
+            <Lock size={mini ? 18 : 15} aria-hidden="true" />
             {mini ? <span className="sr-only">Lock</span> : <span>Lock</span>}
           </button>
         )}

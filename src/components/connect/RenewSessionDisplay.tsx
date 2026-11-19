@@ -120,7 +120,7 @@ export function RenewSessionDisplay({
           && blocked('The app no longer supports the profile used by this connection. Renewal is blocked.')}
 
         {!lookupPending && !lookupError && matched && ownerSupported && detection.pinnedOwnerDid && (
-          <div className="flex items-center gap-3 rounded-xl border border-border-default bg-surface-1 px-3 py-2.5">
+          <div className="surface-card flex items-center gap-3 rounded-xl border border-border-default bg-surface-1 px-3 py-2.5">
             <Monogram label={ownerLabel ?? detection.pinnedOwnerDid} seed={detection.pinnedOwnerDid} size="sm" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium text-text-primary">

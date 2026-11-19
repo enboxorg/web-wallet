@@ -390,7 +390,7 @@ function AccessRows({
         {description && <p className="mt-0.5 text-xs text-text-tertiary">{description}</p>}
       </div>
 
-      <ul className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
+      <ul className="surface-card divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
         {rowGroups.length === 0 && (
           <li className="px-4 py-3 text-sm text-text-secondary">No record or message access is requested.</li>
         )}
@@ -421,7 +421,7 @@ function SessionTerms({
   const canChoose = onSessionDurationSecondsChange !== undefined && durationOptions.length > 1;
 
   return (
-    <section className="rounded-xl border border-border-default bg-surface-1 p-4">
+    <section className="surface-card rounded-xl border border-border-default bg-surface-1 p-4">
       <div className="flex items-start gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-text-secondary ring-1 ring-inset ring-border-subtle">
           <Clock3 className="size-[18px]" aria-hidden="true" />
@@ -665,7 +665,7 @@ function TechnicalDetails({ access }: { access: ModuleAccess[] }) {
   return (
     <Disclosure
       data-testid="technical-setup-details"
-      className="rounded-xl border border-border-default bg-surface-1"
+      className="surface-card rounded-xl border border-border-default bg-surface-1"
       summaryClassName="px-4 py-3.5 text-text-tertiary hover:text-text-primary"
       summary={(
         <>

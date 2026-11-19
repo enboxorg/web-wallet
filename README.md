@@ -180,8 +180,9 @@ src/
 
   components/
     ui/                     # Shared primitives (Button, Dialog, Tabs, Card, etc.)
+    brand/                  # Enbox mark, wordmark, and the halo behind the lock screens
     identity/               # Identity card, avatar, public card
-    layout/                 # AppShell, Sidebar, BottomNav, AppBar, OfflineBanner
+    layout/                 # AppShell, Sidebar, BottomNav, AppBar, AuthLayout, OfflineBanner
 
   features/
     auth/                   # Unlock, setup, restore, onboarding identity step

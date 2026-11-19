@@ -73,13 +73,15 @@ export function DragDropOverlay() {
   if (!dragging) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-surface-0/80 backdrop-blur-sm">
-      <div className="flex flex-col items-center gap-4 rounded-xl border-2 border-dashed border-accent bg-surface-1 px-12 py-10">
-        <Download className="h-12 w-12 text-accent" />
-        <p className="text-lg font-medium text-text-primary">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-scrim p-6 backdrop-blur-md animate-[fadeIn_0.15s_ease-out]">
+      <div className="surface-card flex flex-col items-center gap-3 rounded-[2rem] border-2 border-dashed border-accent bg-surface-1 px-14 py-12 text-center shadow-pop">
+        <span className="mb-2 flex size-16 items-center justify-center rounded-[20px] bg-accent/10 text-accent ring-1 ring-inset ring-accent/20">
+          <Download className="size-7" aria-hidden="true" />
+        </span>
+        <p className="text-xl font-semibold tracking-tight text-text-primary">
           Drop profile files to import
         </p>
-        <p className="text-sm text-text-tertiary">
+        <p className="font-mono text-xs text-text-tertiary">
           .json profile backups only
         </p>
       </div>
