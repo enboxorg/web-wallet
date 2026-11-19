@@ -7,7 +7,9 @@ import {
   getModuleInfo,
   getModuleName,
   getScopeLabel,
+  humanizeSlug,
   isContextCompanionDefinition,
+  parseModuleUri,
 } from '../module-names';
 
 describe('getModuleName', () => {
@@ -61,21 +63,52 @@ describe('getModuleName', () => {
     expect(getModuleName('')).toBe('');
   });
 
-  it('returns the title-cased URI when the last segment is empty (trailing slash)', () => {
-    // '...foo/'.split('/') → [..., ''], last is '' → fallback to full URI, title-cased
+  it('ignores a trailing slash', () => {
     expect(
       getModuleName('https://example.com/foo/'),
-    ).toBe('Https://Example.Com/Foo/');
+    ).toBe('Foo');
   });
 
   it('handles a URI that is just a slash', () => {
     expect(getModuleName('/')).toBe('/');
   });
 
-  it('handles a URI with query parameters (no special parsing)', () => {
+  it('ignores query parameters when naming', () => {
     expect(
-      getModuleName('https://example.com/module?version=2'),
-    ).toBe('Module?Version=2');
+      getModuleName('https://example.com/notes?version=2'),
+    ).toBe('Notes');
+  });
+
+  // ── Versioned and namespaced URIs ────────────────────────────────
+
+  it('skips trailing version segments instead of naming the module "V1"', () => {
+    expect(getModuleName('https://enbox.id/modules/stock-watchlists/v1')).toBe('Stock Watchlists');
+    expect(getModuleName('https://enbox.id/modules/media-library/v2')).toBe('Media Library');
+    expect(getModuleName('https://example.com/modules/notes/1.0.0')).toBe('Notes');
+    expect(getModuleName('https://example.com/modules/notes/v2beta1')).toBe('Notes');
+  });
+
+  it('keeps the parent segment when the leaf is not descriptive on its own', () => {
+    expect(getModuleName('https://example.org/modules/notes/core/v1')).toBe('Notes Core');
+    expect(getModuleName('https://example.org/modules/projects/boards/v1')).toBe('Boards');
+  });
+
+  it('falls back to the host when the path has no descriptive segment', () => {
+    expect(getModuleName('https://notes.example/v1')).toBe('notes.example');
+    expect(getModuleName('https://notes.example/modules/')).toBe('notes.example');
+  });
+
+  it('names versioned companion modules after their root', () => {
+    expect(getModuleName('https://enbox.id/modules/notes/v1/contexts')).toBe('Notes Contexts');
+  });
+
+  it('splits camelCase and underscores', () => {
+    expect(getModuleName('https://example.com/mediaLibrary')).toBe('Media Library');
+    expect(getModuleName('https://example.com/stock_watchlists/v3')).toBe('Stock Watchlists');
+  });
+
+  it('names opaque URIs from their path', () => {
+    expect(getModuleName('urn:enbox:notes:v1')).toBe('Notes');
   });
 
   it('derives "<Base> Contexts" for conventional companion module URIs', () => {
@@ -91,6 +124,39 @@ describe('getModuleName', () => {
     expect(
       getModuleName('https://example.com/contexts'),
     ).toBe('Contexts');
+  });
+});
+
+describe('parseModuleUri', () => {
+  it('extracts host, version, descriptive slugs, and a compact URI', () => {
+    expect(parseModuleUri('https://enbox.id/modules/stock-watchlists/v1')).toEqual({
+      host     : 'enbox.id',
+      version  : 'v1',
+      slugs    : ['stock-watchlists'],
+      shortUri : 'enbox.id/modules/stock-watchlists/v1',
+    });
+  });
+
+  it('handles unversioned and non-URL input', () => {
+    expect(parseModuleUri('https://identity.foundation/modules/profile')).toMatchObject({
+      host    : 'identity.foundation',
+      version : undefined,
+      slugs   : ['profile'],
+    });
+    expect(parseModuleUri('just-a-string')).toEqual({
+      host     : undefined,
+      version  : undefined,
+      slugs    : ['just-a-string'],
+      shortUri : 'just-a-string',
+    });
+  });
+});
+
+describe('humanizeSlug', () => {
+  it('title-cases separators and camelCase', () => {
+    expect(humanizeSlug('stock-watchlists')).toBe('Stock Watchlists');
+    expect(humanizeSlug('mediaLibrary')).toBe('Media Library');
+    expect(humanizeSlug('a__b--c')).toBe('A B C');
   });
 });
 
