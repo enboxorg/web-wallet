@@ -208,6 +208,17 @@ function nameFromSlugs(slugs: string[]): string | undefined {
 }
 
 /**
+ * Name a module purely from its own URI (`…/stock-watchlists/v1` → "Stock
+ * Watchlists"), ignoring the curated registry and the `/contexts` companion
+ * convention. This is what the URI's author called it — never a wallet-vouched
+ * name — so always show it alongside the URI's host.
+ */
+export function nameFromModuleUri(uri: string): string {
+  const { host, slugs } = parseModuleUri(uri);
+  return nameFromSlugs(slugs) ?? host ?? uri;
+}
+
+/**
  * Get a human-friendly name for a module URI.
  *
  * Curated names are used for wallet-known modules. Otherwise the name is
@@ -224,8 +235,7 @@ export function getModuleName(uri: string): string {
   if (companionRoot) {
     return `${getModuleName(companionRoot)} Contexts`;
   }
-  const { host, slugs } = parseModuleUri(uri);
-  return nameFromSlugs(slugs) ?? host ?? uri;
+  return nameFromModuleUri(uri);
 }
 
 /** Everything a management view needs to label a module consistently. */

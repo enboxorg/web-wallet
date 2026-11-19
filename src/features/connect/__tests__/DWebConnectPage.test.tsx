@@ -624,7 +624,7 @@ describe('DWebConnectPage', () => {
     expect(screen.getByText('Revoked')).toBeVisible();
     expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
-    expect(screen.getByRole('listitem', { name: 'Custom data type' })).toBeVisible();
+    expect(screen.getByRole('listitem', { name: 'Tasks' })).toBeVisible();
     await waitFor(() => expect(renew).toBeEnabled());
     fireEvent.click(renew);
 

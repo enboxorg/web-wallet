@@ -10,6 +10,7 @@ import {
   getScopeLabel,
   humanizeSlug,
   isContextCompanionDefinition,
+  nameFromModuleUri,
   parseModuleUri,
 } from '../module-names';
 
@@ -183,6 +184,23 @@ describe('humanizeSlug', () => {
     expect(humanizeSlug('stock-watchlists')).toBe('Stock Watchlists');
     expect(humanizeSlug('mediaLibrary')).toBe('Media Library');
     expect(humanizeSlug('a__b--c')).toBe('A B C');
+  });
+});
+
+describe('nameFromModuleUri', () => {
+  it('names a module from its own path, skipping version and organisational segments', () => {
+    expect(nameFromModuleUri('https://enbox.id/modules/stock-watchlists/v1')).toBe('Stock Watchlists');
+  });
+
+  it('ignores the curated registry and the /contexts companion convention', () => {
+    const profile = 'https://identity.foundation/modules/profile';
+    expect(getModuleName(`${profile}/contexts`)).toBe('Profile Contexts');
+    expect(nameFromModuleUri(`${profile}/contexts`)).toBe('Contexts');
+    expect(nameFromModuleUri('https://evil.example/modules/profile')).toBe('Profile');
+  });
+
+  it('falls back to the host when the path has nothing descriptive', () => {
+    expect(nameFromModuleUri('https://example.com/modules/v2')).toBe('example.com');
   });
 });
 
