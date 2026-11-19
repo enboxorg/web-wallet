@@ -6,6 +6,8 @@ interface MonogramProps {
   label: string;
   /** Stable identity for the tint (defaults to `label`), e.g. an origin or URI. */
   seed?: string;
+  /** Fixed tint hue (0–359) instead of one derived from `seed`. */
+  hue?: number;
   /** Replace the initial with an icon. */
   icon?: React.ReactNode;
   size?: 'sm' | 'md' | 'lg';
@@ -37,7 +39,7 @@ function initialOf(label: string): string {
  * Decorative tinted tile with an initial or icon. Purely visual: the adjacent
  * text always carries the name, so the tile is hidden from assistive tech.
  */
-export function Monogram({ label, seed, icon, size = 'md', className }: MonogramProps) {
+export function Monogram({ label, seed, hue, icon, size = 'md', className }: MonogramProps) {
   return (
     <span
       aria-hidden="true"
@@ -46,7 +48,7 @@ export function Monogram({ label, seed, icon, size = 'md', className }: Monogram
         sizes[size],
         className,
       )}
-      style={{ '--mono-h': hueFor(seed ?? label) } as CSSProperties}
+      style={{ '--mono-h': hue ?? hueFor(seed ?? label) } as CSSProperties}
     >
       {icon ?? initialOf(label)}
     </span>

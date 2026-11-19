@@ -9,7 +9,9 @@
  * Trust rule: curated names, descriptions and icons are used only for pinned,
  * matching wallet module definitions. Every other module is named from its own
  * URI and always shown with the host that namespaces it, so the name reads as
- * "what <host> calls this data", never as a wallet-vouched label.
+ * "what <host> calls this data", never as a wallet-vouched label. A URI name
+ * that would pass for a built-in module is rejected: the row shows the literal
+ * short URI and says it is not the built-in module.
  */
 import { useId } from 'react';
 import {
@@ -48,6 +50,8 @@ import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
 import { Disclosure } from '@/components/ui/Disclosure';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
+import { LookalikeBadge } from '@/components/modules/LookalikeBadge';
+import { ModuleAddress } from '@/components/modules/ModuleAddress';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
 import {
   getSortedPermissionActions,
@@ -220,6 +224,33 @@ function EncryptedBadge({ keysShared }: { keysShared: boolean }) {
  */
 function AccessItemTitle({ item, titleId }: { item: ModuleAccess; titleId: string }) {
   const curated = item.isKnownModule;
+  const imitates = item.glyph.imitates;
+  const badges = (
+    <>
+      {imitates && <LookalikeBadge coreName={imitates} />}
+      {item.isContextCompanion && <Badge tone="info" title={SHARED_CONTEXTS_HINT}>Shared contexts</Badge>}
+      {item.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(item)} />}
+    </>
+  );
+
+  if (imitates) {
+    // A name that would pass for a built-in module is replaced by the literal
+    // short URI. It wraps rather than truncates: the part that explains the
+    // flag is usually at the end.
+    return (
+      <>
+        <p
+          id={titleId}
+          className="font-mono text-[13px] font-medium leading-5 text-text-primary [overflow-wrap:anywhere]"
+          title={item.moduleUri}
+        >
+          <ModuleAddress address={item.name} />
+        </p>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">{badges}</div>
+      </>
+    );
+  }
+
   return (
     <div className="flex min-h-5 min-w-0 items-center gap-2">
       <p className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -236,8 +267,7 @@ function AccessItemTitle({ item, titleId }: { item: ModuleAccess; titleId: strin
           {item.detail}
         </span>
       </p>
-      {item.isContextCompanion && <Badge tone="info" title={SHARED_CONTEXTS_HINT}>Shared contexts</Badge>}
-      {item.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(item)} />}
+      {badges}
     </div>
   );
 }

@@ -152,7 +152,7 @@ describe('PermissionDisplay', () => {
     expect(within(row).queryByText('Shared contexts')).not.toBeInTheDocument();
   });
 
-  it('keeps curated copy for pinned module URIs whose definition does not match', () => {
+  it('withholds curated copy from a pinned module URI whose definition does not match', () => {
     const permissions = [{
       moduleDefinition: { module: profileModule, types: {}, structure: {} },
       permissionScopes: [{ interface: 'Records', method: 'Read', module: profileModule }],
@@ -163,6 +163,38 @@ describe('PermissionDisplay', () => {
     const row = screen.getByRole('listitem', { name: 'Profile' });
     expect(within(row).getByTitle(profileModule)).toHaveTextContent('identity.foundation');
     expect(screen.queryByText(/Public profile data/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a lookalike of a built-in module by its address, marked as not built-in', () => {
+    const lookalike = 'https://evil.example/modules/enbox-profile/v1';
+    const permissions = [{
+      moduleDefinition: { module: lookalike, types: {}, structure: {} },
+      permissionScopes: [{ interface: 'Records', method: 'Read', module: lookalike }],
+    }] as unknown as ConnectPermissionRequest[];
+
+    render(<PermissionDisplay permissions={permissions} />);
+
+    const row = screen.getByRole('listitem', { name: 'evil.example/modules/enbox-profile/v1' });
+    expect(within(row).getByTitle(lookalike)).toHaveTextContent('evil.example/modules/enbox-profile/v1');
+    expect(within(row).getByText('Not the built-in Profile')).toBeInTheDocument();
+    expect(chips(row)).toEqual(['View']);
+    expect(screen.queryByText('Enbox Profile')).not.toBeInTheDocument();
+    expect(screen.queryByRole('listitem', { name: /^Profile$/ })).not.toBeInTheDocument();
+  });
+
+  it('marks a verified companion of a lookalike module by its root address', () => {
+    const root = 'https://evil.example/modules/profile';
+    const companionUri = `${root}/contexts`;
+    const permissions: ConnectPermissionRequest[] = [{
+      moduleDefinition: createCanonicalContextCompanionDefinition(companionUri),
+      permissionScopes: [{ interface: 'Records', method: 'Read', module: companionUri }],
+    }];
+
+    render(<PermissionDisplay permissions={permissions} />);
+
+    const row = screen.getByRole('listitem', { name: 'evil.example/modules/profile' });
+    expect(within(row).getByText('Shared contexts')).toBeInTheDocument();
+    expect(within(row).getByText('Not the built-in Profile')).toBeInTheDocument();
   });
 
   it('shows a single encrypted-data explanation for multiple encrypted rows', () => {

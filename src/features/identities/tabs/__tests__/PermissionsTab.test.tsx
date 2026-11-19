@@ -222,6 +222,19 @@ describe('PermissionsTab', () => {
     expect(within(row).getByText('Shared contexts')).toBeInTheDocument();
   });
 
+  it('shows a lookalike of a built-in module by its address, marked as not built-in', () => {
+    mocks.permissions = [
+      permissionGrant({ id: 'lookalike-read', session: activeSession, module: 'https://evil.example/modules/profile' }),
+    ];
+
+    renderWithProviders(<PermissionsTab did="did:dht:owner" />);
+
+    const access = screen.getByRole('list', { name: 'Example Notes data access' });
+    const row = within(access).getByRole('listitem', { name: /^evil\.example\/modules\/profile/ });
+    expect(within(row).getByText('Not the built-in Profile')).toBeInTheDocument();
+    expect(within(access).queryByRole('listitem', { name: 'Profile' })).not.toBeInTheDocument();
+  });
+
   it('offers no revoke for direct grants that already expired', () => {
     mocks.permissions = [{
       id          : 'direct-expired',

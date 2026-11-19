@@ -5,6 +5,7 @@ import {
   describeModule,
   getCanonicalModuleDefinition,
   getContextCompanionRootUri,
+  getImitatedCoreModuleName,
   getModuleInfo,
   getModuleName,
   getScopeLabel,
@@ -172,6 +173,19 @@ describe('describeModule', () => {
     }).companionOf).toBeUndefined();
   });
 
+  it('flags a lookalike module, and a verified companion of one', () => {
+    const lookalike = 'https://evil.example/modules/profile';
+    expect(describeModule(lookalike)).toMatchObject({
+      name     : 'evil.example/modules/profile',
+      imitates : 'Profile',
+      isCore   : false,
+    });
+    const companion = `${lookalike}/contexts`;
+    expect(describeModule(companion, createCanonicalContextCompanionDefinition(companion)))
+      .toMatchObject({ companionOf: lookalike, imitates: 'Profile' });
+    expect(describeModule('https://identity.foundation/modules/profile').imitates).toBeUndefined();
+  });
+
   it('labels curated core modules with their description', () => {
     const profile = describeModule('https://identity.foundation/modules/profile');
     expect(profile).toMatchObject({ name: 'Profile', isCore: true, host: 'identity.foundation' });
@@ -196,11 +210,35 @@ describe('nameFromModuleUri', () => {
     const profile = 'https://identity.foundation/modules/profile';
     expect(getModuleName(`${profile}/contexts`)).toBe('Profile Contexts');
     expect(nameFromModuleUri(`${profile}/contexts`)).toBe('Contexts');
-    expect(nameFromModuleUri('https://evil.example/modules/profile')).toBe('Profile');
+  });
+
+  it('shows the literal short URI instead of a name that would pass for a built-in module', () => {
+    expect(nameFromModuleUri('https://evil.example/modules/profile')).toBe('evil.example/modules/profile');
+    expect(nameFromModuleUri('https://evil.example/modules/enbox-profile/v1'))
+      .toBe('evil.example/modules/enbox-profile/v1');
+    expect(getModuleName('https://evil.example/modules/preferences')).toBe('evil.example/modules/preferences');
   });
 
   it('falls back to the host when the path has nothing descriptive', () => {
     expect(nameFromModuleUri('https://example.com/modules/v2')).toBe('example.com');
+  });
+});
+
+describe('getImitatedCoreModuleName', () => {
+  it('flags names that contain a built-in module name as a whole word', () => {
+    expect(getImitatedCoreModuleName('https://evil.example/modules/profile')).toBe('Profile');
+    expect(getImitatedCoreModuleName('https://evil.example/modules/PROFILE/v2')).toBe('Profile');
+    expect(getImitatedCoreModuleName('https://evil.example/modules/profiles')).toBe('Profile');
+    expect(getImitatedCoreModuleName('https://evil.example/modules/enbox-profile/v1')).toBe('Profile');
+    expect(getImitatedCoreModuleName('https://evil.example/modules/walletConnect')).toBe('Connect');
+    expect(getImitatedCoreModuleName('https://evil.example/modules/user_preferences')).toBe('Preferences');
+  });
+
+  it('leaves unrelated names and the pinned modules themselves alone', () => {
+    expect(getImitatedCoreModuleName('https://enbox.id/modules/notes/v1')).toBeUndefined();
+    expect(getImitatedCoreModuleName('https://enbox.id/modules/connections')).toBeUndefined();
+    expect(getImitatedCoreModuleName('https://enbox.id/modules/userprofile')).toBeUndefined();
+    expect(getImitatedCoreModuleName('https://identity.foundation/modules/profile')).toBeUndefined();
   });
 });
 

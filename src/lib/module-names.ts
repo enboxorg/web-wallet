@@ -207,15 +207,53 @@ function nameFromSlugs(slugs: string[]): string | undefined {
   return humanizeSlug(leaf);
 }
 
+function derivedModuleName(uri: string): string {
+  const { host, slugs } = parseModuleUri(uri);
+  return nameFromSlugs(slugs) ?? host ?? uri;
+}
+
+/** Lower-cased words of a display name, singularised so "Profiles" ≈ "Profile". */
+function nameWords(name: string): string[] {
+  return name
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean)
+    .map((word) => (word.length > 3 ? word.replace(/s$/, '') : word));
+}
+
+function containsWords(haystack: string[], needle: string[]): boolean {
+  if (needle.length === 0) return false;
+  for (let start = 0; start + needle.length <= haystack.length; start += 1) {
+    if (needle.every((word, offset) => haystack[start + offset] === word)) return true;
+  }
+  return false;
+}
+
+/**
+ * The built-in module whose name this module's own name would pass for:
+ * `https://evil.example/modules/profile` or `…/enbox-profile/v1` → "Profile".
+ * Undefined for the pinned module URIs themselves and for unrelated names.
+ */
+export function getImitatedCoreModuleName(uri: string): string | undefined {
+  if (MODULE_REGISTRY[uri]) return undefined;
+  const words = nameWords(derivedModuleName(uri));
+  return Object.values(MODULE_REGISTRY)
+    .find((info) => containsWords(words, nameWords(info.name)))
+    ?.name;
+}
+
 /**
  * Name a module purely from its own URI (`…/stock-watchlists/v1` → "Stock
  * Watchlists"), ignoring the curated registry and the `/contexts` companion
  * convention. This is what the URI's author called it — never a wallet-vouched
  * name — so always show it alongside the URI's host.
+ *
+ * A name that would pass for a built-in module ("Profile", "Enbox Profile") is
+ * rejected: the module is shown by its literal short URI instead
+ * (`evil.example/modules/profile`). See {@link getImitatedCoreModuleName}.
  */
 export function nameFromModuleUri(uri: string): string {
-  const { host, slugs } = parseModuleUri(uri);
-  return nameFromSlugs(slugs) ?? host ?? uri;
+  return getImitatedCoreModuleName(uri) ? parseModuleUri(uri).shortUri : derivedModuleName(uri);
 }
 
 /**
@@ -255,6 +293,12 @@ export interface ModuleDisplay {
    * never trusted.
    */
   companionOf?: string;
+  /**
+   * Built-in module name this module's own name would pass for (for a
+   * companion: its root's). `name` is then the literal short URI; label the
+   * module as not being that built-in one.
+   */
+  imitates?: string;
 }
 
 /**
@@ -264,6 +308,9 @@ export interface ModuleDisplay {
 export function describeModule(uri: string, definition?: DwnModuleDefinition): ModuleDisplay {
   const info = MODULE_REGISTRY[uri];
   const parts = parseModuleUri(uri);
+  const companionOf = !info && definition !== undefined && isContextCompanionDefinition(definition)
+    ? getContextCompanionRootUri(uri)
+    : undefined;
   return {
     uri,
     name        : getModuleName(uri),
@@ -272,9 +319,8 @@ export function describeModule(uri: string, definition?: DwnModuleDefinition): M
     version     : parts.version,
     shortUri    : parts.shortUri,
     isCore      : info !== undefined,
-    companionOf : !info && definition !== undefined && isContextCompanionDefinition(definition)
-      ? getContextCompanionRootUri(uri)
-      : undefined,
+    companionOf,
+    imitates    : getImitatedCoreModuleName(companionOf ?? uri),
   };
 }
 

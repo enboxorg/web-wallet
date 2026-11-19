@@ -10,9 +10,12 @@ import { Badge } from '@/components/ui/Badge';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { Disclosure } from '@/components/ui/Disclosure';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { LookalikeBadge } from '@/components/modules/LookalikeBadge';
+import { ModuleAddress } from '@/components/modules/ModuleAddress';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
 import { describeModule, getModuleName, type ModuleDisplay } from '@/lib/module-names';
 import { collectStructurePaths, getModuleTypes } from '@/lib/module-structure';
+import { cn } from '@/lib/utils';
 
 interface ModulesTabProps {
   did: string;
@@ -53,8 +56,9 @@ function ModuleRow({ row }: { row: ModuleRowModel }) {
   const uses = Object.entries(module.definition?.uses ?? {});
 
   const meta = [
-    display.isCore ? display.description : display.host,
-    display.version,
+    // A lookalike's name is already its short URI, host and version included.
+    display.isCore ? display.description : display.imitates ? undefined : display.host,
+    display.imitates ? undefined : display.version,
     types.length > 0 ? pluralize(types.length, 'type') : undefined,
   ].filter(Boolean).join(' · ');
 
@@ -68,10 +72,20 @@ function ModuleRow({ row }: { row: ModuleRowModel }) {
             <ModuleGlyph module={display} />
             <span className="min-w-0 flex-1">
               <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="truncate text-sm font-semibold text-text-primary" title={module.uri}>
-                  {display.companionOf ? getModuleName(display.companionOf) : display.name}
+                <span
+                  className={cn(
+                    'text-sm font-semibold text-text-primary',
+                    // A lookalike's address wraps: the part behind the flag is usually at the end.
+                    display.imitates ? 'font-mono text-[13px] font-medium [overflow-wrap:anywhere]' : 'truncate',
+                  )}
+                  title={module.uri}
+                >
+                  {display.imitates ? (
+                    <ModuleAddress address={display.companionOf ? getModuleName(display.companionOf) : display.name} />
+                  ) : display.companionOf ? getModuleName(display.companionOf) : display.name}
                 </span>
                 {display.companionOf && <Badge tone="info">Shared contexts</Badge>}
+                {display.imitates && <LookalikeBadge coreName={display.imitates} />}
               </span>
               <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-normal text-text-tertiary">
                 <span className="truncate">{meta}</span>

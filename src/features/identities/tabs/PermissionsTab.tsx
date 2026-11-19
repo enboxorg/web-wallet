@@ -29,6 +29,8 @@ import { Monogram } from '@/components/ui/Monogram';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { LookalikeBadge } from '@/components/modules/LookalikeBadge';
+import { ModuleAddress } from '@/components/modules/ModuleAddress';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
 import { PermissionActionChips } from '@/components/connect/PermissionActionChips';
 import { formatList } from '@/components/connect/connect-scope-display';
@@ -119,9 +121,10 @@ function accessRowDetail(row: GrantAccessRow, display: ModuleDisplay | undefined
   if (row.contextId) return 'One shared context only';
   if (row.modulePath) return `Only ${row.modulePath}`;
   if (!display) return 'Not limited to one module';
-  return display.isCore
-    ? display.description
-    : [display.host, display.version].filter(Boolean).join(' · ') || undefined;
+  if (display.isCore) return display.description;
+  // A lookalike's name is already its short URI, host included.
+  if (display.imitates) return undefined;
+  return [display.host, display.version].filter(Boolean).join(' · ') || undefined;
 }
 
 function DeviceIcon({ summary, className }: { summary: SessionEnvironmentSummary; className?: string }) {
@@ -162,11 +165,14 @@ function AccessRowItem({
       )}
       <div className="min-w-0 flex-1 sm:flex sm:items-center sm:gap-4">
         <div className="min-w-0 sm:flex-1">
-          <p id={nameId} className="flex min-w-0 items-center gap-2 text-sm font-medium text-text-primary" title={row.module}>
-            <span className="truncate">
-              {display?.companionOf ? getModuleName(display.companionOf) : name}
+          <p id={nameId} className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm font-medium text-text-primary" title={row.module}>
+            <span className={display?.imitates ? 'font-mono text-[13px] [overflow-wrap:anywhere]' : 'truncate'}>
+              {display?.imitates ? (
+                <ModuleAddress address={display.companionOf ? getModuleName(display.companionOf) : name} />
+              ) : display?.companionOf ? getModuleName(display.companionOf) : name}
             </span>
             {display?.companionOf && <Badge tone="info">Shared contexts</Badge>}
+            {display?.imitates && <LookalikeBadge coreName={display.imitates} />}
           </p>
           {detail && (
             <p className="truncate text-xs text-text-tertiary" title={detail}>{detail}</p>
