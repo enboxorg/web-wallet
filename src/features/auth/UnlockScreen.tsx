@@ -171,7 +171,7 @@ export function UnlockScreen({
 
         <div className="flex flex-col items-center gap-2">
           <h1 className="text-2xl font-semibold text-text-primary">
-            Unlock Wallet
+            Unlock your wallet
           </h1>
           <p className="text-sm text-text-secondary">
             {subtitle}

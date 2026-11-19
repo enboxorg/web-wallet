@@ -122,7 +122,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     hasActiveConnectDeepLink() ? 'loading' : 'scanning'
   ));
   const [cameraReady, setCameraReady] = useState(false);
-  const [cameraError, setCameraError] = useState(false);
+  // 'none': the device has no camera; 'unavailable': it has one we couldn't start (often permission).
+  const [cameraError, setCameraError] = useState<false | 'none' | 'unavailable'>(false);
   const [cameras, setCameras] = useState<Scanner.Camera[]>([]);
   const [selectedCamera, setSelectedCamera] = useState('environment');
   const [hasFlash, setHasFlash] = useState(false);
@@ -316,7 +317,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         const hasCamera = await Scanner.hasCamera();
         if (cancelled) return;
         if (!hasCamera) {
-          setCameraError(true);
+          setCameraError('none');
           return;
         }
 
@@ -347,7 +348,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         setCameraReady(true);
       } catch (err) {
         console.warn('[wallet] Camera init failed:', err);
-        if (!cancelled) setCameraError(true);
+        if (!cancelled) setCameraError('unavailable');
       }
     })();
 
@@ -685,18 +686,24 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       {phase === 'scanning' && (
         <div className="animate-[fadeIn_0.3s_ease-out]">
           {cameraError ? (
-            <div className="flex flex-col items-center gap-4 px-6 py-16 text-center">
-              <CameraOff className="h-16 w-16 text-text-ghost" />
-              <p className="text-sm text-text-secondary">
-                No camera found. Make sure a camera is connected to your device.
+            <div className="mx-auto flex max-w-md flex-col items-center gap-4 px-6 py-16 text-center">
+              <CameraOff className="h-12 w-12 text-text-ghost" aria-hidden="true" />
+              <div className="space-y-1.5">
+                <h1 className="text-lg font-semibold text-text-primary">Connect an app</h1>
+                <p className="text-sm text-text-secondary">
+                  When an app offers to connect with Enbox, it shows a QR code. Scan it to choose
+                  which profile to use and what the app can access.
+                </p>
+              </div>
+              <p className="text-sm text-text-tertiary">
+                {cameraError === 'none'
+                  ? 'No camera found on this device. Upload a screenshot or photo of the code instead.'
+                  : 'Couldn’t start the camera. Allow camera access in your browser, or upload an image of the code instead.'}
               </p>
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="mt-2 text-sm font-medium text-accent hover:underline min-h-[44px] inline-flex items-center"
-              >
-                Scan from image instead
-              </button>
+              <Button onClick={() => fileInputRef.current?.click()}>
+                <ImageUp className="h-4 w-4" aria-hidden="true" />
+                Upload QR code image
+              </Button>
             </div>
           ) : (
             <div className="flex flex-col items-center">
@@ -750,7 +757,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               {/* Instruction pill */}
               <div className="py-4">
                 <span className="inline-flex items-center rounded-full bg-surface-2 px-4 py-2 text-sm text-text-secondary">
-                  Point at a QR code
+                  Scan the QR code shown by the app
                 </span>
               </div>
 

@@ -151,7 +151,7 @@ export default function ImportIdentityPage() {
         <Download className="h-10 w-10 text-text-ghost" />
         <div className="text-center">
           <p className="text-sm font-medium text-text-primary">
-            Drop identity files here
+            Drop profile backup files here
           </p>
           <p className="mt-1 text-xs text-text-tertiary">
             or

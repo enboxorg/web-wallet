@@ -77,28 +77,46 @@ describe('BackupPage', () => {
     expect(screen.getByText(/recommended/i)).toBeInTheDocument();
   });
 
-  it('shows the recovery phrase words', () => {
-    renderWithProviders(<BackupPage />);
+  it('keeps the recovery phrase hidden until asked for', async () => {
+    const { user } = renderWithProviders(<BackupPage />);
+    expect(screen.queryByRole('list', { name: 'Recovery phrase words' })).not.toBeInTheDocument();
+    expect(screen.queryByText('abandon')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /i've saved it/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/12-word phrase is hidden/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /show phrase/i }));
+    expect(screen.getByRole('list', { name: 'Recovery phrase words' })).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^hide$/i }));
+    expect(screen.queryByRole('list', { name: 'Recovery phrase words' })).not.toBeInTheDocument();
+  });
+
+  it('shows the recovery phrase words', async () => {
+    const { user } = renderWithProviders(<BackupPage />);
+    await user.click(screen.getByRole('button', { name: /show phrase/i }));
     // The phrase has 12 words; first is "abandon", last is "about"
     const listItems = screen.getAllByRole('listitem');
     expect(listItems).toHaveLength(12);
   });
 
-  it('shows word numbers in the phrase grid', () => {
-    renderWithProviders(<BackupPage />);
+  it('shows word numbers in the phrase grid', async () => {
+    const { user } = renderWithProviders(<BackupPage />);
+    await user.click(screen.getByRole('button', { name: /show phrase/i }));
     expect(screen.getByText('1.')).toBeInTheDocument();
     expect(screen.getByText('12.')).toBeInTheDocument();
   });
 
-  it('has a copy phrase button', () => {
-    renderWithProviders(<BackupPage />);
+  it('has a copy phrase button', async () => {
+    const { user } = renderWithProviders(<BackupPage />);
+    await user.click(screen.getByRole('button', { name: /show phrase/i }));
     expect(
       screen.getByRole('button', { name: /copy phrase/i }),
     ).toBeInTheDocument();
   });
 
-  it('has a confirmation button', () => {
-    renderWithProviders(<BackupPage />);
+  it('has a confirmation button', async () => {
+    const { user } = renderWithProviders(<BackupPage />);
+    await user.click(screen.getByRole('button', { name: /show phrase/i }));
     expect(
       screen.getByRole('button', { name: /i've saved it/i }),
     ).toBeInTheDocument();
@@ -106,6 +124,7 @@ describe('BackupPage', () => {
 
   it('shows confirmation dialog when clicking the save button', async () => {
     const { user } = renderWithProviders(<BackupPage />);
+    await user.click(screen.getByRole('button', { name: /show phrase/i }));
 
     await user.click(
       screen.getByRole('button', { name: /i've saved it/i }),
@@ -134,8 +153,8 @@ describe('BackupPage', () => {
     ).toBeDisabled();
   });
 
-  it('shows identity count', () => {
+  it('shows profile count', () => {
     renderWithProviders(<BackupPage />);
-    expect(screen.getByText(/0 identities available/i)).toBeInTheDocument();
+    expect(screen.getByText(/0 profiles to export/i)).toBeInTheDocument();
   });
 });

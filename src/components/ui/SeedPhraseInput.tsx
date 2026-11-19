@@ -93,7 +93,8 @@ export function SeedPhraseInput({ onSubmit, disabled, className }: SeedPhraseInp
       <p
         className={cn(
           'text-sm text-center',
-          isValidCount ? 'text-success' : 'text-warning',
+          // Neutral until there is something to judge.
+          wordCount === 0 ? 'text-text-tertiary' : isValidCount ? 'text-success' : 'text-warning',
         )}
       >
         {wordCount} {wordCount === 1 ? 'word' : 'words'}

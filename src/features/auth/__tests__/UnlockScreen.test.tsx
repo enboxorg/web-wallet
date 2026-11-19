@@ -13,7 +13,7 @@ describe('UnlockScreen', () => {
   it('renders the logo, heading, and subtitle', () => {
     render(<UnlockScreen {...defaults} />);
 
-    expect(screen.getByText('Unlock Wallet')).toBeInTheDocument();
+    expect(screen.getByText('Unlock your wallet')).toBeInTheDocument();
     expect(screen.getByText('Enter your PIN to continue')).toBeInTheDocument();
     expect(screen.getByText('Identity Wallet')).toBeInTheDocument();
   });

@@ -107,13 +107,34 @@ export async function fetchModules(agent: EnboxAgent, did: string) {
   );
 }
 
+type QueriedModule = {
+  definition: { module: string; published?: boolean };
+  toJSON?: () => { descriptor?: { messageTimestamp?: string } };
+};
+
+/**
+ * One entry per module URI. A module can have several configure messages
+ * (installs, upgrades, synced copies); only its newest configuration counts.
+ */
+export function latestModulePerUri<T extends QueriedModule>(modules: readonly T[]): T[] {
+  const timestamp = (module: T) => module.toJSON?.().descriptor?.messageTimestamp ?? '';
+  const byUri = new Map<string, T>();
+  for (const module of modules) {
+    const current = byUri.get(module.definition.module);
+    if (current === undefined || timestamp(module) >= timestamp(current)) {
+      byUri.set(module.definition.module, module);
+    }
+  }
+  return [...byUri.values()];
+}
+
 export function fetchModulesEffect(did: string) {
   return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
     const { modules } = yield* Effect.tryPromise({
       try: async () => enbox.dwn.modules.query({}),
       catch: sdkError('modules.query'),
     });
-    return modules.map((p) => ({
+    return latestModulePerUri(modules).map((p) => ({
       uri: p.definition.module as string,
       published: (p.definition.published ?? false) as boolean,
       definition: p.definition,
@@ -228,15 +249,27 @@ export async function fetchActivity(
 
 export function fetchActivityEffect(did: string, limit = 50) {
   return withEnboxEffect(did, (enbox) => Effect.gen(function* () {
-    const { records } = yield* Effect.tryPromise({
+    // A records query needs at least one filter property, so recent records
+    // are read per installed module and merged newest-first.
+    const { modules } = yield* Effect.tryPromise({
+      try: async () => enbox.dwn.modules.query({}),
+      catch: sdkError('modules.query.activity'),
+    });
+    const moduleUris = latestModulePerUri(modules).map((module) => module.definition.module as string);
+    const perModule = yield* Effect.forEach(moduleUris, (module) => Effect.tryPromise({
       try: async () =>
         enbox.dwn.records.query({
-          filter: {},
+          filter: { module },
           dateSort: DwnDateSort.CreatedDescending,
           pagination: { limit },
         }),
       catch: sdkError('records.query.activity'),
-    });
+    }), { concurrency: 4 });
+
+    const records = perModule
+      .flatMap((result) => result.records)
+      .sort((left, right) => right.dateCreated.localeCompare(left.dateCreated))
+      .slice(0, limit);
 
     return records.map((r) => ({
       id: r.id,

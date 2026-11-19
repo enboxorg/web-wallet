@@ -535,7 +535,7 @@ describe('DWebConnectPage', () => {
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
 
-    expect(await screen.findByText(/Could not write the approved permission grants/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Couldn’t save the approval to any of this profile’s sync servers/i)).toBeInTheDocument();
     expect(mocks.transport.deny).toHaveBeenCalledTimes(1);
     expect(mocks.transport.sendResponseAwaitingAck).not.toHaveBeenCalled();
   });

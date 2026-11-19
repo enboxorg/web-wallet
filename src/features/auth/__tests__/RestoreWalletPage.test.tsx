@@ -52,7 +52,7 @@ describe('RestoreWalletPage', () => {
     render(<RestoreWalletPage onRestore={onRestore} isLoading={false} error={null} />);
 
     await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
-    expect(screen.getByText('Recovery DWN Endpoints')).toBeInTheDocument();
+    expect(screen.getByText('Recovery servers')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'DWN endpoint 1' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Continue' }));
 
@@ -71,7 +71,7 @@ describe('RestoreWalletPage', () => {
     render(<RestoreWalletPage onRestore={onRestore} isLoading={false} error={null} />);
 
     await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
-    expect(screen.getByText('Recovery DWN Endpoints')).toBeInTheDocument();
+    expect(screen.getByText('Recovery servers')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Enter replacement endpoints' }));
     await user.click(screen.getByRole('button', { name: 'Remove DWN endpoint 2' }));
@@ -120,7 +120,7 @@ describe('RestoreWalletPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Submit phrase' }));
 
-    expect(screen.queryByText('Recovery DWN Endpoints')).not.toBeInTheDocument();
+    expect(screen.queryByText('Recovery servers')).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Create PIN' })).toBeInTheDocument();
   });
 

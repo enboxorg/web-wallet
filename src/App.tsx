@@ -24,6 +24,7 @@ import {
   unlockWithStoredPasskey,
 } from '@/lib/passkeys';
 
+import { describeAuthError } from '@/lib/auth-errors';
 import { Loader } from '@/components/ui/Loader';
 import { Button } from '@/components/ui/Button';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
@@ -327,7 +328,7 @@ function AuthGate() {
         <RestoreWalletPage
           onRestore={handleRestore}
           isLoading={isLoading}
-          error={authUiError ?? error}
+          error={describeAuthError(authUiError ?? error)}
           onBack={() => setForgotPin(false)}
           allowEndpointSelection={false}
         />
@@ -339,7 +340,7 @@ function AuthGate() {
           <RestoreWalletPage
             onRestore={handleRestore}
             isLoading={isLoading}
-            error={authUiError ?? error}
+            error={describeAuthError(authUiError ?? error)}
             onBack={() => setShowRestore(false)}
           />
         );
@@ -349,7 +350,7 @@ function AuthGate() {
           onSetup={handleSetup}
           onSwitchToRestore={() => setShowRestore(true)}
           isLoading={isLoading}
-          error={authUiError ?? error}
+          error={describeAuthError(authUiError ?? error)}
         />
       );
     }
@@ -358,7 +359,7 @@ function AuthGate() {
         onUnlock={handleUnlock}
         onUnlockWithPasskey={handlePasskeyUnlock}
         onForgotPin={() => setForgotPin(true)}
-        error={authUiError ?? error}
+        error={describeAuthError(authUiError ?? error, passkeyConfigured ? 'passkey' : 'pin')}
         isLoading={isLoading}
         isLocking={isLocking}
         passkeyConfigured={passkeyConfigured}

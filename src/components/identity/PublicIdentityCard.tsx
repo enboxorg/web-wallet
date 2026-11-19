@@ -77,7 +77,7 @@ export function PublicIdentityCard({
               type="button"
               onClick={handleCopyDid}
               className="shrink-0 rounded-md p-1 text-text-ghost hover:text-text-secondary hover:bg-surface-2 transition-colors"
-              aria-label="Copy DID"
+              aria-label="Copy profile ID"
             >
               {copied ? (
                 <Check className="h-3.5 w-3.5 text-success" />

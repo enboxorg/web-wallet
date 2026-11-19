@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Copy, Check, Shield } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { truncateDid, copyToClipboard } from '@/lib/utils';
+import { truncateDid, copyToClipboard, sameName } from '@/lib/utils';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 
@@ -89,8 +89,8 @@ export function IdentityCard({
                 displayName ?? 'Unnamed'
               )}
             </h3>
-            {persona && (
-              <Badge tone="accent">{persona}</Badge>
+            {persona && !sameName(persona, displayName) && (
+              <Badge tone="accent" title="Persona: only you see this">{persona}</Badge>
             )}
           </div>
           {tagline && (
@@ -106,7 +106,7 @@ export function IdentityCard({
               type="button"
               onClick={handleCopy}
               className="relative z-10 shrink-0 rounded p-1 text-text-ghost transition-colors hover:text-text-secondary"
-              aria-label="Copy DID"
+              aria-label="Copy profile ID"
             >
               {copied ? <Check size={12} className="text-success" /> : <Copy size={12} />}
             </button>

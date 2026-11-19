@@ -3,12 +3,15 @@ import { cn } from '@/lib/utils';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
+  /** Short guidance under the field, e.g. who can see the value. */
+  hint?: string;
   error?: string;
 }
 
 export const Input = forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, className, id, ...props }, ref) => {
+  ({ label, hint, error, className, id, ...props }, ref) => {
     const inputId = id ?? label?.toLowerCase().replace(/\s+/g, '-');
+    const describedBy = [hint && `${inputId}-hint`, error && `${inputId}-error`].filter(Boolean).join(' ');
 
     return (
       <div className="flex flex-col gap-1.5">
@@ -34,9 +37,14 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
             className,
           )}
           aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${inputId}-error` : undefined}
+          aria-describedby={describedBy || undefined}
           {...props}
         />
+        {hint && !error && (
+          <p id={`${inputId}-hint`} className="text-xs text-text-tertiary">
+            {hint}
+          </p>
+        )}
         {error && (
           <p id={`${inputId}-error`} className="text-xs text-error">
             {error}

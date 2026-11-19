@@ -1,7 +1,7 @@
 import { getUnknownErrorMessage } from '@/enbox/effect/errors';
 
 const GRANT_DELIVERY_ERROR =
-  'Could not write the approved permission grants to any DWN endpoint for this identity. Check the identity DWN endpoints and try again.';
+  'Couldn’t save the approval to any of this profile’s sync servers. Check the profile’s DWN endpoints and try again.';
 
 /**
  * Normalizes errors crossing SDK, browser, and transport boundaries before

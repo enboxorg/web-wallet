@@ -124,9 +124,15 @@ export default function CreateIdentityPage() {
         description="Set up a new profile to share with apps."
         backTo="/"
         actions={
-          <Button type="button" variant="ghost" size="sm" onClick={handleRegenerate}>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleRegenerate}
+            title="Pick a new random name, avatar and banner"
+          >
             <RefreshCw size={14} className={cn(isPending && 'animate-spin')} />
-            <span className="hidden sm:inline">Regenerate</span>
+            Shuffle
           </Button>
         }
       />
@@ -161,16 +167,18 @@ export default function CreateIdentityPage() {
           </h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Input
-              label="Persona Name"
-              placeholder="e.g. Personal, Work, Gaming"
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
-            />
-            <Input
-              label="Display Name"
+              label="Display name"
+              hint="Public. Apps and people see this name."
               placeholder="Your public-facing name"
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
+            />
+            <Input
+              label="Persona"
+              hint="Private. Only you see it, to tell your profiles apart."
+              placeholder="e.g. Personal, Work, Gaming"
+              value={persona}
+              onChange={(e) => setPersona(e.target.value)}
             />
           </div>
           <Input
@@ -181,7 +189,7 @@ export default function CreateIdentityPage() {
           />
           <Textarea
             label="Bio"
-            placeholder="Tell the world a bit more about this identity..."
+            placeholder="Tell the world a bit more about yourself…"
             value={bio}
             onChange={(e) => setBio(e.target.value)}
             rows={4}

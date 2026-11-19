@@ -1,4 +1,5 @@
-import { Link2, Share2, SlidersHorizontal, UserRound } from 'lucide-react';
+import { Link2, RadioTower, Share2, SlidersHorizontal, UserRound } from 'lucide-react';
+import { ServiceConfigModuleDefinition } from '@enbox/agent';
 import {
   ConnectDefinition,
   PreferencesDefinition,
@@ -9,9 +10,10 @@ import { Monogram } from '@/components/ui/Monogram';
 import type { ModuleDisplay } from '@/lib/module-names';
 
 const CORE_ICONS: Record<string, React.ReactNode> = {
-  [ProfileDefinition.module]     : <UserRound />,
-  [ConnectDefinition.module]     : <Link2 />,
-  [PreferencesDefinition.module] : <SlidersHorizontal />,
+  [ProfileDefinition.module]             : <UserRound />,
+  [ConnectDefinition.module]             : <Link2 />,
+  [PreferencesDefinition.module]         : <SlidersHorizontal />,
+  [ServiceConfigModuleDefinition.module] : <RadioTower />,
 };
 
 /** Visual anchor for a module row: a core icon, or a tint stable per module. */

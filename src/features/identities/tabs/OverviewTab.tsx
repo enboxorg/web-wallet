@@ -17,9 +17,10 @@ interface OverviewTabProps {
 function Stat({ icon, value, label }: { icon: React.ReactNode; value: number; label: string }) {
   return (
     <div className="min-w-0 rounded-xl border border-border-default bg-surface-1 p-3.5 sm:p-4">
-      <div className="flex items-center gap-1.5 text-text-tertiary [&>svg]:size-3.5 [&>svg]:shrink-0">
+      <div className="flex items-start gap-1.5 text-text-tertiary [&>svg]:mt-px [&>svg]:size-3.5 [&>svg]:shrink-0">
         {icon}
-        <span className="truncate text-xs">{label}</span>
+        {/* Wraps rather than truncating on narrow phones. */}
+        <span className="text-xs leading-tight">{label}</span>
       </div>
       <p className="mt-2 text-2xl font-semibold tabular-nums tracking-tight text-text-primary">{value}</p>
     </div>
@@ -99,8 +100,8 @@ export default function OverviewTab({ did }: OverviewTabProps) {
       )}
 
       <div className="grid grid-cols-3 gap-3">
-        <Stat icon={<Shield />} value={withAccess} label="With access" />
-        <Stat icon={<MonitorSmartphone />} value={activeSessions.length} label="Sessions" />
+        <Stat icon={<Shield />} value={withAccess} label="Apps with access" />
+        <Stat icon={<MonitorSmartphone />} value={activeSessions.length} label="Active sessions" />
         <Stat icon={<Boxes />} value={modules?.length ?? 0} label="Modules" />
       </div>
 
@@ -117,7 +118,7 @@ export default function OverviewTab({ did }: OverviewTabProps) {
           to="/search"
           icon={<Search />}
           title="Find people"
-          description="Look up a public profile by DID"
+          description="Look up someone's public profile"
         />
       </div>
     </div>
