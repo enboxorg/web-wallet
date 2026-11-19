@@ -1,5 +1,5 @@
 import type { ConnectPermissionRequest } from '@enbox/connect';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import type { ConnectRefreshDetection } from '@/features/connect/connect-refresh';
@@ -45,8 +45,7 @@ describe('RenewSessionDisplay', () => {
       />,
     );
 
-    expect(screen.getByText('Renew access for Example App')).toBeInTheDocument();
-    expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Alice');
+    expect(within(screen.getByRole('region', { name: 'Renewing as' })).getByText('Alice')).toBeInTheDocument();
     expect(screen.getByText('Active')).toBeInTheDocument();
     expect(screen.getByText('Previous access expires in 2 hours')).toBeInTheDocument();
     expect(screen.getByText('New access period: 1 hour')).toBeInTheDocument();

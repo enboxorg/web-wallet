@@ -332,12 +332,45 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    // The requester label is the transport-authenticated origin, not the
-    // request's claimed clientMetadata.origin.
-    expect(screen.getByRole('heading', { name: /^https:\/\/\s?app\.example$/ })).toBeInTheDocument();
-    expect(screen.getByText('Origin verified')).toBeInTheDocument();
-    expect(screen.queryByText('https://claimed.example')).not.toBeInTheDocument();
-    expect(screen.getByText(/Reported app name:\s*Example App/i)).toBeInTheDocument();
+    // The app's own name leads; the address under it is the transport-
+    // authenticated origin, never the request's claimed clientMetadata.origin.
+    expect(screen.getByRole('heading', { level: 1, name: 'Example App' })).toBeInTheDocument();
+    expect(screen.getByText('app.example')).toBeInTheDocument();
+    // The browser-pinned HTTPS origin, and only that, earns the badge.
+    expect(screen.getByText('Verified')).toBeInTheDocument();
+    expect(screen.queryByText(/claimed\.example/)).not.toBeInTheDocument();
+  });
+
+  it('shows a local development origin without the Verified badge', async () => {
+    mocks.transport.dappOrigin = 'http://localhost:5173';
+    render(<DWebConnectPage />);
+    expect(await screen.findByText('Local development')).toBeInTheDocument();
+    expect(screen.getByText('http://localhost:5173')).toBeInTheDocument();
+    expect(screen.queryByText('Verified')).not.toBeInTheDocument();
+  });
+
+  it('strips symbols an app could use to fake wallet badges from its name', async () => {
+    mocks.transport.awaitRequest.mockResolvedValue({ ...connectRequest(), appName: '✅ PayPal \u202EVerified 🛡️' });
+    render(<DWebConnectPage />);
+    expect(await screen.findByRole('heading', { level: 1, name: 'PayPal Verified' })).toBeInTheDocument();
+    expect(screen.queryByText(/✅|🛡/)).not.toBeInTheDocument();
+  });
+
+  it('says when a verified site has never connected to this wallet', async () => {
+    mocks.allPermissions = [{ ownerDid: 'did:dht:alice', permissions: [], revokedGrantIds: [] }];
+    render(<DWebConnectPage />);
+    expect(await screen.findByText("This site hasn't connected to your wallet before.")).toBeInTheDocument();
+  });
+
+  it('stays quiet for a site this wallet has connected to, even if that access was revoked', async () => {
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:bob',
+      permissions     : [existingSessionGrant('did:dht:bob', 'did:jwk:old-delegate')],
+      revokedGrantIds : ['grant-did:dht:bob'],
+    }];
+    render(<DWebConnectPage />);
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByText(/hasn't connected to your wallet before/)).not.toBeInTheDocument();
   });
 
   it('approves via the ceremony and posts the sealed response', async () => {
@@ -584,8 +617,7 @@ describe('DWebConnectPage', () => {
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText('Returning connection')).toBeInTheDocument();
-    expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
+    expect(await screen.findByText(/already has 1 active session/i)).toBeInTheDocument();
   });
 
   it('renews a fully revoked popup session with the exact delegate owner', async () => {
@@ -619,8 +651,7 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     const renew = await screen.findByRole('button', { name: 'Renew access' });
-    expect(screen.getByText('Renewing connection')).toBeInTheDocument();
-    expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Bob');
+    expect(within(screen.getByRole('region', { name: 'Renewing as' })).getByText('Bob')).toBeInTheDocument();
     expect(screen.getByText('Revoked')).toBeVisible();
     expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
@@ -672,8 +703,7 @@ describe('DWebConnectPage', () => {
     const allow = await screen.findByRole('button', { name: 'Allow access' });
     expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
     expect(screen.getByText(/wants to add Bills and renew its existing access/)).toBeInTheDocument();
-    expect(screen.getByText('Adding access')).toBeInTheDocument();
-    expect(screen.getByText(/Approving as/)).toHaveTextContent('Approving as Bob');
+    expect(within(screen.getByRole('region', { name: 'Approving as' })).getByText('Bob')).toBeInTheDocument();
 
     // New access is listed first, then what is being renewed.
     const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);

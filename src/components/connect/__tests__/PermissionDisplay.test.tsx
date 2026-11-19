@@ -93,14 +93,48 @@ describe('PermissionDisplay', () => {
     expect(screen.getByText('Access lasts 1 hour')).toBeInTheDocument();
     const row = screen.getByRole('listitem', { name: 'Demo' });
     expect(within(row).getByTitle('https://example.com/modules/demo')).toHaveTextContent('example.com');
-    // Record access leads; sync + setup plumbing collapses into one quiet chip.
-    expect(chips(row)).toEqual(['View', 'Add or edit', 'Delete', 'Sync & setup']);
-    expect(within(row).getByTitle('Messages.Read, Modules.Query')).toBeInTheDocument();
+    // Record access leads; sync + setup plumbing becomes one note under the list.
+    expect(chips(row)).toEqual(['View', 'Add or edit', 'Delete']);
+    expect(screen.getAllByText('The app can also sync changes and check the setup of Demo.')).toHaveLength(1);
     expect(screen.queryByText('Query')).not.toBeInTheDocument();
     // Every granted scope stays disclosed verbatim in the technical details.
     expect(screen.getAllByText('Modules.Query')).toHaveLength(1);
     expect(screen.getAllByText('Messages.Read')).toHaveLength(1);
     expect(screen.getByTestId('technical-setup-details')).not.toHaveAttribute('open');
+  });
+
+  it('names the items with sync and setup when only some include it', () => {
+    const scopes = (module: string, support: boolean) => [
+      ...(support ? [{ interface: 'Messages', method: 'Read', module }, { interface: 'Modules', method: 'Query', module }] : []),
+      { interface: 'Records', method: 'Read', module },
+    ];
+    const request = (module: string, support: boolean) => ({
+      moduleDefinition : { module, types: {}, structure: {} },
+      permissionScopes : scopes(module, support),
+    });
+    render(<PermissionDisplay permissions={[
+      request('https://example.com/modules/tasks', true),
+      request('https://example.com/modules/notes', false),
+    ] as unknown as ConnectPermissionRequest[]} />);
+
+    expect(screen.getByText('The app can also sync changes and check the setup of Tasks.')).toBeInTheDocument();
+    expect(chips(screen.getByRole('listitem', { name: 'Tasks' }))).toEqual(['View']);
+  });
+
+  it('says "each of these" only when it applies to every item', () => {
+    const request = (module: string) => ({
+      moduleDefinition : { module, types: {}, structure: {} },
+      permissionScopes : [
+        { interface: 'Messages', method: 'Read', module },
+        { interface: 'Records', method: 'Read', module },
+      ],
+    });
+    render(<PermissionDisplay permissions={[
+      request('https://example.com/modules/tasks'),
+      request('https://example.com/modules/notes'),
+    ] as unknown as ConnectPermissionRequest[]} />);
+
+    expect(screen.getByText(/check how each of these is set up/)).toBeInTheDocument();
   });
 
   it('shows the effective capability when a request contains only a support scope', () => {
@@ -605,7 +639,8 @@ describe('PermissionDisplay', () => {
     expect(screen.queryByRole('listitem', { name: /contexts/i })).not.toBeInTheDocument();
     expect(chips(row, 0)).toEqual(['View']);
     const companion = within(row).getByRole('group', { name: 'Shared contexts & invitations' });
-    expect(chips(companion)).toEqual(['View', 'Add or edit', 'Sync changes']);
+    expect(chips(companion)).toEqual(['View', 'Add or edit']);
+    expect(screen.getByText(/also sync changes/i)).toBeInTheDocument();
     // Even though `notes` itself is unencrypted, the paired companion's `follow` type is encrypted + Read-granted.
     expect(within(row).getAllByText('Encrypted')).toHaveLength(1);
     expect(within(companion).getByText('Encrypted')).toBeInTheDocument();

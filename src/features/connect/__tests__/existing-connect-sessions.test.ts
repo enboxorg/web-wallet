@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DwnPermissionGrant } from '@enbox/agent';
-import { findMatchingActiveConnectSessions } from '../existing-connect-sessions';
+import { findMatchingActiveConnectSessions, hasConnectedBefore } from '../existing-connect-sessions';
 
 const baseSession = {
   id        : 'session-1',
@@ -81,5 +81,20 @@ describe('findMatchingActiveConnectSessions', () => {
     }, new Date('2026-06-23T12:00:00.000Z'));
 
     expect(sessions).toHaveLength(0);
+  });
+});
+
+describe('hasConnectedBefore', () => {
+  it('counts any earlier session for the origin, on any profile, even expired ones', () => {
+    // baseSession expired in 2026-06; it still proves the site connected before.
+    const owners = [{ permissions: [] }, { permissions: [grant({ connectSession: baseSession } as Partial<DwnPermissionGrant>)] }];
+    expect(hasConnectedBefore(owners, 'https://app.example')).toBe(true);
+  });
+
+  it('treats a different origin, even a near match, as new', () => {
+    const owners = [{ permissions: [grant({ connectSession: baseSession } as Partial<DwnPermissionGrant>)] }];
+    expect(hasConnectedBefore(owners, 'https://app.example.evil')).toBe(false);
+    expect(hasConnectedBefore(owners, 'http://app.example')).toBe(false);
+    expect(hasConnectedBefore([], 'https://app.example')).toBe(false);
   });
 });

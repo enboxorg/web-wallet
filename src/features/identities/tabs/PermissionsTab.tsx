@@ -30,9 +30,8 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
-import { ThirdPartyBadge } from '@/components/modules/ThirdPartyBadge';
-import { PermissionActionChips } from '@/components/connect/PermissionActionChips';
-import { formatList } from '@/components/connect/connect-scope-display';
+import { PermissionActionChips, SupportActionsNote } from '@/components/connect/PermissionActionChips';
+import { formatList, hidesSupportActions, visibleActions } from '@/components/connect/connect-scope-display';
 import { truncateDid, cn } from '@/lib/utils';
 import { describeModule, getModuleName, type ModuleDisplay } from '@/lib/module-names';
 import {
@@ -169,17 +168,24 @@ function AccessRowItem({
             <span className="truncate">
               {display?.companionOf ? getModuleName(display.companionOf) : name}
             </span>
-            {display?.companionOf && <Badge tone="info">Shared contexts</Badge>}
+            {display?.companionOf && (
+              <span className="shrink-0 text-xs font-normal text-text-tertiary">Shared contexts</span>
+            )}
           </p>
           {(detail || thirdParty) && (
-            <p className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-text-tertiary">
-              {detail && <span className="truncate" title={detail}>{detail}</span>}
-              {thirdParty && <ThirdPartyBadge uri={row.module} />}
+            <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
+              {detail && <span className="min-w-0 truncate" title={detail}>{detail}</span>}
+              {detail && thirdParty && <span aria-hidden="true" className="text-text-ghost">·</span>}
+              {thirdParty && (
+                <span className="shrink-0" title="Not built into the wallet. A module is identified by its URI, not its name.">
+                  Third-party
+                </span>
+              )}
             </p>
           )}
         </div>
         <PermissionActionChips
-          actions={row.actions}
+          actions={visibleActions(row.actions)}
           emphasizeSupport={!hasRecordAccess}
           className="mt-2 sm:mt-0 sm:max-w-[60%] sm:justify-end"
         />
@@ -215,19 +221,25 @@ function AccessList({
   }
 
   return (
-    <ul
-      aria-label={label}
-      className="divide-y divide-border-subtle overflow-hidden rounded-lg border border-border-subtle bg-surface-0/40"
-    >
-      {rows.map((row) => (
-        <AccessRowItem
-          key={row.key}
-          row={row}
-          onRevoke={onRevokeRow ? () => onRevokeRow(row) : undefined}
-          revokeLabel={revokeLabel?.(row)}
-        />
-      ))}
-    </ul>
+    <div className="space-y-2">
+      <ul
+        aria-label={label}
+        className="divide-y divide-border-subtle overflow-hidden rounded-lg border border-border-subtle bg-surface-0/40"
+      >
+        {rows.map((row) => (
+          <AccessRowItem
+            key={row.key}
+            row={row}
+            onRevoke={onRevokeRow ? () => onRevokeRow(row) : undefined}
+            revokeLabel={revokeLabel?.(row)}
+          />
+        ))}
+      </ul>
+      <SupportActionsNote
+        names={[...new Set(rows.filter((row) => hidesSupportActions(row.actions)).map(accessRowName))]}
+        all={rows.every((row) => hidesSupportActions(row.actions))}
+      />
+    </div>
   );
 }
 

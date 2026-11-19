@@ -1,6 +1,8 @@
 import { ServiceConfigModuleDefinition, type DwnModuleDefinition } from '@enbox/agent';
 import { authoredModuleDefinitionsEqual } from '@enbox/dwn-sdk-js';
 
+import { sanitizeDisplayText } from './display-text';
+
 import {
   ConnectDefinition,
   PreferencesDefinition,
@@ -208,10 +210,11 @@ export function humanizeSlug(slug: string): string {
 function nameFromSlugs(slugs: string[]): string | undefined {
   if (slugs.length === 0) return undefined;
   const leaf = slugs[slugs.length - 1];
-  if (slugs.length > 1 && NON_DESCRIPTIVE_LEAVES.has(leaf.toLowerCase())) {
-    return humanizeSlug(`${slugs[slugs.length - 2]} ${leaf}`);
-  }
-  return humanizeSlug(leaf);
+  const raw = slugs.length > 1 && NON_DESCRIPTIVE_LEAVES.has(leaf.toLowerCase())
+    ? humanizeSlug(`${slugs[slugs.length - 2]} ${leaf}`)
+    : humanizeSlug(leaf);
+  // Segments are percent-decoded, so a URI can spell "✅ Verified".
+  return sanitizeDisplayText(raw) || undefined;
 }
 
 /**
@@ -222,7 +225,7 @@ function nameFromSlugs(slugs: string[]): string | undefined {
  */
 export function nameFromModuleUri(uri: string): string {
   const { host, slugs } = parseModuleUri(uri);
-  return nameFromSlugs(slugs) ?? host ?? uri;
+  return nameFromSlugs(slugs) ?? host ?? sanitizeDisplayText(uri);
 }
 
 /**
