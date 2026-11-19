@@ -1,4 +1,4 @@
-import type { DwnModuleDefinition } from '@enbox/agent';
+import { ServiceConfigModuleDefinition, type DwnModuleDefinition } from '@enbox/agent';
 import { authoredModuleDefinitionsEqual } from '@enbox/dwn-sdk-js';
 
 import {
@@ -30,12 +30,19 @@ const MODULE_REGISTRY: Record<string, ModuleInfo> = {
     name        : 'Preferences',
     description : 'Theme, locale, privacy, and notification preferences',
   },
+  // Installed by the wallet itself; announces endpoint changes so other
+  // servers and devices pick up where this profile now syncs.
+  [ServiceConfigModuleDefinition.module]: {
+    name        : 'Sync servers',
+    description : 'Announces changes to the servers this profile syncs with',
+  },
 };
 
 const CANONICAL_MODULE_DEFINITIONS = new Map<string, DwnModuleDefinition>([
   [ProfileDefinition.module, ProfileDefinition as DwnModuleDefinition],
   [ConnectDefinition.module, ConnectDefinition as DwnModuleDefinition],
   [PreferencesDefinition.module, PreferencesDefinition as DwnModuleDefinition],
+  [ServiceConfigModuleDefinition.module, ServiceConfigModuleDefinition as DwnModuleDefinition],
 ]);
 
 export function getCanonicalModuleDefinition(uri: string): DwnModuleDefinition | undefined {

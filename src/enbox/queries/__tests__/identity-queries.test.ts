@@ -151,36 +151,67 @@ describe('raw DWN reads', () => {
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
-  it('uses and closes the Enbox raw-DWN escape hatch for activity', async () => {
-    mocks.activityQuery.mockResolvedValue({
-      records: [{
-        id          : 'record-1',
-        module    : 'https://example.com/module',
-        modulePath: 'note',
-        dateCreated : '2026-08-11T00:00:00.000Z',
-        author      : 'did:dht:alice',
-      }],
+  it('keeps one entry per module URI, preferring its newest configuration', async () => {
+    const configured = (published: boolean, messageTimestamp: string) => ({
+      definition : { module: 'https://example.com/module', published },
+      toJSON     : () => ({ descriptor: { messageTimestamp } }),
+    });
+    mocks.moduleQuery.mockResolvedValue({
+      modules: [
+        configured(false, '2026-08-11T00:00:02.000000Z'),
+        configured(true, '2026-08-11T00:00:01.000000Z'),
+        { definition: { module: 'https://example.com/other', published: false } },
+      ],
     });
 
-    await expect(fetchActivity({} as never, 'did:dht:alice', 5)).resolves.toEqual([{
-      id           : 'record-1',
-      module     : 'https://example.com/module',
-      modulePath : 'note',
-      schema       : undefined,
-      dataFormat   : undefined,
-      dateCreated  : '2026-08-11T00:00:00.000Z',
-      author       : 'did:dht:alice',
-      published    : undefined,
-    }]);
+    const modules = await fetchModules({} as never, 'did:dht:alice');
+
+    expect(modules.map((module) => [module.uri, module.published])).toEqual([
+      ['https://example.com/module', false],
+      ['https://example.com/other', false],
+    ]);
+  });
+
+  it('reads recent activity per installed module, merged newest-first', async () => {
+    const notes = 'https://example.com/notes';
+    const tasks = 'https://example.com/tasks';
+    mocks.moduleQuery.mockResolvedValue({
+      modules: [{ definition: { module: notes } }, { definition: { module: tasks } }, { definition: { module: notes } }],
+    });
+    const record = (id: string, module: string, dateCreated: string) => ({
+      id, module, modulePath: 'item', dateCreated, author: 'did:dht:alice',
+    });
+    mocks.activityQuery.mockImplementation(async ({ filter }: { filter: { module: string } }) => ({
+      records: filter.module === notes
+        ? [record('note-2', notes, '2026-08-11T00:00:03.000Z'), record('note-1', notes, '2026-08-11T00:00:01.000Z')]
+        : [record('task-1', tasks, '2026-08-11T00:00:02.000Z')],
+    }));
+
+    const activity = await fetchActivity({} as never, 'did:dht:alice', 2);
+
+    expect(activity.map((item) => item.id)).toEqual(['note-2', 'task-1']);
+    expect(activity[0]).toEqual({
+      id          : 'note-2',
+      module      : notes,
+      modulePath  : 'item',
+      schema      : undefined,
+      dataFormat  : undefined,
+      dateCreated : '2026-08-11T00:00:03.000Z',
+      author      : 'did:dht:alice',
+      published   : undefined,
+    });
+    // Never an empty filter: the DWN schema rejects it.
+    expect(mocks.activityQuery).toHaveBeenCalledTimes(2);
     expect(mocks.activityQuery).toHaveBeenCalledWith({
-      filter     : {},
+      filter     : { module: notes },
       dateSort   : 'createdDescending',
-      pagination : { limit: 5 },
+      pagination : { limit: 2 },
     });
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
   it('closes the Enbox facade when a raw read fails', async () => {
+    mocks.moduleQuery.mockResolvedValue({ modules: [{ definition: { module: 'https://example.com/module' } }] });
     mocks.activityQuery.mockRejectedValue(new Error('query failed'));
 
     await expect(fetchActivity({} as never, 'did:dht:alice')).rejects.toThrow('query failed');
