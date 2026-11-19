@@ -19,10 +19,11 @@ import { Button } from '@/components/ui/Button';
 import { buttonClassName } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/Dialog';
 import { Loader } from '@/components/ui/Loader';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { TabList, Tab, TabPanel } from '@/components/ui/Tabs';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { shareEffect } from '@/lib/browser-effects';
-import { truncateDid, copyToClipboard } from '@/lib/utils';
+import { truncateDid, copyToClipboard, sameName } from '@/lib/utils';
 
 import OverviewTab from './tabs/OverviewTab';
 import ModulesTab from './tabs/ModulesTab';
@@ -160,47 +161,23 @@ export default function IdentityDetailsPage() {
               className="ring-4 ring-surface-1"
             />
 
-            {/* Actions */}
+            {/* Everyday actions; export and delete live under Manage profile. */}
             <div className="flex items-center gap-2 pb-1">
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={() => setQrOpen(true)}
-                title="Share DID"
-                aria-label="Share"
               >
                 <QrCode className="size-3.5" />
-                <span className="hidden sm:inline">Share</span>
+                Share
               </Button>
               <Link
                 to={`/identity/${encodeURIComponent(did)}/edit`}
                 className={buttonClassName({ variant: 'secondary', size: 'sm' })}
-                aria-label="Edit"
               >
                 <Pencil className="size-3.5" />
-                <span className="hidden sm:inline">Edit</span>
+                Edit
               </Link>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleExport}
-                loading={exportIdentity.isPending}
-                aria-label="Export"
-                title="Export profile"
-              >
-                {!exportIdentity.isPending && <Download className="size-3.5" />}
-                <span className="hidden md:inline">Export</span>
-              </Button>
-              <Button
-                variant="danger-ghost"
-                size="sm"
-                onClick={() => setDeleteOpen(true)}
-                aria-label="Delete"
-                title="Delete profile"
-              >
-                <Trash2 className="size-3.5" />
-                <span className="hidden md:inline">Delete</span>
-              </Button>
             </div>
           </div>
 
@@ -209,7 +186,9 @@ export default function IdentityDetailsPage() {
               <h1 className="truncate text-2xl font-semibold tracking-tight text-text-primary">
                 {displayName}
               </h1>
-              {persona && <Badge tone="accent" size="md">{persona}</Badge>}
+              {persona && !sameName(persona, displayName) && (
+                <Badge tone="accent" size="md" title="Persona: only you see this">{persona}</Badge>
+              )}
             </div>
             {profile?.tagline && (
               <p className="mt-1 text-sm text-text-secondary">{profile.tagline}</p>
@@ -218,7 +197,7 @@ export default function IdentityDetailsPage() {
               type="button"
               onClick={handleCopyDid}
               className="mt-2.5 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 font-mono text-xs text-text-tertiary transition-colors hover:bg-surface-3 hover:text-text-primary"
-              title="Copy DID"
+              title="Copy profile ID"
             >
               <span className="truncate">{truncateDid(did)}</span>
               {copied ? (
@@ -248,7 +227,50 @@ export default function IdentityDetailsPage() {
       </TabList>
 
       <TabPanel id={panelId(0)} labelledBy={tabId(0)} active={activeTab === 0}>
-        <OverviewTab did={did} />
+        <div className="space-y-8">
+          <OverviewTab did={did} />
+
+          <section aria-labelledby="manage-profile-heading" className="space-y-3">
+            <SectionHeader id="manage-profile-heading" title="Manage profile" />
+            <div className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
+              <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-text-primary">Export profile</p>
+                  <p className="mt-0.5 text-xs text-text-tertiary">
+                    Download this profile and its keys as a backup file. Keep the file private.
+                  </p>
+                </div>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="shrink-0 self-start sm:self-auto"
+                  onClick={handleExport}
+                  loading={exportIdentity.isPending}
+                >
+                  {!exportIdentity.isPending && <Download className="size-3.5" />}
+                  Export
+                </Button>
+              </div>
+              <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-text-primary">Delete profile</p>
+                  <p className="mt-0.5 text-xs text-text-tertiary">
+                    Permanently remove this profile and its data from your wallet.
+                  </p>
+                </div>
+                <Button
+                  variant="danger-soft"
+                  size="sm"
+                  className="shrink-0 self-start sm:self-auto"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2 className="size-3.5" />
+                  Delete
+                </Button>
+              </div>
+            </div>
+          </section>
+        </div>
       </TabPanel>
       <TabPanel id={panelId(1)} labelledBy={tabId(1)} active={activeTab === 1}>
         <ModulesTab did={did} />
@@ -297,7 +319,7 @@ export default function IdentityDetailsPage() {
                 }
               }}
               className="shrink-0 rounded-lg bg-surface-2 p-2.5 text-text-tertiary hover:text-text-primary transition-colors"
-              aria-label="Copy DID"
+              aria-label="Copy profile ID"
             >
               {qrCopied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
             </button>
@@ -337,7 +359,7 @@ export default function IdentityDetailsPage() {
           )}
 
           <p className="text-xs text-text-ghost text-center">
-            Scan this QR code or copy the DID to share this identity.
+            Scan this QR code or copy the ID to share this profile.
           </p>
         </div>
       </Dialog>
@@ -376,7 +398,7 @@ export default function IdentityDetailsPage() {
               loading={deleteIdentity.isPending}
               disabled={deleteConfirmText !== 'DELETE'}
             >
-              Delete Identity
+              Delete profile
             </Button>
           </div>
         </div>

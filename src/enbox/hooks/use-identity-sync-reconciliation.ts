@@ -69,7 +69,7 @@ export function useIdentitySyncReconciliation(identities: unknown[] | undefined)
       } catch (error) {
         console.error('Identity reconciliation failed:', error);
         toast.error(
-          'Failed to set up a new identity. Reload the wallet to retry.',
+          'Couldn’t finish setting up a new profile. Reload the wallet to retry.',
         );
       } finally {
         runningRef.current = false;

@@ -97,12 +97,12 @@ describe('RemoteSyncStatusPanel', () => {
     expect(await screen.findByText('https://healthy.example/dwn')).toBeInTheDocument();
     expect(screen.getByText('Healthy')).toBeInTheDocument();
     expect(screen.getByText('Quota blocked')).toBeInTheDocument();
-    expect(screen.getByText(/2 messages are waiting for remote quota/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 changes are waiting because this server's storage is full/i)).toBeInTheDocument();
     expect(screen.getByText(/tenant storage quota exceeded/i)).toBeInTheDocument();
-    expect(screen.getByText('Replication link caught up')).toBeInTheDocument();
+    expect(screen.getByText('Up to date')).toBeInTheDocument();
     expect(screen.getByText('2 modules')).toBeInTheDocument();
     expect(screen.getByText('Live')).toBeInTheDocument();
-    expect(screen.getByText('0 of 1 replication link caught up')).toBeInTheDocument();
+    expect(screen.getByText('Catching up (0 of 1 done)')).toBeInTheDocument();
     expect(screen.getByText('Repairing')).toBeInTheDocument();
   });
 
@@ -170,6 +170,6 @@ describe('RemoteSyncStatusPanel', () => {
     render(<RemoteSyncStatusPanel did="did:dht:owner" />, { wrapper: createWrapper() });
 
     expect(await screen.findByText('Shared context')).toBeInTheDocument();
-    expect(screen.getByText('0 of 1 replication link caught up')).toBeInTheDocument();
+    expect(screen.getByText('Catching up (0 of 1 done)')).toBeInTheDocument();
   });
 });

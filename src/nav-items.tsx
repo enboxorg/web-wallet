@@ -1,7 +1,5 @@
 import {
   Users,
-  UserPlus,
-  Download,
   Search,
   QrCode,
   Shield,
@@ -12,39 +10,26 @@ import type { NavItem } from '@/components/layout/types';
 
 /**
  * Full sidebar navigation items (desktop).
- * Grouped by section with all destinations visible.
+ *
+ * Only destinations: creating and importing profiles are actions on the
+ * Profiles page, so they highlight Profiles instead of being separate entries.
  */
 export const sidebarItems: NavItem[] = [
   {
     path: '/',
     label: 'Profiles',
     icon: <Users size={20} />,
-    section: 'Profiles',
-    activePrefixes: ['/identity/'],
-  },
-  {
-    path: '/identities/create',
-    label: 'New profile',
-    icon: <UserPlus size={20} />,
-    section: 'Profiles',
-  },
-  {
-    path: '/identities/import',
-    label: 'Import',
-    icon: <Download size={20} />,
-    section: 'Profiles',
+    activePrefixes: ['/identity/', '/identities/'],
   },
   {
     path: '/search',
     label: 'Find people',
     icon: <Search size={20} />,
-    section: 'Discover',
   },
   {
     path: '/connect/app',
-    label: 'App Connect',
+    label: 'Connect an app',
     icon: <QrCode size={20} />,
-    section: 'Connect',
   },
   {
     path: '/settings/security',

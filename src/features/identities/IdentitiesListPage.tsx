@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Users, UserPlus, Search } from 'lucide-react';
+import { Download, Users, UserPlus, Search } from 'lucide-react';
 import { Link, useNavigate } from 'react-router';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
@@ -14,6 +14,8 @@ import { Input } from '@/components/ui/Input';
 import { Loader } from '@/components/ui/Loader';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { countActivePermissionApps } from './tabs/permission-sessions';
+
+const SEARCH_THRESHOLD = 3;
 
 function IdentityCardWithProfile({ identity }: { identity: any }) {
   const did = identity.did.uri;
@@ -68,7 +70,7 @@ export default function IdentitiesListPage() {
   }, [identities, search]);
 
   if (isLoading) {
-    return <Loader message="Loading identities…" />;
+    return <Loader message="Loading profiles…" />;
   }
 
   if (error) {
@@ -77,12 +79,12 @@ export default function IdentitiesListPage() {
         <h1 className="text-[length:var(--text-2xl)] font-semibold text-text-primary">
           Identities
         </h1>
-        <ErrorBox message={`Failed to load identities: ${(error as Error).message}`} />
+        <ErrorBox message={`Couldn't load your profiles: ${(error as Error).message}`} />
       </div>
     );
   }
 
-  const hasIdentities = identities && identities.length > 0;
+  const hasIdentities = identities !== undefined && identities.length > 0;
 
   return (
     <div className="space-y-6">
@@ -90,14 +92,21 @@ export default function IdentitiesListPage() {
         title="Profiles"
         description="The profiles you share with your apps."
         actions={
-          <Link to="/identities/create" className={buttonClassName({ size: 'sm' })}>
-            <UserPlus size={16} />
-            New profile
-          </Link>
+          <>
+            <Link to="/identities/import" className={buttonClassName({ variant: 'secondary', size: 'sm' })}>
+              <Download size={16} />
+              Import
+            </Link>
+            <Link to="/identities/create" className={buttonClassName({ size: 'sm' })}>
+              <UserPlus size={16} />
+              New profile
+            </Link>
+          </>
         }
       />
 
-      {hasIdentities && (
+      {/* Searching only helps once there are a few profiles to tell apart. */}
+      {hasIdentities && (identities.length > SEARCH_THRESHOLD || search !== '') && (
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-ghost pointer-events-none" />
           <Input
@@ -132,7 +141,7 @@ export default function IdentitiesListPage() {
           title="No profiles yet"
           description="Create your first profile to get started."
           action={
-            <Link to="/identities/create" className={buttonClassName()}>Create your first identity</Link>
+            <Link to="/identities/create" className={buttonClassName()}>Create your first profile</Link>
           }
         />
       )}

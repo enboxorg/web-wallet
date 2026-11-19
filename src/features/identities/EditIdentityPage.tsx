@@ -210,7 +210,8 @@ export default function EditIdentityPage() {
 
         <div className="grid gap-4 sm:grid-cols-2">
           <Input
-            label="Display Name"
+            label="Display name"
+            hint="Public. Apps and people see this name."
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="How others see you"
@@ -218,6 +219,7 @@ export default function EditIdentityPage() {
           />
           <Input
             label="Persona"
+            hint="Private. Only you see it, to tell your profiles apart."
             value={persona}
             onChange={(e) => setPersona(e.target.value)}
             placeholder="e.g. Personal, Work, Gaming"

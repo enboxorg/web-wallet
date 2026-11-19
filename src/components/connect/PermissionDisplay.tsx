@@ -385,7 +385,7 @@ function SessionTerms({
         <p className="mt-3.5 flex items-start gap-2 border-t border-border-subtle pt-3 text-xs leading-relaxed text-text-tertiary">
           <History className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           <span>
-            This requester already has {pluralize(existingSessionCount, 'active session')} for this identity.
+            This requester already has {pluralize(existingSessionCount, 'active session')} for this profile.
             Approving creates a separate session with {durationLabel} of access.
           </span>
         </p>

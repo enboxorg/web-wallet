@@ -81,17 +81,18 @@ export default function SearchPage() {
   const showEmpty = !searchDid || !searchDid.startsWith('did:');
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
+    <div className="max-w-3xl space-y-6">
       <PageHeader
         title="Find people"
-        description="Paste someone's ID to see their public profile."
+        description="Look up someone's public profile with their profile ID. They can copy it from Share on their profile."
       />
 
       {/* Search form */}
       <form onSubmit={handleSearch} className="flex gap-3">
         <div className="flex-1">
           <Input
-            placeholder="Enter a DID (e.g. did:dht:...)"
+            aria-label="Profile ID"
+            placeholder="Paste a profile ID (did:…)"
             value={didInput}
             onChange={(e) => setDidInput(e.target.value)}
           />
@@ -153,7 +154,7 @@ export default function SearchPage() {
               <div>
                 <p className="text-sm font-medium text-text-primary">Found them</p>
                 <p className="mt-1 text-xs text-text-tertiary">
-                  This DID exists but has no public profile.
+                  This profile ID exists, but there's no public profile for it yet.
                 </p>
                 <p className="mt-2 font-mono text-xs text-text-ghost break-all">
                   {profile.did}
@@ -169,7 +170,7 @@ export default function SearchPage() {
         <div className="flex flex-col items-center gap-3 rounded-lg border border-border-default bg-surface-1 p-12 text-center">
           <Search className="h-12 w-12 text-text-ghost" />
           <p className="text-sm text-text-tertiary">
-            Enter a valid DID above to search for public profiles
+            Paste a profile ID above to see that person's public profile. IDs start with did:
           </p>
         </div>
       )}

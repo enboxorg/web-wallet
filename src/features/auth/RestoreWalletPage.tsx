@@ -179,11 +179,11 @@ export function RestoreWalletPage({
           <div className="flex flex-col items-center gap-6 w-full">
             <div className="flex flex-col items-center gap-2">
               <h1 className="text-2xl font-semibold text-text-primary">
-                Restore Wallet
+                Restore your wallet
               </h1>
               <p className="text-sm text-text-secondary text-center">
-                Enter your recovery phrase to restore your wallet vault and recover
-                profiles synced to your network.
+                Enter your recovery phrase to restore your wallet and the profiles
+                that synced from it.
               </p>
             </div>
 
@@ -201,10 +201,10 @@ export function RestoreWalletPage({
           <div className="flex w-full flex-col items-center gap-6">
             <div className="flex flex-col items-center gap-2 text-center">
               <h1 className="text-2xl font-semibold text-text-primary">
-                Recovery DWN Endpoints
+                Recovery servers
               </h1>
               <p className="text-sm text-text-secondary">
-                By default, recovery uses the endpoints in your signed vault DID document.
+                By default, recovery uses the sync servers recorded with your wallet. Only change them if you know your data is elsewhere.
               </p>
             </div>
 

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { Download, KeyRound, ShieldCheck, Copy, Check, Upload, AlertTriangle } from 'lucide-react';
+import { Download, KeyRound, ShieldCheck, Copy, Check, Upload, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import { Link } from 'react-router';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
@@ -23,6 +24,9 @@ export default function BackupPage() {
   const [exporting, setExporting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  // The phrase stays hidden until asked for, so it isn't exposed to anyone
+  // who can see the screen just because this page was opened.
+  const [revealed, setRevealed] = useState(false);
   const [lastExport, setLastExport] = useState<string | null>(() =>
     runEnboxSync(localStorageGetEffect(LAST_EXPORT_STORAGE_KEY))
   );
@@ -68,7 +72,7 @@ export default function BackupPage() {
       URL.revokeObjectURL(url);
 
       toast.success(
-        `Exported ${exported.length} ${exported.length === 1 ? 'identity' : 'identities'}`,
+        `Exported ${exported.length} ${exported.length === 1 ? 'profile' : 'profiles'}`,
       );
       const now = Date.now().toString();
       runEnboxSync(localStorageSetEffect(LAST_EXPORT_STORAGE_KEY, now));
@@ -86,7 +90,7 @@ export default function BackupPage() {
   const identityCount = identities?.length ?? 0;
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-2xl space-y-6">
       <PageHeader
         title="Backup & Recovery"
         description="Back up your wallet and manage recovery options."
@@ -106,23 +110,26 @@ export default function BackupPage() {
         </div>
 
         <p className="text-sm text-text-secondary">
-          Export your identities as a portable JSON file. This is the <strong className="text-text-primary">most
-          explicit way</strong> to back up your identity keys and metadata without depending on
-          remote DWN recovery.
+          Download every profile, including its keys, as one backup file. It works even if
+          your sync servers are unavailable. <strong className="text-text-primary">Keep the
+          file private</strong>: anyone who has it can use your profiles.
         </p>
 
         <div className="flex items-center gap-3 rounded-lg bg-surface-2 p-3">
           <Upload className="h-4 w-4 text-text-tertiary shrink-0" />
           <p className="text-xs text-text-tertiary">
-            To restore a JSON backup, use <strong>Import profiles</strong> from the sidebar after
-            unlocking or restoring your wallet.
+            To restore from a backup file, use{' '}
+            <Link to="/identities/import" className="font-medium text-text-secondary underline-offset-2 hover:underline">
+              Import profiles
+            </Link>
+            .
           </p>
         </div>
 
         <div className="flex items-center justify-between pt-1">
           <div className="flex flex-col gap-1">
             <span className="text-sm text-text-tertiary">
-              {identityCount} {identityCount === 1 ? 'identity' : 'identities'} available
+              {identityCount} {identityCount === 1 ? 'profile' : 'profiles'} to export
             </span>
             {lastExport && (
               <span className="text-xs text-text-ghost">
@@ -137,7 +144,7 @@ export default function BackupPage() {
             size="sm"
           >
             <Download size={14} />
-            Export All
+            Export all
           </Button>
         </div>
       </Card>
@@ -147,7 +154,7 @@ export default function BackupPage() {
         <div className="flex items-center gap-2">
           <KeyRound className="h-5 w-5 text-text-secondary" />
           <h2 className="text-lg font-medium text-text-primary">
-            Recovery Phrase
+            Recovery phrase
           </h2>
         </div>
 
@@ -158,50 +165,67 @@ export default function BackupPage() {
                 <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
                 <div className="text-sm text-warning space-y-1">
                   <p>
-                    <strong>Important:</strong> The recovery phrase restores your <em>wallet vault</em> and
-                    can recover profiles that have synced to your network.
-                    Keep an exported backup file as an extra safety net.
+                    <strong>Write these words down and keep them private.</strong> They restore this
+                    wallet on a new device, along with any profiles that have synced. Anyone who has
+                    them can do the same.
                   </p>
                   <p>
-                    Once confirmed, this phrase will be permanently removed from the app.
+                    Once you confirm you've saved them, the wallet removes them from this device for good.
                   </p>
                 </div>
               </div>
             </div>
 
-            <div
-              className="grid grid-cols-3 sm:grid-cols-4 gap-2"
-              role="list"
-              aria-label="Recovery phrase words"
-            >
-              {words.map((word, i) => (
+            {revealed ? (
+              <>
                 <div
-                  key={i}
-                  role="listitem"
-                  className="flex items-center gap-2 rounded-md bg-surface-2 px-3 py-2 border border-border-subtle"
+                  className="grid grid-cols-2 min-[400px]:grid-cols-3 sm:grid-cols-4 gap-2"
+                  role="list"
+                  aria-label="Recovery phrase words"
                 >
-                  <span className="text-xs text-text-ghost w-5 text-right">
-                    {i + 1}.
-                  </span>
-                  <span className="font-mono text-sm text-text-primary">
-                    {word}
-                  </span>
+                  {words.map((word, i) => (
+                    <div
+                      key={i}
+                      role="listitem"
+                      className="flex items-center gap-2 rounded-md bg-surface-2 px-3 py-2 border border-border-subtle"
+                    >
+                      <span className="text-xs text-text-ghost w-5 text-right">
+                        {i + 1}.
+                      </span>
+                      <span className="font-mono text-sm text-text-primary">
+                        {word}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
 
-            <div className="flex flex-wrap gap-3 pt-2">
-              <Button variant="secondary" onClick={handleCopy} size="sm">
-                {copied ? (
-                  <><Check size={14} /> Copied</>
-                ) : (
-                  <><Copy size={14} /> Copy phrase</>
-                )}
-              </Button>
-              <Button onClick={() => setShowConfirmDialog(true)} size="sm">
-                <ShieldCheck size={14} /> I've saved it
-              </Button>
-            </div>
+                <div className="flex flex-wrap gap-3 pt-2">
+                  <Button variant="secondary" onClick={handleCopy} size="sm">
+                    {copied ? (
+                      <><Check size={14} /> Copied</>
+                    ) : (
+                      <><Copy size={14} /> Copy phrase</>
+                    )}
+                  </Button>
+                  <Button variant="ghost" onClick={() => setRevealed(false)} size="sm">
+                    <EyeOff size={14} /> Hide
+                  </Button>
+                  <Button onClick={() => setShowConfirmDialog(true)} size="sm" className="sm:ml-auto">
+                    <ShieldCheck size={14} /> I've saved it
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border-default bg-surface-2/60 px-4 py-6 text-center">
+                <EyeOff className="h-5 w-5 text-text-tertiary" aria-hidden="true" />
+                <p className="text-sm text-text-secondary">
+                  Your {words.length}-word phrase is hidden. Make sure no one can see your screen.
+                </p>
+                <Button variant="secondary" size="sm" onClick={() => setRevealed(true)}>
+                  <Eye size={14} /> Show phrase
+                </Button>
+              </div>
+            )}
           </>
         ) : (
           <div className="flex items-start gap-3 rounded-lg bg-surface-2 p-4">

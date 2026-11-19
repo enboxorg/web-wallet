@@ -35,11 +35,9 @@ describe('SecurityPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('shows "PIN change not yet available" text', () => {
+  it('does not advertise settings that are not available yet', () => {
     render(<SecurityPage />);
-    expect(
-      screen.getByText(/pin change is not yet available/i),
-    ).toBeInTheDocument();
+    expect(screen.queryByText(/not yet available/i)).not.toBeInTheDocument();
   });
 
   it('shows auto-lock timeout options', () => {

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Lock, Clock, Shield } from 'lucide-react';
+import { Lock, Clock } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
@@ -36,7 +36,7 @@ export default function SecurityPage() {
   }, [lock]);
 
   return (
-    <div className="mx-auto max-w-2xl space-y-6">
+    <div className="max-w-2xl space-y-6">
       <PageHeader
         title="Security"
         description="Manage wallet security settings."
@@ -71,26 +71,13 @@ export default function SecurityPage() {
             <div>
               <h2 className="text-base font-semibold text-text-primary">Lock wallet</h2>
               <p className="mt-0.5 text-sm text-text-tertiary">
-                Immediately lock your wallet and require PIN to re-enter.
+                Lock right away. You'll need your PIN or passkey to get back in.
               </p>
             </div>
           </div>
           <Button variant="secondary" onClick={handleLock} className="shrink-0">
             Lock now
           </Button>
-        </div>
-      </Card>
-
-      {/* Change PIN */}
-      <Card className="border-dashed">
-        <div className="flex items-start gap-3">
-          <SettingIcon><Shield /></SettingIcon>
-          <div>
-            <h2 className="text-base font-semibold text-text-primary">Change PIN</h2>
-            <p className="mt-0.5 text-sm text-text-tertiary">
-              PIN change is not yet available. This feature will be added in a future update.
-            </p>
-          </div>
         </div>
       </Card>
     </div>

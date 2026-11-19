@@ -20,6 +20,6 @@ describe('getConnectErrorMessage', () => {
     expect(getConnectErrorMessage(
       new Error('Could not send permission grant to any DWN endpoint.'),
       'fallback',
-    )).toMatch(/Could not write the approved permission grants/i);
+    )).toMatch(/Couldn’t save the approval to any of this profile’s sync servers/i);
   });
 });

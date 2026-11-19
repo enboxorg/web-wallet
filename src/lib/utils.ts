@@ -62,3 +62,9 @@ export function formatRelativeTime(date: Date | string | number): string {
 
   return new Date(timestamp).toLocaleDateString();
 }
+
+/** Whether two user-facing names read the same (ignoring case and spacing). */
+export function sameName(a?: string | null, b?: string | null): boolean {
+  const normalize = (value?: string | null) => (value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
+  return normalize(a) !== '' && normalize(a) === normalize(b);
+}

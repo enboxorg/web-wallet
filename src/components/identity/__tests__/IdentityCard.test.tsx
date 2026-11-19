@@ -45,7 +45,7 @@ describe('IdentityCard', () => {
     const user = userEvent.setup();
     const onClick = vi.fn();
     render(<IdentityCard did={longDid} displayName="Alice" onClick={onClick} />);
-    await user.click(screen.getByRole('button', { name: 'Copy DID' }));
+    await user.click(screen.getByRole('button', { name: 'Copy profile ID' }));
     expect(onClick).not.toHaveBeenCalled();
   });
 

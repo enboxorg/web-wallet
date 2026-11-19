@@ -72,21 +72,21 @@ function formatTimestamp(value: string | undefined): string | undefined {
 function remoteDetail(status: RemoteSyncStatus): string {
   if (status.state === 'quota-blocked') {
     const count = status.quotaBlockedMessageCount;
-    return `${count} ${count === 1 ? 'message is' : 'messages are'} waiting for remote quota.`;
+    return `${count} ${count === 1 ? 'change is' : 'changes are'} waiting because this server's storage is full.`;
   }
   if (status.failedMessageCount > 0) {
     const count = status.failedMessageCount;
-    return `${count} ${count === 1 ? 'message needs' : 'messages need'} attention.`;
+    return `${count} ${count === 1 ? 'change' : 'changes'} couldn't sync to this server.`;
   }
   if (status.state === 'offline') {
-    return 'The sync engine cannot currently reach this remote.';
+    return 'Can’t reach this server right now. The wallet keeps retrying automatically.';
   }
-  return 'Replication is operating normally.';
+  return 'Syncing normally.';
 }
 
 function linkScopeLabel(link: ReplicationLinkSnapshot): string {
   if (link.scope.kind === 'full') {
-    return 'All modules';
+    return 'Everything';
   }
   if (link.scope.kind === 'context') {
     return 'Shared context';
@@ -115,14 +115,13 @@ function linkKey(link: ReplicationLinkSnapshot): string {
 
 function caughtUpLabel(links: ReplicationLinkSnapshot[]): string {
   if (links.length === 0) {
-    return 'Preparing replication links';
+    return 'Getting ready';
   }
   const currentCount = links.filter((link) => areReplicationLinksCurrent([link])).length;
-  const linkLabel = links.length === 1 ? 'replication link' : 'replication links';
   if (currentCount === links.length) {
-    return links.length === 1 ? 'Replication link caught up' : 'All replication links caught up';
+    return 'Up to date';
   }
-  return `${currentCount} of ${links.length} ${linkLabel} caught up`;
+  return `Catching up (${currentCount} of ${links.length} done)`;
 }
 
 export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
@@ -134,26 +133,31 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
   async function handleRetry(remoteEndpoint: string): Promise<void> {
     try {
       await retryRemote.mutateAsync(remoteEndpoint);
-      toast.success('Remote sync retry started');
+      toast.success('Retrying sync');
     } catch (retryError) {
-      toast.error(retryError instanceof Error ? retryError.message : 'Failed to retry remote sync');
+      toast.error(retryError instanceof Error ? retryError.message : 'Couldn’t retry sync');
     }
   }
 
   return (
-    <section className="space-y-3" aria-label="Remote sync status">
-      <div className="flex items-center gap-2">
-        <Server className="h-4 w-4 text-text-tertiary" />
-        <h3 className="text-sm font-semibold text-text-primary">Remote sync</h3>
+    <section className="space-y-3" aria-label="Sync status">
+      <div>
+        <div className="flex items-center gap-2">
+          <Server className="h-4 w-4 text-text-tertiary" />
+          <h3 className="text-sm font-semibold text-text-primary">Sync</h3>
+        </div>
+        <p className="mt-0.5 text-xs text-text-tertiary">
+          This profile&apos;s data is copied to these servers, so your other devices and apps stay up to date.
+        </p>
       </div>
 
-      {status.isLoading && <Loader message="Loading remote sync status..." />}
+      {status.isLoading && <Loader message="Checking sync…" />}
       {status.error && (
-        <ErrorAlert message={status.error instanceof Error ? status.error.message : 'Failed to load remote sync status'} />
+        <ErrorAlert message={status.error instanceof Error ? status.error.message : 'Couldn’t check sync status'} />
       )}
       {!status.isLoading && !status.error && remotes?.length === 0 && (
         <div className="rounded-xl border border-border-default bg-surface-1 px-4 py-3 text-sm text-text-tertiary">
-          No active remote sync links yet.
+          Not syncing to any server yet.
         </div>
       )}
 
@@ -184,7 +188,7 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
                 )}
                 <div className="mt-3 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] font-medium text-text-secondary">Live sync</span>
+                    <span className="text-[11px] font-medium text-text-secondary">What syncs</span>
                     <span className="text-[11px] text-text-ghost" aria-live="polite">
                       {caughtUpLabel(remoteLinks)}
                     </span>
@@ -208,7 +212,7 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-text-ghost">
                   {nextProbe && <span>Next automatic retry: {nextProbe}</span>}
-                  {lastActivity && <span>Last activity: {lastActivity}</span>}
+                  {lastActivity && <span>Last synced: {lastActivity}</span>}
                 </div>
               </div>
 

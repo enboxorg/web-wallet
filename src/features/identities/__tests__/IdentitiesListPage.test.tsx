@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen } from '@testing-library/react';
 import { renderWithProviders } from '@/test-utils';
 import { createMockIdentity, createMockProfile } from '@/__mocks__/enbox-mocks';
@@ -136,57 +136,76 @@ describe('IdentitiesListPage', () => {
     expect(screen.getByRole('link', { name: /new profile/i })).toBeInTheDocument();
   });
 
-  it('shows a search input when identities exist', () => {
+  it('also offers Import, so it is reachable without the sidebar', () => {
     renderWithProviders(<IdentitiesListPage />);
-    expect(
-      screen.getByPlaceholderText(/search your profiles/i),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /import/i })).toHaveAttribute('href', '/identities/import');
   });
 
-  it('filters identities by persona name when typing in search', async () => {
-    // Search filters on identity.metadata.name (persona) and DID, not
-    // profile displayName — so we search for the persona "Personal"
-    const { user } = renderWithProviders(<IdentitiesListPage />);
-    const searchInput = screen.getByPlaceholderText(/search/i);
-
-    await user.type(searchInput, 'Personal');
-
-    // "Personal" persona is alice → Alice card visible
-    expect(screen.getByText('Alice')).toBeInTheDocument();
-    // "Work" persona is bob → Bob card hidden
-    expect(screen.queryByText('Bob Work')).not.toBeInTheDocument();
+  it('hides search while there are only a few profiles', () => {
+    renderWithProviders(<IdentitiesListPage />);
+    expect(screen.queryByPlaceholderText(/search your profiles/i)).not.toBeInTheDocument();
   });
 
-  it('shows empty state when search matches nothing', async () => {
-    const { user } = renderWithProviders(<IdentitiesListPage />);
-    const searchInput = screen.getByPlaceholderText(/search/i);
+  describe('with enough profiles to search', () => {
+    const extra = [
+      createMockIdentity({ did: 'did:dht:carol333', name: 'Gaming' }),
+      createMockIdentity({ did: 'did:dht:dave444', name: 'Family' }),
+    ];
+    beforeEach(() => { mockIdentities.push(...extra); });
+    afterEach(() => { mockIdentities.splice(2); });
 
-    await user.type(searchInput, 'zzzznonexistent');
+    it('shows a search input', () => {
+      renderWithProviders(<IdentitiesListPage />);
+      expect(
+        screen.getByPlaceholderText(/search your profiles/i),
+      ).toBeInTheDocument();
+    });
 
-    expect(
-      screen.getByText(/no profiles match/i),
-    ).toBeInTheDocument();
-  });
+    it('filters identities by persona name when typing in search', async () => {
+      // Search filters on identity.metadata.name (persona) and DID, not
+      // profile displayName — so we search for the persona "Personal"
+      const { user } = renderWithProviders(<IdentitiesListPage />);
+      const searchInput = screen.getByPlaceholderText(/search/i);
 
-  it('clears search and shows all identities again', async () => {
-    const { user } = renderWithProviders(<IdentitiesListPage />);
-    const searchInput = screen.getByPlaceholderText(/search/i);
+      await user.type(searchInput, 'Personal');
 
-    await user.type(searchInput, 'Personal');
-    expect(screen.queryByText('Bob Work')).not.toBeInTheDocument();
+      // "Personal" persona is alice → Alice card visible
+      expect(screen.getByText('Alice')).toBeInTheDocument();
+      // "Work" persona is bob → Bob card hidden
+      expect(screen.queryByText('Bob Work')).not.toBeInTheDocument();
+    });
 
-    await user.clear(searchInput);
-    expect(screen.getByText('Alice')).toBeInTheDocument();
-    expect(screen.getByText('Bob Work')).toBeInTheDocument();
-  });
+    it('shows empty state when search matches nothing', async () => {
+      const { user } = renderWithProviders(<IdentitiesListPage />);
+      const searchInput = screen.getByPlaceholderText(/search/i);
 
-  it('filters identities by DID substring', async () => {
-    const { user } = renderWithProviders(<IdentitiesListPage />);
-    const searchInput = screen.getByPlaceholderText(/search/i);
+      await user.type(searchInput, 'zzzznonexistent');
 
-    await user.type(searchInput, 'bob222');
+      expect(
+        screen.getByText(/no profiles match/i),
+      ).toBeInTheDocument();
+    });
 
-    expect(screen.getByText('Bob Work')).toBeInTheDocument();
-    expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+    it('clears search and shows all identities again', async () => {
+      const { user } = renderWithProviders(<IdentitiesListPage />);
+      const searchInput = screen.getByPlaceholderText(/search/i);
+
+      await user.type(searchInput, 'Personal');
+      expect(screen.queryByText('Bob Work')).not.toBeInTheDocument();
+
+      await user.clear(searchInput);
+      expect(screen.getByText('Alice')).toBeInTheDocument();
+      expect(screen.getByText('Bob Work')).toBeInTheDocument();
+    });
+
+    it('filters identities by DID substring', async () => {
+      const { user } = renderWithProviders(<IdentitiesListPage />);
+      const searchInput = screen.getByPlaceholderText(/search/i);
+
+      await user.type(searchInput, 'bob222');
+
+      expect(screen.getByText('Bob Work')).toBeInTheDocument();
+      expect(screen.queryByText('Alice')).not.toBeInTheDocument();
+    });
   });
 });

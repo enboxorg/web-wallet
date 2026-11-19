@@ -33,7 +33,7 @@ export default function SettingsPage() {
   const { lock } = useAuth();
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
+    <div className="max-w-2xl space-y-8">
       <PageHeader title="Settings" description="Manage your wallet preferences." />
 
       <ul className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
