@@ -9,7 +9,8 @@
  * Trust rule: curated names, descriptions and icons are used only for pinned,
  * matching wallet module definitions. Every other module is named from its own
  * URI and always shown with the host that namespaces it, so the name reads as
- * "what <host> calls this data", never as a wallet-vouched label.
+ * "what <host> calls this data", never as a wallet-vouched label. Modules are
+ * keyed by URI, not name, so every unpinned module is tagged Third-party.
  */
 import { useId } from 'react';
 import {
@@ -49,6 +50,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Disclosure } from '@/components/ui/Disclosure';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
+import { ThirdPartyBadge } from '@/components/modules/ThirdPartyBadge';
 import {
   getSortedPermissionActions,
   groupPermissionRequestsWithCompanions,
@@ -216,13 +218,22 @@ function EncryptedBadge({ keysShared }: { keysShared: boolean }) {
 
 /**
  * Name + provenance on one line. An unpinned module's name is only what its
- * URI says, so its host never truncates away before the name does.
+ * URI says, so its host never truncates away before the name does, and it is
+ * tagged Third-party. Tags wrap under the name rather than squeezing it.
  */
 function AccessItemTitle({ item, titleId }: { item: ModuleAccess; titleId: string }) {
   const curated = item.isKnownModule;
+  const hasTags = !curated || item.isContextCompanion || item.hasEncryptedTypes;
   return (
-    <div className="flex min-h-5 min-w-0 items-center gap-2">
-      <p className="flex min-w-0 flex-1 items-baseline gap-2">
+    <div className="flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <p
+        className={cn(
+          'flex min-w-0 items-baseline gap-2',
+          // A curated description truncates to keep tags on this line; a
+          // module's own name + host keep their width and push tags below.
+          curated ? 'flex-1' : 'flex-auto',
+        )}
+      >
         <span
           id={titleId}
           className={cn('text-sm font-semibold text-text-primary', curated ? 'shrink-0' : 'min-w-0 truncate')}
@@ -236,8 +247,13 @@ function AccessItemTitle({ item, titleId }: { item: ModuleAccess; titleId: strin
           {item.detail}
         </span>
       </p>
-      {item.isContextCompanion && <Badge tone="info" title={SHARED_CONTEXTS_HINT}>Shared contexts</Badge>}
-      {item.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(item)} />}
+      {hasTags && (
+        <span className="flex shrink-0 flex-wrap gap-1.5">
+          {!curated && <ThirdPartyBadge uri={item.moduleUri} />}
+          {item.isContextCompanion && <Badge tone="info" title={SHARED_CONTEXTS_HINT}>Shared contexts</Badge>}
+          {item.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(item)} />}
+        </span>
+      )}
     </div>
   );
 }

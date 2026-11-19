@@ -30,6 +30,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
+import { ThirdPartyBadge } from '@/components/modules/ThirdPartyBadge';
 import { PermissionActionChips } from '@/components/connect/PermissionActionChips';
 import { formatList } from '@/components/connect/connect-scope-display';
 import { truncateDid, cn } from '@/lib/utils';
@@ -149,6 +150,8 @@ function AccessRowItem({
   const name = accessRowName(row);
   const display = useModuleDisplay(row.module);
   const detail = accessRowDetail(row, display);
+  // Modules are keyed by URI: anything that isn't a built-in definition is third-party.
+  const thirdParty = display !== undefined && !display.isCore;
   const hasRecordAccess = row.actions.some((action) => action.kind === 'record');
   // Expired access is shown for context but can no longer be revoked.
   const inactive = !row.grants.some((grant) => isGrantActive(grant));
@@ -168,8 +171,11 @@ function AccessRowItem({
             </span>
             {display?.companionOf && <Badge tone="info">Shared contexts</Badge>}
           </p>
-          {detail && (
-            <p className="truncate text-xs text-text-tertiary" title={detail}>{detail}</p>
+          {(detail || thirdParty) && (
+            <p className="mt-0.5 flex min-w-0 items-center gap-2 text-xs text-text-tertiary">
+              {detail && <span className="truncate" title={detail}>{detail}</span>}
+              {thirdParty && <ThirdPartyBadge uri={row.module} />}
+            </p>
           )}
         </div>
         <PermissionActionChips

@@ -33,7 +33,7 @@ function pluralize(count: number, singular: string, plural = `${singular}s`): st
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-/** Core modules first; app modules by name with each companion right after its root. */
+/** By name, with each companion right after its root. */
 function sortRows(rows: ModuleRowModel[]): ModuleRowModel[] {
   const sortKey = (row: ModuleRowModel): string => {
     const root = row.display.companionOf;
@@ -217,8 +217,8 @@ export default function ModulesTab({ did }: ModulesTabProps) {
   return (
     <div className="space-y-8">
       <ModuleSection
-        title="App modules"
-        description="Data types added when you approved app connections."
+        title="Third-party modules"
+        description="Defined by apps you approved, not built into the wallet. Each is identified by its module URI."
         rows={apps}
       />
       <ModuleSection
