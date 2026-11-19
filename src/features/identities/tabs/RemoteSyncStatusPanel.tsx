@@ -2,7 +2,6 @@ import {
   areReplicationLinksCurrent,
   type LinkStatus,
   type RemoteSyncState,
-  type RemoteSyncStatus,
   type ReplicationLinkSnapshot,
 } from '@enbox/agent';
 
@@ -10,12 +9,14 @@ import { AlertTriangle, CheckCircle2, CloudOff, RefreshCw, Server } from 'lucide
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/Button';
+import { Disclosure } from '@/components/ui/Disclosure';
 import { ErrorAlert } from '@/components/ui/ErrorAlert';
 import { Loader } from '@/components/ui/Loader';
 import {
   useLiveSyncStatus,
   useRetryRemoteSync,
 } from '@/enbox/hooks/use-live-sync-status';
+import { remoteDetail, summarizeSync, type SummaryTone } from './sync-summary';
 
 interface RemoteSyncStatusPanelProps {
   did: string;
@@ -69,21 +70,6 @@ function formatTimestamp(value: string | undefined): string | undefined {
   }).format(date);
 }
 
-function remoteDetail(status: RemoteSyncStatus): string {
-  if (status.state === 'quota-blocked') {
-    const count = status.quotaBlockedMessageCount;
-    return `${count} ${count === 1 ? 'change is' : 'changes are'} waiting because this server's storage is full.`;
-  }
-  if (status.failedMessageCount > 0) {
-    const count = status.failedMessageCount;
-    return `${count} ${count === 1 ? 'change' : 'changes'} couldn't sync to this server.`;
-  }
-  if (status.state === 'offline') {
-    return 'Can’t reach this server right now. The wallet keeps retrying automatically.';
-  }
-  return 'Syncing normally.';
-}
-
 function linkScopeLabel(link: ReplicationLinkSnapshot): string {
   if (link.scope.kind === 'full') {
     return 'Everything';
@@ -113,7 +99,7 @@ function linkKey(link: ReplicationLinkSnapshot): string {
   return `${link.remoteEndpoint}:${link.delegateDid ?? 'owner'}:${scope}`;
 }
 
-function caughtUpLabel(links: ReplicationLinkSnapshot[]): string {
+function caughtUpLabel(links: readonly ReplicationLinkSnapshot[]): string {
   if (links.length === 0) {
     return 'Getting ready';
   }
@@ -123,6 +109,14 @@ function caughtUpLabel(links: ReplicationLinkSnapshot[]): string {
   }
   return `Catching up (${currentCount} of ${links.length} done)`;
 }
+
+const SUMMARY_ICONS: Record<SummaryTone, React.ReactNode> = {
+  ok       : <CheckCircle2 className="size-5 text-success" aria-hidden="true" />,
+  progress : <RefreshCw className="size-5 text-accent" aria-hidden="true" />,
+  warning  : <AlertTriangle className="size-5 text-warning" aria-hidden="true" />,
+  error    : <AlertTriangle className="size-5 text-error" aria-hidden="true" />,
+  offline  : <CloudOff className="size-5 text-text-tertiary" aria-hidden="true" />,
+};
 
 export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
   const status = useLiveSyncStatus(did);
@@ -139,16 +133,13 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
     }
   }
 
+  const summary = remotes && remotes.length > 0 ? summarizeSync(remotes, links ?? []) : undefined;
+
   return (
     <section className="space-y-3" aria-label="Sync status">
-      <div>
-        <div className="flex items-center gap-2">
-          <Server className="h-4 w-4 text-text-tertiary" />
-          <h3 className="text-sm font-semibold text-text-primary">Sync</h3>
-        </div>
-        <p className="mt-0.5 text-xs text-text-tertiary">
-          This profile&apos;s data is copied to these servers, so your other devices and apps stay up to date.
-        </p>
+      <div className="flex items-center gap-2">
+        <Server className="h-4 w-4 text-text-tertiary" />
+        <h3 className="text-sm font-semibold text-text-primary">Sync</h3>
       </div>
 
       {status.isLoading && <Loader message="Checking sync…" />}
@@ -161,82 +152,96 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
         </div>
       )}
 
-      {!status.error && remotes?.map((remote) => {
-        const nextProbe = formatTimestamp(remote.nextProbeAt);
-        const lastActivity = formatTimestamp(remote.lastActivityAt);
-        const retrying = retryRemote.isPending && retryRemote.variables === remote.remoteEndpoint;
-        const remoteLinks = links?.filter(
-          ({ remoteEndpoint }) => remoteEndpoint === remote.remoteEndpoint,
-        ) ?? [];
+      {!status.error && remotes && summary && (
+        <Disclosure
+          // Remount when attention changes so problems open on their own,
+          // while a calm panel stays however the user left it.
+          key={summary.needsAttention ? 'attention' : 'calm'}
+          open={summary.needsAttention}
+          data-testid="sync-summary"
+          className="rounded-xl border border-border-default bg-surface-1"
+          summaryClassName="rounded-xl px-4 py-3.5 text-text-secondary hover:bg-surface-2/60"
+          summary={(
+            <>
+              {SUMMARY_ICONS[summary.tone]}
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-text-primary">{summary.headline}</span>
+                <span className="block truncate text-xs font-normal text-text-tertiary">{summary.detail}</span>
+              </span>
+              <span className="shrink-0 text-xs font-normal text-text-ghost">Details</span>
+            </>
+          )}
+          contentClassName="divide-y divide-border-subtle border-t border-border-subtle px-4"
+        >
+          {remotes.map((remote) => {
+            const nextProbe = formatTimestamp(remote.nextProbeAt);
+            const lastActivity = formatTimestamp(remote.lastActivityAt);
+            const retrying = retryRemote.isPending && retryRemote.variables === remote.remoteEndpoint;
+            const remoteLinks = links?.filter(
+              ({ remoteEndpoint }) => remoteEndpoint === remote.remoteEndpoint,
+            ) ?? [];
 
-        return (
-          <div
-            key={remote.remoteEndpoint}
-            className="rounded-xl border border-border-default bg-surface-1 p-4"
-          >
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex min-w-0 items-center gap-2">
+            return (
+              <div key={remote.remoteEndpoint} className="py-3">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                   <StatusIcon state={remote.state} />
-                  <code className="truncate text-xs text-text-primary" title={remote.remoteEndpoint}>
+                  <code className="min-w-0 flex-1 truncate text-xs text-text-primary" title={remote.remoteEndpoint}>
                     {remote.remoteEndpoint}
                   </code>
+                  <span className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${STATE_CLASSES[remote.state]}`}>
+                    {STATE_LABELS[remote.state]}
+                  </span>
                 </div>
-                <p className="mt-2 text-xs text-text-secondary">{remoteDetail(remote)}</p>
-                {remote.lastError && (
-                  <p className="mt-1 break-words text-xs text-error">{remote.lastError}</p>
-                )}
-                <div className="mt-3 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="text-[11px] font-medium text-text-secondary">What syncs</span>
-                    <span className="text-[11px] text-text-ghost" aria-live="polite">
+
+                <div className="mt-1.5 space-y-1.5 pl-6">
+                  <p className="text-xs text-text-secondary">{remoteDetail(remote)}</p>
+                  {remote.lastError && (
+                    <p className="break-words text-xs text-error">{remote.lastError}</p>
+                  )}
+                  <div
+                    className="flex flex-wrap items-center gap-1.5"
+                    aria-label={`What syncs to ${remote.remoteEndpoint}`}
+                  >
+                    <span className="text-[11px] text-text-tertiary" aria-live="polite">
                       {caughtUpLabel(remoteLinks)}
                     </span>
-                  </div>
-                  {remoteLinks.length > 0 && (
-                    <div className="mt-2 flex flex-wrap gap-2" aria-label={`Live sync links for ${remote.remoteEndpoint}`}>
-                      {remoteLinks.map((link) => (
-                        <span
-                          key={linkKey(link)}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border-default bg-surface-1 px-2 py-1 text-[11px]"
-                          title={linkScopeDetail(link)}
-                        >
-                          <span className="text-text-tertiary">{linkScopeLabel(link)}</span>
-                          <span className={`font-medium ${LINK_STATUS_CLASSES[link.status]}`}>
-                            {LINK_STATUS_LABELS[link.status]}
-                          </span>
+                    {remoteLinks.map((link) => (
+                      <span
+                        key={linkKey(link)}
+                        className="inline-flex items-center gap-1.5 rounded-full border border-border-default bg-surface-2 px-2 py-0.5 text-[11px]"
+                        title={linkScopeDetail(link)}
+                      >
+                        <span className="text-text-tertiary">{linkScopeLabel(link)}</span>
+                        <span className={`font-medium ${LINK_STATUS_CLASSES[link.status]}`}>
+                          {LINK_STATUS_LABELS[link.status]}
                         </span>
-                      ))}
+                      </span>
+                    ))}
+                  </div>
+                  {(nextProbe || lastActivity) && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-text-ghost">
+                      {nextProbe && <span>Next automatic retry: {nextProbe}</span>}
+                      {lastActivity && <span>Last synced: {lastActivity}</span>}
                     </div>
                   )}
-                </div>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-text-ghost">
-                  {nextProbe && <span>Next automatic retry: {nextProbe}</span>}
-                  {lastActivity && <span>Last synced: {lastActivity}</span>}
+                  {remote.state === 'quota-blocked' && (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      loading={retrying}
+                      disabled={retryRemote.isPending && !retrying}
+                      onClick={() => handleRetry(remote.remoteEndpoint)}
+                    >
+                      <RefreshCw className="h-3.5 w-3.5" />
+                      Retry now
+                    </Button>
+                  )}
                 </div>
               </div>
-
-              <div className="flex shrink-0 items-center gap-2">
-                <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${STATE_CLASSES[remote.state]}`}>
-                  {STATE_LABELS[remote.state]}
-                </span>
-                {remote.state === 'quota-blocked' && (
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    loading={retrying}
-                    disabled={retryRemote.isPending && !retrying}
-                    onClick={() => handleRetry(remote.remoteEndpoint)}
-                  >
-                    <RefreshCw className="h-3.5 w-3.5" />
-                    Retry now
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </Disclosure>
+      )}
     </section>
   );
 }

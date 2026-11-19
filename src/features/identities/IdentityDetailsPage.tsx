@@ -13,6 +13,7 @@ import {
   useExportIdentity,
 } from '@/enbox/hooks/use-identity-mutations';
 
+import { BackupPasswordDialog } from '@/components/backup/BackupPasswordDialog';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -24,6 +25,7 @@ import { TabList, Tab, TabPanel } from '@/components/ui/Tabs';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { shareEffect } from '@/lib/browser-effects';
 import { truncateDid, copyToClipboard, sameName } from '@/lib/utils';
+import { downloadJsonFile, encryptBackup } from '@/lib/encrypted-backup';
 
 import OverviewTab from './tabs/OverviewTab';
 import ModulesTab from './tabs/ModulesTab';
@@ -32,7 +34,8 @@ import PermissionsTab from './tabs/PermissionsTab';
 import ActivityTab from './tabs/ActivityTab';
 import { countActivePermissionApps } from './tabs/permission-sessions';
 
-const TABS = ['Overview', 'Modules', 'Wallets', 'Apps & Permissions', 'Activity'] as const;
+// Day-to-day first: what apps can do and what changed; setup details last.
+const TABS = ['Overview', 'Apps & Permissions', 'Activity', 'Modules', 'Wallets'] as const;
 const tabId = (i: number) => `identity-tab-${i}`;
 const panelId = (i: number) => `identity-panel-${i}`;
 
@@ -50,9 +53,9 @@ export default function IdentityDetailsPage() {
 
   const tabCounts = useMemo<Array<number | undefined>>(() => [
     undefined,
-    modules?.length ?? 0,
-    undefined,
     countActivePermissionApps(permissions),
+    undefined,
+    modules?.length ?? 0,
     undefined,
   ], [modules, permissions]);
 
@@ -63,6 +66,7 @@ export default function IdentityDetailsPage() {
 
   const [activeTab, setActiveTab] = useState(0);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [qrOpen, setQrOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -77,19 +81,13 @@ export default function IdentityDetailsPage() {
     }
   }
 
-  async function handleExport() {
+  async function handleExport(password: string) {
     try {
       const data = await exportIdentity.mutateAsync(did);
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `identity-${truncateDid(did, 6)}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success('Profile exported');
+      const backup = await encryptBackup(data, password);
+      downloadJsonFile(`enbox-profile-${did.split(':').at(-1)?.slice(0, 8) ?? 'backup'}.json`, backup);
+      toast.success('Profile exported to a protected file');
+      setExportOpen(false);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to export profile',
@@ -237,17 +235,16 @@ export default function IdentityDetailsPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-text-primary">Export profile</p>
                   <p className="mt-0.5 text-xs text-text-tertiary">
-                    Download this profile and its keys as a backup file. Keep the file private.
+                    Download this profile and its keys as a password-protected backup file.
                   </p>
                 </div>
                 <Button
                   variant="secondary"
                   size="sm"
                   className="shrink-0 self-start sm:self-auto"
-                  onClick={handleExport}
-                  loading={exportIdentity.isPending}
+                  onClick={() => setExportOpen(true)}
                 >
-                  {!exportIdentity.isPending && <Download className="size-3.5" />}
+                  <Download className="size-3.5" />
                   Export
                 </Button>
               </div>
@@ -273,17 +270,24 @@ export default function IdentityDetailsPage() {
         </div>
       </TabPanel>
       <TabPanel id={panelId(1)} labelledBy={tabId(1)} active={activeTab === 1}>
-        <ModulesTab did={did} />
-      </TabPanel>
-      <TabPanel id={panelId(2)} labelledBy={tabId(2)} active={activeTab === 2}>
-        <WalletsTab did={did} />
-      </TabPanel>
-      <TabPanel id={panelId(3)} labelledBy={tabId(3)} active={activeTab === 3}>
         <PermissionsTab did={did} />
       </TabPanel>
-      <TabPanel id={panelId(4)} labelledBy={tabId(4)} active={activeTab === 4}>
+      <TabPanel id={panelId(2)} labelledBy={tabId(2)} active={activeTab === 2}>
         <ActivityTab did={did} />
       </TabPanel>
+      <TabPanel id={panelId(3)} labelledBy={tabId(3)} active={activeTab === 3}>
+        <ModulesTab did={did} />
+      </TabPanel>
+      <TabPanel id={panelId(4)} labelledBy={tabId(4)} active={activeTab === 4}>
+        <WalletsTab did={did} />
+      </TabPanel>
+
+      <BackupPasswordDialog
+        open={exportOpen}
+        subject={displayName}
+        onClose={() => setExportOpen(false)}
+        onConfirm={handleExport}
+      />
 
       {/* Share DID QR dialog */}
       <Dialog

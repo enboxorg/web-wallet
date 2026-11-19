@@ -20,3 +20,11 @@ export function describeAuthError(
   // Drop an SDK class prefix ("HdIdentityVault: …") from anything else.
   return message.replace(/^[A-Z][A-Za-z]*(?:Vault|Error|Failure):\s+/, '');
 }
+
+/** The PIN entered as the current PIN isn't the wallet's PIN. */
+export class IncorrectPinError extends Error {
+  constructor() {
+    super('That PIN isn’t right. Try again.');
+    this.name = 'IncorrectPinError';
+  }
+}

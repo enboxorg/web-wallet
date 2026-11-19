@@ -1,4 +1,5 @@
 import { afterEach, describe, it, expect, vi, beforeEach } from 'vitest';
+import { useState } from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
@@ -889,5 +890,73 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(auth.agent.secrets._store.clear).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
     expect(localStorage.getItem('enbox:enbox:auth:previouslyConnected')).toBe('true');
+  });
+});
+
+describe('EnboxAuthProvider change PIN', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.clear();
+    sessionStorage.clear();
+    useAuthStore.setState({ initialized: false, firstTime: false, agent: null });
+  });
+
+  function ChangePinProbe({ current, next }: { current: string; next: string }) {
+    const { changePin, verifyPin } = useEnboxAuth();
+    const [result, setResult] = useState('');
+    return (
+      <div>
+        <button
+          type="button"
+          onClick={() => {
+            changePin(current, next).then(() => setResult('changed'), (err: Error) => setResult(err.name));
+          }}
+        >
+          Change PIN
+        </button>
+        <button type="button" onClick={() => setResult(String(verifyPin(current)))}>Verify PIN</button>
+        <output>{result}</output>
+      </div>
+    );
+  }
+
+  async function connectedAuth(current: string, next: string) {
+    const user = userEvent.setup();
+    const auth = createAuth();
+    Object.assign(auth.agent.vault, {
+      changePassword : vi.fn().mockResolvedValue(undefined),
+      isLocked       : vi.fn(() => false),
+    });
+    authMocks.create.mockResolvedValue(auth);
+    render(
+      <EnboxAuthProvider>
+        <ConnectButton />
+        <ChangePinProbe current={current} next={next} />
+      </EnboxAuthProvider>,
+    );
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: 'Connect' }));
+    await waitFor(() => expect(useAuthStore.getState().agent).not.toBeNull());
+    return { user, auth, vault: auth.agent.vault as unknown as { changePassword: ReturnType<typeof vi.fn> } };
+  }
+
+  it('re-wraps the vault with the new PIN and keeps the session on it', async () => {
+    const { user, vault } = await connectedAuth('1234', '5678');
+    await user.click(screen.getByRole('button', { name: 'Change PIN' }));
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('changed'));
+    expect(vault.changePassword).toHaveBeenCalledWith({ oldPassword: '1234', newPassword: '5678' });
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('5678');
+  });
+
+  it('never hands a wrong current PIN to the vault, which would lock it', async () => {
+    const { user, vault } = await connectedAuth('9999', '5678');
+    await user.click(screen.getByRole('button', { name: 'Verify PIN' }));
+    expect(screen.getByRole('status')).toHaveTextContent('false');
+
+    await user.click(screen.getByRole('button', { name: 'Change PIN' }));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('IncorrectPinError'));
+    expect(vault.changePassword).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
   });
 });

@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import { useAuthStore } from '@/stores/auth-store';
 import { RemoteSyncStatusPanel } from '../RemoteSyncStatusPanel';
+import { summarizeSync } from '../sync-summary';
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -97,7 +98,11 @@ describe('RemoteSyncStatusPanel', () => {
     expect(await screen.findByText('https://healthy.example/dwn')).toBeInTheDocument();
     expect(screen.getByText('Healthy')).toBeInTheDocument();
     expect(screen.getByText('Quota blocked')).toBeInTheDocument();
-    expect(screen.getByText(/2 changes are waiting because this server's storage is full/i)).toBeInTheDocument();
+    // One summary line; a problem opens the per-server details on its own.
+    expect(screen.getByText('1 of 2 servers needs attention')).toBeInTheDocument();
+    expect(screen.getByText(/^full\.example: 2 changes are waiting/)).toBeInTheDocument();
+    expect(screen.getByTestId('sync-summary')).toHaveAttribute('open');
+    expect(screen.getByText(/^2 changes are waiting because this server's storage is full/i)).toBeInTheDocument();
     expect(screen.getByText(/tenant storage quota exceeded/i)).toBeInTheDocument();
     expect(screen.getByText('Up to date')).toBeInTheDocument();
     expect(screen.getByText('2 modules')).toBeInTheDocument();
@@ -171,5 +176,55 @@ describe('RemoteSyncStatusPanel', () => {
 
     expect(await screen.findByText('Shared context')).toBeInTheDocument();
     expect(screen.getByText('Catching up (0 of 1 done)')).toBeInTheDocument();
+  });
+});
+
+describe('summarizeSync', () => {
+  const remote = (remoteEndpoint: string, state: RemoteSyncStatus['state'], extra: Partial<RemoteSyncStatus> = {}): RemoteSyncStatus => ({
+    tenantDid               : 'did:dht:alice',
+    remoteEndpoint,
+    state,
+    connectivity            : state === 'offline' ? 'offline' : 'online',
+    quotaBlockedMessageCount: 0,
+    failedMessageCount      : 0,
+    ...extra,
+  } as RemoteSyncStatus);
+  const link = (remoteEndpoint: string, isPullCurrent: boolean): ReplicationLinkSnapshot => ({
+    tenantDid    : 'did:dht:alice',
+    remoteEndpoint,
+    scope        : { kind: 'full' },
+    status       : isPullCurrent ? 'live' : 'initializing',
+    connectivity : 'online',
+    isPullCurrent,
+  } as ReplicationLinkSnapshot);
+
+  it('reads "All synced" and stays collapsed when every server is current', () => {
+    const summary = summarizeSync(
+      [remote('https://a.example', 'healthy', { lastActivityAt: new Date().toISOString() }), remote('https://b.example', 'healthy')],
+      [link('https://a.example', true), link('https://b.example', true)],
+    );
+    expect(summary).toMatchObject({ tone: 'ok', headline: 'All synced', needsAttention: false });
+    expect(summary.detail).toMatch(/^2 servers · last synced /);
+  });
+
+  it('reports catching up without asking for attention', () => {
+    const summary = summarizeSync(
+      [remote('https://a.example', 'healthy'), remote('https://b.example', 'healthy')],
+      [link('https://a.example', true), link('https://b.example', false)],
+    );
+    expect(summary).toMatchObject({ tone: 'progress', headline: 'Syncing', detail: 'Catching up with 1 of 2 servers', needsAttention: false });
+  });
+
+  it('calls out an unreachable network once rather than per server', () => {
+    const summary = summarizeSync([remote('https://a.example', 'offline'), remote('https://b.example', 'offline')], []);
+    expect(summary).toMatchObject({ tone: 'offline', headline: 'Can’t reach your sync servers', needsAttention: true });
+  });
+
+  it('lets the worst problem set the tone', () => {
+    const summary = summarizeSync(
+      [remote('https://a.example', 'quota-blocked', { quotaBlockedMessageCount: 1 }), remote('https://b.example', 'degraded', { failedMessageCount: 3 })],
+      [],
+    );
+    expect(summary).toMatchObject({ tone: 'error', headline: '2 of 2 servers need attention', needsAttention: true });
   });
 });

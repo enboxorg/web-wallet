@@ -3,6 +3,7 @@ import { Download, KeyRound, ShieldCheck, Copy, Check, Upload, AlertTriangle, Ey
 import { Link } from 'react-router';
 import { toast } from 'sonner';
 
+import { BackupPasswordDialog } from '@/components/backup/BackupPasswordDialog';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Dialog } from '@/components/ui/Dialog';
@@ -11,6 +12,7 @@ import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
 import { useExportIdentity } from '@/enbox/hooks/use-identity-mutations';
 import { copyToClipboard, formatRelativeTime } from '@/lib/utils';
+import { downloadJsonFile, encryptBackup } from '@/lib/encrypted-backup';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { localStorageGetEffect, localStorageSetEffect } from '@/lib/browser-effects';
 
@@ -21,7 +23,7 @@ export default function BackupPage() {
   const confirmBackup = useBackupSeedStore((s) => s.confirmBackup);
   const { data: identities } = useIdentities();
   const exportIdentity = useExportIdentity();
-  const [exporting, setExporting] = useState(false);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   // The phrase stays hidden until asked for, so it isn't exposed to anyone
@@ -46,13 +48,12 @@ export default function BackupPage() {
     toast.success('Recovery phrase backup confirmed');
   }, [confirmBackup]);
 
-  const handleExportAll = useCallback(async () => {
+  const handleExportAll = useCallback(async (password: string) => {
     if (!identities || identities.length === 0) {
       toast.error('No profiles to export');
       return;
     }
 
-    setExporting(true);
     try {
       const exported = [];
       for (const identity of identities) {
@@ -61,28 +62,20 @@ export default function BackupPage() {
         exported.push(data);
       }
 
-      const blob = new Blob([JSON.stringify(exported, null, 2)], {
-        type: 'application/json',
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `enbox-profiles-${Date.now()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+      const backup = await encryptBackup(exported, password);
+      downloadJsonFile(`enbox-profiles-${new Date().toISOString().slice(0, 10)}.json`, backup);
 
       toast.success(
-        `Exported ${exported.length} ${exported.length === 1 ? 'profile' : 'profiles'}`,
+        `Exported ${exported.length} ${exported.length === 1 ? 'profile' : 'profiles'} to a protected file`,
       );
       const now = Date.now().toString();
       runEnboxSync(localStorageSetEffect(LAST_EXPORT_STORAGE_KEY, now));
       setLastExport(now);
+      setExportDialogOpen(false);
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : 'Failed to export profiles',
       );
-    } finally {
-      setExporting(false);
     }
   }, [identities, exportIdentity]);
 
@@ -111,8 +104,8 @@ export default function BackupPage() {
 
         <p className="text-sm text-text-secondary">
           Download every profile, including its keys, as one backup file. It works even if
-          your sync servers are unavailable. <strong className="text-text-primary">Keep the
-          file private</strong>: anyone who has it can use your profiles.
+          your sync servers are unavailable. The file is <strong className="text-text-primary">locked
+          with a password</strong> you choose, so keep that password somewhere safe.
         </p>
 
         <div className="flex items-center gap-3 rounded-lg bg-surface-2 p-3">
@@ -138,8 +131,7 @@ export default function BackupPage() {
             )}
           </div>
           <Button
-            onClick={handleExportAll}
-            loading={exporting}
+            onClick={() => setExportDialogOpen(true)}
             disabled={identityCount === 0}
             size="sm"
           >
@@ -237,6 +229,13 @@ export default function BackupPage() {
           </div>
         )}
       </Card>
+
+      <BackupPasswordDialog
+        open={exportDialogOpen}
+        subject={`${identityCount} ${identityCount === 1 ? 'profile' : 'profiles'}`}
+        onClose={() => setExportDialogOpen(false)}
+        onConfirm={handleExportAll}
+      />
 
       {/* Confirmation dialog */}
       <Dialog

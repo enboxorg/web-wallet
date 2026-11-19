@@ -15,6 +15,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth-store';
+import { IncorrectPinError } from '@/lib/auth-errors';
 import {
   getAutoLockTimeout,
   SESSION_VAULT_PASSWORD_KEY,
@@ -99,6 +100,10 @@ export interface EnboxAuthContextValue {
   ) => Promise<void>;
   retryInitialization: () => void;
   lock: () => void;
+  /** Change the PIN of a PIN-secured wallet while it is unlocked. */
+  changePin: (currentPin: string, newPin: string) => Promise<void>;
+  /** Whether `pin` is this unlocked wallet's PIN; null when it can't be checked. */
+  verifyPin: (pin: string) => boolean | null;
   adoptDwnEndpoints: (endpoints: string[]) => void;
   dwnEndpoints: string[];
   error: string | null;
@@ -398,6 +403,39 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     lockCompletionRef.current = completion;
   }, [storeLock]);
 
+  // ── Change PIN ───────────────────────────────────────────────────
+
+  const verifyPin = useCallback((pin: string): boolean | null => {
+    if (useAuthStore.getState().agent === null) return null;
+    const sessionPassword = getCachedSessionPassword();
+    return sessionPassword === null ? null : sessionPassword === pin;
+  }, []);
+
+  const changePin = useCallback(async (currentPin: string, newPin: string): Promise<void> => {
+    const agent = useAuthStore.getState().agent;
+    if (!agent) throw new Error('Unlock your wallet to change your PIN.');
+
+    // Check the current PIN against this session's vault password before
+    // touching the vault: the SDK's changePassword locks the live vault first
+    // and leaves it locked when the old password is wrong.
+    const sessionPassword = getCachedSessionPassword();
+    if (sessionPassword === null) {
+      throw new Error('Couldn’t confirm your current PIN. Lock and unlock your wallet, then try again.');
+    }
+    if (sessionPassword !== currentPin) throw new IncorrectPinError();
+    if (newPin === currentPin) throw new Error('Choose a PIN that’s different from your current one.');
+
+    try {
+      // Re-wraps the same vault key, so keys and data are untouched.
+      await agent.vault.changePassword({ oldPassword: currentPin, newPassword: newPin });
+    } catch (err) {
+      // Never leave the app running on top of a locked vault.
+      if (agent.vault.isLocked()) lock();
+      throw err;
+    }
+    cacheSessionPassword(newPin);
+  }, [lock]);
+
   // ── Inactivity auto-lock ─────────────────────────────────────────
 
   useEffect(() => {
@@ -433,6 +471,8 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     restore,
     retryInitialization,
     lock,
+    changePin,
+    verifyPin,
     adoptDwnEndpoints: applyAuthoritativeDwnEndpoints,
     dwnEndpoints,
     error,
