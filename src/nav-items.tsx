@@ -20,6 +20,7 @@ export const sidebarItems: NavItem[] = [
     label: 'Profiles',
     icon: <Users size={20} />,
     section: 'Profiles',
+    activePrefixes: ['/identity/'],
   },
   {
     path: '/identities/create',
@@ -69,6 +70,7 @@ export const bottomTabItems: NavItem[] = [
     path: '/',
     label: 'Profiles',
     icon: <Users size={22} />,
+    activePrefixes: ['/identity', '/identities/'],
   },
   {
     path: '/search',

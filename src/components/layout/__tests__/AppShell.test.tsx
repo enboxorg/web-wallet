@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { NavItem } from '../types';
 
@@ -96,9 +96,11 @@ describe('AppShell', () => {
       expect(screen.getByText('Page content')).toBeInTheDocument();
     });
 
-    it('renders the AppBar', () => {
+    it('keeps brand and theme in the sidebar instead of a top bar', () => {
       renderShell();
-      expect(screen.getByTestId('appbar')).toBeInTheDocument();
+      expect(screen.queryByTestId('appbar')).not.toBeInTheDocument();
+      expect(within(screen.getByTestId('sidebar')).getByRole('button', { name: /switch to light mode/i }))
+        .toBeInTheDocument();
     });
 
     it('navigates when a sidebar item is clicked', async () => {

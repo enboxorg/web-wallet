@@ -19,7 +19,7 @@ export interface AppShellProps {
 /**
  * Main layout shell for the unlocked wallet.
  *
- * - Desktop (>= 1024px): persistent sidebar + top AppBar + scrollable content
+ * - Desktop (>= 1024px): persistent sidebar (brand, nav, theme, lock) + scrollable content
  * - Mobile / Tablet (< 1024px): minimal top AppBar + content + pinned bottom tab bar
  *
  * On mobile, the bottom tab bar replaces the sidebar/drawer pattern entirely,
@@ -30,7 +30,7 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
   const navigate = useNavigate();
   const isDesktop = useMediaQuery('(min-width: 1024px)');
 
-  const { sidebarMini, setSidebarMini } = useUIStore();
+  const { sidebarMini, setSidebarMini, theme, setTheme } = useUIStore();
   const { lock } = useAuth();
 
   const handleNavigate = useCallback(
@@ -51,6 +51,8 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
           mini={sidebarMini}
           onLock={lock}
           onToggleMini={() => setSidebarMini(!sidebarMini)}
+          theme={theme}
+          onToggleTheme={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
         />
       )}
 
@@ -60,12 +62,12 @@ export function AppShell({ sidebarItems, bottomTabItems, children }: AppShellPro
         data-testid="app-shell-content"
       >
         <OfflineBanner />
-        {/* Top bar: desktop shows full bar, mobile shows minimal bar */}
-        <AppBar isDesktop={isDesktop} />
+        {/* Mobile / tablet: brand + theme toggle. Desktop keeps both in the sidebar. */}
+        {!isDesktop && <AppBar isDesktop={false} />}
 
         {/* Scrollable content area */}
         <main
-          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-[var(--content-gutter)] py-6 lg:py-10"
           data-testid="main-content"
         >
           <div className="mx-auto max-w-[var(--content-width)]">

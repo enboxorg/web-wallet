@@ -40,6 +40,7 @@ import DWebConnectPage from '@/features/connect/DWebConnectPage';
 import AppConnectPage from '@/features/connect/AppConnectPage';
 import { hasActiveConnectDeepLink } from '@/features/connect/connect-deep-link';
 import { EnboxLogo } from '@/features/auth/EnboxLogo';
+import { ConsentBrandBar } from '@/components/connect/ConsentLayout';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -307,8 +308,8 @@ function AuthGate() {
     // notches and home indicators.
     return (
       <div className="flex min-h-dvh flex-col">
-        <header className="sticky top-0 z-30 flex justify-center border-b border-border-subtle bg-surface-0/85 pb-3 backdrop-blur-md pt-[max(1.25rem,env(safe-area-inset-top))]">
-          <EnboxLogo size="sm" />
+        <header className="sticky top-0 z-30 border-b border-border-subtle bg-surface-0/85 pb-3 backdrop-blur-md pt-[max(1rem,env(safe-area-inset-top))]">
+          <ConsentBrandBar />
         </header>
         <main className="flex flex-1 flex-col">
           <Suspense fallback={<Loader message="Loading..." />}>

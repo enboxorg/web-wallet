@@ -11,4 +11,6 @@ export interface NavItem {
   section?: string;
   /** Show a notification dot badge on this item. */
   badge?: boolean;
+  /** Extra route prefixes that should also mark this item active. */
+  activePrefixes?: string[];
 }

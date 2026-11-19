@@ -1,4 +1,5 @@
 import { cn } from '@/lib/utils';
+import { isNavItemActive } from './nav-active';
 import type { NavItem } from './types';
 
 export interface BottomNavProps {
@@ -27,7 +28,7 @@ export function BottomNav({
       className={cn(
         'shrink-0',
         'flex items-center justify-around',
-        'bg-surface-1/80 backdrop-blur-sm',
+        'bg-surface-glass backdrop-blur-[var(--glass-blur)] backdrop-saturate-[var(--glass-saturate)]',
         'border-t border-border-subtle',
         className,
       )}
@@ -36,17 +37,16 @@ export function BottomNav({
       data-testid="bottom-nav"
     >
       {items.map((item) => {
-        const active = isActive(currentPath, item.path);
+        const active = isNavItemActive(currentPath, item);
         return (
           <button
             key={item.path}
             type="button"
             onClick={() => onNavigate(item.path)}
             className={cn(
-              'flex flex-col items-center justify-center gap-0.5',
-              'flex-1 py-2 pt-2.5',
-              'transition-all duration-[var(--duration-fast)]',
-              'active:scale-95 active:opacity-80',
+              'flex flex-col items-center justify-center gap-1',
+              'min-h-14 flex-1 pt-2 pb-1.5',
+              'transition-colors duration-[var(--duration-fast)]',
               active
                 ? 'text-accent'
                 : 'text-text-ghost hover:text-text-secondary',
@@ -55,8 +55,8 @@ export function BottomNav({
           >
             <span
               className={cn(
-                'relative flex items-center justify-center w-6 h-6',
-                active && 'drop-shadow-[0_0_6px_rgba(var(--accent-rgb),0.4)]',
+                'relative flex h-8 w-14 items-center justify-center rounded-full transition-colors',
+                active ? 'bg-accent-muted' : 'bg-transparent',
               )}
               aria-hidden="true"
             >
@@ -65,7 +65,7 @@ export function BottomNav({
                 <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-error" />
               )}
             </span>
-            <span className="text-[11px] font-medium leading-tight">
+            <span className={cn('text-[11px] leading-tight', active ? 'font-semibold' : 'font-medium')}>
               {item.label}
             </span>
           </button>
@@ -73,13 +73,4 @@ export function BottomNav({
       })}
     </nav>
   );
-}
-
-/**
- * Check if a nav item is active. Matches exact path for root ("/")
- * and prefix match for other paths (e.g. "/settings" matches "/settings/security").
- */
-function isActive(currentPath: string, itemPath: string): boolean {
-  if (itemPath === '/') return currentPath === '/';
-  return currentPath.startsWith(itemPath);
 }

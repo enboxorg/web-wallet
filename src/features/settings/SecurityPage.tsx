@@ -11,6 +11,14 @@ import { cn } from '@/lib/utils';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { localStorageSetEffect } from '@/lib/browser-effects';
 
+function SettingIcon({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-text-secondary [&>svg]:size-[18px]">
+      {children}
+    </span>
+  );
+}
+
 export default function SecurityPage() {
   const { lock } = useAuth();
 
@@ -28,69 +36,80 @@ export default function SecurityPage() {
   }, [lock]);
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-2xl space-y-6">
       <PageHeader
         title="Security"
         description="Manage wallet security settings."
         backTo="/settings"
       />
 
-      {/* Change PIN */}
-      <Card padding="lg">
-        <div className="flex items-center gap-2 mb-2">
-          <Shield className="h-5 w-5 text-text-secondary" />
-          <h2 className="text-lg font-medium text-text-primary">Change PIN</h2>
-        </div>
-        <p className="text-sm text-text-secondary">
-          PIN change is not yet available. This feature will be added in a future update.
-        </p>
-      </Card>
-
       {/* Auto-lock timeout */}
-      <Card padding="lg">
-        <div className="flex items-center gap-2 mb-3">
-          <Clock className="h-5 w-5 text-text-secondary" />
-          <h2 className="text-lg font-medium text-text-primary">Auto-lock timeout</h2>
+      <Card>
+        <div className="flex items-start gap-3">
+          <SettingIcon><Clock /></SettingIcon>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-text-primary">Auto-lock timeout</h2>
+            <p className="mt-0.5 text-sm text-text-tertiary">
+              Automatically lock the wallet after a period of inactivity.
+            </p>
+          </div>
         </div>
-        <p className="text-sm text-text-secondary mb-3">
-          Automatically lock the wallet after a period of inactivity.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          {AUTO_LOCK_OPTIONS.map((opt) => (
-            <button
-              key={opt.value}
-              type="button"
-              onClick={() => handleAutoLockChange(String(opt.value))}
-              className={cn(
-                'rounded-lg px-3 py-1.5 text-sm font-medium transition-colors',
-                autoLockMs === opt.value
-                  ? 'bg-accent text-accent-text'
-                  : 'bg-surface-2 text-text-secondary hover:text-text-primary',
-              )}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div
+          role="radiogroup"
+          aria-label="Auto-lock timeout"
+          className="mt-4 flex flex-wrap gap-1 rounded-xl bg-surface-2 p-1"
+        >
+          {AUTO_LOCK_OPTIONS.map((opt) => {
+            const selected = autoLockMs === opt.value;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => handleAutoLockChange(String(opt.value))}
+                className={cn(
+                  'min-h-9 flex-1 whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-colors pointer-coarse:min-h-11',
+                  selected
+                    ? 'bg-surface-0 text-text-primary shadow-sm ring-1 ring-border-default'
+                    : 'text-text-tertiary hover:text-text-primary',
+                )}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       </Card>
 
       {/* Lock wallet now */}
-      <Card padding="lg">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Lock className="h-5 w-5 text-text-secondary" />
+      <Card>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <SettingIcon><Lock /></SettingIcon>
             <div>
-              <h2 className="text-lg font-medium text-text-primary">
-                Lock wallet
-              </h2>
-              <p className="text-sm text-text-secondary">
+              <h2 className="text-base font-semibold text-text-primary">Lock wallet</h2>
+              <p className="mt-0.5 text-sm text-text-tertiary">
                 Immediately lock your wallet and require PIN to re-enter.
               </p>
             </div>
           </div>
-          <Button variant="secondary" onClick={handleLock}>
+          <Button variant="secondary" onClick={handleLock} className="shrink-0">
             Lock now
           </Button>
+        </div>
+      </Card>
+
+      {/* Change PIN */}
+      <Card className="border-dashed">
+        <div className="flex items-start gap-3">
+          <SettingIcon><Shield /></SettingIcon>
+          <div>
+            <h2 className="text-base font-semibold text-text-primary">Change PIN</h2>
+            <p className="mt-0.5 text-sm text-text-tertiary">
+              PIN change is not yet available. This feature will be added in a future update.
+            </p>
+          </div>
         </div>
       </Card>
     </div>

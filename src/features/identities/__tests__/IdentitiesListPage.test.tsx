@@ -132,7 +132,7 @@ describe('IdentitiesListPage', () => {
 
   it('renders a create identity link', () => {
     renderWithProviders(<IdentitiesListPage />);
-    // The "Create Identity" text is inside a <Link> wrapping a <Button>
+    // Navigation renders as a link styled like a button (no nested interactive elements).
     expect(screen.getByRole('link', { name: /new profile/i })).toBeInTheDocument();
   });
 

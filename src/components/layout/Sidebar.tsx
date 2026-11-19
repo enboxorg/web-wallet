@@ -1,5 +1,6 @@
-import { PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Lock, Moon, PanelLeftClose, PanelLeftOpen, Sun } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { isNavItemActive } from './nav-active';
 import type { NavItem } from './types';
 
 export interface SidebarProps {
@@ -9,6 +10,8 @@ export interface SidebarProps {
   mini?: boolean;
   onLock?: () => void;
   onToggleMini?: () => void;
+  theme?: 'dark' | 'light';
+  onToggleTheme?: () => void;
   className?: string;
 }
 
@@ -23,15 +26,25 @@ export function Sidebar({
   mini = false,
   onLock,
   onToggleMini,
+  theme,
+  onToggleTheme,
   className,
 }: SidebarProps) {
   // Group items by section, preserving insertion order
   const sections = groupBySection(items);
 
+  const footerButton = cn(
+    'flex w-full items-center gap-3 rounded-lg text-sm font-medium',
+    'text-text-tertiary hover:bg-surface-2 hover:text-text-primary',
+    'transition-colors duration-[var(--duration-fast)]',
+    mini ? 'justify-center py-2.5' : 'px-3 py-2',
+  );
+  const themeLabel = `Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`;
+
   return (
     <aside
       className={cn(
-        'flex flex-col h-full bg-surface-1 border-r border-border-default',
+        'flex h-full shrink-0 flex-col border-r border-border-subtle bg-surface-1',
         'transition-[width] duration-[200ms] ease-[var(--ease-out)]',
         mini ? 'w-[var(--sidebar-mini-width)]' : 'w-[var(--sidebar-width)]',
         className,
@@ -41,11 +54,11 @@ export function Sidebar({
       {/* Logo */}
       <div
         className={cn(
-          'flex items-center h-14 shrink-0 border-b border-border-subtle',
+          'flex h-16 shrink-0 items-center',
           mini ? 'justify-center px-0' : 'px-6',
         )}
       >
-        <span className="text-xl font-bold tracking-tight text-text-primary select-none">
+        <span className="select-none text-xl font-bold tracking-tight text-text-primary">
           {mini ? (
             <span className="text-accent">b</span>
           ) : (
@@ -57,88 +70,86 @@ export function Sidebar({
       </div>
 
       {/* Nav sections */}
-      <nav className="flex-1 overflow-y-auto py-4" aria-label="Main navigation">
+      <nav className={cn('flex-1 overflow-y-auto py-2', mini ? 'px-2' : 'px-3')} aria-label="Main navigation">
         {sections.map(({ section, items: sectionItems }) => (
-          <div key={section ?? '__ungrouped'} className="mb-3">
+          <div key={section ?? '__ungrouped'} className="mb-4">
             {section && !mini && (
-              <div className="px-6 pb-1 pt-2 text-xs font-medium tracking-wider uppercase text-text-ghost">
+              <div className="px-3 pb-1.5 pt-1 text-[11px] font-medium uppercase tracking-wider text-text-ghost">
                 {section}
               </div>
             )}
 
-            {sectionItems.map((item) => {
-              const active = item.path === '/'
-                ? currentPath === '/'
-                : currentPath.startsWith(item.path);
-              return (
-                <button
-                  key={item.path}
-                  type="button"
-                  onClick={() => onNavigate(item.path)}
-                  title={mini ? item.label : undefined}
-                  className={cn(
-                    'flex items-center w-full gap-3 text-sm font-medium',
-                    'transition-colors duration-[var(--duration-fast)]',
-                    mini ? 'justify-center px-0 py-3 mx-auto' : 'px-6 py-2.5',
-                    active
-                      ? 'bg-accent-muted text-accent border-l-2 border-accent'
-                      : 'text-text-secondary hover:bg-surface-3 hover:text-text-primary border-l-2 border-transparent',
-                  )}
-                  aria-current={active ? 'page' : undefined}
-                >
-                  <span className="relative shrink-0 w-5 h-5" aria-hidden="true">
-                    {item.icon}
-                    {item.badge && (
-                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-error" />
+            <div className="space-y-0.5">
+              {sectionItems.map((item) => {
+                const active = isNavItemActive(currentPath, item);
+                return (
+                  <button
+                    key={item.path}
+                    type="button"
+                    onClick={() => onNavigate(item.path)}
+                    title={mini ? item.label : undefined}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-lg text-sm font-medium',
+                      'transition-colors duration-[var(--duration-fast)]',
+                      mini ? 'justify-center py-2.5' : 'px-3 py-2',
+                      active
+                        ? 'bg-accent-muted text-accent'
+                        : 'text-text-secondary hover:bg-surface-2 hover:text-text-primary',
                     )}
-                  </span>
-                  {!mini && <span className="truncate">{item.label}</span>}
-                </button>
-              );
-            })}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    <span className="relative size-5 shrink-0 [&>svg]:size-5" aria-hidden="true">
+                      {item.icon}
+                      {item.badge && (
+                        <span className="absolute -right-0.5 -top-0.5 size-2 rounded-full bg-error ring-2 ring-surface-1" />
+                      )}
+                    </span>
+                    {mini ? <span className="sr-only">{item.label}</span> : <span className="truncate">{item.label}</span>}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         ))}
       </nav>
 
-      {/* Mini mode toggle */}
-      {onToggleMini && (
-        <div className={cn('border-t border-border-subtle py-2', mini ? 'px-0' : 'px-4')}>
+      {/* Footer actions */}
+      <div className={cn('space-y-0.5 border-t border-border-subtle py-3', mini ? 'px-2' : 'px-3')}>
+        {onToggleTheme && (
+          <button
+            type="button"
+            onClick={onToggleTheme}
+            title={mini ? themeLabel : undefined}
+            aria-label={themeLabel}
+            className={footerButton}
+          >
+            {theme === 'dark' ? <Sun size={18} aria-hidden="true" /> : <Moon size={18} aria-hidden="true" />}
+            {!mini && <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
+          </button>
+        )}
+        {onToggleMini && (
           <button
             type="button"
             onClick={onToggleMini}
             title={mini ? 'Expand sidebar' : 'Collapse sidebar'}
-            className={cn(
-              'flex items-center w-full gap-3 text-sm font-medium rounded-lg',
-              'text-text-ghost hover:bg-surface-3 hover:text-text-secondary',
-              'transition-colors duration-[var(--duration-fast)]',
-              mini ? 'justify-center py-2.5' : 'px-3 py-2.5',
-            )}
+            className={footerButton}
           >
-            {mini ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-            {!mini && <span>Collapse</span>}
+            {mini ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
+            {mini ? <span className="sr-only">Expand sidebar</span> : <span>Collapse</span>}
           </button>
-        </div>
-      )}
-
-      {/* Bottom actions */}
-      {onLock && (
-        <div className={cn('border-t border-border-subtle py-3', mini ? 'px-0' : 'px-4')}>
+        )}
+        {onLock && (
           <button
             type="button"
             onClick={onLock}
             title="Lock wallet"
-            className={cn(
-              'flex items-center w-full gap-3 text-sm font-medium rounded-lg',
-              'text-text-secondary hover:bg-surface-3 hover:text-text-primary',
-              'transition-colors duration-[var(--duration-fast)]',
-              mini ? 'justify-center py-2.5' : 'px-3 py-2.5',
-            )}
+            className={footerButton}
           >
-            <LockIcon />
-            {!mini && <span>Lock</span>}
+            <Lock size={18} aria-hidden="true" />
+            {mini ? <span className="sr-only">Lock</span> : <span>Lock</span>}
           </button>
-        </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }
@@ -165,20 +176,4 @@ function groupBySection(items: NavItem[]): SectionGroup[] {
   }
 
   return groups;
-}
-
-function LockIcon() {
-  return (
-    <svg
-      className="w-5 h-5"
-      viewBox="0 0 20 20"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      aria-hidden="true"
-    >
-      <rect x="4" y="9" width="12" height="8" rx="2" />
-      <path d="M7 9V6a3 3 0 0 1 6 0v3" />
-    </svg>
-  );
 }

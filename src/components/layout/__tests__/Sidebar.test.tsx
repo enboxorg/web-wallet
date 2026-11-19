@@ -65,7 +65,6 @@ describe('Sidebar', () => {
     const activeButton = screen.getByRole('button', { name: 'My DID' });
     expect(activeButton.className).toContain('bg-accent-muted');
     expect(activeButton.className).toContain('text-accent');
-    expect(activeButton.className).toContain('border-accent');
   });
 
   it('calls onNavigate with the item path when clicked', async () => {
@@ -76,10 +75,10 @@ describe('Sidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('/connect');
   });
 
-  it('hides labels in mini mode', () => {
+  it('keeps labels only for assistive tech in mini mode', () => {
     renderSidebar({ mini: true });
-    expect(screen.queryByText('My DID')).not.toBeInTheDocument();
-    expect(screen.queryByText('Credentials')).not.toBeInTheDocument();
+    expect(screen.getByText('My DID')).toHaveClass('sr-only');
+    expect(screen.getByRole('button', { name: 'Credentials' })).toBeInTheDocument();
   });
 
   it('hides section labels in mini mode', () => {

@@ -14,7 +14,9 @@ import {
 } from '@/enbox/hooks/use-identity-mutations';
 
 import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { buttonClassName } from '@/components/ui/button-styles';
 import { Dialog } from '@/components/ui/Dialog';
 import { Loader } from '@/components/ui/Loader';
 import { TabList, Tab, TabPanel } from '@/components/ui/Tabs';
@@ -45,17 +47,13 @@ export default function IdentityDetailsPage() {
   const deleteIdentity = useDeleteIdentity();
   const exportIdentity = useExportIdentity();
 
-  const tabLabels = useMemo(() => {
-    const moduleCount = modules?.length ?? 0;
-    const appCount = countActivePermissionApps(permissions);
-    return [
-      'Overview',
-      moduleCount > 0 ? `Modules (${moduleCount})` : 'Modules',
-      'Wallets',
-      appCount > 0 ? `Apps & Permissions (${appCount})` : 'Apps & Permissions',
-      'Activity',
-    ];
-  }, [modules, permissions]);
+  const tabCounts = useMemo<Array<number | undefined>>(() => [
+    undefined,
+    modules?.length ?? 0,
+    undefined,
+    countActivePermissionApps(permissions),
+    undefined,
+  ], [modules, permissions]);
 
   const identity = useMemo(
     () => identities?.find((id: any) => id.did.uri === did),
@@ -122,9 +120,7 @@ export default function IdentityDetailsPage() {
         <p className="text-sm text-text-secondary">
           This identity may have been deleted or the DID is invalid.
         </p>
-        <Link to="/">
-          <Button>Go to profiles</Button>
-        </Link>
+        <Link to="/" className={buttonClassName()}>Go to profiles</Link>
       </div>
     );
   }
@@ -134,95 +130,117 @@ export default function IdentityDetailsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex items-start gap-3">
-          {/* Back arrow — visible on mobile/tablet, hidden on desktop (sidebar handles nav) */}
-          <Link
-            to="/"
-            className="mt-1.5 rounded-lg p-2.5 text-text-secondary hover:text-text-primary hover:bg-surface-2 transition-colors lg:hidden"
-            aria-label="Back to profiles"
-          >
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <Avatar
-            src={profile?.avatarUrl}
-            name={displayName}
-            size="lg"
+      {/* Back link — mobile/tablet only; the sidebar handles this on desktop */}
+      <Link
+        to="/"
+        className="-ml-1 inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm text-text-tertiary transition-colors hover:text-text-primary lg:hidden"
+        aria-label="Back to profiles"
+      >
+        <ArrowLeft className="size-4" />
+        Profiles
+      </Link>
+
+      {/* Profile header */}
+      <header className="overflow-hidden rounded-2xl border border-border-default bg-surface-1">
+        {profile?.heroUrl ? (
+          <div
+            className="h-28 bg-cover bg-center sm:h-36"
+            style={{ backgroundImage: `url(${profile.heroUrl})` }}
           />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="text-[length:var(--text-2xl)] font-semibold text-text-primary truncate">
+        ) : (
+          <div className="h-28 bg-[radial-gradient(120%_140%_at_0%_0%,rgba(var(--accent-rgb),0.35),transparent_55%),radial-gradient(120%_140%_at_100%_100%,rgba(var(--accent-rgb),0.12),transparent_60%)] bg-surface-2 sm:h-36" />
+        )}
+
+        <div className="px-5 pb-5 sm:px-6">
+          <div className="-mt-12 flex items-end justify-between gap-3">
+            <Avatar
+              src={profile?.avatarUrl}
+              name={displayName}
+              size="xl"
+              className="ring-4 ring-surface-1"
+            />
+
+            {/* Actions */}
+            <div className="flex items-center gap-2 pb-1">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setQrOpen(true)}
+                title="Share DID"
+                aria-label="Share"
+              >
+                <QrCode className="size-3.5" />
+                <span className="hidden sm:inline">Share</span>
+              </Button>
+              <Link
+                to={`/identity/${encodeURIComponent(did)}/edit`}
+                className={buttonClassName({ variant: 'secondary', size: 'sm' })}
+                aria-label="Edit"
+              >
+                <Pencil className="size-3.5" />
+                <span className="hidden sm:inline">Edit</span>
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleExport}
+                loading={exportIdentity.isPending}
+                aria-label="Export"
+                title="Export profile"
+              >
+                {!exportIdentity.isPending && <Download className="size-3.5" />}
+                <span className="hidden md:inline">Export</span>
+              </Button>
+              <Button
+                variant="danger-ghost"
+                size="sm"
+                onClick={() => setDeleteOpen(true)}
+                aria-label="Delete"
+                title="Delete profile"
+              >
+                <Trash2 className="size-3.5" />
+                <span className="hidden md:inline">Delete</span>
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-3 min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="truncate text-2xl font-semibold tracking-tight text-text-primary">
                 {displayName}
               </h1>
-              {persona && (
-                <span className="shrink-0 rounded-full bg-accent-muted px-2.5 py-0.5 text-xs font-medium text-accent">
-                  {persona}
-                </span>
-              )}
+              {persona && <Badge tone="accent" size="md">{persona}</Badge>}
             </div>
+            {profile?.tagline && (
+              <p className="mt-1 text-sm text-text-secondary">{profile.tagline}</p>
+            )}
             <button
               type="button"
               onClick={handleCopyDid}
-              className="mt-1 inline-flex items-center gap-1.5 font-mono text-sm text-text-tertiary hover:text-text-primary transition-colors"
+              className="mt-2.5 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 font-mono text-xs text-text-tertiary transition-colors hover:bg-surface-3 hover:text-text-primary"
               title="Copy DID"
             >
-              {truncateDid(did)}
+              <span className="truncate">{truncateDid(did)}</span>
               {copied ? (
-                <Check className="h-3.5 w-3.5 text-success" />
+                <Check className="size-3.5 shrink-0 text-success" />
               ) : (
-                <Copy className="h-3.5 w-3.5" />
+                <Copy className="size-3.5 shrink-0" />
               )}
             </button>
           </div>
         </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-2">
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => setQrOpen(true)}
-            title="Share DID"
-          >
-            <QrCode className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Share</span>
-          </Button>
-          <Link to={`/identity/${encodeURIComponent(did)}/edit`}>
-            <Button variant="secondary" size="sm">
-              <Pencil className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Edit</span>
-            </Button>
-          </Link>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={handleExport}
-            loading={exportIdentity.isPending}
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Export</span>
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            onClick={() => setDeleteOpen(true)}
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Delete</span>
-          </Button>
-        </div>
-      </div>
+      </header>
 
       {/* Tabs */}
       <TabList>
-        {tabLabels.map((label, index) => (
+        {TABS.map((label, index) => (
           <Tab
-            key={TABS[index]}
+            key={label}
             id={tabId(index)}
             panelId={panelId(index)}
             active={activeTab === index}
             onClick={() => setActiveTab(index)}
+            count={tabCounts[index]}
           >
             {label}
           </Tab>
@@ -253,7 +271,7 @@ export default function IdentityDetailsPage() {
       >
         <div className="flex flex-col items-center gap-5">
           {/* QR code on white background for scan visibility in any theme */}
-          <div className="rounded-xl bg-white p-5">
+          <div className="rounded-2xl bg-white p-5 shadow-sm">
             <QRCodeCanvas
               value={did}
               size={200}
@@ -344,17 +362,16 @@ export default function IdentityDetailsPage() {
               value={deleteConfirmText}
               onChange={(e) => setDeleteConfirmText(e.target.value)}
               placeholder="DELETE"
-              className="mt-1.5 w-full rounded-lg bg-surface-2 px-4 py-2.5 text-sm text-text-primary border border-border-default focus:border-error focus:outline-none font-mono"
+              className="mt-1.5 w-full min-h-11 rounded-xl bg-surface-2 px-4 py-2.5 text-sm text-text-primary border border-border-default focus:border-error focus:outline-none focus:ring-4 focus:ring-error/15 font-mono"
               autoComplete="off"
             />
           </div>
-          <div className="flex justify-end gap-3">
-            <Button variant="ghost" size="sm" onClick={() => { setDeleteOpen(false); setDeleteConfirmText(''); }}>
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+            <Button variant="ghost" onClick={() => { setDeleteOpen(false); setDeleteConfirmText(''); }}>
               Cancel
             </Button>
             <Button
               variant="danger"
-              size="sm"
               onClick={handleDelete}
               loading={deleteIdentity.isPending}
               disabled={deleteConfirmText !== 'DELETE'}
