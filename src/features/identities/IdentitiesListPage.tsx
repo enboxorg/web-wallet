@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Download, Users, UserPlus, Search } from 'lucide-react';
+import { Download, Plus, Users, UserPlus, Search } from 'lucide-react';
 import { Link, useNavigate } from 'react-router';
 
 import { useIdentities } from '@/enbox/hooks/use-identities';
@@ -76,8 +76,8 @@ export default function IdentitiesListPage() {
   if (error) {
     return (
       <div className="space-y-6">
-        <h1 className="text-[length:var(--text-2xl)] font-semibold text-text-primary">
-          Identities
+        <h1 className="text-[1.75rem] font-semibold leading-9 tracking-[-0.025em] text-text-primary sm:text-[2rem] sm:leading-10">
+          Profiles
         </h1>
         <ErrorBox message={`Couldn't load your profiles: ${(error as Error).message}`} />
       </div>
@@ -87,7 +87,7 @@ export default function IdentitiesListPage() {
   const hasIdentities = identities !== undefined && identities.length > 0;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
       <PageHeader
         title="Profiles"
         description="The profiles you share with your apps."
@@ -108,25 +108,41 @@ export default function IdentitiesListPage() {
       {/* Searching only helps once there are a few profiles to tell apart. */}
       {hasIdentities && (identities.length > SEARCH_THRESHOLD || search !== '') && (
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-ghost pointer-events-none" />
+          <Search className="pointer-events-none absolute left-4 top-1/2 z-10 size-4 -translate-y-1/2 text-text-tertiary" />
           <Input
             placeholder="Search your profiles…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-11"
           />
         </div>
       )}
 
       {hasIdentities ? (
         filteredIdentities.length > 0 ? (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 lg:grid-cols-3">
+          <div className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3">
             {filteredIdentities.map((identity: any) => (
               <IdentityCardWithProfile
                 key={identity.did.uri}
                 identity={identity}
               />
             ))}
+            {/* An open seat at the end of the row: one more way in to creating a profile. */}
+            {search === '' && (
+              <Link
+                to="/identities/create"
+                aria-label="Add a profile"
+                className="group flex min-h-48 flex-col items-center justify-center gap-3 rounded-3xl border border-dashed border-border-strong p-6 text-center transition-[border-color,background-color] duration-[var(--duration-base)] hover:border-accent/60 hover:bg-accent-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-0"
+              >
+                <span className="flex size-11 items-center justify-center rounded-full border border-border-default bg-surface-2 text-text-secondary transition-colors group-hover:border-accent/40 group-hover:bg-accent-muted group-hover:text-accent">
+                  <Plus className="size-5" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block text-sm font-medium text-text-primary">Add a profile</span>
+                  <span className="mt-0.5 block text-xs text-text-tertiary">Keep work, play and personal apart</span>
+                </span>
+              </Link>
+            )}
           </div>
         ) : (
           <EmptyState

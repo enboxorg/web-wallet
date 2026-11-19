@@ -10,6 +10,7 @@ import { useBlobUrl } from '@/enbox/hooks/use-blob-url';
 import { useUpdateIdentityProfile, useUpdateDwnEndpoints } from '@/enbox/hooks/use-identity-mutations';
 
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { ChipInput } from '@/components/ui/ChipInput';
@@ -166,10 +167,12 @@ export default function EditIdentityPage() {
 
   if (!identity && !identitiesLoading) {
     return (
-      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
-        <UserX size={48} className="text-text-ghost" />
-        <h1 className="text-xl font-semibold text-text-primary">Profile not found</h1>
-        <p className="text-sm text-text-secondary">
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-center">
+        <span className="surface-card mb-3 flex size-16 items-center justify-center rounded-[20px] border border-border-default bg-surface-2 text-text-secondary">
+          <UserX className="size-7" aria-hidden="true" />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Profile not found</h1>
+        <p className="mb-4 max-w-sm text-[15px] leading-relaxed text-text-secondary">
           This identity may have been deleted or the DID is invalid.
         </p>
         <Link to="/">
@@ -180,7 +183,7 @@ export default function EditIdentityPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl space-y-7">
       <PageHeader
         title="Edit profile"
         description="Update how you appear to apps and people."
@@ -188,80 +191,86 @@ export default function EditIdentityPage() {
         onBack={confirmDiscardChanges}
       />
 
-      <form onSubmit={handleSubmit} className="space-y-6">
-        {/* Banner */}
-        <BannerUpload
-          src={heroPreview}
-          onUpload={handleHeroUpload}
-          onClear={handleHeroClear}
-          onError={(message) => toast.error(message)}
-        />
-
-        {/* Avatar overlapping the banner */}
-        <div className="-mt-12 ml-4">
-          <AvatarUpload
-            src={avatarPreview}
-            name={displayName}
-            onUpload={handleAvatarUpload}
+      <form onSubmit={handleSubmit} className="space-y-8">
+        <section aria-label="Profile images">
+          <BannerUpload
+            src={heroPreview}
+            onUpload={handleHeroUpload}
+            onClear={handleHeroClear}
             onError={(message) => toast.error(message)}
-            size="xl"
           />
-        </div>
 
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Input
-            label="Display name"
-            hint="Public. Apps and people see this name."
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="How others see you"
-            required
-          />
-          <Input
-            label="Persona"
-            hint="Private. Only you see it, to tell your profiles apart."
-            value={persona}
-            onChange={(e) => setPersona(e.target.value)}
-            placeholder="e.g. Personal, Work, Gaming"
-          />
-        </div>
-
-        <Input
-          label="Tagline"
-          value={tagline}
-          onChange={(e) => setTagline(e.target.value)}
-          placeholder="A short one-liner about this profile"
-        />
-
-        <Textarea
-          label="Bio"
-          value={bio}
-          onChange={(e) => setBio(e.target.value)}
-          placeholder="Tell the world a bit more..."
-          rows={4}
-        />
-
-        {/* DWN Endpoints */}
-        <section className="space-y-4">
-          <h2 className="text-sm font-medium text-text-secondary uppercase tracking-wider">
-            Advanced
-          </h2>
-          <ChipInput
-            label="DWN Endpoints"
-            values={dwnEndpoints}
-            onChange={setDwnEndpoints}
-            placeholder="Add a DWN endpoint URL…"
-          />
-          {dwnEndpoints.length > 0 && (
-            <div className="flex flex-wrap gap-3 mt-1">
-              {dwnEndpoints.map((ep) => (
-                <EndpointHealth key={ep} url={ep} />
-              ))}
-            </div>
-          )}
+          {/* Avatar overlapping the banner */}
+          <div className="relative z-10 -mt-12 ml-5 sm:ml-7">
+            <AvatarUpload
+              src={avatarPreview}
+              name={displayName}
+              onUpload={handleAvatarUpload}
+              onError={(message) => toast.error(message)}
+              size="xl"
+            />
+          </div>
         </section>
 
-        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-border-default pt-6">
+        <section className="space-y-3">
+          <h2 className="eyebrow px-1">Details</h2>
+          <Card padding="lg" className="space-y-5">
+            <div className="grid gap-5 sm:grid-cols-2">
+              <Input
+                label="Display name"
+                hint="Public. Apps and people see this name."
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="How others see you"
+                required
+              />
+              <Input
+                label="Persona"
+                hint="Private. Only you see it, to tell your profiles apart."
+                value={persona}
+                onChange={(e) => setPersona(e.target.value)}
+                placeholder="e.g. Personal, Work, Gaming"
+              />
+            </div>
+
+            <Input
+              label="Tagline"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
+              placeholder="A short one-liner about this profile"
+            />
+
+            <Textarea
+              label="Bio"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              placeholder="Tell the world a bit more..."
+              rows={4}
+            />
+          </Card>
+        </section>
+
+        {/* DWN Endpoints */}
+        <section className="space-y-3">
+          <h2 className="eyebrow px-1">Advanced</h2>
+          <Card padding="lg" className="space-y-3">
+            <ChipInput
+              label="DWN Endpoints"
+              values={dwnEndpoints}
+              onChange={setDwnEndpoints}
+              placeholder="Add a DWN endpoint URL…"
+            />
+            {dwnEndpoints.length > 0 && (
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {dwnEndpoints.map((ep) => (
+                  <EndpointHealth key={ep} url={ep} />
+                ))}
+              </div>
+            )}
+          </Card>
+        </section>
+
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
           <Button
             type="button"
             variant="ghost"

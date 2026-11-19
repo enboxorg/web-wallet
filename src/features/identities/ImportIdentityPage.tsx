@@ -186,7 +186,7 @@ export default function ImportIdentityPage() {
   const allDone = entries.length > 0 && pendingCount === 0 && lockedCount === 0 && !importing;
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl space-y-7">
       <PageHeader
         title="Import profiles"
         description="Bring profiles over from exported backup files."
@@ -199,19 +199,26 @@ export default function ImportIdentityPage() {
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         className={cn(
-          'flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed p-12',
-          'transition-colors duration-[var(--duration-fast)]',
+          'flex flex-col items-center justify-center gap-5 rounded-3xl border border-dashed px-6 py-14',
+          'transition-[border-color,background-color] duration-[var(--duration-base)]',
           dragging
-            ? 'border-accent bg-accent/5'
-            : 'border-border-default bg-surface-1 hover:border-border-strong',
+            ? 'border-accent bg-accent/[0.07]'
+            : 'border-border-strong bg-surface-1/60 hover:border-text-ghost',
         )}
       >
-        <Download className="h-10 w-10 text-text-ghost" />
+        <span
+          className={cn(
+            'surface-card flex size-16 items-center justify-center rounded-[20px] border border-border-default bg-surface-2 transition-colors',
+            dragging ? 'text-accent' : 'text-text-secondary',
+          )}
+        >
+          <Download className="size-7" aria-hidden="true" />
+        </span>
         <div className="text-center">
-          <p className="text-sm font-medium text-text-primary">
+          <p className="text-base font-semibold tracking-tight text-text-primary">
             Drop profile backup files here
           </p>
-          <p className="mt-1 text-xs text-text-tertiary">
+          <p className="mt-1 text-sm text-text-tertiary">
             or
           </p>
         </div>
@@ -238,10 +245,10 @@ export default function ImportIdentityPage() {
       {/* Entries */}
       {entries.length > 0 && (
         <div className="space-y-3">
-          <h2 className="text-sm font-medium text-text-secondary">
+          <h2 className="eyebrow px-1">
             To import ({entries.length})
           </h2>
-          <ul className="divide-y divide-border-subtle rounded-lg border border-border-default bg-surface-1 overflow-hidden">
+          <ul className="surface-card divide-y divide-border-subtle rounded-xl border border-border-default bg-surface-1 overflow-hidden">
             {entries.map((entry) => (
               <li key={entry.id} className="px-4 py-3">
                 <div className="flex items-center justify-between">

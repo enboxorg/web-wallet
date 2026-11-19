@@ -175,7 +175,7 @@ function ModuleSection({
   return (
     <section className="space-y-3" aria-labelledby={headingId}>
       <SectionHeader id={headingId} title={title} description={description} count={rows.length} />
-      <ul className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
+      <ul className="surface-card divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
         {rows.map((row) => <ModuleRow key={row.module.uri} row={row} />)}
       </ul>
     </section>

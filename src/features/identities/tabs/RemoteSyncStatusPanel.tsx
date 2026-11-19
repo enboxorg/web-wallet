@@ -147,7 +147,7 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
         <ErrorAlert message={status.error instanceof Error ? status.error.message : 'Couldn’t check sync status'} />
       )}
       {!status.isLoading && !status.error && remotes?.length === 0 && (
-        <div className="rounded-xl border border-border-default bg-surface-1 px-4 py-3 text-sm text-text-tertiary">
+        <div className="surface-card rounded-xl border border-border-default bg-surface-1 px-4 py-3 text-sm text-text-tertiary">
           Not syncing to any server yet.
         </div>
       )}
@@ -159,7 +159,7 @@ export function RemoteSyncStatusPanel({ did }: RemoteSyncStatusPanelProps) {
           key={summary.needsAttention ? 'attention' : 'calm'}
           open={summary.needsAttention}
           data-testid="sync-summary"
-          className="rounded-xl border border-border-default bg-surface-1"
+          className="surface-card rounded-xl border border-border-default bg-surface-1"
           summaryClassName="rounded-xl px-4 py-3.5 text-text-secondary hover:bg-surface-2/60"
           summary={(
             <>

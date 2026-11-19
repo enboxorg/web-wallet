@@ -113,13 +113,15 @@ export default function IdentityDetailsPage() {
 
   if (!identity && !identitiesLoading) {
     return (
-      <div className="flex min-h-[40vh] flex-col items-center justify-center gap-4 text-center">
-        <UserX size={48} className="text-text-ghost" />
-        <h1 className="text-xl font-semibold text-text-primary">Profile not found</h1>
-        <p className="text-sm text-text-secondary">
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-2 text-center">
+        <span className="surface-card mb-3 flex size-16 items-center justify-center rounded-[20px] border border-border-default bg-surface-2 text-text-secondary">
+          <UserX className="size-7" aria-hidden="true" />
+        </span>
+        <h1 className="text-2xl font-semibold tracking-tight text-text-primary">Profile not found</h1>
+        <p className="max-w-sm text-[15px] leading-relaxed text-text-secondary">
           This identity may have been deleted or the DID is invalid.
         </p>
-        <Link to="/" className={buttonClassName()}>Go to profiles</Link>
+        <Link to="/" className={buttonClassName({ className: 'mt-4' })}>Go to profiles</Link>
       </div>
     );
   }
@@ -128,11 +130,11 @@ export default function IdentityDetailsPage() {
   const persona = identity?.metadata?.name;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Back link — mobile/tablet only; the sidebar handles this on desktop */}
       <Link
         to="/"
-        className="-ml-1 inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm text-text-tertiary transition-colors hover:text-text-primary lg:hidden"
+        className="-ml-2 inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2 text-sm font-medium text-text-tertiary transition-colors hover:bg-surface-2 hover:text-text-primary lg:hidden"
         aria-label="Back to profiles"
       >
         <ArrowLeft className="size-4" />
@@ -140,23 +142,27 @@ export default function IdentityDetailsPage() {
       </Link>
 
       {/* Profile header */}
-      <header className="overflow-hidden rounded-2xl border border-border-default bg-surface-1">
-        {profile?.heroUrl ? (
-          <div
-            className="h-28 bg-cover bg-center sm:h-36"
-            style={{ backgroundImage: `url(${profile.heroUrl})` }}
-          />
-        ) : (
-          <div className="h-28 bg-[radial-gradient(120%_140%_at_0%_0%,rgba(var(--accent-rgb),0.35),transparent_55%),radial-gradient(120%_140%_at_100%_100%,rgba(var(--accent-rgb),0.12),transparent_60%)] bg-surface-2 sm:h-36" />
-        )}
+      <header className="surface-card overflow-hidden rounded-3xl border border-border-default bg-surface-1">
+        {/* Banner, fading into the card beneath the avatar. */}
+        <div className="relative h-32 bg-surface-2 sm:h-48">
+          {profile?.heroUrl ? (
+            <div
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: `url(${profile.heroUrl})` }}
+            />
+          ) : (
+            <div className="absolute inset-0 bg-[radial-gradient(120%_140%_at_0%_0%,rgba(var(--accent-rgb),0.36),transparent_58%),radial-gradient(120%_140%_at_100%_0%,rgba(var(--accent-2-rgb),0.28),transparent_60%)]" />
+          )}
+          <div className="banner-scrim h-24" aria-hidden="true" />
+        </div>
 
-        <div className="px-5 pb-5 sm:px-6">
-          <div className="-mt-12 flex items-end justify-between gap-3">
+        <div className="relative px-5 pb-6 sm:px-8 sm:pb-7">
+          <div className="-mt-14 flex items-end justify-between gap-3">
             <Avatar
               src={profile?.avatarUrl}
               name={displayName}
               size="xl"
-              className="ring-4 ring-surface-1"
+              className="shadow-raised ring-4 ring-surface-1"
             />
 
             {/* Everyday actions; export and delete live under Manage profile. */}
@@ -179,9 +185,9 @@ export default function IdentityDetailsPage() {
             </div>
           </div>
 
-          <div className="mt-3 min-w-0">
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h1 className="truncate text-2xl font-semibold tracking-tight text-text-primary">
+          <div className="mt-4 min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+              <h1 className="truncate text-[1.75rem] font-semibold leading-9 tracking-[-0.025em] text-text-primary sm:text-[2rem] sm:leading-10">
                 {displayName}
               </h1>
               {persona && !sameName(persona, displayName) && (
@@ -189,12 +195,12 @@ export default function IdentityDetailsPage() {
               )}
             </div>
             {profile?.tagline && (
-              <p className="mt-1 text-sm text-text-secondary">{profile.tagline}</p>
+              <p className="mt-1.5 text-[15px] leading-relaxed text-text-secondary">{profile.tagline}</p>
             )}
             <button
               type="button"
               onClick={handleCopyDid}
-              className="mt-2.5 inline-flex max-w-full items-center gap-1.5 rounded-lg bg-surface-2 px-2.5 py-1 font-mono text-xs text-text-tertiary transition-colors hover:bg-surface-3 hover:text-text-primary"
+              className="mt-4 inline-flex min-h-8 max-w-full items-center gap-2 rounded-full border border-border-default bg-surface-2 px-3 font-mono text-xs text-text-tertiary transition-colors hover:border-border-strong hover:bg-surface-3 hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
               title="Copy profile ID"
             >
               <span className="truncate">{truncateDid(did)}</span>
@@ -230,7 +236,7 @@ export default function IdentityDetailsPage() {
 
           <section aria-labelledby="manage-profile-heading" className="space-y-3">
             <SectionHeader id="manage-profile-heading" title="Manage profile" />
-            <div className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
+            <div className="surface-card divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1">
               <div className="flex flex-col gap-3 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-sm font-medium text-text-primary">Export profile</p>
@@ -297,7 +303,7 @@ export default function IdentityDetailsPage() {
       >
         <div className="flex flex-col items-center gap-5">
           {/* QR code on white background for scan visibility in any theme */}
-          <div className="rounded-2xl bg-white p-5 shadow-sm">
+          <div className="rounded-3xl bg-white p-5 shadow-raised ring-1 ring-black/5">
             <QRCodeCanvas
               value={did}
               size={200}
@@ -310,7 +316,7 @@ export default function IdentityDetailsPage() {
 
           {/* DID with copy */}
           <div className="flex w-full items-center gap-2">
-            <code className="min-w-0 flex-1 truncate rounded-lg bg-surface-2 px-3 py-2.5 font-mono text-xs text-text-secondary">
+            <code className="min-w-0 flex-1 truncate rounded-xl border border-border-default bg-field px-3.5 py-3 font-mono text-xs text-text-secondary inset-shadow-field">
               {did}
             </code>
             <button
@@ -322,7 +328,7 @@ export default function IdentityDetailsPage() {
                   setTimeout(() => setQrCopied(false), 2000);
                 }
               }}
-              className="shrink-0 rounded-lg bg-surface-2 p-2.5 text-text-tertiary hover:text-text-primary transition-colors"
+              className="btn-raised inline-flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 text-text-secondary transition-colors hover:border-border-strong hover:bg-surface-3 hover:text-text-primary"
               aria-label="Copy profile ID"
             >
               {qrCopied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
@@ -388,7 +394,7 @@ export default function IdentityDetailsPage() {
               value={deleteConfirmText}
               onChange={(e) => setDeleteConfirmText(e.target.value)}
               placeholder="DELETE"
-              className="mt-1.5 w-full min-h-11 rounded-xl bg-surface-2 px-4 py-2.5 text-sm text-text-primary border border-border-default focus:border-error focus:outline-none focus:ring-4 focus:ring-error/15 font-mono"
+              className="mt-1.5 w-full min-h-11 rounded-xl border border-border-default bg-field px-4 py-2.5 font-mono text-sm text-text-primary inset-shadow-field transition-[border-color,box-shadow] focus:border-error focus:outline-none focus:ring-4 focus:ring-error/15"
               autoComplete="off"
             />
           </div>

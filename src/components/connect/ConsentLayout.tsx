@@ -24,6 +24,7 @@ import { Monogram } from '@/components/ui/Monogram';
 import { SiteIcon } from '@/components/ui/SiteIcon';
 import { PinInput } from '@/components/ui/PinInput';
 import { PIN_LENGTH } from '@/lib/constants';
+import { EnboxMark } from '@/components/brand/Brand';
 import { cn, truncateDid } from '@/lib/utils';
 
 // ── Brand ────────────────────────────────────────────────────────────
@@ -35,13 +36,14 @@ import { cn, truncateDid } from '@/lib/utils';
 export function ConsentBrandBar({ className }: { className?: string }) {
   return (
     <div className={cn('flex select-none items-center justify-center gap-2.5', className)}>
+      <EnboxMark className="-mr-0.5 size-5 text-text-primary" />
       <span className="text-lg font-semibold tracking-tight">
         <span className="text-text-primary">en</span>
         <span className="font-bold text-accent">b</span>
         <span className="text-text-primary">ox</span>
       </span>
       <span className="h-3.5 w-px bg-border-strong" aria-hidden="true" />
-      <span className="text-xs font-medium text-text-tertiary">Identity Wallet</span>
+      <span className="font-mono text-[10px] font-medium uppercase tracking-[0.12em] text-text-tertiary">Identity Wallet</span>
     </div>
   );
 }
@@ -294,7 +296,7 @@ export function ConsentPinSetup({
   onBack: () => void;
 }) {
   return (
-    <div className="flex flex-col items-center gap-4 rounded-2xl border border-border-default bg-surface-1 p-5">
+    <div className="surface-card flex flex-col items-center gap-4 rounded-2xl border border-border-default bg-surface-1 p-5">
       <div className="flex items-center gap-2">
         <ShieldCheck className="size-4 text-accent" />
         <p className="text-sm font-semibold text-text-primary">

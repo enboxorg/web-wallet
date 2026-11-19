@@ -105,7 +105,7 @@ export default function ActivityTab({ did }: ActivityTabProps) {
   return (
     <ul
       aria-label="Recent activity"
-      className="divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1"
+      className="surface-card divide-y divide-border-subtle overflow-hidden rounded-xl border border-border-default bg-surface-1"
     >
       {activity.map((item: ActivityRecord) => (
         <ActivityRow key={item.id} item={item} ownerDid={did} definitions={definitions} />

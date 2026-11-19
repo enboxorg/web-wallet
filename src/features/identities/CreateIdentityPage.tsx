@@ -11,6 +11,7 @@ import { runEnboxSync } from '@/enbox/effect/runtime';
 import { randomUuidEffect } from '@/lib/browser-effects';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { AvatarUpload } from '@/components/ui/AvatarUpload';
@@ -118,7 +119,7 @@ export default function CreateIdentityPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto max-w-3xl space-y-7">
       <PageHeader
         title="New profile"
         description="Set up a new profile to share with apps."
@@ -139,17 +140,14 @@ export default function CreateIdentityPage() {
 
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Profile media section */}
-        <section className="space-y-4">
-          <h2 className="text-xs font-medium text-text-ghost uppercase tracking-wider">
-            Profile
-          </h2>
+        <section aria-label="Profile images">
           <BannerUpload
             src={heroPreview}
             onUpload={handleHeroUpload}
             onClear={handleHeroClear}
             onError={(message) => toast.error(message)}
           />
-          <div className="-mt-10 ml-4 relative z-10">
+          <div className="relative z-10 -mt-12 ml-5 sm:ml-7">
             <AvatarUpload
               src={avatarPreview}
               name={displayName || persona}
@@ -161,64 +159,68 @@ export default function CreateIdentityPage() {
         </section>
 
         {/* Details section */}
-        <section className="space-y-4">
-          <h2 className="text-xs font-medium text-text-ghost uppercase tracking-wider">
+        <section className="space-y-3">
+          <h2 className="eyebrow px-1">
             Details
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Card padding="lg" className="space-y-5">
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <Input
+                label="Display name"
+                hint="Public. Apps and people see this name."
+                placeholder="Your public-facing name"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+              />
+              <Input
+                label="Persona"
+                hint="Private. Only you see it, to tell your profiles apart."
+                placeholder="e.g. Personal, Work, Gaming"
+                value={persona}
+                onChange={(e) => setPersona(e.target.value)}
+              />
+            </div>
             <Input
-              label="Display name"
-              hint="Public. Apps and people see this name."
-              placeholder="Your public-facing name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
+              label="Tagline"
+              placeholder="A short description about yourself"
+              value={tagline}
+              onChange={(e) => setTagline(e.target.value)}
             />
-            <Input
-              label="Persona"
-              hint="Private. Only you see it, to tell your profiles apart."
-              placeholder="e.g. Personal, Work, Gaming"
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
+            <Textarea
+              label="Bio"
+              placeholder="Tell the world a bit more about yourself…"
+              value={bio}
+              onChange={(e) => setBio(e.target.value)}
+              rows={4}
             />
-          </div>
-          <Input
-            label="Tagline"
-            placeholder="A short description about yourself"
-            value={tagline}
-            onChange={(e) => setTagline(e.target.value)}
-          />
-          <Textarea
-            label="Bio"
-            placeholder="Tell the world a bit more about yourself…"
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            rows={4}
-          />
+          </Card>
         </section>
 
         {/* Advanced section */}
-        <section className="space-y-4">
-          <h2 className="text-xs font-medium text-text-ghost uppercase tracking-wider">
+        <section className="space-y-3">
+          <h2 className="eyebrow px-1">
             Advanced
           </h2>
-          <ChipInput
-            label="DWN Endpoints"
-            values={dwnEndpoints}
-            onChange={setDwnEndpoints}
-            placeholder="Add a DWN endpoint URL..."
-          />
-          {dwnEndpoints.length > 0 && (
-            <div className="flex flex-wrap gap-3 mt-1">
-              {dwnEndpoints.map((ep) => (
-                <EndpointHealth key={ep} url={ep} />
-              ))}
-            </div>
-          )}
+          <Card padding="lg" className="space-y-3">
+            <ChipInput
+              label="DWN Endpoints"
+              values={dwnEndpoints}
+              onChange={setDwnEndpoints}
+              placeholder="Add a DWN endpoint URL..."
+            />
+            {dwnEndpoints.length > 0 && (
+              <div className="flex flex-wrap gap-x-4 gap-y-2">
+                {dwnEndpoints.map((ep) => (
+                  <EndpointHealth key={ep} url={ep} />
+                ))}
+              </div>
+            )}
+          </Card>
         </section>
 
         {/* Error display */}
         {error && (
-          <div className="rounded-lg border border-error/30 bg-error/5 p-4">
+          <div className="rounded-2xl border border-error/30 bg-error/[0.07] p-4">
             <p className="text-sm text-error">
               {(error as Error).message}
             </p>
@@ -226,7 +228,7 @@ export default function CreateIdentityPage() {
         )}
 
         {/* Form actions */}
-        <div className="flex flex-col-reverse sm:flex-row sm:items-center sm:justify-end gap-3 border-t border-border-default pt-6">
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
           <Link to="/" className="w-full sm:w-auto">
             <Button type="button" variant="secondary" className="w-full sm:w-auto">
               Cancel

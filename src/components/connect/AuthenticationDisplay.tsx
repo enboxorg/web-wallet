@@ -9,7 +9,7 @@ interface AuthenticationDisplayProps {
 export function AuthenticationDisplay({ audience, authenticationOnly }: AuthenticationDisplayProps) {
   const service = new URL(audience).host;
   return (
-    <section className="rounded-xl border border-border-default bg-surface-1 p-4">
+    <section className="surface-card rounded-xl border border-border-default bg-surface-1 p-4">
       <div className="flex items-start gap-3">
         <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/20">
           <KeyRound className="size-[18px]" aria-hidden="true" />

@@ -524,7 +524,7 @@ function ApplicationCard({
   return (
     <article
       aria-labelledby={headingId}
-      className="overflow-hidden rounded-xl border border-border-default bg-surface-1"
+      className="surface-card overflow-hidden rounded-xl border border-border-default bg-surface-1"
     >
       <header className="flex items-start gap-3 p-4 sm:p-5">
         <Monogram label={application.name} seed={application.origin ?? application.id} />
@@ -635,7 +635,7 @@ function StandaloneGroupCard({
   return (
     <article
       aria-label={`Grants to ${label}`}
-      className="overflow-hidden rounded-xl border border-border-default bg-surface-1"
+      className="surface-card overflow-hidden rounded-xl border border-border-default bg-surface-1"
     >
       <header className="flex items-center gap-3 px-4 py-3 sm:px-5">
         <Monogram label={group.grantee.replace(/^did:[^:]+:/, '')} seed={group.grantee} icon={<Shield />} size="sm" />

@@ -43,7 +43,7 @@ export default function WalletsTab({ did }: WalletsTabProps) {
           return (
             <div
               key={i}
-              className="rounded-xl border border-border-default bg-surface-1 px-4 py-3"
+              className="surface-card rounded-xl border border-border-default bg-surface-1 px-4 py-3"
             >
               {displayUrl ? (
                 <div className="flex items-center gap-3">

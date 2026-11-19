@@ -83,34 +83,39 @@ export default function BackupPage() {
   const identityCount = identities?.length ?? 0;
 
   return (
-    <div className="max-w-2xl space-y-6">
+    <div className="mx-auto max-w-2xl space-y-5">
       <PageHeader
         title="Backup & Recovery"
         description="Back up your wallet and manage recovery options."
         backTo="/settings"
+        className="pb-2"
       />
 
       {/* Identity Export — PRIMARY backup method */}
-      <Card padding="lg" className="space-y-4">
-        <div className="flex items-center gap-2">
-          <Download className="h-5 w-5 text-accent" />
-          <h2 className="text-lg font-medium text-text-primary">
-            Export profiles
-          </h2>
-          <span className="rounded-full bg-accent-muted px-2 py-0.5 text-xs font-medium text-accent">
-            Recommended
+      <Card padding="lg" className="space-y-5">
+        <div className="flex items-center gap-3.5">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent ring-1 ring-inset ring-accent/15">
+            <Download className="size-5" aria-hidden="true" />
           </span>
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+            <h2 className="text-lg font-semibold tracking-tight text-text-primary">
+              Export profiles
+            </h2>
+            <span className="rounded-full bg-accent/10 px-2 py-0.5 text-[11px] font-semibold text-accent ring-1 ring-inset ring-accent/20">
+              Recommended
+            </span>
+          </div>
         </div>
 
-        <p className="text-sm text-text-secondary">
+        <p className="text-sm leading-relaxed text-text-secondary">
           Download every profile, including its keys, as one backup file. It works even if
           your sync servers are unavailable. The file is <strong className="text-text-primary">locked
           with a password</strong> you choose, so keep that password somewhere safe.
         </p>
 
-        <div className="flex items-center gap-3 rounded-lg bg-surface-2 p-3">
-          <Upload className="h-4 w-4 text-text-tertiary shrink-0" />
-          <p className="text-xs text-text-tertiary">
+        <div className="flex items-center gap-3 rounded-xl border border-border-subtle bg-surface-2 px-3.5 py-3">
+          <Upload className="size-4 shrink-0 text-text-tertiary" aria-hidden="true" />
+          <p className="text-[13px] text-text-tertiary">
             To restore from a backup file, use{' '}
             <Link to="/identities/import" className="font-medium text-text-secondary underline-offset-2 hover:underline">
               Import profiles
@@ -119,8 +124,8 @@ export default function BackupPage() {
           </p>
         </div>
 
-        <div className="flex items-center justify-between pt-1">
-          <div className="flex flex-col gap-1">
+        <div className="flex items-center justify-between gap-3 border-t border-border-subtle pt-4">
+          <div className="flex flex-col gap-0.5">
             <span className="text-sm text-text-tertiary">
               {identityCount} {identityCount === 1 ? 'profile' : 'profiles'} to export
             </span>
@@ -142,20 +147,22 @@ export default function BackupPage() {
       </Card>
 
       {/* Recovery phrase — secondary backup */}
-      <Card padding="lg" className="space-y-4">
-        <div className="flex items-center gap-2">
-          <KeyRound className="h-5 w-5 text-text-secondary" />
-          <h2 className="text-lg font-medium text-text-primary">
+      <Card padding="lg" className="space-y-5">
+        <div className="flex items-center gap-3.5">
+          <span className="flex size-11 shrink-0 items-center justify-center rounded-xl border border-border-default bg-surface-2 text-text-secondary">
+            <KeyRound className="size-5" aria-hidden="true" />
+          </span>
+          <h2 className="text-lg font-semibold tracking-tight text-text-primary">
             Recovery phrase
           </h2>
         </div>
 
         {phrase ? (
           <>
-            <div className="rounded-lg border border-warning/30 bg-warning/5 p-4 space-y-2">
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
-                <div className="text-sm text-warning space-y-1">
+            <div className="space-y-2 rounded-2xl border border-warning/30 bg-warning/[0.07] p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden="true" />
+                <div className="space-y-1.5 text-sm leading-relaxed text-warning">
                   <p>
                     <strong>Write these words down and keep them private.</strong> They restore this
                     wallet on a new device, along with any profiles that have synced. Anyone who has
@@ -179,9 +186,9 @@ export default function BackupPage() {
                     <div
                       key={i}
                       role="listitem"
-                      className="flex items-center gap-2 rounded-md bg-surface-2 px-3 py-2 border border-border-subtle"
+                      className="flex items-center gap-2 rounded-xl border border-border-default bg-field px-3 py-2.5 inset-shadow-field"
                     >
-                      <span className="text-xs text-text-ghost w-5 text-right">
+                      <span className="w-5 text-right font-mono text-[11px] tabular-nums text-text-ghost">
                         {i + 1}.
                       </span>
                       <span className="font-mono text-sm text-text-primary">
@@ -191,7 +198,7 @@ export default function BackupPage() {
                   ))}
                 </div>
 
-                <div className="flex flex-wrap gap-3 pt-2">
+                <div className="flex flex-wrap gap-2.5 pt-1">
                   <Button variant="secondary" onClick={handleCopy} size="sm">
                     {copied ? (
                       <><Check size={14} /> Copied</>
@@ -208,9 +215,11 @@ export default function BackupPage() {
                 </div>
               </>
             ) : (
-              <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border-default bg-surface-2/60 px-4 py-6 text-center">
-                <EyeOff className="h-5 w-5 text-text-tertiary" aria-hidden="true" />
-                <p className="text-sm text-text-secondary">
+              <div className="flex flex-col items-center gap-3.5 rounded-2xl border border-dashed border-border-strong bg-surface-2/50 px-4 py-8 text-center">
+                <span className="flex size-11 items-center justify-center rounded-full border border-border-default bg-surface-1 text-text-tertiary">
+                  <EyeOff className="size-5" aria-hidden="true" />
+                </span>
+                <p className="max-w-xs text-sm leading-relaxed text-text-secondary">
                   Your {words.length}-word phrase is hidden. Make sure no one can see your screen.
                 </p>
                 <Button variant="secondary" size="sm" onClick={() => setRevealed(true)}>
@@ -220,9 +229,9 @@ export default function BackupPage() {
             )}
           </>
         ) : (
-          <div className="flex items-start gap-3 rounded-lg bg-surface-2 p-4">
-            <ShieldCheck className="h-5 w-5 shrink-0 text-success mt-0.5" />
-            <p className="text-sm text-text-secondary">
+          <div className="flex items-start gap-3 rounded-2xl border border-success/20 bg-success/[0.06] p-4">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-success" aria-hidden="true" />
+            <p className="text-sm leading-relaxed text-text-secondary">
               Your recovery phrase has been confirmed. It is no longer stored
               in the app for security.
             </p>
