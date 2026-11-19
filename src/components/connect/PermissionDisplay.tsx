@@ -50,7 +50,6 @@ import { Badge } from '@/components/ui/Badge';
 import { Disclosure } from '@/components/ui/Disclosure';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { ModuleGlyph } from '@/components/modules/ModuleGlyph';
-import { ThirdPartyBadge } from '@/components/modules/ThirdPartyBadge';
 import {
   getSortedPermissionActions,
   groupPermissionRequestsWithCompanions,
@@ -209,69 +208,72 @@ function sharesKeys(item: ModuleAccess | undefined): boolean {
   return Boolean(item?.hasEncryptedTypes && item.sharesDecryptionKeys);
 }
 
+const SHARED_CONTEXTS_HINT = 'Invitations others send you, and your encrypted list of followed contexts.';
+const THIRD_PARTY_HINT = 'Not built into the wallet. A module is identified by its URI, not its name.';
+
+function Dot() {
+  return <span aria-hidden="true" className="text-text-ghost">·</span>;
+}
+
 /**
- * Encryption marker for a row. The key-sharing consequence is spelled out once
- * in the notice under the list, so the row only needs a compact tag.
+ * "Encrypted" as words in a row's details line, amber when approving shares
+ * the decryption keys. The notice under the list explains what that means.
  */
-function EncryptedBadge({ keysShared }: { keysShared: boolean }) {
+function EncryptedNote({ keysShared }: { keysShared: boolean }) {
   const explanation = keysShared
     ? 'Approving shares its decryption keys.'
     : 'This approval does not share private decryption keys.';
   return (
-    <Badge
-      tone={keysShared ? 'warning' : 'neutral'}
-      variant={keysShared ? 'soft' : 'outline'}
-      icon={<LockKeyhole />}
+    <span
+      className={cn('inline-flex shrink-0 items-center gap-1', keysShared ? 'text-warning' : 'text-text-tertiary')}
       title={`Stored encrypted. ${explanation}`}
     >
+      <LockKeyhole className="size-3" aria-hidden="true" />
       Encrypted<span className="sr-only">. {explanation}</span>
-    </Badge>
+    </span>
   );
 }
 
 /**
- * Name + provenance on one line. An unpinned module's name is only what its
- * URI says, so its host never truncates away before the name does, and it is
- * tagged Third-party. Tags wrap under the name rather than squeezing it.
+ * One quiet line under the name. For a module named from its own URI the
+ * host leads, so provenance is read first; "Third-party" says it isn't one of
+ * the wallet's built-in definitions. Plain words, not pills.
  */
-function AccessItemTitle({ item, titleId }: { item: ModuleAccess; titleId: string }) {
-  const curated = item.isKnownModule;
-  const hasTags = !curated || item.isContextCompanion || item.hasEncryptedTypes;
-  return (
-    <div className="flex min-h-5 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <p
-        className={cn(
-          'flex min-w-0 items-baseline gap-2',
-          // A curated description truncates to keep tags on this line; a
-          // module's own name + host keep their width and push tags below.
-          curated ? 'flex-1' : 'flex-auto',
+function AccessItemMeta({ item }: { item: ModuleAccess }) {
+  if (item.isKnownModule) {
+    return (
+      <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
+        {item.hasEncryptedTypes && (
+          <>
+            <EncryptedNote keysShared={sharesKeys(item)} />
+            <Dot />
+          </>
         )}
-      >
-        <span
-          id={titleId}
-          className={cn('text-sm font-semibold text-text-primary', curated ? 'shrink-0' : 'min-w-0 truncate')}
-        >
-          {item.name}
-        </span>
-        <span
-          className={cn('text-xs text-text-tertiary', curated ? 'min-w-0 truncate' : 'max-w-[60%] shrink-0 truncate')}
-          title={curated ? item.detail : item.moduleUri}
-        >
-          {item.detail}
-        </span>
+        <span className="min-w-0 truncate" title={item.detail}>{item.detail}</span>
       </p>
-      {hasTags && (
-        <span className="flex shrink-0 flex-wrap gap-1.5">
-          {!curated && <ThirdPartyBadge uri={item.moduleUri} />}
-          {item.isContextCompanion && <Badge tone="info" title={SHARED_CONTEXTS_HINT}>Shared contexts</Badge>}
-          {item.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(item)} />}
-        </span>
+    );
+  }
+
+  return (
+    <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
+      <span className="min-w-0 truncate" title={item.moduleUri}>{item.detail}</span>
+      <Dot />
+      <span className="shrink-0" title={THIRD_PARTY_HINT}>Third-party</span>
+      {item.isContextCompanion && (
+        <>
+          <Dot />
+          <span className="shrink-0" title={SHARED_CONTEXTS_HINT}>Shared contexts</span>
+        </>
       )}
-    </div>
+      {item.hasEncryptedTypes && (
+        <>
+          <Dot />
+          <EncryptedNote keysShared={sharesKeys(item)} />
+        </>
+      )}
+    </p>
   );
 }
-
-const SHARED_CONTEXTS_HINT = 'Invitations others send you, and your encrypted list of followed contexts.';
 
 /** A verified contexts companion, folded into its root module's row. */
 function CompanionAccess({ companion }: { companion: ModuleAccess }) {
@@ -279,21 +281,24 @@ function CompanionAccess({ companion }: { companion: ModuleAccess }) {
     <div
       role="group"
       aria-label="Shared contexts & invitations"
-      className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 border-t border-border-subtle pt-2.5"
+      className="mt-3 rounded-lg bg-surface-2/70 px-3 py-2.5"
     >
-      <span
-        className="inline-flex items-center gap-1.5 text-xs font-medium text-text-secondary"
-        title={SHARED_CONTEXTS_HINT}
-      >
-        <Share2 className="size-3.5 shrink-0 text-text-tertiary" aria-hidden="true" />
-        Shared contexts
-      </span>
-      {companion.hasEncryptedTypes && <EncryptedBadge keysShared={sharesKeys(companion)} />}
-      <PermissionActionChips actions={itemActions(companion)} />
+      <p className="flex items-center gap-1.5 text-xs text-text-tertiary">
+        <Share2 className="size-3.5 shrink-0" aria-hidden="true" />
+        <span className="font-medium text-text-secondary" title={SHARED_CONTEXTS_HINT}>Shared contexts</span>
+        {companion.hasEncryptedTypes && (
+          <>
+            <Dot />
+            <EncryptedNote keysShared={sharesKeys(companion)} />
+          </>
+        )}
+      </p>
+      <PermissionActionChips actions={itemActions(companion)} className="mt-1.5" />
     </div>
   );
 }
 
+/** Name, then provenance, then what the app may do: three quiet lines. */
 function AccessItem({ group }: { group: AccessRowGroup }) {
   const titleId = useId();
   const { primary: item, companion } = group;
@@ -301,14 +306,15 @@ function AccessItem({ group }: { group: AccessRowGroup }) {
   const hasRecordAccess = actions.some((action) => action.kind === 'record');
 
   return (
-    <li aria-labelledby={titleId} className="flex items-start gap-2.5 px-3 py-3">
+    <li aria-labelledby={titleId} className="flex items-start gap-3 px-4 py-3.5">
       <ModuleGlyph module={item.glyph} size="sm" />
       <div className="min-w-0 flex-1">
-        <AccessItemTitle item={item} titleId={titleId} />
+        <p id={titleId} className="truncate text-sm font-semibold text-text-primary">{item.name}</p>
+        <AccessItemMeta item={item} />
         <PermissionActionChips
           actions={actions}
           emphasizeSupport={!hasRecordAccess}
-          className="mt-1.5"
+          className="mt-2"
         />
         {companion && <CompanionAccess companion={companion} />}
       </div>
@@ -351,7 +357,7 @@ function AccessRows({
       <div>
         <h2
           id={headingId}
-          className={prominent ? 'text-sm font-semibold text-text-primary' : 'text-xs font-medium text-text-tertiary'}
+          className={prominent ? 'text-sm font-semibold text-text-primary' : 'text-[13px] font-medium text-text-secondary'}
         >
           {heading}
         </h2>

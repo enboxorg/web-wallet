@@ -490,9 +490,8 @@ export default function DWebConnectPage() {
     : isRefresh
       ? refreshRequestSummary(refreshSplit)
       : hasDataAccess ? 'wants to connect to your profile' : 'wants to connect';
-  const connectionStatus = isRefresh
-    ? refreshAddsAccess(refreshSplit) ? 'Adding access' : 'Renewing connection'
-    : existingSessions.length > 0 ? 'Returning connection' : 'First connection';
+  // The verified address as people read it in a browser bar: no "https://".
+  const originDisplay = origin ? origin.replace(/^https:\/\//i, '') : 'Unknown website';
   const showRequest = phase === 'request' && !refreshUnavailable && !(isRefresh && refreshLookupPending);
 
   // ── Render ────────────────────────────────────────────────────
@@ -583,13 +582,13 @@ export default function DWebConnectPage() {
         <div className="flex flex-1 flex-col animate-[fadeIn_0.3s_ease-out]">
           <div className="flex-1 space-y-6 pt-2 pb-6">
             <ConsentRequester
-              title={requesterLabel}
-              titleHint={origin}
+              title={appName?.trim() || originDisplay}
+              titleHint={appName?.trim() ? `${appName.trim()} (name provided by the app)` : origin}
+              identifier={originDisplay}
+              iconOrigin={origin || undefined}
               seed={origin || requesterLabel}
               trust="verified-origin"
-              trustLabel="Origin verified"
-              status={connectionStatus}
-              details={appName && <p>Reported app name: {appName}</p>}
+              trustLabel="Verified website address"
               summary={requestSummary}
             />
 

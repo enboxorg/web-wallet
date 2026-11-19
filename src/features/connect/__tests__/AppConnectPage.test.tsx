@@ -324,7 +324,7 @@ describe('AppConnectPage', () => {
     expect(mocks.scannerHasCamera).not.toHaveBeenCalled();
   });
 
-  it('keeps standalone approval actions above the mobile safe area', async () => {
+  it('puts the decision at the end of the request, clear of the mobile safe area', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
 
@@ -333,11 +333,9 @@ describe('AppConnectPage', () => {
     });
 
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    expect(screen.getByTestId('connect-action-area')).toHaveClass(
-      'sticky',
-      'bottom-0',
-      'pb-[calc(1rem+env(safe-area-inset-bottom,0px))]',
-    );
+    // Not pinned: people scroll past what they're agreeing to before deciding.
+    expect(screen.getByTestId('connect-action-area')).not.toHaveClass('sticky');
+    expect(screen.getByTestId('connect-action-area')).toHaveClass('pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]');
   });
 
   it('scrubs an incomplete secret-bearing fragment before showing an error', async () => {
@@ -680,7 +678,7 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     const renew = await screen.findByRole('button', { name: 'Renew access' });
-    expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Bob');
+    expect(within(screen.getByRole('region', { name: 'Renewing as' })).getByText('Bob')).toBeInTheDocument();
     expect(screen.getByText('Revoked')).toBeVisible();
     expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();

@@ -866,18 +866,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               seed={connectionRequest.clientMetadata?.origin ?? connectionRequest.appName ?? connectionRequest.clientDid}
               trust="reported"
               trustLabel="Unverified app"
-              status="Signed relay request"
               details={(
-                <>
+                <p className="break-all">
                   {connectionRequest.clientMetadata?.origin && (
-                    <p className="break-all">
-                      Reported origin: <span className="font-mono">{connectionRequest.clientMetadata.origin}</span>
-                    </p>
+                    <>Says it&apos;s <span className="font-mono">{connectionRequest.clientMetadata.origin}</span> · </>
                   )}
-                  <p>
-                    Signed by <span className="font-mono" title={connectionRequest.clientDid}>{requesterLabel}</span>
-                  </p>
-                </>
+                  Signed by <span className="font-mono" title={connectionRequest.clientDid}>{requesterLabel}</span>
+                </p>
               )}
               summary={requestSummary}
             />

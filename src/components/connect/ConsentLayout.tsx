@@ -5,9 +5,10 @@
  * Reading order follows the decision a person makes:
  *   who is asking → as which profile → what access → for how long → decide.
  */
-import { useId } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import {
   AlertTriangle,
+  ChevronDown,
   ChevronsUpDown,
   Info,
   ShieldAlert,
@@ -16,9 +17,9 @@ import {
   X,
 } from 'lucide-react';
 
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Monogram } from '@/components/ui/Monogram';
+import { SiteIcon } from '@/components/ui/SiteIcon';
 import { PinInput } from '@/components/ui/PinInput';
 import { PIN_LENGTH } from '@/lib/constants';
 import { cn, truncateDid } from '@/lib/utils';
@@ -46,69 +47,71 @@ export function ConsentBrandBar({ className }: { className?: string }) {
 // ── Requester ────────────────────────────────────────────────────────
 
 interface ConsentRequesterProps {
-  /** Headline: the most trustworthy identifier available (verified origin, else reported name). */
+  /** The app's name as it reports it, or its address when it gives none. */
   title: string;
   /** Full value for the tooltip, e.g. the complete origin. */
   titleHint?: string;
-  /** Stable seed for the tile tint (origin or client DID). */
+  /**
+   * The verified website address (host). Shown on its own line with a shield
+   * so the address, not the self-reported name, is what earns trust.
+   */
+  identifier?: string;
+  /** Verified origin to load the site's own icon from. Never a reported one. */
+  iconOrigin?: string;
+  /** Stable seed for the fallback tile tint (origin or client DID). */
   seed: string;
   trust: 'verified-origin' | 'reported';
   trustLabel: string;
-  /** Relationship to this wallet, e.g. "First connection". */
-  status?: string;
-  /** Supplementary self-reported facts, rendered quietly under the badges. */
+  /** Supplementary self-reported facts, rendered quietly under the trust line. */
   details?: React.ReactNode;
   /** One-line purpose, e.g. "wants to connect to your profile". */
   summary: string;
 }
 
-/** Split `https://host` so the host carries the visual weight (anti-phishing). */
-function OriginText({ value }: { value: string }) {
-  const match = value.match(/^(https?:\/\/)(.+)$/i);
-  if (!match) return <>{value}</>;
-  return (
-    <>
-      <span className="font-normal text-text-ghost">{match[1]}</span>
-      {match[2]}
-    </>
-  );
-}
-
+/**
+ * Who is asking. The name leads because people recognise apps by name; the
+ * verified address sits right under it with a shield and no "verified" word,
+ * so a borrowed name never reads as vouched for.
+ */
 export function ConsentRequester({
   title,
   titleHint,
+  identifier,
+  iconOrigin,
   seed,
   trust,
   trustLabel,
-  status,
   details,
   summary,
 }: ConsentRequesterProps) {
-  const labelForTile = title.replace(/^https?:\/\//i, '');
+  const verified = trust === 'verified-origin';
 
   return (
     <header className="flex flex-col items-center text-center">
-      <Monogram label={labelForTile} seed={seed} size="lg" />
+      <SiteIcon origin={verified ? iconOrigin : undefined} label={title} seed={seed} />
       <h1
         className="mt-4 max-w-full break-words text-xl font-semibold tracking-tight text-text-primary"
         title={titleHint}
       >
-        <OriginText value={title} />
+        {title}
       </h1>
-      <div className="mt-2.5 flex flex-wrap justify-center gap-1.5">
-        <Badge
-          size="md"
-          tone={trust === 'verified-origin' ? 'success' : 'warning'}
-          icon={trust === 'verified-origin' ? <ShieldCheck /> : <ShieldAlert />}
-        >
-          {trustLabel}
-        </Badge>
-        {status && <Badge size="md">{status}</Badge>}
-      </div>
+      <p
+        className={cn(
+          'mt-1.5 inline-flex max-w-full items-center gap-1.5 text-sm',
+          verified ? 'text-text-secondary' : 'font-medium text-warning',
+        )}
+        title={verified ? 'Your wallet confirmed this request comes from this website.' : undefined}
+      >
+        {verified
+          ? <ShieldCheck className="size-4 shrink-0 text-success" aria-hidden="true" />
+          : <ShieldAlert className="size-4 shrink-0" aria-hidden="true" />}
+        <span className="min-w-0 break-all">{verified ? identifier ?? trustLabel : trustLabel}</span>
+        {verified && <span className="sr-only">({trustLabel})</span>}
+      </p>
       {details && (
-        <div className="mt-2.5 max-w-full space-y-0.5 text-xs text-text-tertiary">{details}</div>
+        <div className="mt-1.5 max-w-full space-y-0.5 text-xs text-text-tertiary">{details}</div>
       )}
-      <p className="mt-3 text-sm text-text-secondary">{summary}</p>
+      <p className="mt-4 text-sm text-text-secondary">{summary}</p>
     </header>
   );
 }
@@ -147,7 +150,7 @@ export function ConsentProfilePicker({
 
   return (
     <section aria-labelledby={headingId} className="space-y-2">
-      <h2 id={headingId} className="text-xs font-medium text-text-tertiary">{heading}</h2>
+      <h2 id={headingId} className="text-[13px] font-medium text-text-secondary">{heading}</h2>
       <div
         className={cn(
           'relative flex items-center gap-3 rounded-xl border border-border-default bg-surface-1 px-3 py-2.5',
@@ -318,45 +321,93 @@ export function ConsentOutcome({
 
 // ── Decision ─────────────────────────────────────────────────────────
 
+/** The element that scrolls this page: a scrolling ancestor, else the document. */
+function scrollParentOf(element: HTMLElement): HTMLElement {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if ((overflowY === 'auto' || overflowY === 'scroll') && node.scrollHeight > node.clientHeight) return node;
+  }
+  return (document.scrollingElement as HTMLElement | null) ?? document.documentElement;
+}
+
 /**
- * Deny + primary decision. Sticky at the bottom of the viewport so the
- * decision is always one thumb-reach away however long the request is.
+ * Deny + primary decision, at the end of the request so people scroll past
+ * everything they're agreeing to before they can decide. Until the buttons
+ * are in view, a cue at the bottom edge says there is more below.
  */
 export function ConsentDecisionBar({
   onDeny,
   denyDisabled,
   primary,
   hint,
-  sticky = true,
   className,
 }: {
   onDeny: () => void;
   denyDisabled?: boolean;
   primary: React.ReactNode;
   hint?: React.ReactNode;
-  sticky?: boolean;
   className?: string;
 }) {
+  const barRef = useRef<HTMLDivElement>(null);
+  const [belowFold, setBelowFold] = useState(false);
+
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setBelowFold(!entry.isIntersecting),
+      { threshold: 0.5 },
+    );
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
+
+  function scrollOn() {
+    const bar = barRef.current;
+    if (!bar) return;
+    const scroller = scrollParentOf(bar);
+    const isDocument = scroller === document.scrollingElement || scroller === document.documentElement;
+    const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    // A page at a time: it moves people along without skipping the content.
+    const top = (isDocument ? window.innerHeight : scroller.clientHeight) * 0.75;
+    if (isDocument) window.scrollBy({ top, behavior });
+    else scroller.scrollBy({ top, behavior });
+  }
+
   return (
-    <div
-      data-testid="connect-action-area"
-      className={cn(
-        sticky
-          ? 'sticky bottom-0 z-20 border-t border-border-subtle bg-surface-0/85 pt-3 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] backdrop-blur-md'
-          : 'pt-2',
-        className,
-      )}
-    >
-      <div className="mx-auto flex w-full max-w-lg gap-3">
-        <Button variant="secondary" className="min-w-0 flex-1" onClick={onDeny} disabled={denyDisabled}>
-          <X className="size-4 max-[359px]:hidden" />
-          Deny
-        </Button>
-        {primary}
+    <>
+      {/* Zero-height sticky anchor: the cue rides the bottom edge of the
+          scroll area until the decision itself scrolls into view. */}
+      <div className="pointer-events-none sticky bottom-0 z-20 h-0">
+        {belowFold && (
+          <div className="absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-surface-0 via-surface-0/85 to-transparent pt-14 pb-[calc(1rem+env(safe-area-inset-bottom,0px))] animate-[fadeIn_0.2s_ease-out]">
+            <button
+              type="button"
+              onClick={scrollOn}
+              className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border border-border-default bg-surface-1 px-4 py-2 text-xs font-medium text-text-secondary shadow-lg shadow-black/20 transition-colors hover:border-border-strong hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+            >
+              Scroll to review
+              <ChevronDown className="size-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
       </div>
-      {hint && (
-        <p className="mx-auto mt-2.5 max-w-xs text-center text-xs leading-relaxed text-text-tertiary">{hint}</p>
-      )}
-    </div>
+      <div
+        ref={barRef}
+        data-testid="connect-action-area"
+        className={cn('pt-2 pb-[calc(1.5rem+env(safe-area-inset-bottom,0px))]', className)}
+      >
+        <div className="mx-auto flex w-full max-w-lg gap-3">
+          <Button variant="secondary" className="min-w-0 flex-1" onClick={onDeny} disabled={denyDisabled}>
+            <X className="size-4 max-[359px]:hidden" />
+            Deny
+          </Button>
+          {primary}
+        </div>
+        {hint && (
+          <p className="mx-auto mt-2.5 max-w-xs text-center text-xs leading-relaxed text-text-tertiary">{hint}</p>
+        )}
+      </div>
+    </>
   );
 }

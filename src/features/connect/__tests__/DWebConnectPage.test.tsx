@@ -332,12 +332,12 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
-    // The requester label is the transport-authenticated origin, not the
-    // request's claimed clientMetadata.origin.
-    expect(screen.getByRole('heading', { name: /^https:\/\/\s?app\.example$/ })).toBeInTheDocument();
-    expect(screen.getByText('Origin verified')).toBeInTheDocument();
-    expect(screen.queryByText('https://claimed.example')).not.toBeInTheDocument();
-    expect(screen.getByText(/Reported app name:\s*Example App/i)).toBeInTheDocument();
+    // The app's own name leads; the address under it is the transport-
+    // authenticated origin, never the request's claimed clientMetadata.origin.
+    expect(screen.getByRole('heading', { level: 1, name: 'Example App' })).toBeInTheDocument();
+    expect(screen.getByText('app.example')).toBeInTheDocument();
+    expect(screen.getByText('(Verified website address)')).toBeInTheDocument();
+    expect(screen.queryByText(/claimed\.example/)).not.toBeInTheDocument();
   });
 
   it('approves via the ceremony and posts the sealed response', async () => {
@@ -584,8 +584,7 @@ describe('DWebConnectPage', () => {
 
     render(<DWebConnectPage />);
 
-    expect(await screen.findByText('Returning connection')).toBeInTheDocument();
-    expect(screen.getByText(/already has 1 active session/i)).toBeInTheDocument();
+    expect(await screen.findByText(/already has 1 active session/i)).toBeInTheDocument();
   });
 
   it('renews a fully revoked popup session with the exact delegate owner', async () => {
@@ -619,8 +618,7 @@ describe('DWebConnectPage', () => {
     render(<DWebConnectPage />);
 
     const renew = await screen.findByRole('button', { name: 'Renew access' });
-    expect(screen.getByText('Renewing connection')).toBeInTheDocument();
-    expect(screen.getByText(/Renewing as/)).toHaveTextContent('Renewing as Bob');
+    expect(within(screen.getByRole('region', { name: 'Renewing as' })).getByText('Bob')).toBeInTheDocument();
     expect(screen.getByText('Revoked')).toBeVisible();
     expect(screen.getByText('Previous access was revoked.')).toBeVisible();
     expect(screen.queryByLabelText('Approve as profile')).not.toBeInTheDocument();
@@ -672,8 +670,7 @@ describe('DWebConnectPage', () => {
     const allow = await screen.findByRole('button', { name: 'Allow access' });
     expect(screen.queryByRole('button', { name: 'Renew access' })).not.toBeInTheDocument();
     expect(screen.getByText(/wants to add Bills and renew its existing access/)).toBeInTheDocument();
-    expect(screen.getByText('Adding access')).toBeInTheDocument();
-    expect(screen.getByText(/Approving as/)).toHaveTextContent('Approving as Bob');
+    expect(within(screen.getByRole('region', { name: 'Approving as' })).getByText('Bob')).toBeInTheDocument();
 
     // New access is listed first, then what is being renewed.
     const headings = screen.getAllByRole('heading', { level: 2 }).map((heading) => heading.textContent);
