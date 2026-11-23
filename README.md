@@ -19,6 +19,7 @@
 <p align="center">
   <a href="https://enbox-wallet.pages.dev">Live Demo</a> &bull;
   <a href="https://blue-enbox-wallet.pages.dev">Blue Variant</a> &bull;
+  <a href="https://wallet.enbox.id">Orange (Cloudflare) Variant</a> &bull;
   <a href="#getting-started">Getting Started</a> &bull;
   <a href="#testing">Testing</a> &bull;
   <a href="#architecture">Architecture</a>
@@ -265,13 +266,15 @@ The wallet configures the SDK's live WebSocket sync and otherwise leaves sync li
 
 Build-time product themes via `VITE_PRODUCT_THEME`:
 
-| Variant | Accent | Demo |
-|---------|--------|------|
-| Default | Rose / Pink | [enbox-wallet.pages.dev](https://enbox-wallet.pages.dev) |
-| Blue | Blue | [blue-enbox-wallet.pages.dev](https://blue-enbox-wallet.pages.dev) |
+| Variant | Accent | Default DWNs | Demo |
+|---------|--------|--------------|------|
+| Default | Rose / Pink | Fly + AWS (`enbox-dwn.fly.dev`, `dev.aws.dwn.enbox.id`) | [enbox-wallet.pages.dev](https://enbox-wallet.pages.dev) |
+| Blue | Blue | Fly + AWS (`enbox-dwn.fly.dev`, `dev.aws.dwn.enbox.id`) | [blue-enbox-wallet.pages.dev](https://blue-enbox-wallet.pages.dev) |
+| Orange | Cloudflare Orange | Cloudflare East + West (`cf-east.dwn.enbox.id`, `cf-west.dwn.enbox.id`) | [wallet.enbox.id](https://wallet.enbox.id) |
 
 ```bash
 VITE_PRODUCT_THEME=blue bun run build
+VITE_PRODUCT_THEME=orange bun run build
 ```
 
 ## CI/CD

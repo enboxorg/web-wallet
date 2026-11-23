@@ -2,13 +2,13 @@
 /**
  * Generates the themed Enbox brand assets committed under `public/`:
  *
- *   logo-blue.svg / logo-rose.svg   — the stacked-squares mark, one per accent
- *   og-blue.png  / og-rose.png      — 1200×630 Open Graph card (mark on dark)
+ *   logo-{blue,orange,rose}.svg     — the stacked-squares mark, one per accent
+ *   og-{blue,orange,rose}.png       — 1200×630 Open Graph card (mark on dark)
  *
  * The mark is three overlapping rounded squares receding into depth (back
  * square dimmest, front square brightest) with a dot at the intersection.
  * Palettes map that dim → mid → bright ramp onto the product accents from
- * `src/app.css` (`--accent` rose #ff6b8a, blue #3b82f6). Icon sources carry
+ * `src/app.css` (`--accent` rose #ff6b8a, blue #3b82f6, orange #f38020). Icon sources carry
  * the dark brand tile (#0a0a0f) full-bleed so generated apple-touch and
  * maskable icons never composite the bright front square onto white.
  *
@@ -29,6 +29,7 @@
  *   # config in vite.config.ts, then for each brand:
  *   bun run build                                  # default (rose)
  *   VITE_PRODUCT_THEME=blue bun run build          # blue
+ *   VITE_PRODUCT_THEME=orange bun run build        # orange (Cloudflare)
  *   # copy dist/{pwa-64x64,pwa-192x192,pwa-512x512,maskable-icon-512x512,apple-touch-icon-180x180}.png
  *   # and dist/favicon.ico into public/pwa-icons/<brand>/, then revert the
  *   # package.json / vite.config.ts changes.
@@ -45,6 +46,7 @@ const BACKGROUND = '#0a0a0f';
 // [back square, mid square, front square]; the dot shares the front color.
 const PALETTES = {
   blue: ['#1d4ed8', '#3b82f6', '#dbeafe'],
+  orange: ['#c2410c', '#f38020', '#ffedd5'],
   rose: ['#cc2955', '#ff6b8a', '#ffe1e8'],
 };
 

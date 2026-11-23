@@ -98,6 +98,11 @@ jobs:
             project: blue-enbox-wallet
             environment: production-blue
             url: https://blue-enbox-wallet.pages.dev
+          - name: orange
+            theme: orange
+            project: orange-enbox-wallet
+            environment: production-orange
+            url: https://wallet.enbox.id
 
     permissions:
       contents: read

@@ -7,6 +7,19 @@ const BUILT_IN_DWN_ENDPOINTS = [
   'https://dev.aws.dwn.enbox.id',
 ] as const;
 
+const CLOUDFLARE_DWN_ENDPOINTS = [
+  'https://cf-east.dwn.enbox.id',
+  'https://cf-west.dwn.enbox.id',
+] as const;
+
+function getProductTheme(): string {
+  return import.meta.env.VITE_PRODUCT_THEME || '';
+}
+
+function getBuiltInDwnEndpoints(): readonly string[] {
+  return getProductTheme() === 'orange' ? CLOUDFLARE_DWN_ENDPOINTS : BUILT_IN_DWN_ENDPOINTS;
+}
+
 /**
  * Default DWN (Decentralised Web Node) endpoints.
  * These are the remote DWNs that identities register with and sync to.
@@ -21,15 +34,19 @@ export const DEFAULT_DWN_ENDPOINTS: string[] = (() => {
     .split(',')
     .map((endpoint: string) => endpoint.trim())
     .filter(Boolean);
-  return resolveDefaultDwnEndpoints(overrides.length > 0 ? overrides : BUILT_IN_DWN_ENDPOINTS);
+  const builtIn = getBuiltInDwnEndpoints();
+  return resolveDefaultDwnEndpoints(overrides.length > 0 ? overrides : builtIn, builtIn);
 })();
 
-function resolveDefaultDwnEndpoints(configured: readonly string[]): string[] {
+function resolveDefaultDwnEndpoints(
+  configured: readonly string[],
+  fallback: readonly string[] = getBuiltInDwnEndpoints(),
+): string[] {
   try {
     return normalizeDwnEndpoints(configured);
   } catch (error) {
     console.warn('Invalid VITE_DWN_ENDPOINTS configuration; using hosted defaults:', error);
-    return [...BUILT_IN_DWN_ENDPOINTS];
+    return [...fallback];
   }
 }
 
@@ -128,11 +145,12 @@ export function setConfiguredDwnEndpoints(endpoints: readonly string[]): string[
  * The public-facing wallet URL used by DWeb Connect handlers
  * and written into wallet records via the Connect module.
  *
- * Respects the VITE_PRODUCT_THEME env var so the blue variant
+ * Respects the VITE_PRODUCT_THEME env var so each themed variant
  * writes its own URL.
  */
 export const WALLET_URL: string = (() => {
-  const theme = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_PRODUCT_THEME) || '';
+  const theme = getProductTheme();
   if (theme === 'blue') { return 'https://blue-enbox-wallet.pages.dev'; }
+  if (theme === 'orange') { return 'https://wallet.enbox.id'; }
   return 'https://enbox-wallet.pages.dev';
 })();

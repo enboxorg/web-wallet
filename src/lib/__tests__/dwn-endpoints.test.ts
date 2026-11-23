@@ -107,4 +107,61 @@ describe('DWN endpoint configuration', () => {
       warn.mockRestore();
     }
   });
+
+  it('defaults to Cloudflare DWNs and custom wallet URL when VITE_PRODUCT_THEME is orange', async () => {
+    vi.stubEnv('VITE_PRODUCT_THEME', 'orange');
+    vi.stubEnv('VITE_DWN_ENDPOINTS', '');
+    vi.resetModules();
+
+    try {
+      const endpoints = await import('../dwn-endpoints');
+      expect(endpoints.DEFAULT_DWN_ENDPOINTS).toEqual([
+        'https://cf-east.dwn.enbox.id',
+        'https://cf-west.dwn.enbox.id',
+      ]);
+      expect(endpoints.getConfiguredDwnEndpoints()).toEqual([
+        'https://cf-east.dwn.enbox.id',
+        'https://cf-west.dwn.enbox.id',
+      ]);
+      expect(endpoints.WALLET_URL).toBe('https://wallet.enbox.id');
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
+
+  it('falls back to Cloudflare DWNs when orange build override is invalid', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubEnv('VITE_PRODUCT_THEME', 'orange');
+    vi.stubEnv('VITE_DWN_ENDPOINTS', 'http://insecure.example');
+    vi.resetModules();
+
+    try {
+      const endpoints = await import('../dwn-endpoints');
+      expect(endpoints.DEFAULT_DWN_ENDPOINTS).toEqual([
+        'https://cf-east.dwn.enbox.id',
+        'https://cf-west.dwn.enbox.id',
+      ]);
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+      warn.mockRestore();
+    }
+  });
+
+  it('allows explicit VITE_DWN_ENDPOINTS override on orange theme', async () => {
+    vi.stubEnv('VITE_PRODUCT_THEME', 'orange');
+    vi.stubEnv('VITE_DWN_ENDPOINTS', 'https://custom-cf.example/');
+    vi.resetModules();
+
+    try {
+      const endpoints = await import('../dwn-endpoints');
+      expect(endpoints.DEFAULT_DWN_ENDPOINTS).toEqual(['https://custom-cf.example']);
+      expect(endpoints.WALLET_URL).toBe('https://wallet.enbox.id');
+    } finally {
+      vi.unstubAllEnvs();
+      vi.resetModules();
+    }
+  });
 });
