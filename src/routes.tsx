@@ -13,6 +13,7 @@ const DWebConnectPage = lazy(() => import('@/features/connect/DWebConnectPage'))
 const SettingsPage = lazy(() => import('@/features/settings/SettingsPage'));
 const SecurityPage = lazy(() => import('@/features/settings/SecurityPage'));
 const BackupPage = lazy(() => import('@/features/settings/BackupPage'));
+const CreditsPage = lazy(() => import('@/features/settings/CreditsPage'));
 const NotFoundPage = lazy(() => import('@/features/NotFoundPage'));
 
 export const routes: RouteObject[] = [
@@ -28,5 +29,6 @@ export const routes: RouteObject[] = [
   { path: 'settings', element: <SettingsPage /> },
   { path: 'settings/security', element: <SecurityPage /> },
   { path: 'settings/backup', element: <BackupPage /> },
+  { path: 'settings/credits', element: <CreditsPage /> },
   { path: '*', element: <NotFoundPage /> },
 ];

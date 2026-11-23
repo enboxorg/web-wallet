@@ -24,6 +24,14 @@ import {
   DwnRegistrationError,
   registrationError,
 } from './effect/errors';
+import {
+  hasCreditsForEndpoint,
+  redeemStorageBlockForDid,
+} from './blind-token-vault';
+import {
+  fetchEndpointBlindTokenInfo,
+  type ServerBlindTokenDescriptor,
+} from '@/lib/blind-tokens';
 import { fetchWithEffectSignal, withNetworkPolicy } from './effect/network-policy';
 import { runEnboxPromise } from './effect/runtime';
 import { runRegistrationSingleFlight } from './effect/keyed-single-flight';
@@ -161,9 +169,64 @@ function registerDidWithEndpointEffect(
       return updated;
     }
 
+    const inlineBlindTokenDescriptor = (
+      serverInfo as ServerInfo & { blindToken?: ServerBlindTokenDescriptor }
+    ).blindToken;
+    const supportsBlindToken = serverInfo.registrationRequirements?.includes('blind-token-v1') === true;
+
     const requiresProviderAuth =
       serverInfo.registrationRequirements?.includes('provider-auth-v0') &&
       serverInfo.providerAuth !== undefined;
+
+    if (supportsBlindToken) {
+      const blindTokenDescriptor = inlineBlindTokenDescriptor ?? (
+        yield* Effect.tryPromise({
+          try: async () => (await fetchEndpointBlindTokenInfo(dwnEndpoint)).blindToken,
+          catch: registrationError('tenant.fetchBlindTokenDescriptor', dwnEndpoint, did),
+        })
+      );
+
+      if (blindTokenDescriptor !== undefined) {
+        const hasCredits = yield* Effect.tryPromise({
+          try: () => hasCreditsForEndpoint(agent, blindTokenDescriptor),
+          catch: registrationError('tenant.checkBlindTokenCredits', dwnEndpoint, did),
+        });
+
+        if (hasCredits) {
+          yield* withNetworkPolicy(
+            'tenant.registerWithBlindToken',
+            Effect.tryPromise({
+              try: () =>
+                runRegistrationSingleFlight(
+                  agent,
+                  did,
+                  dwnEndpoint,
+                  () => redeemStorageBlockForDid(agent, {
+                    did,
+                    endpoint: dwnEndpoint,
+                    descriptor: blindTokenDescriptor,
+                  }),
+                ),
+              catch: registrationError('tenant.registerWithBlindToken', dwnEndpoint, did),
+            }),
+            () => registrationTimeout('tenant.registerWithBlindToken', dwnEndpoint, did),
+          );
+          return updated;
+        }
+      }
+
+      if (!requiresProviderAuth) {
+        return yield* Effect.fail(
+          new DwnRegistrationError({
+            operation : 'tenant.registerWithBlindToken',
+            endpoint  : dwnEndpoint,
+            did,
+            cause     : undefined,
+            message   : `Storage credits are required to register with ${dwnEndpoint}. Open Settings -> Credits & Storage to claim an invite code.`,
+          }),
+        );
+      }
+    }
 
     if (requiresProviderAuth) {
       updated = yield* ensureValidTokenEffect(dwnEndpoint, serverInfo.providerAuth!, updated);
