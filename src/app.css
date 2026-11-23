@@ -229,6 +229,32 @@
   --accent-2-rgb: 13, 148, 136;
 }
 
+/* ---- orange product accent (Cloudflare) ---- */
+[data-product='orange'] {
+  --accent: #f38020;
+  --accent-rgb: 243, 128, 32;
+  --accent-hover: #fb923c;
+  --accent-muted: rgba(243, 128, 32, 0.12);
+  --accent-subtle: rgba(243, 128, 32, 0.06);
+  --accent-text: var(--gray-950);
+  --accent-gradient: linear-gradient(135deg, #f38020, #fdba74);
+  --accent-2: #f59e0b;
+  --accent-2-rgb: 245, 158, 11;
+}
+
+/* Orange light mode accent */
+[data-product='orange'][data-theme='light'] {
+  --accent: #c2410c;
+  --accent-rgb: 194, 65, 12;
+  --accent-hover: #9a3412;
+  --accent-muted: rgba(194, 65, 12, 0.1);
+  --accent-subtle: rgba(194, 65, 12, 0.05);
+  --accent-text: var(--white);
+  --accent-gradient: linear-gradient(135deg, #c2410c, #fb923c);
+  --accent-2: #b45309;
+  --accent-2-rgb: 180, 83, 9;
+}
+
 /* ============================================================
    LIGHT MODE
    ============================================================ */
