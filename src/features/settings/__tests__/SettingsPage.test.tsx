@@ -47,6 +47,14 @@ describe('SettingsPage', () => {
     ).toBeInTheDocument();
   });
 
+  it('shows Credits & Storage link with description', () => {
+    render(<SettingsPage />);
+    expect(screen.getByText('Credits & Storage')).toBeInTheDocument();
+    expect(
+      screen.getByText(/invite credits, blind tokens, and dwn storage leases/i),
+    ).toBeInTheDocument();
+  });
+
   it('shows Lock Wallet button', () => {
     render(<SettingsPage />);
     expect(
@@ -73,5 +81,12 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
     await user.click(screen.getByText('Backup & Recovery'));
     expect(mockNavigate).toHaveBeenCalledWith('/settings/backup');
+  });
+
+  it('navigates to /settings/credits when Credits & Storage is clicked', async () => {
+    const user = userEvent.setup();
+    render(<SettingsPage />);
+    await user.click(screen.getByText('Credits & Storage'));
+    expect(mockNavigate).toHaveBeenCalledWith('/settings/credits');
   });
 });

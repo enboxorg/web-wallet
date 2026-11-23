@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router';
-import { Shield, KeyRound, ChevronRight, Lock } from 'lucide-react';
+import { Shield, KeyRound, ChevronRight, Lock, Coins } from 'lucide-react';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { cn } from '@/lib/utils';
@@ -19,6 +19,12 @@ const settingsLinks = [
     label: 'Backup & Recovery',
     description: 'Recovery phrase and profile export',
     icon: KeyRound,
+  },
+  {
+    path: '/settings/credits',
+    label: 'Credits & Storage',
+    description: 'Invite credits, blind tokens, and DWN storage leases',
+    icon: Coins,
   },
 ];
 
