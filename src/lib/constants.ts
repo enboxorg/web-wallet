@@ -17,6 +17,9 @@ export const DEFAULT_AUTO_LOCK_MS = 10 * 60 * 1000;
 /** localStorage key for auto-lock preference. */
 export const AUTO_LOCK_STORAGE_KEY = 'enbox:autoLockTimeout';
 
+/** Window event dispatched when the auto-lock timeout preference changes in this tab. */
+export const AUTO_LOCK_CHANGED_EVENT = 'enbox:auto-lock-changed';
+
 /** Read the user's auto-lock timeout preference from localStorage. */
 export function getAutoLockTimeout(): number {
   return runEnboxSync(getAutoLockTimeoutEffect());

@@ -84,14 +84,18 @@ describe('SecurityPage', () => {
     expect(mockLock).toHaveBeenCalledOnce();
   });
 
-  it('stores selected timeout in localStorage', async () => {
+  it('stores selected timeout in localStorage and notifies listeners', async () => {
     const user = userEvent.setup();
+    const onChanged = vi.fn();
+    window.addEventListener('enbox:auto-lock-changed', onChanged);
     render(<SecurityPage />);
 
     await user.click(screen.getByText('30 minutes'));
     expect(localStorage.getItem('enbox:autoLockTimeout')).toBe(
       String(30 * 60 * 1000),
     );
+    expect(onChanged).toHaveBeenCalledOnce();
+    window.removeEventListener('enbox:auto-lock-changed', onChanged);
   });
 
   describe('Change PIN', () => {

@@ -7,7 +7,12 @@ import { Card } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/PageHeader';
 import { SegmentedControl } from '@/components/ui/SegmentedControl';
 import { useAuth } from '@/enbox/hooks/use-auth';
-import { AUTO_LOCK_OPTIONS, AUTO_LOCK_STORAGE_KEY, getAutoLockTimeout } from '@/lib/constants';
+import {
+  AUTO_LOCK_CHANGED_EVENT,
+  AUTO_LOCK_OPTIONS,
+  AUTO_LOCK_STORAGE_KEY,
+  getAutoLockTimeout,
+} from '@/lib/constants';
 import { runEnboxSync } from '@/enbox/effect/runtime';
 import { localStorageSetEffect } from '@/lib/browser-effects';
 import { hasStoredPasskeyCredential } from '@/lib/passkeys';
@@ -33,6 +38,9 @@ export default function SecurityPage() {
     const ms = parseInt(value, 10);
     runEnboxSync(localStorageSetEffect(AUTO_LOCK_STORAGE_KEY, String(ms)));
     setAutoLockMs(ms);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(AUTO_LOCK_CHANGED_EVENT));
+    }
     toast.success('Auto-lock timeout updated');
   }, []);
 
