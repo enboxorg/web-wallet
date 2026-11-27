@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useQueryClient } from '@tanstack/react-query';
 import Scanner from 'qr-scanner';
@@ -93,6 +93,11 @@ import {
   resetConnectDecision,
 } from './connect-decision';
 import { getConnectErrorMessage } from './connect-error';
+import {
+  formatConnectApprovalPhase,
+  SLOW_APPROVAL_HINT,
+  useSlowOperationHint,
+} from './connect-progress';
 
 type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
 
@@ -143,6 +148,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   );
   const [selectedDid, setSelectedDid] = useState('');
+  const [statusMessage, setStatusMessage] = useState('Authorizing...');
   const [pin, setPin] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
   const [pinCopied, setPinCopied] = useState(false);
@@ -180,19 +186,24 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   // Build identity options for the selector and validate that a matched
   // refresh owner still uses a DID method accepted by the requester.
-  const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
-    .filter((identity: any) => expectedAuthenticationDid === undefined
-      || (identity.did.uri === expectedAuthenticationDid && identity.metadata?.connectedDid === undefined))
-    .filter((identity: any) =>
-      connectionRequest === undefined
-      || isDidSupportedByRequest(identity.did.uri, connectionRequest.supportedDidMethods)
-    )
-    .map((identity: any) => ({
-      value: identity.did.uri as string,
-      label: identity.metadata?.name ?? truncateDid(identity.did.uri),
-    }));
-  const ownerDids = (identities ?? []).map((identity: any) => identity.did.uri as string);
+  const identityOptions = useMemo<Array<{ value: string; label: string }>>(() =>
+    (identities ?? [])
+      .filter((identity: any) => expectedAuthenticationDid === undefined
+        || (identity.did.uri === expectedAuthenticationDid && identity.metadata?.connectedDid === undefined))
+      .filter((identity: any) =>
+        connectionRequest === undefined
+        || isDidSupportedByRequest(identity.did.uri, connectionRequest.supportedDidMethods)
+      )
+      .map((identity: any) => ({
+        value: identity.did.uri as string,
+        label: identity.metadata?.name ?? truncateDid(identity.did.uri),
+      })),
+  [identities, expectedAuthenticationDid, connectionRequest]);
+  const ownerDids = useMemo<string[]>(() =>
+    (identities ?? []).map((identity: any) => identity.did.uri as string),
+  [identities]);
   const allPermissions = useAllPermissions(ownerDids, isRefresh);
+  const slowAuthHint = useSlowOperationHint(phase === 'authorizing');
   const refreshDetection = detectConnectRefresh(connectionRequest, allPermissions.data);
   // A refresh is only a renewal for scopes this delegate actually held; the
   // request's own claim decides nothing about its contents.
@@ -482,6 +493,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         throw new Error('This profile uses an ID type the app does not support.');
       }
 
+      setStatusMessage(
+        activeRequest.requestType === 'authenticate' ? 'Confirming sign-in...' : 'Authorizing...',
+      );
       // The agent ceremony owns module preparation end to end:
       // install, explicitly approved definition replacement, encryption
       // upgrades, and fail-closed remote verification across reachable owner
@@ -498,6 +512,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         sessionDurationSeconds,
         liveAgent,
         overrideAcknowledged ? overridableModules : [],
+        {
+          onProgress: ({ phase: approvalPhase }) => {
+            setStatusMessage(formatConnectApprovalPhase(approvalPhase));
+          },
+        },
       );
 
       // Permission-query freshness is secondary to a completed approval. The
@@ -559,6 +578,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     viaPasskey: boolean,
   ) {
     setPhase('authorizing');
+    setStatusMessage('Creating your wallet...');
 
     const recoveryPhrase = await connectVault(vaultPassword, defaultDwnEndpoints);
     if (!viaPasskey) {
@@ -573,6 +593,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       throw new Error('Wallet was created but could not be unlocked.');
     }
 
+    setStatusMessage('Setting up your profile...');
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
     const approvalDid = identity.did.uri;
     // Standalone onboarding runs without <WalletBackgroundServices>, so update
@@ -600,6 +621,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       );
     } catch (err) {
       setPhase('request');
+      setStatusMessage('Authorizing...');
       if (isPasskeyVaultUnsupportedError(err)) {
         setOnboardStep('pin-create');
         return;
@@ -628,6 +650,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       await completeOnboardingAndConnect(onboardPin, false);
     } catch (err) {
       setPhase('request');
+      setStatusMessage('Authorizing...');
       setOnboardError(getConnectErrorMessage(err, 'Failed to create wallet'));
       setOnboardStep('pin-create');
       setOnboardPin('');
@@ -861,7 +884,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       {/* ─── Authorizing phase ──────────────────────────────────── */}
       {phase === 'authorizing' && (
         <div className={`animate-[fadeIn_0.3s_ease-out] px-6 lg:px-0 flex flex-col justify-center ${standalone ? 'flex-1 pb-24' : 'min-h-[55vh]'}`}>
-          <Loader message="Authorizing..." />
+          <Loader
+            message={statusMessage}
+            detail={slowAuthHint ? SLOW_APPROVAL_HINT : undefined}
+          />
         </div>
       )}
 

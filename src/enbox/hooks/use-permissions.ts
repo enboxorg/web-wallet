@@ -11,12 +11,15 @@ import { useAuthStore } from '@/stores/auth-store';
 import { queryKeys } from '../queries/query-keys';
 import { fetchPermissions } from '../queries/identity-queries';
 
-export function usePermissions(did: string) {
+export function usePermissions(did: string, options: { activeOnly?: boolean } = {}) {
+  const { activeOnly = false } = options;
   const agent = useAuthStore((s) => s.agent);
 
   return useQuery({
-    queryKey: queryKeys.identities.permissions(did),
-    queryFn: () => fetchPermissions(agent!, did),
+    queryKey: activeOnly
+      ? queryKeys.identities.activePermissions(did)
+      : queryKeys.identities.permissions(did),
+    queryFn: () => fetchPermissions(agent!, did, { activeOnly }),
     enabled: !!did && !!agent,
   });
 }

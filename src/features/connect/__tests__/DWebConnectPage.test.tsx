@@ -1,9 +1,10 @@
 import { StrictMode } from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import DWebConnectPage from '../DWebConnectPage';
+import { SLOW_APPROVAL_HINT } from '../connect-progress';
 import { useAuthStore } from '@/stores/auth-store';
 
 /** The wallet approves for 7 days unless the owner picks another duration. */
@@ -34,6 +35,7 @@ const mocks = vi.hoisted(() => {
     allPermissions: [] as any[],
     allPermissionsPending: false,
     allPermissionsError: false,
+    useAllPermissionsSpy: vi.fn(),
     identitiesPending: false,
     identitiesError: false,
     identities: [
@@ -74,11 +76,14 @@ vi.mock('@/enbox/hooks/use-identities', () => ({
 }));
 
 vi.mock('@/enbox/hooks/use-all-permissions', () => ({
-  useAllPermissions: () => ({
-    data      : mocks.allPermissions,
-    isPending : mocks.allPermissionsPending,
-    isError   : mocks.allPermissionsError,
-  }),
+  useAllPermissions: (...args: unknown[]) => {
+    mocks.useAllPermissionsSpy(...args);
+    return {
+      data      : mocks.allPermissions,
+      isPending : mocks.allPermissionsPending,
+      isError   : mocks.allPermissionsError,
+    };
+  },
 }));
 
 vi.mock('@/enbox/hooks/use-permissions', () => ({
@@ -252,6 +257,7 @@ describe('DWebConnectPage', () => {
     fireEvent.click(approve);
     await waitFor(() => expect(mocks.approvePopupConnectRequest).toHaveBeenCalledWith(
       'did:dht:bob', request, 'https://app.example', expect.any(Number), mocks.agent, [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
   });
 
@@ -394,6 +400,7 @@ describe('DWebConnectPage', () => {
       DEFAULT_APPROVAL_SECONDS,
       mocks.agent,
       [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     );
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
     expect(mocks.publishWalletEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -425,6 +432,7 @@ describe('DWebConnectPage', () => {
       9 * 60,
       mocks.agent,
       [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
   });
 
@@ -448,6 +456,7 @@ describe('DWebConnectPage', () => {
       seconds,
       mocks.agent,
       [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
   });
 
@@ -477,6 +486,7 @@ describe('DWebConnectPage', () => {
       expect.any(Number),
       mocks.agent,
       [permissionRequest.moduleDefinition.module],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
 
     await waitFor(() => expect(mocks.transport.sendResponseAwaitingAck).toHaveBeenCalledWith('sealed-response-jwe'));
@@ -670,6 +680,7 @@ describe('DWebConnectPage', () => {
         DEFAULT_APPROVAL_SECONDS,
         mocks.agent,
         [],
+        expect.objectContaining({ onProgress: expect.any(Function) }),
       );
     });
   });
@@ -884,6 +895,106 @@ describe('DWebConnectPage', () => {
     });
     // The response was delivered; a failed analytics event must not replace
     // the success screen with an error.
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
+  });
+
+  it('skips revocation queries for non-refresh popup connects and enables them for refresh', async () => {
+    const view = render(<DWebConnectPage />);
+    expect(await screen.findByRole('button', { name: 'Approve' })).toBeInTheDocument();
+
+    // First render waits for connectRequest -> disabled.
+    expect(mocks.useAllPermissionsSpy).toHaveBeenCalledWith(
+      ['did:dht:alice'],
+      false,
+      { includeRevocations: false },
+    );
+    // Once a non-refresh request arrives, only grant history is queried.
+    expect(mocks.useAllPermissionsSpy).toHaveBeenLastCalledWith(
+      ['did:dht:alice'],
+      true,
+      { includeRevocations: false },
+    );
+
+    view.unmount();
+    mocks.useAllPermissionsSpy.mockClear();
+    mocks.transport.awaitRequest.mockResolvedValue({
+      ...connectRequest(),
+      requestType : 'refresh',
+      delegateDid : 'did:jwk:existing-delegate',
+    });
+    mocks.allPermissions = [{
+      ownerDid        : 'did:dht:alice',
+      permissions     : [existingSessionGrant('did:dht:alice', 'did:jwk:existing-delegate')],
+      revokedGrantIds : [],
+    }];
+
+    render(<DWebConnectPage />);
+    expect(await screen.findByRole('button', { name: 'Renew access' })).toBeInTheDocument();
+    expect(mocks.useAllPermissionsSpy).toHaveBeenLastCalledWith(
+      ['did:dht:alice'],
+      true,
+      { includeRevocations: true },
+    );
+  });
+
+  it('updates approval progress copy from onProgress callbacks', async () => {
+    let reportProgress: ((progress: { phase: string }) => void) | undefined;
+    let releaseApproval: (value: string) => void = () => {};
+    mocks.approvePopupConnectRequest.mockImplementation(
+      (_did, _req, _origin, _ttl, _agent, _overrides, options) => {
+        reportProgress = options?.onProgress;
+        return new Promise<string>((resolve) => { releaseApproval = resolve; });
+      },
+    );
+
+    render(<DWebConnectPage />);
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(reportProgress).toBeTypeOf('function'));
+    expect(screen.getByText('Authorizing...')).toBeInTheDocument();
+
+    act(() => { reportProgress?.({ phase: 'modules' }); });
+    expect(screen.getByText('Setting up app data types...')).toBeInTheDocument();
+
+    act(() => { reportProgress?.({ phase: 'permission-grants' }); });
+    expect(screen.getByText('Creating permissions...')).toBeInTheDocument();
+
+    act(() => { reportProgress?.({ phase: 'grant-keys' }); });
+    expect(screen.getByText('Securing encrypted access...')).toBeInTheDocument();
+
+    act(() => { reportProgress?.({ phase: 'revocations' }); });
+    expect(screen.getByText('Finalizing permissions...')).toBeInTheDocument();
+
+    releaseApproval('sealed-response-jwe');
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
+  });
+
+  it('shows a slow-storage hint when popup approval takes longer than 5 seconds', async () => {
+    let releaseApproval: (value: string) => void = () => {};
+    mocks.approvePopupConnectRequest.mockImplementation(
+      () => new Promise<string>((resolve) => { releaseApproval = resolve; }),
+    );
+
+    render(<DWebConnectPage />);
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(approve);
+      expect(screen.queryByText(SLOW_APPROVAL_HINT)).not.toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(screen.getByText(SLOW_APPROVAL_HINT)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    releaseApproval('sealed-response-jwe');
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 });

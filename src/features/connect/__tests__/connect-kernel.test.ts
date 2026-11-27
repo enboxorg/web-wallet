@@ -452,6 +452,28 @@ describe('connect-kernel', () => {
       ).rejects.toThrow('Connect callback URL must use HTTPS');
       expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
     });
+
+    it('forwards onProgress to executeConnectApproval when provided', async () => {
+      const onProgress = vi.fn();
+      const agent = { id: 'agent-1' } as any;
+      const request = connectRequest();
+
+      await approveConnectRequest(
+        'did:dht:alice',
+        request,
+        '1234',
+        3_600,
+        agent,
+        [],
+        { onProgress },
+      );
+
+      expect(mocks.executeConnectApproval).toHaveBeenCalledWith(expect.objectContaining({
+        agent,
+        providerDid: 'did:dht:alice',
+        onProgress,
+      }));
+    });
   });
 
   describe('waitForRelayCompletion', () => {
@@ -579,6 +601,29 @@ describe('connect-kernel', () => {
         ),
       ).rejects.toThrow('ECONNRESET');
       expect(mocks.executeConnectApproval).toHaveBeenCalledTimes(1);
+    });
+
+    it('forwards onProgress to executeConnectApproval for popup requests', async () => {
+      const onProgress = vi.fn();
+      const agent = { id: 'agent-1' } as any;
+      const request = connectRequest({ reply: { mode: 'post_message' } });
+
+      await approvePopupConnectRequest(
+        'did:dht:alice',
+        request,
+        'https://app.example',
+        3_600,
+        agent,
+        [],
+        { onProgress },
+      );
+
+      expect(mocks.executeConnectApproval).toHaveBeenCalledWith(expect.objectContaining({
+        agent,
+        providerDid: 'did:dht:alice',
+        verifiedRequesterOrigin: 'https://app.example',
+        onProgress,
+      }));
     });
   });
 

@@ -28,6 +28,14 @@ const LOCAL_RELAY_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MAX_CONNECT_RESPONSE_BYTES = 2_000_000;
 const relayRequestOrigins = new WeakMap<ConnectRequest, string>();
 
+export interface ConnectApprovalOptions {
+  onProgress?: ExecuteConnectApprovalParams['onProgress'];
+}
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
 /** Snapshot at API entry, but keep invalid input in the Effect/Promise error channel. */
 function captureApprovalInput<T>(operation: string, capture: () => T) {
   try {
@@ -225,6 +233,7 @@ export function approveConnectRequestEffect(
   pin: string,
   approvedSessionTtlSeconds: number,
   approvedModuleOverrides: readonly string[] = [],
+  options?: ConnectApprovalOptions,
 ) {
   const prepared = captureApprovalInput('connect.submitConnectResponse', () => {
     // Only the original fetched object carries the verified relay origin.
@@ -241,17 +250,27 @@ export function approveConnectRequestEffect(
       approvedModuleOverrides: [...approvedModuleOverrides],
       providerDid: selectedDid,
       approvedSessionTtlSeconds,
+      ...(options?.onProgress === undefined ? {} : { onProgress: options.onProgress }),
     };
   });
   return Effect.gen(function* () {
     const { callbackUrl, ...captured } = yield* prepared;
     const { request } = captured;
     const agent = yield* CurrentAgent;
+    const totalStart = nowMs();
     const idToken = yield* Effect.tryPromise({
-      try: () => approveAndSeal({ ...captured, agent, transport: 'relay', pin }),
+      try: async () => {
+        const sealStart = nowMs();
+        const sealed = await approveAndSeal({ ...captured, agent, transport: 'relay', pin });
+        console.debug(
+          `[connect.perf] relay.approveAndSeal ok in ${(nowMs() - sealStart).toFixed(1)}ms`,
+        );
+        return sealed;
+      },
       catch: sdkError('connect.submitConnectResponse'),
     });
 
+    const postStart = nowMs();
     yield* withNetworkPolicy(
       'connect.submitConnectResponse',
       Effect.tryPromise({
@@ -265,6 +284,10 @@ export function approveConnectRequestEffect(
       }),
       () => sdkTimeout('connect.submitConnectResponse'),
     );
+    console.debug(
+      `[connect.perf] relay.postResponse ok in ${(nowMs() - postStart).toFixed(1)}ms `
+      + `(total=${(nowMs() - totalStart).toFixed(1)}ms)`,
+    );
     return request;
   });
 }
@@ -276,6 +299,7 @@ export function approveConnectRequest(
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
   approvedModuleOverrides: readonly string[] = [],
+  options?: ConnectApprovalOptions,
 ): Promise<ConnectRequest> {
   return runEnboxPromise(
     approveConnectRequestEffect(
@@ -284,6 +308,7 @@ export function approveConnectRequest(
       pin,
       approvedSessionTtlSeconds,
       approvedModuleOverrides,
+      options,
     ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
@@ -337,6 +362,7 @@ export function approvePopupConnectRequestEffect(
   dappOrigin: string,
   approvedSessionTtlSeconds: number,
   approvedModuleOverrides: readonly string[] = [],
+  options?: ConnectApprovalOptions,
 ) {
   const prepared = captureApprovalInput('dwebConnect.submitConnectResponse', () => {
     if (!isTrustedDappOrigin(dappOrigin)) {
@@ -345,14 +371,27 @@ export function approvePopupConnectRequestEffect(
     assertConnectAuthenticationOrigin(request, dappOrigin);
     const capturedRequest = structuredClone(request);
     assertConnectAuthenticationOrigin(capturedRequest, dappOrigin);
-    return { request: capturedRequest, approvedModuleOverrides: [...approvedModuleOverrides], providerDid: selectedDid,
-      approvedSessionTtlSeconds, verifiedRequesterOrigin: dappOrigin };
+    return {
+      request: capturedRequest,
+      approvedModuleOverrides: [...approvedModuleOverrides],
+      providerDid: selectedDid,
+      approvedSessionTtlSeconds,
+      verifiedRequesterOrigin: dappOrigin,
+      ...(options?.onProgress === undefined ? {} : { onProgress: options.onProgress }),
+    };
   });
   return Effect.gen(function* () {
     const captured = yield* prepared;
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
-      try: () => approveAndSeal({ ...captured, agent, transport: 'postMessage' }),
+      try: async () => {
+        const sealStart = nowMs();
+        const sealed = await approveAndSeal({ ...captured, agent, transport: 'postMessage' });
+        console.debug(
+          `[connect.perf] popup.approveAndSeal ok in ${(nowMs() - sealStart).toFixed(1)}ms`,
+        );
+        return sealed;
+      },
       catch: sdkError('dwebConnect.submitConnectResponse'),
     });
   });
@@ -365,6 +404,7 @@ export function approvePopupConnectRequest(
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
   approvedModuleOverrides: readonly string[] = [],
+  options?: ConnectApprovalOptions,
 ): Promise<string> {
   return runEnboxPromise(
     approvePopupConnectRequestEffect(
@@ -373,6 +413,7 @@ export function approvePopupConnectRequest(
       dappOrigin,
       approvedSessionTtlSeconds,
       approvedModuleOverrides,
+      options,
     ).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
