@@ -1,4 +1,5 @@
 import { Effect } from 'effect';
+import { normalizeSyncModules } from '@enbox/agent';
 
 import {
   IDENTITY_SYNC_MODULES,
@@ -8,6 +9,31 @@ import type { EnboxAgent } from './types';
 import { sdkError } from './effect/errors';
 import { CurrentAgent, enboxLiveLayer } from './effect/services';
 import { runEnboxPromise } from './effect/runtime';
+
+const RECONCILE_CONCURRENCY = 4;
+const NORMALIZED_IDENTITY_SYNC_MODULES = normalizeSyncModules(IDENTITY_SYNC_MODULES);
+
+function hasExpectedOwnerSyncOptions(options: unknown): boolean {
+  if (!options || typeof options !== 'object') {
+    return false;
+  }
+  const candidate = options as { delegateDid?: unknown; modules?: unknown };
+  if (
+    candidate.delegateDid !== undefined
+    || !Array.isArray(candidate.modules)
+    || candidate.modules.length === 0
+    || !candidate.modules.every((m): m is string => typeof m === 'string' && m.length > 0)
+  ) {
+    return false;
+  }
+  try {
+    const existingModules = normalizeSyncModules(candidate.modules);
+    return existingModules.length === NORMALIZED_IDENTITY_SYNC_MODULES.length
+      && existingModules.every((module, index) => module === NORMALIZED_IDENTITY_SYNC_MODULES[index]);
+  } catch {
+    return false;
+  }
+}
 
 type IdentityLike = {
   did?: { uri?: unknown };
@@ -63,6 +89,21 @@ export function getIdentitySyncTargets(identities: readonly unknown[]): Identity
 export function ensureIdentitySyncOptionsEffect(did: string) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
+    // Fast-path: check current options lock-free before calling
+    // ensureIdentityOptions(), which acquires both the engine-local sync lock
+    // and the cross-context Web Lock `enbox:sync-identity:<ns>:<did>` before
+    // noticing that options are already identical.
+    if (typeof agent.sync.getIdentityOptions === 'function') {
+      const existing = yield* Effect.tryPromise({
+        try: () => agent.sync.getIdentityOptions(did),
+        catch: sdkError('sync.getIdentityOptions'),
+      }).pipe(Effect.catchAll(() => Effect.succeed(undefined)));
+
+      if (hasExpectedOwnerSyncOptions(existing)) {
+        return false;
+      }
+    }
+
     return yield* Effect.tryPromise({
       try: () => agent.sync.ensureIdentityOptions({
         did,
@@ -101,23 +142,22 @@ export function reconcileIdentitySyncEffect(
 
     const changedDids: string[] = [];
     const failedDids: string[] = [];
-    for (const did of ownerDids) {
-      const changed = yield* Effect.gen(function* () {
+    yield* Effect.forEach(ownerDids, (did) =>
+      Effect.gen(function* () {
         yield* installModulesEffect(did);
-        return yield* ensureIdentitySyncOptionsEffect(did);
+        const changed = yield* ensureIdentitySyncOptionsEffect(did);
+        if (changed) {
+          changedDids.push(did);
+        }
       }).pipe(
         Effect.catchAll((error) =>
           Effect.sync(() => {
             console.warn(`Identity reconciliation failed for ${did}:`, error);
             failedDids.push(did);
-            return false;
           })
         ),
-      );
-      if (changed) {
-        changedDids.push(did);
-      }
-    }
+      ),
+    { concurrency: RECONCILE_CONCURRENCY });
 
     return { changedDids, failedDids };
   });

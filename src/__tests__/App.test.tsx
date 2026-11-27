@@ -24,6 +24,9 @@ const mocks = vi.hoisted(() => ({
   setPhrase: vi.fn(),
   createIdentity: vi.fn(),
   unlockWithStoredPasskey: vi.fn(),
+  useSyncQueryInvalidation: vi.fn(),
+  useIdentitySyncReconciliation: vi.fn(),
+  useRegistrationRepair: vi.fn(),
   passkeyConfigured: false,
   passkeyController: null as AbortController | null,
 }));
@@ -50,15 +53,15 @@ vi.mock('@/enbox/hooks/use-identities', () => ({
 }));
 
 vi.mock('@/enbox/hooks/use-identity-sync-reconciliation', () => ({
-  useIdentitySyncReconciliation: vi.fn(),
+  useIdentitySyncReconciliation: mocks.useIdentitySyncReconciliation,
 }));
 
 vi.mock('@/enbox/hooks/use-registration-repair', () => ({
-  useRegistrationRepair: vi.fn(),
+  useRegistrationRepair: mocks.useRegistrationRepair,
 }));
 
 vi.mock('@/enbox/hooks/use-sync-query-invalidation', () => ({
-  useSyncQueryInvalidation: vi.fn(),
+  useSyncQueryInvalidation: mocks.useSyncQueryInvalidation,
 }));
 
 vi.mock('@/enbox/hooks/use-identity-mutations', () => ({
@@ -251,7 +254,7 @@ describe('App auth restore flow', () => {
     expect(mocks.unlock).not.toHaveBeenCalled();
   });
 
-  it('renders DWeb Connect before empty-wallet identity onboarding', async () => {
+  it('renders DWeb Connect before empty-wallet identity onboarding without mounting full-wallet background hooks', async () => {
     mocks.authState.unlocked = true;
     mocks.authState.agent = { agentDid: { uri: 'did:dht:agent' } } as never;
 
@@ -259,6 +262,30 @@ describe('App auth restore flow', () => {
 
     expect(await screen.findByRole('heading', { name: 'DWeb Connect Mock' })).toBeInTheDocument();
     expect(screen.queryByText(/new profile/i)).not.toBeInTheDocument();
+    expect(mocks.useSyncQueryInvalidation).not.toHaveBeenCalled();
+    expect(mocks.useIdentitySyncReconciliation).not.toHaveBeenCalled();
+    expect(mocks.useRegistrationRepair).not.toHaveBeenCalled();
+  });
+
+  it('does not mount wallet background hooks while locked', () => {
+    renderApp('/');
+
+    expect(screen.getByRole('heading', { name: 'Unlock Mock' })).toBeInTheDocument();
+    expect(mocks.useSyncQueryInvalidation).not.toHaveBeenCalled();
+    expect(mocks.useIdentitySyncReconciliation).not.toHaveBeenCalled();
+    expect(mocks.useRegistrationRepair).not.toHaveBeenCalled();
+  });
+
+  it('mounts wallet background hooks when unlocked in the wallet shell', async () => {
+    mocks.authState.unlocked = true;
+    mocks.authState.agent = { agentDid: { uri: 'did:dht:agent' } } as never;
+
+    renderApp('/');
+
+    expect(await screen.findByRole('button', { name: 'Create first identity' })).toBeInTheDocument();
+    expect(mocks.useSyncQueryInvalidation).toHaveBeenCalled();
+    expect(mocks.useIdentitySyncReconciliation).toHaveBeenCalled();
+    expect(mocks.useRegistrationRepair).toHaveBeenCalled();
   });
 
   it('seeds the first identity with the wallet endpoint selection', async () => {

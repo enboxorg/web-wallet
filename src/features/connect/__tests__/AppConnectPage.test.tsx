@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { QueryClient } from '@tanstack/react-query';
 import { Effect } from 'effect';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -6,6 +7,7 @@ import { renderWithProviders } from '@/test-utils';
 import AppConnectPage from '../AppConnectPage';
 import { __resetDeepLinkSessionForTests, primeConnectDeepLink } from '../connect-deep-link';
 import { useAuthStore } from '@/stores/auth-store';
+import { queryKeys } from '@/enbox/queries/query-keys';
 
 /** The wallet approves for 7 days unless the owner picks another duration. */
 const DEFAULT_APPROVAL_SECONDS = 7 * 24 * 60 * 60;
@@ -1045,7 +1047,15 @@ describe('AppConnectPage', () => {
 
     it('offers create-wallet-and-connect and completes approval with the new profile', async () => {
       setPageUrl(DEEP_LINK_FRAGMENT);
-      renderWithProviders(<AppConnectPage />, { initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}` });
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false } },
+      });
+      // Simulate AuthGate caching [] right when the vault unlocks before autoCreateIdentity finishes.
+      queryClient.setQueryData(queryKeys.identities.all, []);
+      renderWithProviders(<AppConnectPage standalone />, {
+        initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}`,
+        queryClient,
+      });
 
       const create = await screen.findByRole('button', { name: /create wallet & connect/i });
       expect(screen.getByText(/No wallet here yet/)).toBeInTheDocument();
@@ -1064,6 +1074,9 @@ describe('AppConnectPage', () => {
           [],
         );
       });
+      expect(queryClient.getQueryData(queryKeys.identities.all)).toEqual([
+        { did: { uri: 'did:dht:fresh' } },
+      ]);
       expect(mocks.connectVault).toHaveBeenCalledWith('wrapped-vault-password', ['https://dwn.example']);
       expect(mocks.autoCreateIdentity).toHaveBeenCalledWith(mocks.agent, ['https://dwn.example']);
       expect(mocks.createPasskeyVault).toHaveBeenCalledWith(expect.any(Function));

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
+import { useQueryClient } from '@tanstack/react-query';
 import Scanner from 'qr-scanner';
 import {
   CameraOff,
@@ -59,6 +60,7 @@ import { useAuth } from '@/enbox/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
+import { queryKeys } from '@/enbox/queries/query-keys';
 import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
@@ -103,6 +105,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   // Nullable on purpose: with a connect deep link this page renders
   // before onboarding too.
   const agent = useAuthStore((s) => s.agent);
+  const queryClient = useQueryClient();
   const { firstTime, connect: connectVault, dwnEndpoints: defaultDwnEndpoints } = useAuth();
   const setBackupPhrase = useBackupSeedStore((s) => s.setPhrase);
   const navigate = useNavigate();
@@ -501,11 +504,15 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // same event is emitted by the popup flow, while local DWN subscriptions
       // remain an additional best-effort invalidation path.
       try {
-        if (completedRequest.requestType !== 'authenticate') void runEnboxPromise(publishWalletEvent({
-          _tag         : 'connect.approved',
-          origin       : completedRequest.clientMetadata?.origin ?? completedRequest.appName,
-          connectedDid : approveAsDid,
-        })).catch((err: unknown) => console.warn('Relay connect approval event failed:', err));
+        if (completedRequest.requestType !== 'authenticate') {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(approveAsDid) });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(approveAsDid) });
+          void runEnboxPromise(publishWalletEvent({
+            _tag         : 'connect.approved',
+            origin       : completedRequest.clientMetadata?.origin ?? completedRequest.appName,
+            connectedDid : approveAsDid,
+          })).catch((err: unknown) => console.warn('Relay connect approval event failed:', err));
+        }
       } catch (err) {
         console.warn('Relay connect approval event failed:', err);
       }
@@ -568,6 +575,16 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
     const approvalDid = identity.did.uri;
+    // Standalone onboarding runs without <WalletBackgroundServices>, so update
+    // the identities cache immediately to prevent AuthGate from reading a stale
+    // empty [] and redirecting into FirstIdentityGate after the ceremony.
+    queryClient.setQueryData<unknown[]>(queryKeys.identities.all, (prev) => {
+      const existing = Array.isArray(prev) ? prev : [];
+      return existing.some((entry: any) => entry?.did?.uri === approvalDid)
+        ? existing
+        : [...existing, identity];
+    });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
     setSelectedDid(approvalDid);
 
     await handleApprove(approvalDid);

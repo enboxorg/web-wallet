@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { QueryClientContext } from '@tanstack/react-query';
 import { Globe, Check, AlertCircle, Fingerprint } from 'lucide-react';
 import { WalletPostMessageTransport } from '@enbox/browser';
 import type { ConnectPermissionRequest, ConnectRequest } from '@enbox/connect';
@@ -26,6 +27,7 @@ import { useAuth } from '@/enbox/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
 import { useBackupSeedStore } from '@/stores/backup-seed-store';
 import { useIdentities } from '@/enbox/hooks/use-identities';
+import { queryKeys } from '@/enbox/queries/query-keys';
 import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { usePermissions } from '@/enbox/hooks/use-permissions';
 import { truncateDid } from '@/lib/utils';
@@ -73,6 +75,7 @@ type OnboardStep = 'idle' | 'pin-create' | 'pin-confirm';
 export default function DWebConnectPage() {
   // Nullable on purpose: this page renders before onboarding too.
   const agent = useAuthStore((s) => s.agent);
+  const queryClient = useContext(QueryClientContext);
   const { firstTime, connect: connectVault, dwnEndpoints: defaultDwnEndpoints } = useAuth();
   const setBackupPhrase = useBackupSeedStore((s) => s.setPhrase);
   const {
@@ -373,6 +376,15 @@ export default function DWebConnectPage() {
     setStatusMessage('Setting up your profile...');
     const identity = await autoCreateIdentity(liveAgent, defaultDwnEndpoints);
     const approvalDid = identity.did.uri;
+    // Standalone/popup onboarding runs without <WalletBackgroundServices>, so
+    // update the identities cache immediately to prevent a stale empty [] read.
+    queryClient?.setQueryData<unknown[]>(queryKeys.identities.all, (prev) => {
+      const existing = Array.isArray(prev) ? prev : [];
+      return existing.some((entry: any) => entry?.did?.uri === approvalDid)
+        ? existing
+        : [...existing, identity];
+    });
+    void queryClient?.invalidateQueries({ queryKey: queryKeys.identities.all });
     setSelectedDid(approvalDid);
 
     await handleApprove(approvalDid);

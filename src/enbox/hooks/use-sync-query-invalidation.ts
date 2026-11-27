@@ -19,7 +19,11 @@ import { useAuthStore } from '@/stores/auth-store';
 import { getIdentitySyncTargets } from '../identity-sync';
 import { queryKeys } from '../queries/query-keys';
 import { interruptEnboxFork, runEnboxFork } from '../effect/runtime';
-import { WalletEventBus, type WalletEvent } from '../effect/wallet-events';
+import {
+  getWalletEventCursor,
+  WalletEventBus,
+  type WalletEvent,
+} from '../effect/wallet-events';
 
 const INVALIDATION_DEBOUNCE_MS = 250;
 
@@ -119,9 +123,10 @@ export function useSyncQueryInvalidation(
   }, [identities]);
 
   useEffect(() => {
+    const cursor = getWalletEventCursor();
     const fiber = runEnboxFork(
       Effect.flatMap(WalletEventBus, (bus) =>
-        bus.stream.pipe(
+        bus.streamSince(cursor).pipe(
           Stream.runForEach((event) =>
             Effect.sync(() => invalidateWalletEventQueries(event, queryClient))
           ),
