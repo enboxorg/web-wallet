@@ -364,16 +364,24 @@ export function updateIdentityProfileEffect(params: UpdateIdentityProfileParams)
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
 
-    const persona = params.persona;
+    const persona = params.persona?.trim();
     if (persona) {
-      yield* Effect.tryPromise({
-        try: () =>
-          agent.identity.setMetadataName({
-            didUri: params.did,
-            name: persona,
-          }),
-        catch: sdkError('identity.setMetadataName'),
-      });
+      const liveIdentity = typeof agent.identity.get === 'function'
+        ? yield* Effect.tryPromise({
+          try: () => agent.identity.get({ didUri: params.did }),
+          catch: sdkError('identity.get'),
+        }).pipe(Effect.catchAll(() => Effect.succeed(undefined)))
+        : undefined;
+      if (liveIdentity?.metadata?.name !== persona) {
+        yield* Effect.tryPromise({
+          try: () =>
+            agent.identity.setMetadataName({
+              didUri: params.did,
+              name: persona,
+            }),
+          catch: sdkError('identity.setMetadataName'),
+        });
+      }
     }
 
     return yield* withEnboxEffect(params.did, (enbox) => Effect.gen(function* () {

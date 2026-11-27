@@ -23,6 +23,11 @@ import { PageHeader } from '@/components/ui/PageHeader';
 export default function EditIdentityPage() {
   const { did: rawDid } = useParams<{ did: string }>();
   const did = rawDid ? decodeURIComponent(rawDid) : '';
+
+  return <EditIdentityForm key={did} did={did} />;
+}
+
+function EditIdentityForm({ did }: { did: string }) {
   const navigate = useNavigate();
 
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
@@ -37,15 +42,27 @@ export default function EditIdentityPage() {
     [identities, did],
   );
 
-  // Form fields
-  const [persona, setPersona] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [tagline, setTagline] = useState('');
-  const [bio, setBio] = useState('');
+  // Nullable draft overrides: untouched fields stay live-hydrated as profile
+  // sync completes, while edited fields are never clobbered by background
+  // refetches. Switching DIDs remounts this form via `key={did}`.
+  const [personaDraft, setPersonaDraft] = useState<string | null>(null);
+  const [personaError, setPersonaError] = useState<string | undefined>(undefined);
+  const [displayNameDraft, setDisplayNameDraft] = useState<string | null>(null);
+  const [taglineDraft, setTaglineDraft] = useState<string | null>(null);
+  const [bioDraft, setBioDraft] = useState<string | null>(null);
+  const [dwnEndpointsDraft, setDwnEndpointsDraft] = useState<string[] | null>(null);
 
-  // DWN endpoints
-  const [dwnEndpoints, setDwnEndpoints] = useState<string[]>([]);
-  const [endpointsInitialized, setEndpointsInitialized] = useState(false);
+  const serverPersona = identity?.metadata?.name ?? '';
+  const serverDisplayName = profile?.displayName ?? '';
+  const serverTagline = profile?.tagline ?? '';
+  const serverBio = profile?.bio ?? '';
+  const serverEndpoints = useMemo(() => currentEndpoints ?? [], [currentEndpoints]);
+
+  const persona = personaDraft ?? serverPersona;
+  const displayName = displayNameDraft ?? serverDisplayName;
+  const tagline = taglineDraft ?? serverTagline;
+  const bio = bioDraft ?? serverBio;
+  const dwnEndpoints = dwnEndpointsDraft ?? serverEndpoints;
 
   // Avatar state
   const [avatarFile, setAvatarFile] = useState<File | null>(null);
@@ -59,41 +76,33 @@ export default function EditIdentityPage() {
   const avatarPreview = avatarChanged ? avatarFileUrl : profile?.avatarUrl;
   const heroPreview = heroChanged ? heroFileUrl : profile?.heroUrl;
 
-  // Populate form when profile data loads
-  useEffect(() => {
-    if (profile) {
-      setDisplayName(profile.displayName ?? '');
-      setTagline(profile.tagline ?? '');
-      setBio(profile.bio ?? '');
-    }
-  }, [profile]);
-
-  useEffect(() => {
-    if (identity) {
-      setPersona(identity.metadata.name ?? '');
-    }
-  }, [identity]);
-
-  useEffect(() => {
-    if (currentEndpoints && !endpointsInitialized) {
-      setDwnEndpoints(currentEndpoints);
-      setEndpointsInitialized(true);
-    }
-  }, [currentEndpoints, endpointsInitialized]);
-
   // Track whether the form has unsaved changes
   const isDirty = useMemo(() => {
     if (!profile) return false;
     return (
-      displayName !== (profile.displayName ?? '') ||
-      persona !== (identity?.metadata?.name ?? '') ||
-      tagline !== (profile.tagline ?? '') ||
-      bio !== (profile.bio ?? '') ||
+      displayName !== serverDisplayName ||
+      persona !== serverPersona ||
+      tagline !== serverTagline ||
+      bio !== serverBio ||
       avatarChanged ||
       heroChanged ||
-      JSON.stringify(dwnEndpoints) !== JSON.stringify(currentEndpoints ?? [])
+      JSON.stringify(dwnEndpoints) !== JSON.stringify(serverEndpoints)
     );
-  }, [displayName, persona, tagline, bio, avatarChanged, heroChanged, dwnEndpoints, profile, identity, currentEndpoints]);
+  }, [
+    displayName,
+    serverDisplayName,
+    persona,
+    serverPersona,
+    tagline,
+    serverTagline,
+    bio,
+    serverBio,
+    avatarChanged,
+    heroChanged,
+    dwnEndpoints,
+    serverEndpoints,
+    profile,
+  ]);
 
   // Warn on browser back / tab close / URL navigation
   useEffect(() => {
@@ -124,19 +133,51 @@ export default function EditIdentityPage() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
+    const trimmedPersona = persona.trim();
+    if (serverPersona !== '' && trimmedPersona === '') {
+      setPersonaError('Persona name cannot be empty.');
+      return;
+    }
+    setPersonaError(undefined);
+
     try {
-      await updateProfile.mutateAsync({
-        did,
-        displayName,
-        tagline: tagline || undefined,
-        bio: bio || undefined,
-        avatar: avatarChanged ? (avatarFile ?? null) : undefined,
-        hero: heroChanged ? (heroFile ?? null) : undefined,
-      });
+      // AgentIdentityApi.setMetadataName rejects empty or unchanged names.
+      const nextPersona = trimmedPersona && trimmedPersona !== serverPersona
+        ? trimmedPersona
+        : undefined;
+      const profileChanged =
+        nextPersona !== undefined ||
+        displayName !== serverDisplayName ||
+        tagline !== serverTagline ||
+        bio !== serverBio ||
+        avatarChanged ||
+        heroChanged;
+      const endpointsChanged =
+        JSON.stringify(dwnEndpoints) !== JSON.stringify(serverEndpoints);
+
+      // Skip redundant profile/media writes when only endpoints changed (for
+      // example, retrying after profile saved and endpoint publishing failed).
+      if (profileChanged || !endpointsChanged) {
+        await updateProfile.mutateAsync({
+          did,
+          ...(nextPersona ? { persona: nextPersona } : {}),
+          displayName,
+          tagline: tagline || undefined,
+          bio: bio || undefined,
+          avatar: avatarChanged ? (avatarFile ?? null) : undefined,
+          hero: heroChanged ? (heroFile ?? null) : undefined,
+        });
+        setPersonaDraft(null);
+        setDisplayNameDraft(null);
+        setTaglineDraft(null);
+        setBioDraft(null);
+        setAvatarFile(null);
+        setAvatarChanged(false);
+        setHeroFile(null);
+        setHeroChanged(false);
+      }
 
       // Update DWN endpoints if they changed
-      const endpointsChanged =
-        JSON.stringify(dwnEndpoints) !== JSON.stringify(currentEndpoints ?? []);
       if (endpointsChanged) {
         await updateEndpoints.mutateAsync({ did, endpoints: dwnEndpoints });
       }
@@ -220,7 +261,7 @@ export default function EditIdentityPage() {
                 label="Display name"
                 hint="Public. Apps and people see this name."
                 value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
+                onChange={(e) => setDisplayNameDraft(e.target.value)}
                 placeholder="How others see you"
                 required
               />
@@ -228,7 +269,11 @@ export default function EditIdentityPage() {
                 label="Persona"
                 hint="Private. Only you see it, to tell your profiles apart."
                 value={persona}
-                onChange={(e) => setPersona(e.target.value)}
+                onChange={(e) => {
+                  setPersonaDraft(e.target.value);
+                  if (personaError) setPersonaError(undefined);
+                }}
+                error={personaError}
                 placeholder="e.g. Personal, Work, Gaming"
               />
             </div>
@@ -236,14 +281,14 @@ export default function EditIdentityPage() {
             <Input
               label="Tagline"
               value={tagline}
-              onChange={(e) => setTagline(e.target.value)}
+              onChange={(e) => setTaglineDraft(e.target.value)}
               placeholder="A short one-liner about this profile"
             />
 
             <Textarea
               label="Bio"
               value={bio}
-              onChange={(e) => setBio(e.target.value)}
+              onChange={(e) => setBioDraft(e.target.value)}
               placeholder="Tell the world a bit more..."
               rows={4}
             />
@@ -257,7 +302,7 @@ export default function EditIdentityPage() {
             <ChipInput
               label="DWN Endpoints"
               values={dwnEndpoints}
-              onChange={setDwnEndpoints}
+              onChange={setDwnEndpointsDraft}
               placeholder="Add a DWN endpoint URL…"
             />
             {dwnEndpoints.length > 0 && (
