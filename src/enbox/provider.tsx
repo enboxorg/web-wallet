@@ -12,11 +12,14 @@
  * - Session vault password caching for same-tab refresh persistence
  */
 
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { getDwnEndpointStatus } from '@enbox/dids';
 import { useAuthStore } from '@/stores/auth-store';
 import { IncorrectPinError } from '@/lib/auth-errors';
 import {
+  AUTO_LOCK_CHANGED_EVENT,
+  AUTO_LOCK_STORAGE_KEY,
   getAutoLockTimeout,
   SESSION_VAULT_PASSWORD_KEY,
 } from '@/lib/constants';
@@ -44,19 +47,89 @@ import { runEnboxPromise, runEnboxSync } from './effect/runtime';
 import { queryKeys } from './queries/query-keys';
 
 const AUTH_FINALIZATION_TIMEOUT_MS = 10_000;
+const AUTH_SHUTDOWN_WAIT_TIMEOUT_MS = 3_000;
+const ACTIVITY_RESET_THROTTLE_MS = 1_000;
 
-async function getAgentDwnEndpoints(agent: EnboxAgent): Promise<string[]> {
-  // Auth refreshes the agent DID before returning a restored session. Read the
-  // advertised endpoints through the agent resolver so that a portable vault's
-  // older BearerDid snapshot cannot replace that authoritative result in the
-  // wallet's endpoint cache. This should be an ordinary cache hit, but it is
-  // still a promise-only SDK boundary, so fail closed if it never settles.
+const pendingAuthManagerShutdowns = new Set<Promise<void>>();
+
+type RetainedDidResolution = {
+  didDocument?: Parameters<typeof getDwnEndpointStatus>[1] | null;
+  didResolutionMetadata?: { error?: string };
+};
+
+type RetainedDidCache = {
+  getRetained?: (didUri: string) => Promise<RetainedDidResolution | undefined>;
+};
+
+type RetainedIdentityApi = {
+  getRetainedDwnEndpointStatus?: (params: { didUri: string }) => Promise<ReturnType<typeof getDwnEndpointStatus> | undefined>;
+};
+
+type RetainedDidApi = {
+  getRetainedResolution?: (didUri: string) => Promise<RetainedDidResolution | undefined>;
+  cache?: RetainedDidCache;
+};
+
+async function readRetainedAgentDwnEndpoints(
+  agent: EnboxAgent,
+  signal: AbortSignal,
+): Promise<string[] | undefined> {
+  const didUri = agent.agentDid.uri;
+  const timeoutError = () => new Error('Timed out reading retained agent DID settings.');
+
+  try {
+    // Prefer the public retained-resolution APIs (@enbox/agent >= PR #1876).
+    const identityApi = agent.identity as unknown as RetainedIdentityApi | undefined;
+    if (typeof identityApi?.getRetainedDwnEndpointStatus === 'function') {
+      const status = await withPromiseTimeout(
+        () => identityApi.getRetainedDwnEndpointStatus!({ didUri }),
+        AUTH_FINALIZATION_TIMEOUT_MS,
+        timeoutError,
+        signal,
+      );
+      return status?.status === 'ready' ? normalizeDwnEndpoints(status.endpoints) : undefined;
+    }
+
+    const didApi = agent.did as unknown as RetainedDidApi | undefined;
+    const readRetained = typeof didApi?.getRetainedResolution === 'function'
+      ? () => didApi.getRetainedResolution!(didUri)
+      : typeof didApi?.cache?.getRetained === 'function'
+        ? () => didApi.cache!.getRetained!(didUri)
+        : undefined;
+    if (readRetained === undefined) {
+      return undefined;
+    }
+
+    const retained = await withPromiseTimeout(
+      readRetained,
+      AUTH_FINALIZATION_TIMEOUT_MS,
+      timeoutError,
+      signal,
+    );
+    if (!retained?.didDocument || retained.didResolutionMetadata?.error !== undefined) {
+      return undefined;
+    }
+    const status = getDwnEndpointStatus(didUri, retained.didDocument);
+    return status.status === 'ready' ? normalizeDwnEndpoints(status.endpoints) : undefined;
+  } catch (err: unknown) {
+    if (!signal.aborted) {
+      console.warn('EnboxAuthProvider: Failed to read retained agent DWN endpoints:', err);
+    }
+    return undefined;
+  }
+}
+
+async function getAgentDwnEndpoints(agent: EnboxAgent, signal: AbortSignal): Promise<string[]> {
+  // Read the advertised endpoints through the agent resolver so that a portable
+  // vault's older BearerDid snapshot cannot replace that authoritative result
+  // in the wallet's endpoint cache. Fail closed if the SDK call never settles.
   return withPromiseTimeout(
     () => agent.identity.getDwnEndpoints({ didUri: agent.agentDid.uri }),
     AUTH_FINALIZATION_TIMEOUT_MS,
     () => new Error(
       'Wallet initialization timed out while loading network settings. Try again.',
     ),
+    signal,
   );
 }
 
@@ -75,13 +148,34 @@ function clearSessionPassword(): void {
 }
 
 function shutdownOwnedAuthManager(auth: WalletAuthManager): Promise<void> {
-  return auth.shutdown().catch((err: unknown) => {
+  const shutdown = auth.shutdown().catch((err: unknown) => {
     console.warn('EnboxAuthProvider: Shutdown failed:', err);
+  });
+  const tracked = shutdown.finally(() => {
+    pendingAuthManagerShutdowns.delete(tracked);
+  });
+  pendingAuthManagerShutdowns.add(tracked);
+  return tracked;
+}
+
+async function waitForPendingAuthManagerShutdown(): Promise<void> {
+  if (pendingAuthManagerShutdowns.size === 0) return;
+  const snapshot = [...pendingAuthManagerShutdowns];
+  await withPromiseTimeout(
+    () => Promise.allSettled(snapshot).then(() => undefined),
+    AUTH_SHUTDOWN_WAIT_TIMEOUT_MS,
+    () => new Error('Previous wallet shutdown timed out.'),
+  ).catch((err: unknown) => {
+    console.warn('EnboxAuthProvider: Continuing initialization after slow shutdown:', err);
   });
 }
 
 async function lockFailedAuthSession(auth: WalletAuthManager): Promise<void> {
-  if (!auth.isLocked) {
+  // Also call lock() when an in-flight connection attempt (e.g. a stalled
+  // restoreSession) timed out before flipping `isLocked` — lock() invalidates
+  // the SDK's connection attempt so retries succeed and late resolution cannot
+  // unlock the vault behind the Lock Screen.
+  if (!auth.isLocked || (auth.isConnecting && auth.state !== 'uninitialized')) {
     await runEnboxPromise(lockAuthManagerEffect(auth)).catch((err: unknown) => {
       console.warn('EnboxAuthProvider: Failed to roll back auth session:', err);
     });
@@ -128,6 +222,7 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const authenticationControllerRef = useRef<AbortController | null>(null);
   const initializationRetryReadyRef = useRef(false);
   const lockCompletionRef = useRef<Promise<void> | null>(null);
+  const endpointsRevisionRef = useRef(0);
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -139,8 +234,13 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const unlocked = useAuthStore((state) => state.agent !== null);
 
   const applyAuthoritativeDwnEndpoints = useCallback((endpoints: string[]): void => {
+    endpointsRevisionRef.current += 1;
     const normalized = normalizeDwnEndpoints(endpoints);
-    setDwnEndpoints(normalized);
+    setDwnEndpoints((prev) => (
+      prev.length === normalized.length && prev.every((url, index) => url === normalized[index])
+        ? prev
+        : normalized
+    ));
     setConfiguredDwnEndpoints(normalized);
   }, []);
 
@@ -149,17 +249,47 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     agent: EnboxAgent,
     password: string,
     signal: AbortSignal,
+    options: { preferRetainedEndpoints?: boolean } = {},
   ): Promise<void> => {
     signal.throwIfAborted();
-    const endpoints = await getAgentDwnEndpoints(agent);
+    // On returning-user unlock, DidResolverCacheLevel's 15-minute TTL may have
+    // expired while the signed resolution is still retained locally in IndexedDB.
+    // Calling agent.identity.getDwnEndpoints() synchronously would block unlock
+    // on a 30s network DHT lookup (and fail unlock at 10s if the gateway stalls).
+    // Adopt the locally retained signed endpoints immediately and refresh the
+    // resolver cache in the background without blocking unlock.
+    const retainedEndpoints = options.preferRetainedEndpoints
+      ? await readRetainedAgentDwnEndpoints(agent, signal)
+      : undefined;
+    signal.throwIfAborted();
+    const endpoints = retainedEndpoints ?? await getAgentDwnEndpoints(agent, signal);
     signal.throwIfAborted();
     if (authManagerRef.current !== auth) {
       throw new Error('Authentication session ended before wallet initialization completed.');
     }
     applyAuthoritativeDwnEndpoints(endpoints);
+    const revisionAtUnlock = endpointsRevisionRef.current;
     cacheSessionPassword(password);
     setUnlocked(agent);
     void queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
+
+    if (retainedEndpoints !== undefined) {
+      void agent.identity.getDwnEndpoints({ didUri: agent.agentDid.uri })
+        .then((refreshed) => {
+          if (
+            signal.aborted
+            || authManagerRef.current !== auth
+            || useAuthStore.getState().agent !== agent
+            || endpointsRevisionRef.current !== revisionAtUnlock
+          ) {
+            return;
+          }
+          applyAuthoritativeDwnEndpoints(refreshed);
+        })
+        .catch((err: unknown) => {
+          console.warn('EnboxAuthProvider: Background agent DWN endpoint refresh failed:', err);
+        });
+    }
   }, [setUnlocked, applyAuthoritativeDwnEndpoints, queryClient]);
 
   const rollbackAuthentication = useCallback(async (
@@ -228,7 +358,9 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     signal.throwIfAborted();
     if (!session) return false;
 
-    await finishAuthentication(auth, session.agent, password, signal);
+    await finishAuthentication(auth, session.agent, password, signal, {
+      preferRetainedEndpoints: true,
+    });
     return true;
   }, [finishAuthentication]);
 
@@ -274,9 +406,12 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     initializationRetryReadyRef.current = false;
 
     async function init() {
+      await waitForPendingAuthManagerShutdown();
+      if (cancelled) return;
+
       let auth: WalletAuthManager;
       try {
-        auth = await runEnboxPromise(createWalletAuthManagerEffect());
+        auth = await runEnboxPromise(createWalletAuthManagerEffect(shutdownOwnedAuthManager));
       } catch (err) {
         if (cancelled) return;
 
@@ -438,34 +573,72 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   // ── Inactivity auto-lock ─────────────────────────────────────────
 
+  const [autoLockTimeoutMs, setAutoLockTimeoutMs] = useState(getAutoLockTimeout);
+
   useEffect(() => {
-    if (!unlocked) return;
-
-    const timeoutMs = getAutoLockTimeout();
-    if (timeoutMs === 0) return; // "Never" option
-
-    let timer: ReturnType<typeof setTimeout> = setTimeout(lock, timeoutMs);
-
-    const reset = () => {
-      clearTimeout(timer);
-      timer = setTimeout(lock, timeoutMs);
+    const syncAutoLockTimeout = () => {
+      setAutoLockTimeoutMs(getAutoLockTimeout());
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === null || event.key === AUTO_LOCK_STORAGE_KEY) {
+        syncAutoLockTimeout();
+      }
     };
 
-    window.addEventListener('mousemove', reset);
-    window.addEventListener('keypress', reset);
-    window.addEventListener('touchstart', reset);
+    window.addEventListener(AUTO_LOCK_CHANGED_EVENT, syncAutoLockTimeout);
+    window.addEventListener('storage', handleStorage);
+    return () => {
+      window.removeEventListener(AUTO_LOCK_CHANGED_EVENT, syncAutoLockTimeout);
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!unlocked || autoLockTimeoutMs === 0) return;
+
+    let lastResetAt = Date.now();
+    let timer: ReturnType<typeof setTimeout>;
+
+    const scheduleLock = () => {
+      timer = setTimeout(() => {
+        if (authenticationControllerRef.current !== null) {
+          scheduleLock();
+          return;
+        }
+        lock();
+      }, autoLockTimeoutMs);
+    };
+
+    scheduleLock();
+
+    const reset = () => {
+      const now = Date.now();
+      if (now - lastResetAt < ACTIVITY_RESET_THROTTLE_MS) {
+        return;
+      }
+      lastResetAt = now;
+      clearTimeout(timer);
+      scheduleLock();
+    };
+
+    const listenerOptions: AddEventListenerOptions = { passive: true };
+    window.addEventListener('mousemove', reset, listenerOptions);
+    window.addEventListener('pointerdown', reset, listenerOptions);
+    window.addEventListener('keydown', reset, listenerOptions);
+    window.addEventListener('touchstart', reset, listenerOptions);
 
     return () => {
       clearTimeout(timer);
-      window.removeEventListener('mousemove', reset);
-      window.removeEventListener('keypress', reset);
-      window.removeEventListener('touchstart', reset);
+      window.removeEventListener('mousemove', reset, listenerOptions);
+      window.removeEventListener('pointerdown', reset, listenerOptions);
+      window.removeEventListener('keydown', reset, listenerOptions);
+      window.removeEventListener('touchstart', reset, listenerOptions);
     };
-  }, [unlocked, lock]);
+  }, [unlocked, autoLockTimeoutMs, lock]);
 
   // ── Render ───────────────────────────────────────────────────────
 
-  const value: EnboxAuthContextValue = {
+  const value = useMemo<EnboxAuthContextValue>(() => ({
     connect,
     unlock,
     restore,
@@ -478,7 +651,20 @@ export const EnboxAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     error,
     isLoading,
     isLocking,
-  };
+  }), [
+    connect,
+    unlock,
+    restore,
+    retryInitialization,
+    lock,
+    changePin,
+    verifyPin,
+    applyAuthoritativeDwnEndpoints,
+    dwnEndpoints,
+    error,
+    isLoading,
+    isLocking,
+  ]);
 
   return (
     <EnboxAuthContext.Provider value={value}>

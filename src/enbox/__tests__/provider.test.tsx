@@ -4,7 +4,12 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event';
 
 import { EnboxAuthProvider, useEnboxAuth } from '../provider';
-import { SESSION_VAULT_PASSWORD_KEY, STORAGE_KEYS } from '@/lib/constants';
+import {
+  AUTO_LOCK_CHANGED_EVENT,
+  AUTO_LOCK_STORAGE_KEY,
+  SESSION_VAULT_PASSWORD_KEY,
+  STORAGE_KEYS,
+} from '@/lib/constants';
 import { useAuthStore } from '@/stores/auth-store';
 
 const TEST_PHRASE =
@@ -87,6 +92,7 @@ function createAgent() {
 function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
   const agent = createAgent();
   let isLocked = state === 'locked';
+  let isConnecting = false;
   const auth = {
     state,
     agent,
@@ -103,13 +109,18 @@ function createAuth(state: 'uninitialized' | 'locked' = 'uninitialized') {
     restoreSession: vi.fn(),
     lock: vi.fn(async () => {
       isLocked = true;
+      isConnecting = false;
     }),
     shutdown: vi.fn(async () => {}),
     setLocked: (locked: boolean) => {
       isLocked = locked;
     },
+    setConnecting: (connecting: boolean) => {
+      isConnecting = connecting;
+    },
   };
   Object.defineProperty(auth, 'isLocked', { get: () => isLocked });
+  Object.defineProperty(auth, 'isConnecting', { get: () => isConnecting });
   return auth;
 }
 
@@ -602,6 +613,400 @@ describe('EnboxAuthProvider restore flow', () => {
     expect(useAuthStore.getState().agent).toBe(replacement.agent);
     expect(sessionStorage.getItem(SESSION_VAULT_PASSWORD_KEY)).toBe('1234');
     expect(replacement.lock).not.toHaveBeenCalled();
+  });
+
+  it('unlocks immediately from locally retained signed endpoints and refreshes them in the background', async () => {
+    const retainedEndpoints = ['https://retained.example/dwn'];
+    const refreshedEndpoints = ['https://refreshed.example/dwn'];
+    const auth = createAuth('locked');
+    const agentDidUri = auth.agent.agentDid.uri;
+    Object.assign(auth.agent, {
+      did: {
+        cache: {
+          getRetained: vi.fn().mockResolvedValue({
+            didDocument: {
+              id: agentDidUri,
+              service: [{
+                id: `${agentDidUri}#dwn`,
+                type: 'DecentralizedWebNode',
+                serviceEndpoint: retainedEndpoints,
+              }],
+            },
+          }),
+        },
+      },
+    });
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    let resolveBackgroundRefresh!: (endpoints: string[]) => void;
+    auth.agent.identity.getDwnEndpoints.mockReturnValue(new Promise((resolve) => {
+      resolveBackgroundRefresh = resolve;
+    }));
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <EndpointProbe />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    // Unlocked immediately from retained cache without waiting for getDwnEndpoints.
+    await waitFor(() => expect(useAuthStore.getState().agent).toBe(auth.agent));
+    expect(screen.getByText(retainedEndpoints[0])).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.WALLET_DWN_ENDPOINTS)!)).toEqual({
+      version: 1,
+      endpoints: retainedEndpoints,
+    });
+    expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledOnce();
+
+    // Background refresh adopts updated endpoints once the resolver finishes.
+    await act(async () => {
+      resolveBackgroundRefresh(refreshedEndpoints);
+    });
+    await screen.findByText(refreshedEndpoints[0]);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEYS.WALLET_DWN_ENDPOINTS)!)).toEqual({
+      version: 1,
+      endpoints: refreshedEndpoints,
+    });
+  });
+
+  it('ignores a late background endpoint refresh after the wallet locks', async () => {
+    const retainedEndpoints = ['https://retained.example/dwn'];
+    const staleRefreshEndpoints = ['https://stale-refresh.example/dwn'];
+    const auth = createAuth('locked');
+    const agentDidUri = auth.agent.agentDid.uri;
+    Object.assign(auth.agent, {
+      did: {
+        cache: {
+          getRetained: vi.fn().mockResolvedValue({
+            didDocument: {
+              id: agentDidUri,
+              service: [{
+                id: `${agentDidUri}#dwn`,
+                type: 'DecentralizedWebNode',
+                serviceEndpoint: retainedEndpoints,
+              }],
+            },
+          }),
+        },
+      },
+    });
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    let resolveBackgroundRefresh!: (endpoints: string[]) => void;
+    auth.agent.identity.getDwnEndpoints.mockReturnValue(new Promise((resolve) => {
+      resolveBackgroundRefresh = resolve;
+    }));
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <LockButton />
+        <EndpointProbe />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(useAuthStore.getState().agent).toBe(auth.agent));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lock now' }));
+    await waitFor(() => expect(auth.lock).toHaveBeenCalledOnce());
+
+    await act(async () => {
+      resolveBackgroundRefresh(staleRefreshEndpoints);
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText(retainedEndpoints[0])).toBeInTheDocument();
+  });
+
+  it('bounds AuthManager.create so a stalled initialization can be retried', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    authMocks.create.mockReturnValue(new Promise(() => {}));
+    vi.useFakeTimers();
+
+    render(
+      <EnboxAuthProvider>
+        <InitializationStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+
+    expect(screen.getByText(/Wallet initialization timed out/i)).toBeInTheDocument();
+    expect(useAuthStore.getState().initialized).toBe(false);
+    consoleError.mockRestore();
+  });
+
+  it('bounds restoreSession so a cross-tab lock stall cannot spin forever', async () => {
+    const auth = createAuth('locked');
+    auth.restoreSession.mockReturnValue(new Promise(() => {}));
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <AuthStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+
+    expect(screen.getByText(/Unlocking timed out/i)).toBeInTheDocument();
+    expect(useAuthStore.getState().agent).toBeNull();
+  });
+
+  it('bounds auth.lock so a stalled lock does not permanently disable unlock', async () => {
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const auth = createAuth('locked');
+    auth.lock.mockReturnValue(new Promise(() => {}));
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <LockButton />
+        <LockingStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    act(() => {
+      useAuthStore.getState().setUnlocked(auth.agent);
+    });
+    vi.useFakeTimers();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Lock now' }));
+    expect(screen.getByText('wallet-locking')).toBeInTheDocument();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+
+    expect(screen.getByText('wallet-lock-settled')).toBeInTheDocument();
+    consoleWarn.mockRestore();
+  });
+
+  it('waits for an in-flight shutdown before creating a replacement AuthManager', async () => {
+    const original = createAuth('locked');
+    const replacement = createAuth('locked');
+    let finishShutdown!: () => void;
+    original.shutdown.mockReturnValue(new Promise<void>((resolve) => {
+      finishShutdown = resolve;
+    }));
+    authMocks.create.mockResolvedValueOnce(original).mockResolvedValueOnce(replacement);
+
+    const view = render(
+      <EnboxAuthProvider key="first">
+        <div />
+      </EnboxAuthProvider>,
+    );
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+
+    view.rerender(
+      <EnboxAuthProvider key="second">
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(original.shutdown).toHaveBeenCalledOnce());
+    expect(authMocks.create).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      finishShutdown();
+    });
+    await waitFor(() => expect(authMocks.create).toHaveBeenCalledTimes(2));
+  });
+
+  it('applies updated auto-lock timeouts immediately while unlocked', async () => {
+    localStorage.setItem(AUTO_LOCK_STORAGE_KEY, '0');
+    const auth = createAuth('locked');
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <div />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    vi.useFakeTimers();
+    act(() => {
+      useAuthStore.getState().setUnlocked(auth.agent);
+    });
+
+    // Initially "Never" (0): advancing time does not lock.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(auth.lock).not.toHaveBeenCalled();
+
+    // Updating the timeout while unlocked schedules lock immediately.
+    localStorage.setItem(AUTO_LOCK_STORAGE_KEY, '5000');
+    act(() => {
+      window.dispatchEvent(new Event(AUTO_LOCK_CHANGED_EVENT));
+    });
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5_000);
+    });
+    expect(auth.lock).toHaveBeenCalledOnce();
+  });
+
+  it('shuts down a late-resolving AuthManager after initialization times out', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const lateAuth = createAuth('locked');
+    let resolveCreate!: (auth: ReturnType<typeof createAuth>) => void;
+    authMocks.create.mockReturnValueOnce(new Promise((resolve) => {
+      resolveCreate = resolve;
+    }));
+
+    vi.useFakeTimers();
+    render(
+      <EnboxAuthProvider>
+        <AuthStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+    expect(screen.getByText(/Wallet initialization timed out/i)).toBeInTheDocument();
+
+    await act(async () => {
+      resolveCreate(lateAuth);
+      await Promise.resolve();
+    });
+    expect(lateAuth.shutdown).toHaveBeenCalledOnce();
+    consoleError.mockRestore();
+  });
+
+  it('aborts stalled endpoint finalization immediately on lock so re-unlock is not blocked', async () => {
+    const auth = createAuth('locked');
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    auth.agent.identity.getDwnEndpoints
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce(['https://dwn.example']);
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <LockButton />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(auth.agent.identity.getDwnEndpoints).toHaveBeenCalledTimes(1));
+
+    // Locking aborts the stalled getDwnEndpoints call immediately rather than
+    // holding authenticationControllerRef for the full 10s finalization timeout.
+    fireEvent.click(screen.getByRole('button', { name: 'Lock now' }));
+    await waitFor(() => expect(auth.lock).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(useAuthStore.getState().agent).toBe(auth.agent));
+  });
+
+  it('calls auth.lock on timed-out restoreSession while isConnecting is true', async () => {
+    const auth = createAuth('locked');
+    auth.restoreSession.mockImplementation(() => {
+      auth.setConnecting(true);
+      return new Promise(() => {});
+    });
+    authMocks.create.mockResolvedValue(auth);
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <AuthStatus />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole('button', { name: 'Unlock' }));
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(20_000);
+    });
+
+    expect(auth.lock).toHaveBeenCalledOnce();
+    expect(screen.getByText(/Unlocking timed out/i)).toBeInTheDocument();
+  });
+
+  it('prefers public getRetainedDwnEndpointStatus and does not let background refresh clobber adoptDwnEndpoints', async () => {
+    const user = userEvent.setup();
+    const auth = createAuth('locked');
+    let resolveBackgroundRefresh!: (endpoints: string[]) => void;
+    const backgroundRefresh = new Promise<string[]>((resolve) => {
+      resolveBackgroundRefresh = resolve;
+    });
+    auth.agent.identity.getDwnEndpoints.mockReturnValueOnce(backgroundRefresh);
+    Object.assign(auth.agent.identity, {
+      getRetainedDwnEndpointStatus: vi.fn().mockResolvedValue({
+        status: 'ready',
+        endpoints: ['https://retained.example'],
+      }),
+    });
+    auth.restoreSession.mockImplementation(async () => {
+      auth.setLocked(false);
+      return { agent: auth.agent };
+    });
+    authMocks.create.mockResolvedValue(auth);
+
+    function AdoptButton() {
+      const { adoptDwnEndpoints, dwnEndpoints } = useEnboxAuth();
+      return (
+        <div>
+          <button type="button" onClick={() => adoptDwnEndpoints(['https://manual.example'])}>
+            Adopt
+          </button>
+          <output data-testid="endpoints">{dwnEndpoints.join(',')}</output>
+        </div>
+      );
+    }
+
+    render(
+      <EnboxAuthProvider>
+        <UnlockButton />
+        <AdoptButton />
+      </EnboxAuthProvider>,
+    );
+
+    await waitFor(() => expect(useAuthStore.getState().initialized).toBe(true));
+    await user.click(screen.getByRole('button', { name: 'Unlock' }));
+    await waitFor(() => expect(screen.getByTestId('endpoints')).toHaveTextContent('https://retained.example'));
+
+    await user.click(screen.getByRole('button', { name: 'Adopt' }));
+    expect(screen.getByTestId('endpoints')).toHaveTextContent('https://manual.example');
+
+    await act(async () => {
+      resolveBackgroundRefresh(['https://stale-refresh.example']);
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('endpoints')).toHaveTextContent('https://manual.example');
   });
 
   it('configures AuthManager to own live sync for every session flow', async () => {
