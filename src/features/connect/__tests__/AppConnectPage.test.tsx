@@ -13,6 +13,48 @@ import { queryKeys } from '@/enbox/queries/query-keys';
 /** The wallet approves for 7 days unless the owner picks another duration. */
 const DEFAULT_APPROVAL_SECONDS = 7 * 24 * 60 * 60;
 
+const HANDSHAKE_KEY = { kty: 'OKP', crv: 'X25519', x: 'wallet-epk-1' } as const;
+
+const MOCK_VERIFICATION_GRID = [
+  { id: 0, emoji: '🐶', label: 'Dog' },
+  { id: 1, emoji: '🦊', label: 'Fox' },
+  { id: 2, emoji: '🚀', label: 'Rocket' },
+  { id: 3, emoji: '🎸', label: 'Guitar' },
+  { id: 4, emoji: '🌵', label: 'Cactus' },
+  { id: 5, emoji: '🍕', label: 'Pizza' },
+  { id: 6, emoji: '🌙', label: 'Moon' },
+  { id: 7, emoji: '🔔', label: 'Bell' },
+  { id: 8, emoji: '🔑', label: 'Key' },
+] as const;
+
+function makeVerificationHandshake() {
+  const targetIds = new Set([1, 2, 3]);
+  let consumed = false;
+  return {
+    walletEpk: { ...HANDSHAKE_KEY },
+    symbols: [
+      MOCK_VERIFICATION_GRID[1],
+      MOCK_VERIFICATION_GRID[2],
+      MOCK_VERIFICATION_GRID[3],
+    ] as const,
+    grid: MOCK_VERIFICATION_GRID,
+    verifySelection: (selectedIds: readonly number[]) => {
+      if (consumed) return false;
+      consumed = true;
+      return selectedIds.length === 3 && new Set(selectedIds).size === 3 && selectedIds.every((id) => targetIds.has(id));
+    },
+  };
+}
+
+async function confirmMatchingSymbols(buttonName = 'Confirm') {
+  fireEvent.click(await screen.findByRole('button', { name: 'Guitar' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Fox' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Rocket' }));
+  const confirm = screen.getByRole('button', { name: buttonName, exact: true });
+  expect(confirm).toBeEnabled();
+  fireEvent.click(confirm);
+}
+
 const mocks = vi.hoisted(() => ({
   agent: {
     id: 'agent-1',
@@ -21,7 +63,7 @@ const mocks = vi.hoisted(() => ({
   approveConnectRequest: vi.fn(),
   denyConnectRequest: vi.fn(),
   fetchConnectRequest: vi.fn(),
-  generatePin: vi.fn(),
+  startRelayVerificationHandshake: vi.fn(),
   waitForRelayCompletion: vi.fn(),
   queryModuleSetupStatus: vi.fn(),
   scannerHasCamera: vi.fn(),
@@ -111,7 +153,7 @@ vi.mock('../connect-kernel', async (importOriginal) => ({
   approveConnectRequest: mocks.approveConnectRequest,
   denyConnectRequest: mocks.denyConnectRequest,
   fetchConnectRequest: mocks.fetchConnectRequest,
-  generatePin: mocks.generatePin,
+  startRelayVerificationHandshake: mocks.startRelayVerificationHandshake,
   waitForRelayCompletion: mocks.waitForRelayCompletion,
 }));
 
@@ -211,6 +253,7 @@ describe('AppConnectPage', () => {
     mocks.agent.identity.getDwnEndpoints.mockResolvedValue(['https://dwn.example']);
     mocks.queryModuleSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
+    mocks.startRelayVerificationHandshake.mockResolvedValue(makeVerificationHandshake());
     mocks.waitForRelayCompletion.mockResolvedValue(false);
     mocks.allPermissions = [];
     mocks.allPermissionsPending = false;
@@ -258,10 +301,11 @@ describe('AppConnectPage', () => {
     };
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(request);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     fireEvent.click(await screen.findByRole('button', { name: 'Sign in', exact: true }));
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+    await confirmMatchingSymbols('Confirm sign-in');
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledOnce());
     expect(mocks.queryModuleSetupStatus).not.toHaveBeenCalled();
     expect(mocks.publishWalletEvent).not.toHaveBeenCalled();
@@ -279,7 +323,6 @@ describe('AppConnectPage', () => {
     };
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(request);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     const approve = await screen.findByRole('button', { name: requestType === 'authenticate' ? 'Sign in' : 'Approve', exact: true });
@@ -288,8 +331,9 @@ describe('AppConnectPage', () => {
     expect(screen.getByLabelText('Approve as profile')).toBeDisabled();
     expect(screen.queryByRole('option', { name: 'Alice' })).not.toBeInTheDocument();
     fireEvent.click(approve);
+    await confirmMatchingSymbols(requestType === 'authenticate' ? 'Confirm sign-in' : 'Confirm');
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
-      'did:dht:bob', request, '1234', expect.any(Number), mocks.agent, [],
+      'did:dht:bob', request, HANDSHAKE_KEY, expect.any(Number), mocks.agent, [],
       expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
   });
@@ -371,17 +415,23 @@ describe('AppConnectPage', () => {
     expect(mocks.fetchConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('runs the approval ceremony after a deep-link fetch', async () => {
+  it('runs pre-approval SAS verification and then the approval ceremony after a deep-link fetch', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
+    expect(mocks.startRelayVerificationHandshake).toHaveBeenCalledWith(connectRequest);
     fireEvent.click(approve);
+
+    // Clicking Approve moves to the pre-approval SAS grid without minting grants yet.
+    expect(await screen.findByRole('heading', { name: 'Match the 3 symbols' })).toBeInTheDocument();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+
+    await confirmMatchingSymbols();
 
     await waitFor(() => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1);
@@ -392,7 +442,7 @@ describe('AppConnectPage', () => {
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       connectRequest,
-      '1234',
+      HANDSHAKE_KEY,
       DEFAULT_APPROVAL_SECONDS,
       mocks.agent,
       [],
@@ -404,45 +454,118 @@ describe('AppConnectPage', () => {
       connectedDid : 'did:dht:alice',
     });
 
-    // PIN phase is shown after a successful submission.
-    expect(await screen.findByText('1234')).toBeInTheDocument();
+    // Connected phase is shown directly after pre-verified approval completes.
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
+    expect(screen.getByText('You can return to meshd now.')).toBeInTheDocument();
     expect(mocks.waitForRelayCompletion).toHaveBeenCalledWith(connectRequest);
-    expect(screen.queryByText('Connected!')).not.toBeInTheDocument();
   });
 
-  it('claims relay approval before starting the non-idempotent ceremony', async () => {
+  it('fails closed without minting grants when the user picks non-matching verification symbols', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    let releasePin: (pin: string) => void = () => undefined;
-    mocks.generatePin.mockImplementation(
-      () => new Promise<string>((resolve) => { releasePin = resolve; }),
-    );
-    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
+    mocks.denyConnectRequest.mockResolvedValue(undefined);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
 
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
-    // Re-enter the click handler before React can commit the phase change.
-    // A state-only guard would generate two PINs and start two ceremonies.
-    let nestedClickSent = false;
-    approve.addEventListener('click', () => {
-      if (nestedClickSent) return;
-      nestedClickSent = true;
-      approve.click();
-    }, { capture: true });
     fireEvent.click(approve);
 
-    expect(mocks.generatePin).toHaveBeenCalledTimes(1);
-    releasePin('1234');
+    // Pick 3 non-matching symbols (Dog, Cactus, Pizza).
+    fireEvent.click(await screen.findByRole('button', { name: 'Dog' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cactus' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pizza' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm' }));
+
+    expect(await screen.findByText(/symbols didn’t match/i)).toBeInTheDocument();
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+    expect(mocks.denyConnectRequest).toHaveBeenCalledWith(
+      'https://relay.example/connect/callback',
+      'state-1',
+    );
+  });
+
+  it('denies the request when the user cancels from the SAS verification grid', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.denyConnectRequest.mockResolvedValue(undefined);
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    const cancel = await screen.findByRole('button', { name: 'Cancel', exact: true });
+    fireEvent.click(cancel);
+
+    expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+    expect(mocks.denyConnectRequest).toHaveBeenCalledWith(
+      'https://relay.example/connect/callback',
+      'state-1',
+    );
+  });
+
+  it('waits for an in-flight verification handshake and allows retrying a handshake failure', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
+    let rejectHandshake: (err: Error) => void = () => undefined;
+    mocks.startRelayVerificationHandshake
+      .mockImplementationOnce(() => new Promise((_, reject) => { rejectHandshake = reject; }))
+      .mockResolvedValueOnce(makeVerificationHandshake());
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    expect(await screen.findByText('Preparing verification...')).toBeInTheDocument();
+
+    act(() => { rejectHandshake(new Error('Relay unreachable')); });
+    expect(await screen.findByText('Relay unreachable')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry verification' }));
+    expect(await screen.findByRole('heading', { name: 'Match the 3 symbols' })).toBeInTheDocument();
+    expect(mocks.startRelayVerificationHandshake).toHaveBeenCalledTimes(2);
+  });
+
+  it('claims relay verification confirmation before starting the non-idempotent ceremony', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    let releaseApproval: (request: typeof connectRequest) => void = () => undefined;
+    mocks.approveConnectRequest.mockImplementation(
+      () => new Promise<typeof connectRequest>((resolve) => { releaseApproval = resolve; }),
+    );
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Fox' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rocket' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guitar' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
+    // Re-enter the click handler before React can commit the phase change.
+    let nestedClickSent = false;
+    confirm.addEventListener('click', () => {
+      if (nestedClickSent) return;
+      nestedClickSent = true;
+      confirm.click();
+    }, { capture: true });
+    fireEvent.click(confirm);
 
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
+    releaseApproval(connectRequest);
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 
   it('keeps a completed relay approval successful when freshness publication fails', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     mocks.publishWalletEvent.mockReturnValue(Effect.fail(new Error('event bus unavailable')));
 
@@ -451,8 +574,9 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
 
-    expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
     expect(mocks.publishWalletEvent).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/event bus unavailable/i)).not.toBeInTheDocument();
   });
@@ -460,7 +584,6 @@ describe('AppConnectPage', () => {
   it('leaves the authorizing phase when the ceremony rejects without an Error', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockRejectedValue(undefined);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -468,15 +591,15 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
 
     expect(await screen.findByText('Failed to authorize connection.')).toBeInTheDocument();
     expect(screen.queryByText('Authorizing...')).not.toBeInTheDocument();
   });
 
-  it('shows the PIN before completion and flips to confirmed when the app acknowledges', async () => {
+  it('updates the connected screen copy when the app acknowledges completion', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     let resolveCompletion: (completed: boolean) => void = () => undefined;
     mocks.waitForRelayCompletion.mockImplementation(
@@ -488,21 +611,18 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
 
-    // The dapp needs this PIN before it can open the response and emit the
-    // completion marker, so polling must never hold this screen back.
-    expect(await screen.findByText('1234')).toBeInTheDocument();
-    expect(screen.queryByText('Connected!')).not.toBeInTheDocument();
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
+    expect(screen.getByText('You can return to meshd now.')).toBeInTheDocument();
 
     resolveCompletion(true);
-    expect(await screen.findByText('Connected!')).toBeInTheDocument();
-    expect(screen.queryByText('1234')).not.toBeInTheDocument();
+    expect(await screen.findByText('The requesting application confirmed the connection.')).toBeInTheDocument();
   });
 
   it('does not start completion polling when approval settles after unmount', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     let resolveApproval: (request: typeof connectRequest) => void = () => undefined;
     mocks.approveConnectRequest.mockImplementation(
       () => new Promise<typeof connectRequest>((resolve) => { resolveApproval = resolve; }),
@@ -512,6 +632,7 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
 
     view.unmount();
@@ -525,7 +646,6 @@ describe('AppConnectPage', () => {
     const original = structuredClone(request);
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(request);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(async (_selectedDid: string, activeRequest: typeof request) => {
       const captured = structuredClone(activeRequest);
       activeRequest.state = 'changed-after-approval';
@@ -536,6 +656,7 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
     await waitFor(() => expect(mocks.waitForRelayCompletion).toHaveBeenCalledWith(original));
     expect(mocks.waitForRelayCompletion.mock.calls[0][0]).not.toBe(request);
   });
@@ -596,7 +717,6 @@ describe('AppConnectPage', () => {
     };
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(shortRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -606,11 +726,12 @@ describe('AppConnectPage', () => {
     const approve = screen.getByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
 
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       shortRequest,
-      '1234',
+      HANDSHAKE_KEY,
       9 * 60,
       mocks.agent,
       [],
@@ -624,7 +745,6 @@ describe('AppConnectPage', () => {
   ])('passes the wallet-selected %s duration to relay approval', async (label, seconds) => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -635,11 +755,12 @@ describe('AppConnectPage', () => {
     const approve = screen.getByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
 
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       connectRequest,
-      '1234',
+      HANDSHAKE_KEY,
       seconds,
       mocks.agent,
       [],
@@ -698,7 +819,6 @@ describe('AppConnectPage', () => {
       },
     ];
     mocks.fetchConnectRequest.mockResolvedValue(refreshRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
     setPageUrl(DEEP_LINK_FRAGMENT);
 
@@ -712,12 +832,13 @@ describe('AppConnectPage', () => {
     expect(screen.getByRole('listitem', { name: 'Wireguard Mesh' })).toBeVisible();
     await waitFor(() => expect(renew).toBeEnabled());
     fireEvent.click(renew);
+    await confirmMatchingSymbols();
 
     await waitFor(() => {
       expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
         'did:dht:bob',
         refreshRequest,
-        '1234',
+        HANDSHAKE_KEY,
         DEFAULT_APPROVAL_SECONDS,
         mocks.agent,
         [],
@@ -864,11 +985,10 @@ describe('AppConnectPage', () => {
     expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
   });
 
-  it('replaces an overridable module only after opt-in and confirmation', async () => {
+  it('replaces an overridable module only after opt-in, confirmation, and SAS verification', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
     mocks.queryModuleSetupStatus.mockResolvedValue('override');
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
@@ -885,19 +1005,20 @@ describe('AppConnectPage', () => {
     fireEvent.click(approve);
     const confirm = await screen.findByRole('button', { name: /replace & connect/i });
     fireEvent.click(confirm);
+    await confirmMatchingSymbols();
 
     // Confirmation hands only the approved module URI to the agent ceremony.
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
     expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:alice',
       connectRequest,
-      '1234',
+      HANDSHAKE_KEY,
       expect.any(Number),
       mocks.agent,
       [connectRequest.permissionRequests[0].moduleDefinition.module],
       expect.objectContaining({ onProgress: expect.any(Function) }),
     );
-    expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 
   it('prepares an identical requested module only once', async () => {
@@ -916,13 +1037,13 @@ describe('AppConnectPage', () => {
         },
       ],
     });
-    mocks.generatePin.mockResolvedValue('1234');
     mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
 
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
 
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledTimes(1));
   });
@@ -1041,8 +1162,7 @@ describe('AppConnectPage', () => {
         agent: null,
       });
       mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-      mocks.generatePin.mockResolvedValue('1234');
-    mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
+      mocks.approveConnectRequest.mockImplementation(returnApprovedRequest);
       // connect() unlocks the vault: reflect that in the store so the
       // approve flow finds the live agent right after onboarding.
       mocks.connectVault.mockImplementation(async () => {
@@ -1052,7 +1172,7 @@ describe('AppConnectPage', () => {
       mocks.autoCreateIdentity.mockResolvedValue({ did: { uri: 'did:dht:fresh' } });
     });
 
-    it('offers create-wallet-and-connect and completes approval with the new profile', async () => {
+    it('offers create-wallet-and-connect and requires SAS verification before approving with the new profile', async () => {
       setPageUrl(DEEP_LINK_FRAGMENT);
       const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false } },
@@ -1071,11 +1191,16 @@ describe('AppConnectPage', () => {
 
       fireEvent.click(create);
 
+      expect(await screen.findByRole('heading', { name: 'Match the 3 symbols' })).toBeInTheDocument();
+      expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+
+      await confirmMatchingSymbols();
+
       await waitFor(() => {
         expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
           'did:dht:fresh',
           connectRequest,
-          '1234',
+          HANDSHAKE_KEY,
           DEFAULT_APPROVAL_SECONDS,
           mocks.agent,
           [],
@@ -1091,8 +1216,7 @@ describe('AppConnectPage', () => {
       expect(mocks.createPasskeyVault.mock.invocationCallOrder[0])
         .toBeLessThan(mocks.approveConnectRequest.mock.invocationCallOrder[0]);
 
-      // The pairing code screen closes the loop.
-      expect(await screen.findByText('1234')).toBeInTheDocument();
+      expect(await screen.findByText('Connected!')).toBeInTheDocument();
     });
 
     it('leaves Authorizing with an error if the wallet locks before approval begins', async () => {
@@ -1128,11 +1252,10 @@ describe('AppConnectPage', () => {
   it('updates authorizing progress copy from onProgress callbacks', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     let reportProgress: ((progress: { phase: string }) => void) | undefined;
     let releaseApproval: (request: typeof connectRequest) => void = () => undefined;
     mocks.approveConnectRequest.mockImplementation(
-      (_did, _req, _pin, _ttl, _agent, _overrides, options) => {
+      (_did, _req, _handshakeKey, _ttl, _agent, _overrides, options) => {
         reportProgress = options?.onProgress;
         return new Promise<typeof connectRequest>((resolve) => { releaseApproval = resolve; });
       },
@@ -1142,6 +1265,7 @@ describe('AppConnectPage', () => {
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
     fireEvent.click(approve);
+    await confirmMatchingSymbols();
 
     await waitFor(() => expect(reportProgress).toBeTypeOf('function'));
     expect(screen.getByText('Authorizing...')).toBeInTheDocument();
@@ -1156,13 +1280,12 @@ describe('AppConnectPage', () => {
     expect(screen.getByText('Finalizing permissions...')).toBeInTheDocument();
 
     releaseApproval(connectRequest);
-    expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 
   it('shows a slow-storage hint when relay authorization takes longer than 5 seconds', async () => {
     setPageUrl(DEEP_LINK_FRAGMENT);
     mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
-    mocks.generatePin.mockResolvedValue('1234');
     let releaseApproval: (request: typeof connectRequest) => void = () => undefined;
     mocks.approveConnectRequest.mockImplementation(
       () => new Promise<typeof connectRequest>((resolve) => { releaseApproval = resolve; }),
@@ -1171,10 +1294,16 @@ describe('AppConnectPage', () => {
     renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
     const approve = await screen.findByRole('button', { name: 'Approve' });
     await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Fox' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Rocket' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Guitar' }));
+    const confirm = screen.getByRole('button', { name: 'Confirm' });
 
     vi.useFakeTimers();
     try {
-      fireEvent.click(approve);
+      fireEvent.click(confirm);
       expect(screen.queryByText(SLOW_APPROVAL_HINT)).not.toBeInTheDocument();
 
       await act(async () => {
@@ -1186,6 +1315,6 @@ describe('AppConnectPage', () => {
     }
 
     releaseApproval(connectRequest);
-    expect(await screen.findByText('1234')).toBeInTheDocument();
+    expect(await screen.findByText('Connected!')).toBeInTheDocument();
   });
 });

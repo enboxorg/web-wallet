@@ -1,12 +1,24 @@
 import type { ConnectRequest } from '@enbox/connect';
+import type { Jwk } from '@enbox/crypto';
 import type { EnboxAgent } from '@/enbox/types';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DidJwk } from '@enbox/dids';
 import { CryptoUtils, X25519 } from '@enbox/crypto';
-import { openAuthenticationResponse, randomToken, sealRequest, verifyOwnerAuthenticationProof } from '@enbox/connect';
+import {
+  deriveConnectVerificationSymbols,
+  openAuthenticationResponse,
+  randomToken,
+  sealRequest,
+  verifyOwnerAuthenticationProof,
+} from '@enbox/connect';
 
-import { approveConnectRequest, approvePopupConnectRequest, fetchConnectRequest } from '../connect-kernel';
+import {
+  approveConnectRequest,
+  approvePopupConnectRequest,
+  fetchConnectRequest,
+  startRelayVerificationHandshake,
+} from '../connect-kernel';
 
 const ORIGIN = 'https://issuer.example';
 const AUDIENCE = `${ORIGIN}/wallet-login`;
@@ -55,7 +67,7 @@ describe('wallet authentication with the published SDK', () => {
   it.each(['popup', 'relay'] as const)('returns a verifiable owner proof through the %s wallet flow without data authority', async (mode) => {
     const f = await fixture(mode);
     let jwe: string;
-    const pin = mode === 'relay' ? '1234' : undefined;
+    let handshakeKey: Jwk | undefined;
     if (mode === 'popup') {
       jwe = await approvePopupConnectRequest(f.owner.uri, f.request, ORIGIN, 3600, f.agent);
     } else {
@@ -63,10 +75,16 @@ describe('wallet authentication with the published SDK', () => {
       const sealedRequest = await sealRequest({ request: f.request, signer: f.client, encryption: { mode: 'dir', requestKey } });
       const requestUri = `${ORIGIN}/connect/authorize/registered.jwt`;
       let posted: URLSearchParams | undefined;
+      let postedHandshake: { state: string; walletEpk: Jwk } | undefined;
       const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
         if (String(input) === requestUri) {
           expect(init?.redirect).toBe('error');
           return new Response(sealedRequest);
+        }
+        if (String(input) === `${ORIGIN}/connect/handshake`) {
+          expect(init?.method).toBe('POST');
+          postedHandshake = JSON.parse(String(init?.body)) as { state: string; walletEpk: Jwk };
+          return new Response(JSON.stringify({ ok: true }), { status: 201 });
         }
         expect(String(input)).toBe(`${ORIGIN}/connect/callback`);
         expect(init?.method).toBe('POST');
@@ -75,16 +93,38 @@ describe('wallet authentication with the published SDK', () => {
       });
       vi.stubGlobal('fetch', fetch);
       const fetched = await fetchConnectRequest(requestUri, requestKey);
-      const approved = await approveConnectRequest(f.owner.uri, fetched, pin!, 3600, f.agent);
+      const handshake = await startRelayVerificationHandshake(fetched);
+      expect(postedHandshake?.state).toBe(f.request.state);
+      expect(postedHandshake?.walletEpk).toEqual(handshake.walletEpk);
+
+      const appSymbols = await deriveConnectVerificationSymbols({
+        privateKey  : f.responsePrivateKey,
+        requestJwe  : sealedRequest,
+        state       : f.request.state,
+        nonce       : f.request.nonce,
+        responseKey : f.request.responseKey,
+        walletEpk   : postedHandshake!.walletEpk,
+      });
+      expect(handshake.symbols).toEqual(appSymbols);
+      expect(handshake.verifySelection(appSymbols.map((s) => s.id))).toBe(true);
+
+      handshakeKey = postedHandshake!.walletEpk;
+      const approved = await approveConnectRequest(f.owner.uri, fetched, handshake.walletEpk, 3600, f.agent);
       expect(approved).toEqual(f.request);
-      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(fetch).toHaveBeenCalledTimes(3);
       expect(posted?.get('state')).toBe(f.request.state);
       jwe = posted!.get('id_token')!;
     }
 
     const response = await openAuthenticationResponse({
-      jwe, pin, recipientPrivateKey: f.responsePrivateKey,
-      expected: { clientDid: f.client.uri, nonce: f.request.nonce, state: f.request.state, providerDid: f.owner.uri },
+      jwe, recipientPrivateKey: f.responsePrivateKey,
+      expected: {
+        clientDid: f.client.uri,
+        nonce: f.request.nonce,
+        state: f.request.state,
+        providerDid: f.owner.uri,
+        ...(handshakeKey ? { handshakeKey } : {}),
+      },
     });
     const verified = await verifyOwnerAuthenticationProof({
       proof: response.authenticationProof, request: f.request, providerDid: f.owner.uri,

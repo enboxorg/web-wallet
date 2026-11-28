@@ -7,7 +7,6 @@ import {
   Check,
   Zap,
   ZapOff,
-  Copy,
   ImageUp,
   SwitchCamera,
   Fingerprint,
@@ -15,7 +14,9 @@ import {
 import {
   parseWalletConnectUri,
   type ConnectRequest,
+  type ConnectVerificationHandshake,
 } from '@enbox/connect';
+import type { Jwk } from '@enbox/crypto';
 
 import {
   clearDeepLinkSession,
@@ -34,6 +35,7 @@ import { AuthenticationDisplay } from '@/components/connect/AuthenticationDispla
 import { RenewSessionDisplay } from '@/components/connect/RenewSessionDisplay';
 import { RefreshUnavailableDisplay } from '@/components/connect/RefreshUnavailableDisplay';
 import { ModuleOverrideConfirmDialog } from '@/components/connect/ModuleOverrideConfirmDialog';
+import { VerificationEmojiGrid } from '@/components/connect/VerificationEmojiGrid';
 import {
   ConsentDecisionBar,
   ConsentNotice,
@@ -50,10 +52,11 @@ import {
 } from './use-module-setup-statuses';
 import {
   approveConnectRequest,
+  clearRelayVerificationHandshake,
   denyConnectRequest,
   fetchConnectRequest,
-  generatePin,
   getRelayCallbackUrl,
+  startRelayVerificationHandshake,
   waitForRelayCompletion,
 } from './connect-kernel';
 import { useAuth } from '@/enbox/hooks/use-auth';
@@ -64,7 +67,7 @@ import { queryKeys } from '@/enbox/queries/query-keys';
 import { useAllPermissions } from '@/enbox/hooks/use-all-permissions';
 import { runEnboxPromise } from '@/enbox/effect/runtime';
 import { publishWalletEvent } from '@/enbox/effect/wallet-events';
-import { cn, copyToClipboard, truncateDid } from '@/lib/utils';
+import { cn, truncateDid } from '@/lib/utils';
 import { sanitizeDisplayText } from '@/lib/display-text';
 import { autoCreateIdentity } from '@/lib/auto-identity';
 import {
@@ -99,7 +102,7 @@ import {
   useSlowOperationHint,
 } from './connect-progress';
 
-type Phase = 'loading' | 'scanning' | 'request' | 'authorizing' | 'pin' | 'connected' | 'error';
+type Phase = 'loading' | 'scanning' | 'request' | 'verify' | 'authorizing' | 'connected' | 'error';
 
 const EMPTY_PERMISSION_REQUESTS: ConnectRequest['permissionRequests'] = [];
 
@@ -148,10 +151,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     CONNECT_SESSION_APPROVAL_DEFAULT_TTL_SECONDS,
   );
   const [selectedDid, setSelectedDid] = useState('');
+  const [pendingApprovalDid, setPendingApprovalDid] = useState<string>();
   const [statusMessage, setStatusMessage] = useState('Authorizing...');
-  const [pin, setPin] = useState('');
+  const [verificationHandshake, setVerificationHandshake] = useState<ConnectVerificationHandshake>();
+  const [handshakeError, setHandshakeError] = useState<string | null>(null);
+  const [handshakeRetryKey, setHandshakeRetryKey] = useState(0);
+  const [relayConfirmed, setRelayConfirmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [pinCopied, setPinCopied] = useState(false);
   const [moduleSetupRetryKey, setModuleSetupRetryKey] = useState(0);
   // Owner opt-in to replace a custom module installed with a different
   // definition, plus the final confirmation gate before the reconfigure runs.
@@ -278,17 +284,16 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     }
   }, [expectedAuthenticationDid, identityOptions, isRefresh, selectedDid]);
 
-  // A definition-override opt-in is profile-specific: clear it whenever the
-  // approving profile changes so the choice must be made against the profile
-  // whose installed modules were actually checked.
+  // A definition-override opt-in is profile- and request-specific: clear it
+  // whenever the approving profile or active request changes.
   useEffect(() => {
     setOverrideAcknowledged(false);
     setShowOverrideConfirm(false);
-  }, [approvalDid]);
+  }, [approvalDid, connectionRequest]);
 
   // Navigation guard during connect flow
   useEffect(() => {
-    if (phase !== 'request' && phase !== 'authorizing') return;
+    if (phase !== 'request' && phase !== 'verify' && phase !== 'authorizing') return;
     const handler = (e: BeforeUnloadEvent) => {
       e.preventDefault();
       e.returnValue = '';
@@ -296,6 +301,40 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [phase]);
+
+  // Publish the wallet's ephemeral X25519 SAS handshake key as soon as a
+  // relayed request is ready to review so the requesting app can display the
+  // 3 verification symbols while the user reviews permissions.
+  const shouldPrepareVerificationHandshake = Boolean(
+    connectionRequest
+    && (phase === 'request' || phase === 'verify')
+    && !refreshUnavailable
+    && !(isRefresh && refreshLookupPending)
+    && (Boolean(approvalDid) || onboardingSupported || Boolean(pendingApprovalDid)),
+  );
+
+  useEffect(() => {
+    if (!shouldPrepareVerificationHandshake || !connectionRequest) return;
+    let cancelled = false;
+    setHandshakeError(null);
+
+    void startRelayVerificationHandshake(connectionRequest).then(
+      (handshake) => {
+        if (cancelled) return;
+        setVerificationHandshake(handshake);
+        setHandshakeError(null);
+      },
+      (err: unknown) => {
+        if (cancelled) return;
+        console.error('Verification handshake error:', err);
+        setHandshakeError(
+          getConnectErrorMessage(err, 'Failed to prepare verification symbols.'),
+        );
+      },
+    );
+
+    return () => { cancelled = true; };
+  }, [shouldPrepareVerificationHandshake, connectionRequest, handshakeRetryKey]);
 
   // NOTE: useBlocker is not available with <BrowserRouter> — it requires
   // createBrowserRouter (data router). The beforeunload handler above is
@@ -407,6 +446,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       const request = await fetchConnectRequest(requestUri, encryptionKey);
       const preflight = preflightConnectRequest(request);
       await validateConnectPermissionSemantics(preflight);
+      setVerificationHandshake(undefined);
+      setHandshakeError(null);
+      setPendingApprovalDid(undefined);
+      setRelayConfirmed(false);
       setConnectionRequest(request);
       setSessionDurationSeconds(
         resolveConnectSessionApprovalDurationSeconds(request.requestedSessionTtlSeconds),
@@ -450,6 +493,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     const adopt = (outcome: DeepLinkOutcome): void => {
       if (cancelled) return;
       if ('request' in outcome) {
+        setVerificationHandshake(undefined);
+        setHandshakeError(null);
+        setPendingApprovalDid(undefined);
+        setRelayConfirmed(false);
         setConnectionRequest(outcome.request);
         setSessionDurationSeconds(
           resolveConnectSessionApprovalDurationSeconds(outcome.request.requestedSessionTtlSeconds),
@@ -473,13 +520,71 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     return () => { cancelled = true; };
   }, []);
 
-  async function handleApprove(overrideDid?: string) {
+  function handleBeginVerification(overrideDid?: string) {
     // Read the agent from the store, not the render closure — the
     // create-wallet-and-connect path calls this right after onboarding,
     // before this component re-renders with the fresh agent.
     const candidateAgent = useAuthStore.getState().agent;
     const candidateDid = overrideDid ?? approvalDid;
+    try {
+      const {
+        request: activeRequest,
+        selectedDid: approveAsDid,
+      } = requireConnectApprovalContext(candidateAgent, connectionRequest, candidateDid);
+
+      if (!isDidSupportedByRequest(approveAsDid, activeRequest.supportedDidMethods)) {
+        throw new Error('This profile uses an ID type the app does not support.');
+      }
+
+      setPendingApprovalDid(approveAsDid);
+      setPhase('verify');
+    } catch (err) {
+      console.error('Authorization error:', err);
+      if (!mountedRef.current) return;
+      setErrorMessage(getConnectErrorMessage(err, 'Failed to authorize connection.'));
+      setPhase('error');
+    }
+  }
+
+  async function handleVerifySelection(selectedIds: readonly number[]) {
+    if (!verificationHandshake) return;
     if (!claimConnectDecision(decisionStartedRef)) return;
+
+    const matched = verificationHandshake.verifySelection(selectedIds);
+    if (connectionRequest) {
+      clearRelayVerificationHandshake(connectionRequest);
+    }
+
+    if (!matched) {
+      if (connectionRequest) {
+        try {
+          void denyConnectRequest(
+            getRelayCallbackUrl(connectionRequest),
+            connectionRequest.state,
+          ).catch(() => {
+            // Best-effort — the dapp will stop polling on denial or timeout.
+          });
+        } catch {
+          // A synchronous transport failure is also best-effort.
+        }
+      }
+      relayCompletionIdRef.current += 1;
+      clearDeepLinkSession();
+      setVerificationHandshake(undefined);
+      setPendingApprovalDid(undefined);
+      setErrorMessage(
+        'Those symbols didn’t match, so the connection was cancelled for your safety. Start a new connection from the app to try again.',
+      );
+      setPhase('error');
+      return;
+    }
+
+    await executeVerifiedApproval(verificationHandshake.walletEpk);
+  }
+
+  async function executeVerifiedApproval(handshakeKey: Jwk) {
+    const candidateAgent = useAuthStore.getState().agent;
+    const candidateDid = pendingApprovalDid ?? approvalDid;
 
     setPhase('authorizing');
     try {
@@ -501,14 +606,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       // upgrades, and fail-closed remote verification across reachable owner
       // endpoints. It then creates and delivers the grants, grant keys, and
       // session revocation grants, and the sealed response is posted to the
-      // relay callback. The PIN strengthens the response encryption key and
-      // never leaves this device except by the user typing it into the app.
-      const generatedPin = await generatePin(4);
-      setPin(generatedPin);
+      // relay callback with `handshakeKey` bound in the JWE `apv` header.
       const completedRequest = await approveConnectRequest(
         approveAsDid,
         activeRequest,
-        generatedPin,
+        handshakeKey,
         sessionDurationSeconds,
         liveAgent,
         overrideAcknowledged ? overridableModules : [],
@@ -536,13 +638,14 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         console.warn('Relay connect approval event failed:', err);
       }
 
+      clearDeepLinkSession();
       if (!mountedRef.current) return;
       setConnectionRequest(completedRequest);
-      setPhase('pin');
+      setRelayConfirmed(false);
+      setPhase('connected');
 
-      // The app cannot open the response (and emit its completion marker)
-      // until the user sees and enters the PIN, so polling must start in the
-      // background after scheduling the PIN screen rather than delaying it.
+      // Poll the relay's observational completion marker in the background so
+      // the Connected screen updates once the app opens the response.
       const completionId = ++relayCompletionIdRef.current;
       try {
         void waitForRelayCompletion(completedRequest).then((completed) => {
@@ -551,17 +654,20 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             || !mountedRef.current
             || relayCompletionIdRef.current !== completionId
           ) return;
-          clearDeepLinkSession();
-          setPhase('connected');
+          setRelayConfirmed(true);
         }).catch(() => {
           // Unsupported/older relays and transient polling failures keep the
-          // PIN screen's manual Done fallback.
+          // completed screen intact.
         });
       } catch {
-        // A synchronous helper failure also leaves the PIN fallback intact.
+        // Ignore synchronous helper failures.
       }
     } catch (err) {
       console.error('Authorization error:', err);
+      clearDeepLinkSession();
+      if (!mountedRef.current) return;
+      setVerificationHandshake(undefined);
+      setPendingApprovalDid(undefined);
       setErrorMessage(getConnectErrorMessage(err, 'Failed to authorize connection.'));
       setPhase('error');
     }
@@ -608,7 +714,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     void queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
     setSelectedDid(approvalDid);
 
-    await handleApprove(approvalDid);
+    handleBeginVerification(approvalDid);
   }
 
   async function handleCreateWalletAndConnect() {
@@ -721,14 +827,6 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     : isRefresh
       ? refreshRequestSummary(refreshSplit)
       : hasDataAccess ? 'wants to connect to your profile' : 'wants to connect';
-
-  async function handleCopyPin() {
-    const copied = await copyToClipboard(pin);
-    if (copied) {
-      setPinCopied(true);
-      setTimeout(() => setPinCopied(false), 2000);
-    }
-  }
 
   // ── Render ───────────────────────────────────────────────────────
 
@@ -902,6 +1000,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
               relayCompletionIdRef.current += 1;
               clearDeepLinkSession();
               resetConnectDecision(decisionStartedRef);
+              setConnectionRequest(undefined);
+              setVerificationHandshake(undefined);
+              setHandshakeError(null);
+              setPendingApprovalDid(undefined);
+              setRelayConfirmed(false);
+              setOverrideAcknowledged(false);
+              setShowOverrideConfirm(false);
               setPhase('scanning');
               setErrorMessage('');
             }}
@@ -1032,7 +1137,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   modules={overridableModules}
                   onConfirm={() => {
                     setShowOverrideConfirm(false);
-                    void handleApprove();
+                    handleBeginVerification();
                   }}
                   onCancel={() => setShowOverrideConfirm(false)}
                 />
@@ -1081,7 +1186,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   onClick={() =>
                     overridableModules.length > 0 && !isRefresh
                       ? setShowOverrideConfirm(true)
-                      : handleApprove()
+                      : handleBeginVerification()
                   }
                   disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
                 >
@@ -1102,39 +1207,54 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         </div>
       )}
 
-      {/* ─── PIN phase ──────────────────────────────────────────── */}
-      {phase === 'pin' && (
-        <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-12 lg:px-0 max-w-lg mx-auto w-full ${standalone ? 'flex-1 flex flex-col justify-center pb-24' : ''}`}>
-          <div className="flex flex-col items-center gap-6 text-center">
-            {/* Glowing PIN display */}
-            <div className="relative">
-              <div className="absolute -inset-6 rounded-[2rem] bg-accent/20 blur-2xl animate-pulse" aria-hidden="true" />
-              <p className="surface-card relative rounded-3xl border border-border-default bg-surface-1 py-5 pl-[calc(2rem+0.4em)] pr-8 font-mono text-5xl font-semibold tabular-nums tracking-[0.4em] text-text-primary">
-                {pin}
-              </p>
+      {/* ─── SAS verification phase ─────────────────────────────── */}
+      {phase === 'verify' && connectionRequest && (
+        <div className={`animate-[fadeIn_0.3s_ease-out] px-5 py-8 sm:px-6 lg:px-0 max-w-lg mx-auto w-full ${standalone ? 'flex-1 flex flex-col justify-center pb-24' : ''}`}>
+          {verificationHandshake ? (
+            <VerificationEmojiGrid
+              key={verificationHandshake.walletEpk.x}
+              grid={verificationHandshake.grid}
+              appName={displayAppName}
+              authenticationOnly={authenticationOnly}
+              onConfirm={handleVerifySelection}
+              onCancel={handleDeny}
+            />
+          ) : handshakeError ? (
+            <div className="space-y-4">
+              <ErrorAlert message={handshakeError} />
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  className="min-w-0 flex-1 min-h-[44px]"
+                  onClick={handleDeny}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  className="min-w-0 flex-[2] min-h-[44px]"
+                  onClick={() => {
+                    setHandshakeError(null);
+                    setHandshakeRetryKey((key) => key + 1);
+                  }}
+                >
+                  Retry verification
+                </Button>
+              </div>
             </div>
-
-            <p className="text-[15px] text-text-secondary">
-              Enter this PIN in the requesting application
-            </p>
-
-            {/* Copy button */}
-            <button
-              type="button"
-              onClick={handleCopyPin}
-              className="inline-flex items-center gap-1.5 text-sm text-accent hover:underline min-h-[44px]"
-            >
-              <Copy className="h-4 w-4" />
-              {pinCopied ? 'Copied!' : 'Copy PIN'}
-            </button>
-
-            <Button
-              className="w-full min-h-[44px] mt-2"
-              onClick={finishRelayCeremony}
-            >
-              Done
-            </Button>
-          </div>
+          ) : (
+            <div className="space-y-4 py-12">
+              <Loader message="Preparing verification..." />
+              <div className="flex justify-center">
+                <Button
+                  variant="secondary"
+                  className="min-h-[44px] min-w-[140px]"
+                  onClick={handleDeny}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1145,7 +1265,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             tone="success"
             icon={<Check />}
             title={authenticationOnly ? 'Signed in!' : 'Connected!'}
-            message="The requesting application confirmed the connection."
+            message={
+              relayConfirmed
+                ? 'The requesting application confirmed the connection.'
+                : `You can return to ${displayAppName ?? 'the app'} now.`
+            }
             action={(
               <Button className="w-full" onClick={finishRelayCeremony}>
                 Done

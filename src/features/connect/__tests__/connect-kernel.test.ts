@@ -8,9 +8,10 @@ import {
   denyConnectRequest,
   fetchConnectRequest,
   fetchConnectRequestEffect,
-  generatePin,
   getRelayCallbackUrl,
   isTrustedDappOrigin,
+  startRelayVerificationHandshake,
+  startRelayVerificationHandshakeEffect,
   waitForRelayCompletion,
 } from '../connect-kernel';
 import { NetworkPolicy, makeNetworkPolicy } from '@/enbox/effect/network-policy';
@@ -23,9 +24,10 @@ const mocks = vi.hoisted(() => ({
   openRequest: vi.fn(),
   sealApprovedResponse: vi.fn(),
   sealAuthenticationResponse: vi.fn(),
+  createConnectVerificationHandshake: vi.fn(),
   pollRelayComplete: vi.fn(),
+  postRelayHandshake: vi.fn(),
   postRelayResponse: vi.fn(),
-  randomPin: vi.fn(),
 }));
 
 vi.mock('@enbox/agent', () => ({
@@ -34,23 +36,31 @@ vi.mock('@enbox/agent', () => ({
 }));
 
 vi.mock('@enbox/connect', () => ({
+  assertX25519PublicJwk: (key: unknown) => {
+    const jwk = key as Record<string, unknown> | null | undefined;
+    if (
+      !jwk || typeof jwk !== 'object'
+      || jwk.kty !== 'OKP' || jwk.crv !== 'X25519'
+      || typeof jwk.x !== 'string' || jwk.x.length === 0
+      || jwk.d !== undefined
+    ) {
+      throw new Error('Connect: handshakeKey must be a public X25519 OKP JWK.');
+    }
+  },
   CONNECT_DENIED_TOKEN: 'DENIED',
   ConnectProvider: {
     openRequest: mocks.openRequest,
     sealApprovedResponse: mocks.sealApprovedResponse,
     sealAuthenticationResponse: mocks.sealAuthenticationResponse,
   },
+  createConnectVerificationHandshake: mocks.createConnectVerificationHandshake,
   pollRelayComplete: mocks.pollRelayComplete,
+  postRelayHandshake: mocks.postRelayHandshake,
   postRelayResponse: mocks.postRelayResponse,
 }));
 
-vi.mock('@enbox/crypto', () => ({
-  CryptoUtils: {
-    randomPin: mocks.randomPin,
-  },
-}));
-
 const REQUEST_KEY = new Uint8Array(32);
+const HANDSHAKE_KEY = { kty: 'OKP', crv: 'X25519', x: 'wallet-epk' } as const;
 
 function connectRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -86,9 +96,19 @@ describe('connect-kernel', () => {
       authenticationProof: 'owner-proof', responseSigner: { uri: 'did:jwk:ephemeral' },
     });
     mocks.sealAuthenticationResponse.mockResolvedValue('sealed-authentication-jwe');
+    mocks.createConnectVerificationHandshake.mockResolvedValue({
+      walletEpk: { ...HANDSHAKE_KEY },
+      symbols: [
+        { id: 1, emoji: '🦊', label: 'Fox' },
+        { id: 2, emoji: '🚀', label: 'Rocket' },
+        { id: 3, emoji: '🎸', label: 'Guitar' },
+      ],
+      grid: [],
+      verifySelection: () => true,
+    });
     mocks.pollRelayComplete.mockResolvedValue(false);
+    mocks.postRelayHandshake.mockResolvedValue(undefined);
     mocks.postRelayResponse.mockResolvedValue(undefined);
-    mocks.randomPin.mockReturnValue('1234');
   });
 
   it.each(['relay', 'popup'] as const)('preserves installation-only provider requests through %s approval', async (transport) => {
@@ -107,7 +127,7 @@ describe('connect-kernel', () => {
     });
     const original = structuredClone(request);
     if (transport === 'relay') {
-      await approveConnectRequest('did:dht:owner', request, '1234', 3600, {} as any);
+      await approveConnectRequest('did:dht:owner', request, { ...HANDSHAKE_KEY }, 3600, {} as any);
     } else {
       await approvePopupConnectRequest('did:dht:owner', request, 'https://app.example', 3600, {} as any);
     }
@@ -116,6 +136,18 @@ describe('connect-kernel', () => {
     expect(approved.request.permissionRequests[0].permissionScopes).toEqual([]);
     expect(approved.approvedModuleOverrides).toEqual([]);
     expect(request).toEqual(original);
+  });
+
+  it('rejects invalid or private-bearing handshakeKey before executing DWN approval mutations', async () => {
+    const request = connectRequest();
+    await expect(approveConnectRequest(
+      'did:dht:owner',
+      request,
+      { ...HANDSHAKE_KEY, d: 'private-material' } as any,
+      3600,
+      {} as any,
+    )).rejects.toThrow('X25519');
+    expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
   });
 
   describe('fetchConnectRequest', () => {
@@ -256,6 +288,66 @@ describe('connect-kernel', () => {
     });
   });
 
+  describe('startRelayVerificationHandshake', () => {
+    it('creates a SAS handshake from the fetched raw JWE and publishes walletEpk', async () => {
+      const fetched = await fetchConnectRequest('https://relay.example/request', REQUEST_KEY);
+      const handshake = await startRelayVerificationHandshake(fetched);
+
+      expect(handshake.walletEpk).toEqual(HANDSHAKE_KEY);
+      expect(mocks.createConnectVerificationHandshake).toHaveBeenCalledWith({
+        request: fetched,
+        requestJwe: 'sealed-request-jwe',
+      });
+      expect(mocks.postRelayHandshake).toHaveBeenCalledWith(expect.objectContaining({
+        callbackUrl: 'https://relay.example/connect/callback',
+        state: 'state-1',
+        walletEpk: HANDSHAKE_KEY,
+        fetchFn: expect.any(Function),
+      }));
+    });
+
+    it('deduplicates repeated calls for the same fetched request', async () => {
+      const fetched = await fetchConnectRequest('https://relay.example/request', REQUEST_KEY);
+      const [first, second] = await Promise.all([
+        startRelayVerificationHandshake(fetched),
+        startRelayVerificationHandshake(fetched),
+      ]);
+
+      expect(first).toBe(second);
+      expect(mocks.createConnectVerificationHandshake).toHaveBeenCalledTimes(1);
+      expect(mocks.postRelayHandshake).toHaveBeenCalledTimes(1);
+    });
+
+    it('reuses the same walletEpk when retrying after a transient publish failure', async () => {
+      const fetched = await fetchConnectRequest('https://relay.example/request', REQUEST_KEY);
+      mocks.postRelayHandshake
+        .mockRejectedValueOnce(new Error('503 Service Unavailable'))
+        .mockResolvedValueOnce(undefined);
+
+      // Run with retryTimes: 0 so the first call rejects and the explicit
+      // second call exercises reuse of the memoized handshake key.
+      const firstAttempt = startRelayVerificationHandshakeEffect(fetched).pipe(
+        Effect.provideService(NetworkPolicy, NetworkPolicy.of(makeNetworkPolicy({ retryTimes: 0 }))),
+      );
+      await expect(runEnboxPromise(firstAttempt)).rejects.toThrow('503');
+
+      const handshake = await startRelayVerificationHandshake(fetched);
+      expect(handshake.walletEpk).toEqual(HANDSHAKE_KEY);
+      expect(mocks.createConnectVerificationHandshake).toHaveBeenCalledTimes(1);
+      expect(mocks.postRelayHandshake).toHaveBeenCalledTimes(2);
+      expect(mocks.postRelayHandshake.mock.calls[0][0].walletEpk)
+        .toEqual(mocks.postRelayHandshake.mock.calls[1][0].walletEpk);
+    });
+
+    it('rejects requests without a fetched raw JWE', async () => {
+      const unfetched = connectRequest();
+      await expect(startRelayVerificationHandshake(unfetched))
+        .rejects.toThrow('fresh relayed connection request');
+      expect(mocks.createConnectVerificationHandshake).not.toHaveBeenCalled();
+      expect(mocks.postRelayHandshake).not.toHaveBeenCalled();
+    });
+  });
+
   describe('approveConnectRequest', () => {
     it.each(['authenticate', 'connect'] as const)('keeps one relay consent snapshot through asynchronous %s approval, sealing and completion', async (requestType) => {
       const request = connectRequest({ requestType,
@@ -264,6 +356,7 @@ describe('connect-kernel', () => {
       mocks.openRequest.mockResolvedValue(request);
       const fetched = await fetchConnectRequest('https://auth.example/request/one', REQUEST_KEY);
       const original = structuredClone(fetched);
+      const handshakeKey = { ...HANDSHAKE_KEY };
       const overrides = ['https://example.test/original-module'];
       let release!: () => void;
       const pending = new Promise<void>(resolve => { release = resolve; });
@@ -274,18 +367,22 @@ describe('connect-kernel', () => {
         entered(); await pending;
         return { authenticationProof: 'proof-for-original-request', responseSigner: {} };
       });
-      const result = approveConnectRequest('did:dht:owner', fetched, '1234', 3600, {} as any, overrides);
+      const result = approveConnectRequest('did:dht:owner', fetched, handshakeKey, 3600, {} as any, overrides);
       await started;
       fetched.state = 'mutated-state'; fetched.nonce = 'mutated-nonce';
       fetched.authentication!.challenge = 'z'.repeat(32);
       fetched.reply = { mode: 'direct_post', callbackUrl: 'https://other.example/callback' };
       fetched.responseKey.x = 'mutated-public-key'; overrides.push('https://other.example/module');
+      (handshakeKey as { x: string }).x = 'mutated-wallet-epk';
       release();
       const completed = await result;
       expect(completed).toEqual(original);
       expect(completed).not.toBe(fetched);
       const seal = requestType === 'authenticate' ? mocks.sealAuthenticationResponse : mocks.sealApprovedResponse;
-      expect(seal).toHaveBeenCalledWith(expect.objectContaining({ request: original }));
+      expect(seal).toHaveBeenCalledWith(expect.objectContaining({
+        request: original,
+        handshakeKey: HANDSHAKE_KEY,
+      }));
       expect(execute).toHaveBeenCalledWith(expect.objectContaining({ request: original, verifiedRequesterOrigin: 'https://auth.example' }));
       if (requestType === 'connect') {
         expect(execute).toHaveBeenCalledWith(expect.objectContaining({ approvedModuleOverrides: ['https://example.test/original-module'] }));
@@ -298,9 +395,9 @@ describe('connect-kernel', () => {
     it('keeps invalid relay context in the Effect and Promise failure channels', async () => {
       const request = connectRequest({ requestType: 'authenticate',
         authentication: { version: 1, audience: 'https://auth.example/', challenge: 'c'.repeat(32) } });
-      expect(() => approveConnectRequestEffect('did:dht:owner', request, '1234', 3600)).not.toThrow();
+      expect(() => approveConnectRequestEffect('did:dht:owner', request, { ...HANDSHAKE_KEY }, 3600)).not.toThrow();
       let rejected!: Promise<unknown>;
-      expect(() => { rejected = approveConnectRequest('did:dht:owner', request, '1234', 3600, {} as any); }).not.toThrow();
+      expect(() => { rejected = approveConnectRequest('did:dht:owner', request, { ...HANDSHAKE_KEY }, 3600, {} as any); }).not.toThrow();
       await expect(rejected).rejects.toThrow('fresh request from the authentication service');
       expect(mocks.executeConnectAuthentication).not.toHaveBeenCalled();
     });
@@ -312,13 +409,13 @@ describe('connect-kernel', () => {
       }));
       const request = await fetchConnectRequest('https://auth.example/request/one', REQUEST_KEY);
       const agent = { id: 'agent-1' } as any;
-      await approveConnectRequest('did:dht:owner', request, '1234', 3600, agent);
+      await approveConnectRequest('did:dht:owner', request, { ...HANDSHAKE_KEY }, 3600, agent);
       expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
       expect(mocks.executeConnectAuthentication).toHaveBeenCalledWith({
         agent, providerDid: 'did:dht:owner', request, verifiedRequesterOrigin: 'https://auth.example',
       });
       expect(mocks.sealAuthenticationResponse).toHaveBeenCalledWith(expect.objectContaining({
-        request, pin: '1234', approval: expect.objectContaining({ authenticationProof: 'owner-proof' }),
+        request, handshakeKey: HANDSHAKE_KEY, approval: expect.objectContaining({ authenticationProof: 'owner-proof' }),
       }));
       expect(mocks.postRelayResponse).toHaveBeenCalledWith(expect.objectContaining({
         idToken: 'sealed-authentication-jwe', state: request.state,
@@ -330,13 +427,13 @@ describe('connect-kernel', () => {
         requestType: 'authenticate',
         authentication: { version: 1, audience: 'https://auth.example/', challenge: 'c'.repeat(32) },
       });
-      await expect(approveConnectRequest('did:dht:owner', request, '1234', 3600, {} as any))
+      await expect(approveConnectRequest('did:dht:owner', request, { ...HANDSHAKE_KEY }, 3600, {} as any))
         .rejects.toThrow('fresh request from the authentication service');
       expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
       expect(mocks.executeConnectAuthentication).not.toHaveBeenCalled();
       expect(mocks.postRelayResponse).not.toHaveBeenCalled();
     });
-    it('runs the ceremony, seals with the PIN, and posts to the callback', async () => {
+    it('runs the ceremony, binds the handshake key, and posts to the callback', async () => {
       const agent = { id: 'agent-1' } as any;
       const request = connectRequest({ requestedSessionTtlSeconds: 86_400 });
       const originalRequest = structuredClone(request);
@@ -344,7 +441,7 @@ describe('connect-kernel', () => {
       await approveConnectRequest(
         'did:dht:alice',
         request,
-        '1234',
+        { ...HANDSHAKE_KEY },
         3_600,
         agent,
         ['https://example.com/modules/tasks'],
@@ -360,10 +457,10 @@ describe('connect-kernel', () => {
       });
       expect(mocks.sealApprovedResponse).toHaveBeenCalledWith({
         request,
-        providerDid : 'did:dht:alice',
-        approval    : expect.objectContaining({ delegateDid: 'did:jwk:delegate' }),
-        signer      : { uri: 'did:jwk:delegate' },
-        pin         : '1234',
+        providerDid  : 'did:dht:alice',
+        approval     : expect.objectContaining({ delegateDid: 'did:jwk:delegate' }),
+        signer       : { uri: 'did:jwk:delegate' },
+        handshakeKey : HANDSHAKE_KEY,
       });
       expect(mocks.postRelayResponse).toHaveBeenCalledWith(expect.objectContaining({
         callbackUrl : 'https://relay.example/connect/callback',
@@ -390,7 +487,7 @@ describe('connect-kernel', () => {
         approveConnectRequest(
           'did:dht:alice',
           connectRequest(),
-          '1234',
+          { ...HANDSHAKE_KEY },
           3_600,
           { id: 'agent-1' } as any,
         ),
@@ -420,7 +517,7 @@ describe('connect-kernel', () => {
       const effect = approveConnectRequestEffect(
         'did:dht:alice',
         connectRequest(),
-        '1234',
+        { ...HANDSHAKE_KEY },
         3_600,
       ).pipe(
         Effect.provide(currentAgentLayer(agent)),
@@ -445,7 +542,7 @@ describe('connect-kernel', () => {
         approveConnectRequest(
           'did:dht:alice',
           request,
-          '1234',
+          { ...HANDSHAKE_KEY },
           3_600,
           { id: 'agent-1' } as any,
         ),
@@ -461,7 +558,7 @@ describe('connect-kernel', () => {
       await approveConnectRequest(
         'did:dht:alice',
         request,
-        '1234',
+        { ...HANDSHAKE_KEY },
         3_600,
         agent,
         [],
@@ -584,7 +681,7 @@ describe('connect-kernel', () => {
       const sealArgs = mocks.sealApprovedResponse.mock.calls[0][0];
       expect(sealArgs.request).toEqual(request);
       expect(sealArgs.request).not.toBe(request);
-      expect(sealArgs.pin).toBeUndefined();
+      expect(sealArgs.handshakeKey).toBeUndefined();
       expect(request).toEqual(originalRequest);
     });
 
@@ -660,10 +757,5 @@ describe('connect-kernel', () => {
       expect(isTrustedDappOrigin('https://app.example/path')).toBe(false);
       expect(isTrustedDappOrigin('not-a-url')).toBe(false);
     });
-  });
-
-  it('generates a numeric PIN of the requested length', async () => {
-    await expect(generatePin(4)).resolves.toBe('1234');
-    expect(mocks.randomPin).toHaveBeenCalledWith({ length: 4 });
   });
 });
