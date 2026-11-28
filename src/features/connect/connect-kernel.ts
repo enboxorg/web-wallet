@@ -2,13 +2,17 @@ import { Effect } from 'effect';
 import type { ExecuteConnectApprovalParams } from '@enbox/agent';
 import { executeConnectApproval, executeConnectAuthentication } from '@enbox/agent';
 import {
+  assertX25519PublicJwk,
   CONNECT_DENIED_TOKEN,
   ConnectProvider,
+  createConnectVerificationHandshake,
   pollRelayComplete,
+  postRelayHandshake,
   postRelayResponse,
   type ConnectRequest,
+  type ConnectVerificationHandshake,
 } from '@enbox/connect';
-import { CryptoUtils } from '@enbox/crypto';
+import type { Jwk } from '@enbox/crypto';
 
 import { sdkError } from '@/enbox/effect/errors';
 import {
@@ -27,6 +31,9 @@ function sdkTimeout(operation: string) {
 const LOCAL_RELAY_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MAX_CONNECT_RESPONSE_BYTES = 2_000_000;
 const relayRequestOrigins = new WeakMap<ConnectRequest, string>();
+const relayRequestJwes = new WeakMap<ConnectRequest, string>();
+const relayHandshakes = new WeakMap<ConnectRequest, Promise<ConnectVerificationHandshake>>();
+const relayHandshakePublishes = new WeakMap<ConnectRequest, Promise<ConnectVerificationHandshake>>();
 
 export interface ConnectApprovalOptions {
   onProgress?: ExecuteConnectApprovalParams['onProgress'];
@@ -46,9 +53,9 @@ function captureApprovalInput<T>(operation: string, capture: () => T) {
 }
 
 /** Approve and seal one captured request; only callback delivery may be retried. */
-async function approveAndSeal({ pin, ...params }: ExecuteConnectApprovalParams & {
+async function approveAndSeal({ handshakeKey, ...params }: ExecuteConnectApprovalParams & {
   request: ConnectRequest;
-  pin?: string;
+  handshakeKey?: Jwk;
 }): Promise<string> {
   const { agent, providerDid, request, verifiedRequesterOrigin } = params;
   if (request.requestType === 'authenticate') {
@@ -57,12 +64,12 @@ async function approveAndSeal({ pin, ...params }: ExecuteConnectApprovalParams &
     }
     const approval = await executeConnectAuthentication({ agent, providerDid, request, verifiedRequesterOrigin });
     return ConnectProvider.sealAuthenticationResponse({
-      request, providerDid, approval, signer: approval.responseSigner, pin,
+      request, providerDid, approval, signer: approval.responseSigner, handshakeKey,
     });
   }
   const approval = await executeConnectApproval(params);
   return ConnectProvider.sealApprovedResponse({
-    request, providerDid, approval, signer: approval.responseSigner, pin,
+    request, providerDid, approval, signer: approval.responseSigner, handshakeKey,
   });
 }
 
@@ -182,6 +189,7 @@ async function getBoundConnectRequest(
   });
   getRelayCallbackUrl(request);
   relayRequestOrigins.set(request, requestUrl.origin);
+  relayRequestJwes.set(request, jwe);
   getRelayAuthenticationOrigin(request);
 
   return request;
@@ -205,12 +213,87 @@ export function fetchConnectRequest(
   return runEnboxPromise(fetchConnectRequestEffect(requestUri, requestKey));
 }
 
-export function generatePinEffect(length = 4) {
-  return Effect.sync(() => CryptoUtils.randomPin({ length }));
+/**
+ * Creates the wallet's pre-approval SAS verification handshake for a fetched
+ * relayed request and publishes its ephemeral `walletEpk` to the relay
+ * (`POST /connect/handshake`) so the requesting app can derive and display
+ * the 3 verification symbols before the user approves.
+ *
+ * The derived handshake (`walletEpk`, targets, and shuffled 3×3 grid) is
+ * memoized per fetched `ConnectRequest` so retries reuse the same `walletEpk`
+ * (matching the relay's first-write-wins idempotency semantics).
+ */
+export function startRelayVerificationHandshakeEffect(request: ConnectRequest) {
+  const prepared = captureApprovalInput('connect.handshake', () => {
+    const requestJwe = relayRequestJwes.get(request);
+    if (requestJwe === undefined) {
+      throw new Error('Verification requires a fresh relayed connection request.');
+    }
+    const capturedRequest = structuredClone(request);
+    const callbackUrl = getRelayCallbackUrl(capturedRequest);
+    return { request: capturedRequest, requestJwe, callbackUrl };
+  });
+
+  return Effect.gen(function* () {
+    const { request: capturedRequest, requestJwe, callbackUrl } = yield* prepared;
+    let handshakePromise = relayHandshakes.get(request);
+    if (handshakePromise === undefined) {
+      handshakePromise = createConnectVerificationHandshake({
+        request: capturedRequest,
+        requestJwe,
+      });
+      relayHandshakes.set(request, handshakePromise);
+      void handshakePromise.catch(() => {
+        if (relayHandshakes.get(request) === handshakePromise) {
+          relayHandshakes.delete(request);
+        }
+      });
+    }
+
+    const handshake = yield* Effect.tryPromise({
+      try: () => handshakePromise,
+      catch: sdkError('connect.handshake'),
+    });
+
+    yield* withNetworkPolicy(
+      'connect.handshake',
+      Effect.tryPromise({
+        try: (signal) => postRelayHandshake({
+          callbackUrl,
+          state     : capturedRequest.state,
+          walletEpk : handshake.walletEpk,
+          fetchFn   : (input, init) => fetchWithEffectSignal(signal, input, init),
+        }),
+        catch: sdkError('connect.handshake'),
+      }),
+      () => sdkTimeout('connect.handshake'),
+    );
+
+    return handshake;
+  });
 }
 
-export function generatePin(length = 4): Promise<string> {
-  return runEnboxPromise(generatePinEffect(length));
+export function startRelayVerificationHandshake(
+  request: ConnectRequest,
+): Promise<ConnectVerificationHandshake> {
+  const existing = relayHandshakePublishes.get(request);
+  if (existing !== undefined) {
+    return existing;
+  }
+  const promise = runEnboxPromise(startRelayVerificationHandshakeEffect(request));
+  relayHandshakePublishes.set(request, promise);
+  void promise.catch(() => {
+    if (relayHandshakePublishes.get(request) === promise) {
+      relayHandshakePublishes.delete(request);
+    }
+  });
+  return promise;
+}
+
+/** Releases cached single-use SAS handshake state once verification has been consumed. */
+export function clearRelayVerificationHandshake(request: ConnectRequest): void {
+  relayHandshakes.delete(request);
+  relayHandshakePublishes.delete(request);
 }
 
 /**
@@ -218,8 +301,9 @@ export function generatePin(length = 4): Promise<string> {
  * the sealed response to the request's callback: delegate mint (or
  * pre-supplied delegate validation), module preparation, grant creation and
  * delivery, encrypted-read grant keys, and session revocation grants all
- * happen inside `executeConnectApproval`; the PIN strengthens the response
- * encryption key and never transits.
+ * happen inside `executeConnectApproval`; `handshakeKey` (`walletEpk`) is
+ * bound into the response JWE's integrity-protected `apv` header so an
+ * untrusted relay cannot split-view a different SAS handshake key.
  *
  * The ceremony itself is deliberately NOT wrapped in the retrying network
  * policy: it is not idempotent (it mints a delegate and writes grants — a
@@ -230,7 +314,7 @@ export function generatePin(length = 4): Promise<string> {
 export function approveConnectRequestEffect(
   selectedDid: string,
   request: ConnectRequest,
-  pin: string,
+  handshakeKey: Jwk,
   approvedSessionTtlSeconds: number,
   approvedModuleOverrides: readonly string[] = [],
   options?: ConnectApprovalOptions,
@@ -240,11 +324,17 @@ export function approveConnectRequestEffect(
     // Do not grant origin authority to arbitrary cloned requests.
     const verifiedRequesterOrigin = getRelayAuthenticationOrigin(request);
     const capturedRequest = structuredClone(request);
+    if (capturedRequest.reply.mode !== 'direct_post') {
+      throw new Error('The connection request does not use the direct_post relay reply mode.');
+    }
+    const capturedHandshakeKey = structuredClone(handshakeKey);
+    assertX25519PublicJwk(capturedHandshakeKey);
     if (verifiedRequesterOrigin !== undefined) {
       assertConnectAuthenticationOrigin(capturedRequest, verifiedRequesterOrigin);
     }
     return {
       request: capturedRequest,
+      handshakeKey: capturedHandshakeKey,
       ...(verifiedRequesterOrigin === undefined ? {} : { verifiedRequesterOrigin }),
       callbackUrl: getRelayCallbackUrl(capturedRequest),
       approvedModuleOverrides: [...approvedModuleOverrides],
@@ -254,14 +344,19 @@ export function approveConnectRequestEffect(
     };
   });
   return Effect.gen(function* () {
-    const { callbackUrl, ...captured } = yield* prepared;
+    const { callbackUrl, handshakeKey: capturedHandshakeKey, ...captured } = yield* prepared;
     const { request } = captured;
     const agent = yield* CurrentAgent;
     const totalStart = nowMs();
     const idToken = yield* Effect.tryPromise({
       try: async () => {
         const sealStart = nowMs();
-        const sealed = await approveAndSeal({ ...captured, agent, transport: 'relay', pin });
+        const sealed = await approveAndSeal({
+          ...captured,
+          agent,
+          transport: 'relay',
+          handshakeKey: capturedHandshakeKey,
+        });
         console.debug(
           `[connect.perf] relay.approveAndSeal ok in ${(nowMs() - sealStart).toFixed(1)}ms`,
         );
@@ -295,7 +390,7 @@ export function approveConnectRequestEffect(
 export function approveConnectRequest(
   selectedDid: string,
   request: ConnectRequest,
-  pin: string,
+  handshakeKey: Jwk,
   approvedSessionTtlSeconds: number,
   agent: EnboxAgent,
   approvedModuleOverrides: readonly string[] = [],
@@ -305,7 +400,7 @@ export function approveConnectRequest(
     approveConnectRequestEffect(
       selectedDid,
       request,
-      pin,
+      handshakeKey,
       approvedSessionTtlSeconds,
       approvedModuleOverrides,
       options,
@@ -318,8 +413,7 @@ export function approveConnectRequest(
 /**
  * Waits for the requesting app to confirm that it opened the relayed
  * response. The completion marker is observational and best-effort:
- * unsupported relays and an elapsed polling budget resolve `false` so the
- * PIN screen can retain its manual Done fallback.
+ * unsupported relays and an elapsed polling budget resolve `false`.
  */
 export function waitForRelayCompletion(request: ConnectRequest): Promise<boolean> {
   return pollRelayComplete({
@@ -351,7 +445,7 @@ export function isTrustedDappOrigin(origin: string): boolean {
  * `WalletPostMessageTransport.sendResponse`. The SDK receives the verified
  * dapp origin separately for stored session metadata. The original request
  * remains intact for proof binding and response sealing; popup responses use
- * no PIN because the transport pins the requesting origin.
+ * no SAS handshake key because the transport pins the requesting origin.
  *
  * Like the relay path, the non-idempotent ceremony runs without the retrying
  * network policy (see `approveConnectRequestEffect`).
