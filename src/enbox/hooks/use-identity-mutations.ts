@@ -78,10 +78,21 @@ export function useUpdateIdentityProfile() {
   return useMutation({
     mutationFn: (params: UpdateIdentityProfileParams) =>
       updateIdentityProfile(agent, params),
-    onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.identities.profile(variables.did),
-      });
+    onSettled: (_data, _error, variables) => {
+      const invalidations: Promise<void>[] = [
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.identities.profile(variables.did),
+        }),
+      ];
+      if (variables.persona?.trim()) {
+        invalidations.push(
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.identities.all,
+            exact: true,
+          }),
+        );
+      }
+      return Promise.all(invalidations);
     },
   });
 }
