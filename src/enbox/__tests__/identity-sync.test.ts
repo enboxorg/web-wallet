@@ -122,4 +122,60 @@ describe('reconcileIdentitySync', () => {
     });
     warn.mockRestore();
   });
+
+  it('skips exclusive ensureIdentityOptions lock when getIdentityOptions already matches', async () => {
+    const identity = { did: { uri: 'did:dht:already-synced' }, metadata: { name: 'Synced' } };
+    const agent = {
+      sync: {
+        getIdentityOptions: vi.fn().mockResolvedValue({
+          modules: [...desiredModules].reverse(),
+        }),
+        ensureIdentityOptions: vi.fn().mockResolvedValue(false),
+        sync: vi.fn(),
+      },
+    };
+
+    const result = await reconcileIdentitySync(agent, [identity]);
+
+    expect(agent.sync.getIdentityOptions).toHaveBeenCalledWith('did:dht:already-synced');
+    expect(agent.sync.ensureIdentityOptions).not.toHaveBeenCalled();
+    expect(result).toEqual({ changedDids: [], failedDids: [] });
+  });
+
+  it('still calls ensureIdentityOptions when existing options are delegated or missing modules', async () => {
+    const agent = {
+      sync: {
+        getIdentityOptions: vi.fn().mockResolvedValue({
+          delegateDid: 'did:jwk:old-delegate',
+          modules: desiredModules,
+        }),
+        ensureIdentityOptions: vi.fn().mockResolvedValue(true),
+        sync: vi.fn(),
+      },
+    };
+
+    const result = await reconcileIdentitySync(agent, [
+      { did: { uri: 'did:dht:owner' }, metadata: { name: 'Owner' } },
+    ]);
+
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledOnce();
+    expect(result).toEqual({ changedDids: ['did:dht:owner'], failedDids: [] });
+  });
+
+  it('repairs empty or malformed persisted module lists instead of failing with a defect', async () => {
+    const agent = {
+      sync: {
+        getIdentityOptions: vi.fn().mockResolvedValue({ modules: [] }),
+        ensureIdentityOptions: vi.fn().mockResolvedValue(true),
+        sync: vi.fn(),
+      },
+    };
+
+    const result = await reconcileIdentitySync(agent, [
+      { did: { uri: 'did:dht:corrupt' }, metadata: { name: 'Corrupt' } },
+    ]);
+
+    expect(agent.sync.ensureIdentityOptions).toHaveBeenCalledOnce();
+    expect(result).toEqual({ changedDids: ['did:dht:corrupt'], failedDids: [] });
+  });
 });

@@ -49,6 +49,11 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 30_000,
       retry: 1,
+      // Wallet queries read local IndexedDB DWN stores and receive reactive
+      // invalidations from useSyncQueryInvalidation and WalletEventBus.
+      // Refetching on window focus triggers redundant DWN/permission/DID
+      // storms whenever the user returns from a passkey dialog or switches tabs.
+      refetchOnWindowFocus: false,
     },
   },
 });
@@ -126,14 +131,28 @@ function FirstIdentityGate({ onDone }: { onDone: () => void }) {
   );
 }
 
-// Latched once a relay approval starts before onboarding. Creating the
-// wallet inside the approval flips `firstTime` (and adds the profile)
-// mid-ceremony, and if the gate re-branched on those store changes it
-// would unmount the approval — killing the in-flight approve and
-// orphaning the single-use request pointer (the exact "create wallet →
-// profile screen → scanner" dead end). Cleared whenever the route leaves
-// /connect/app (deny and Done both navigate home).
-let relayCeremonyActive = false;
+/**
+ * Full-wallet background services: local DWN / sync query invalidation,
+ * owner identity sync reconciliation, and remote tenant registration repair.
+ *
+ * Mounted ONLY when rendering the unlocked wallet shell (including first-time
+ * identity hydration), never while locked or during transient connect
+ * ceremonies (/dweb-connect popups or standalone /connect/app deep links)
+ * where background subscriptions and cross-tab sync mutations would contend
+ * with approval writes and trigger mid-ceremony permission refetches.
+ */
+function WalletBackgroundServices({
+  identities,
+  adoptDwnEndpoints,
+}: {
+  identities: unknown[] | undefined;
+  adoptDwnEndpoints: (endpoints: string[]) => void;
+}) {
+  useSyncQueryInvalidation(identities, adoptDwnEndpoints);
+  useIdentitySyncReconciliation(identities);
+  useRegistrationRepair();
+  return null;
+}
 
 /**
  * AuthGate — decides what to render based on auth + identity state.
@@ -184,11 +203,17 @@ function AuthGate() {
   const passkeyConfigured = !unlocked && !firstTime && hasStoredPasskeyCredential();
   const passkeyAvailable = passkeyConfigured && canUsePasskeyUnlock();
 
+  // Latched once a relay approval starts before onboarding. Creating the
+  // wallet inside the approval flips `firstTime` (and adds the profile)
+  // mid-ceremony, and if the gate re-branched on those store changes it
+  // would unmount the approval — killing the in-flight approve and
+  // orphaning the single-use request pointer (the exact "create wallet →
+  // profile screen → scanner" dead end). Cleared whenever the route leaves
+  // /connect/app (deny and Done both navigate home).
+  const relayCeremonyActiveRef = useRef(false);
+
   // Only query identities when unlocked
   const { data: identities, isLoading: identitiesLoading } = useIdentities();
-  useSyncQueryInvalidation(identities, adoptDwnEndpoints);
-  useIdentitySyncReconciliation(identities);
-  useRegistrationRepair();
 
   // Compute backup-needed badge for nav items (must be before early returns)
   const sidebarWithBadges = useMemo(() =>
@@ -297,13 +322,13 @@ function AuthGate() {
   // inline onboarding flips `firstTime` mid-flow and the approval must
   // keep rendering in this exact tree position (no unmount).
   if (location.pathname !== '/connect/app') {
-    relayCeremonyActive = false;
+    relayCeremonyActiveRef.current = false;
   }
   if (
     location.pathname === '/connect/app'
-    && (relayCeremonyActive || (firstTime && hasActiveConnectDeepLink()))
+    && (relayCeremonyActiveRef.current || (firstTime && hasActiveConnectDeepLink()))
   ) {
-    relayCeremonyActive = true;
+    relayCeremonyActiveRef.current = true;
     // A proper phone screen: brand pinned on top (stays visible however
     // far the permissions scroll), dynamic-viewport height so the mobile
     // browser chrome never hides the actions, safe-area padding for
@@ -371,7 +396,12 @@ function AuthGate() {
 
   // Unlocked but still loading identity list — show loader briefly
   if (identitiesLoading) {
-    return <Loader message="Loading your profiles..." fullScreen />;
+    return (
+      <>
+        <WalletBackgroundServices identities={identities} adoptDwnEndpoints={adoptDwnEndpoints} />
+        <Loader message="Loading your profiles..." fullScreen />
+      </>
+    );
   }
 
   // Unlocked with no identities — show full-screen identity creation
@@ -381,15 +411,19 @@ function AuthGate() {
   const hasIdentities = identities && identities.length > 0;
   if (!hasIdentities && !identitySkipped) {
     return (
-      <FirstIdentityGate
-        onDone={() => setIdentitySkipped(true)}
-      />
+      <>
+        <WalletBackgroundServices identities={identities} adoptDwnEndpoints={adoptDwnEndpoints} />
+        <FirstIdentityGate
+          onDone={() => setIdentitySkipped(true)}
+        />
+      </>
     );
   }
 
   // Wallet is unlocked with identities — render the app
   return (
     <>
+      <WalletBackgroundServices identities={identities} adoptDwnEndpoints={adoptDwnEndpoints} />
       <DragDropOverlay />
       <AppShell sidebarItems={sidebarWithBadges} bottomTabItems={bottomTabsWithBadges}>
         <AnimatedRoutes />

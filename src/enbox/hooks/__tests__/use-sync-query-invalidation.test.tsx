@@ -571,4 +571,46 @@ describe('useSyncQueryInvalidation', () => {
       });
     });
   });
+
+  it('does not replay historical wallet domain events emitted before mounting', async () => {
+    const queryClient = createQueryClient();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    useAuthStore.setState({ agent: null });
+
+    await runEnboxPromise(publishWalletEvent({
+      _tag     : 'identity.profile.updated',
+      did      : 'did:dht:past-event',
+      avatar   : false,
+      hero     : false,
+      metadata : true,
+      timestamp: Date.now(),
+    }));
+
+    renderHook(() => useSyncQueryInvalidation(undefined), {
+      wrapper: createWrapper(queryClient),
+    });
+
+    await settleSubscriptions();
+    expect(invalidateSpy).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await runEnboxPromise(publishWalletEvent({
+        _tag     : 'identity.profile.updated',
+        did      : 'did:dht:live-event',
+        avatar   : false,
+        hero     : false,
+        metadata : true,
+        timestamp: Date.now(),
+      }));
+    });
+
+    await vi.waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: queryKeys.identities.profile('did:dht:live-event'),
+      });
+    });
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: queryKeys.identities.profile('did:dht:past-event'),
+    });
+  });
 });
