@@ -8,6 +8,7 @@ import { CryptoUtils, X25519 } from '@enbox/crypto';
 import {
   deriveConnectVerificationSymbols,
   openAuthenticationResponse,
+  parseRedirectReturnUri,
   randomToken,
   sealRequest,
   verifyOwnerAuthenticationProof,
@@ -16,6 +17,7 @@ import {
 import {
   approveConnectRequest,
   approvePopupConnectRequest,
+  approveRedirectConnectRequest,
   fetchConnectRequest,
   startRelayVerificationHandshake,
 } from '../connect-kernel';
@@ -23,7 +25,7 @@ import {
 const ORIGIN = 'https://issuer.example';
 const AUDIENCE = `${ORIGIN}/wallet-login`;
 
-async function fixture(mode: 'popup' | 'relay') {
+async function fixture(mode: 'popup' | 'relay' | 'redirect') {
   const owner = await DidJwk.create();
   const client = await DidJwk.create();
   const responsePrivateKey = await X25519.generateKey();
@@ -40,7 +42,9 @@ async function fixture(mode: 'popup' | 'relay') {
     responseKey: await X25519.computePublicKey({ key: responsePrivateKey }),
     reply: mode === 'popup'
       ? { mode: 'post_message' }
-      : { mode: 'direct_post', callbackUrl: `${ORIGIN}/connect/callback` },
+      : mode === 'redirect'
+        ? { mode: 'redirect', callbackUrl: `${ORIGIN}/connect/callback`, redirectUri: `${ORIGIN}/callback` }
+        : { mode: 'direct_post', callbackUrl: `${ORIGIN}/connect/callback` },
   };
   // Keep the owner identity/KMS and all SDK signing/envelope functions real.
   // Only the wallet's identity lookup and network boundary are controlled.
@@ -64,12 +68,52 @@ describe('wallet authentication with the published SDK', () => {
     vi.unstubAllGlobals();
   });
 
-  it.each(['popup', 'relay'] as const)('returns a verifiable owner proof through the %s wallet flow without data authority', async (mode) => {
+  it.each(['popup', 'relay', 'redirect'] as const)('returns a verifiable owner proof through the %s wallet flow without data authority', async (mode) => {
     const f = await fixture(mode);
     let jwe: string;
     let handshakeKey: Jwk | undefined;
+    let responseSecret: Uint8Array | undefined;
     if (mode === 'popup') {
       jwe = await approvePopupConnectRequest(f.owner.uri, f.request, ORIGIN, 3600, f.agent);
+    } else if (mode === 'redirect') {
+      const requestKey = CryptoUtils.randomBytes(32);
+      const sealedRequest = await sealRequest({ request: f.request, signer: f.client, encryption: { mode: 'dir', requestKey } });
+      const requestUri = `${ORIGIN}/connect/authorize/registered.jwt`;
+      let posted: URLSearchParams | undefined;
+      const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (String(input) === requestUri) {
+          expect(init?.redirect).toBe('error');
+          return new Response(sealedRequest);
+        }
+        expect(String(input)).toBe(`${ORIGIN}/connect/callback`);
+        expect(init?.method).toBe('POST');
+        posted = new URLSearchParams(String(init?.body));
+        return new Response(null, { status: 201 });
+      });
+      vi.stubGlobal('fetch', fetch);
+      const fetched = await fetchConnectRequest(requestUri, requestKey);
+      const { request: approved, returnUrl } = await approveRedirectConnectRequest(f.owner.uri, fetched, 3600, f.agent);
+      expect(approved).toEqual(f.request);
+      expect(fetch).toHaveBeenCalledTimes(2);
+      expect(posted?.get('state')).toBe(f.request.state);
+      jwe = posted!.get('id_token')!;
+
+      const parsedReturn = parseRedirectReturnUri(returnUrl);
+      expect(parsedReturn?.state).toBe(f.request.state);
+      expect(parsedReturn?.responseSecret).toBeInstanceOf(Uint8Array);
+      responseSecret = parsedReturn!.responseSecret!;
+
+      // Opening without the 256-bit fragment secret must fail.
+      await expect(openAuthenticationResponse({
+        jwe,
+        recipientPrivateKey: f.responsePrivateKey,
+        expected: {
+          clientDid: f.client.uri,
+          nonce: f.request.nonce,
+          state: f.request.state,
+          providerDid: f.owner.uri,
+        },
+      })).rejects.toThrow();
     } else {
       const requestKey = CryptoUtils.randomBytes(32);
       const sealedRequest = await sealRequest({ request: f.request, signer: f.client, encryption: { mode: 'dir', requestKey } });
@@ -117,7 +161,9 @@ describe('wallet authentication with the published SDK', () => {
     }
 
     const response = await openAuthenticationResponse({
-      jwe, recipientPrivateKey: f.responsePrivateKey,
+      jwe,
+      recipientPrivateKey: f.responsePrivateKey,
+      ...(responseSecret ? { responseSecret } : {}),
       expected: {
         clientDid: f.client.uri,
         nonce: f.request.nonce,

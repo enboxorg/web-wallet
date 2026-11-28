@@ -19,7 +19,7 @@
 
 import { parseWalletConnectUri, type ConnectRequest } from '@enbox/connect';
 
-import { fetchConnectRequest } from './connect-kernel';
+import { fetchConnectRequest, verifyRedirectAppOrigin } from './connect-kernel';
 import {
   preflightConnectRequest,
   validateConnectPermissionSemantics,
@@ -27,7 +27,15 @@ import {
 import { getConnectErrorMessage } from './connect-error';
 
 /** Outcome of fetching the sealed deep-link request. */
-export type DeepLinkOutcome = { request: ConnectRequest } | { error: string };
+export type DeepLinkOutcome =
+  | {
+    request: ConnectRequest;
+    redirectOriginVerification?: Promise<{ origin: string; verified: boolean } | undefined>;
+  }
+  | {
+    error: string;
+    replyMode?: ConnectRequest['reply']['mode'];
+  };
 
 /** One deep-link ceremony: the fetch promise plus its settled outcome. */
 export type DeepLinkSession = { promise: Promise<DeepLinkOutcome>; settled?: DeepLinkOutcome };
@@ -93,14 +101,27 @@ export function primeConnectDeepLink(): DeepLinkSession | undefined {
     if (!deepLink) {
       return { error: 'Invalid connection URI: missing request_uri or encryption_key' };
     }
+    let fetchedReplyMode: ConnectRequest['reply']['mode'] | undefined;
     try {
       const request = await fetchConnectRequest(deepLink.requestUri, deepLink.encryptionKey);
+      fetchedReplyMode = request.reply?.mode;
       const preflight = preflightConnectRequest(request);
       await validateConnectPermissionSemantics(preflight);
-      return { request };
+      // For same-device redirect arrivals, begin manifest verification now so
+      // it runs in parallel with auth initialization and UnlockScreen.
+      const redirectOriginVerification = request.reply.mode === 'redirect'
+        ? verifyRedirectAppOrigin(request)
+        : undefined;
+      return {
+        request,
+        ...(redirectOriginVerification === undefined ? {} : { redirectOriginVerification }),
+      };
     } catch (err) {
       console.error('Connect flow error:', err);
-      return { error: getConnectErrorMessage(err, 'Failed to process connection request.') };
+      return {
+        error: getConnectErrorMessage(err, 'Failed to process connection request.'),
+        ...(fetchedReplyMode === undefined ? {} : { replyMode: fetchedReplyMode }),
+      };
     }
   })();
 

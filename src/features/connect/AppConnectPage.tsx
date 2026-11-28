@@ -52,12 +52,17 @@ import {
 } from './use-module-setup-statuses';
 import {
   approveConnectRequest,
+  approveRedirectConnectRequest,
+  buildRedirectDenialUrl,
   clearRelayVerificationHandshake,
   denyConnectRequest,
   fetchConnectRequest,
   getRelayCallbackUrl,
+  navigateToRedirectReturn,
   startRelayVerificationHandshake,
+  verifyRedirectAppOrigin,
   waitForRelayCompletion,
+  type ConnectApprovalOptions,
 } from './connect-kernel';
 import { useAuth } from '@/enbox/hooks/use-auth';
 import { useAuthStore } from '@/stores/auth-store';
@@ -130,6 +135,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const mountedRef = useRef(true);
   const relayCompletionIdRef = useRef(0);
   const decisionStartedRef = useRef(false);
+  const allowUnloadRef = useRef(false);
+  const primedOriginVerificationRef = useRef<Promise<{ origin: string; verified: boolean } | undefined>>();
   processConnectUriRef.current = processConnectUri;
 
   // Start in 'loading' when the URL carries deep-link connect parameters —
@@ -138,6 +145,9 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const [phase, setPhase] = useState<Phase>(() => (
     hasActiveConnectDeepLink() ? 'loading' : 'scanning'
   ));
+  const [isDeepLinkCeremony, setIsDeepLinkCeremony] = useState(() => hasActiveConnectDeepLink());
+  const [failedReplyMode, setFailedReplyMode] = useState<ConnectRequest['reply']['mode']>();
+  const [redirectReturnError, setRedirectReturnError] = useState<string | null>(null);
   const [cameraReady, setCameraReady] = useState(false);
   // 'none': the device has no camera; 'unavailable': it has one we couldn't start (often permission).
   const [cameraError, setCameraError] = useState<false | 'none' | 'unavailable'>(false);
@@ -156,6 +166,8 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   const [verificationHandshake, setVerificationHandshake] = useState<ConnectVerificationHandshake>();
   const [handshakeError, setHandshakeError] = useState<string | null>(null);
   const [handshakeRetryKey, setHandshakeRetryKey] = useState(0);
+  const [redirectOriginVerified, setRedirectOriginVerified] = useState(false);
+  const [redirectReturnUrl, setRedirectReturnUrl] = useState<string>();
   const [relayConfirmed, setRelayConfirmed] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [moduleSetupRetryKey, setModuleSetupRetryKey] = useState(0);
@@ -184,6 +196,18 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   const permissionRequests = connectionRequest?.permissionRequests ?? EMPTY_PERMISSION_REQUESTS;
   const needsOnboarding = firstTime && !agent;
+  const isRedirectReply = connectionRequest?.reply.mode === 'redirect';
+  const redirectTargetOrigin = useMemo(() => {
+    if (!connectionRequest || connectionRequest.reply.mode !== 'redirect') return undefined;
+    try {
+      return new URL(connectionRequest.reply.redirectUri).origin;
+    } catch {
+      return undefined;
+    }
+  }, [connectionRequest]);
+  const redirectOriginDisplay = redirectTargetOrigin
+    ? redirectTargetOrigin.replace(/^https:\/\//i, '')
+    : undefined;
   const isRefresh = connectionRequest?.requestType === 'refresh';
   const authenticationOnly = connectionRequest?.requestType === 'authenticate';
   const authentication = connectionRequest?.authentication;
@@ -295,6 +319,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   useEffect(() => {
     if (phase !== 'request' && phase !== 'verify' && phase !== 'authorizing') return;
     const handler = (e: BeforeUnloadEvent) => {
+      if (allowUnloadRef.current) return;
       e.preventDefault();
       e.returnValue = '';
     };
@@ -303,10 +328,13 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
   }, [phase]);
 
   // Publish the wallet's ephemeral X25519 SAS handshake key as soon as a
-  // relayed request is ready to review so the requesting app can display the
-  // 3 verification symbols while the user reviews permissions.
+  // cross-device `direct_post` relayed request is ready to review so the
+  // requesting app can display the 3 verification symbols while the user
+  // reviews permissions. Same-device `redirect` requests authenticate return
+  // delivery via a 256-bit fragment secret instead of cross-device SAS.
   const shouldPrepareVerificationHandshake = Boolean(
     connectionRequest
+    && connectionRequest.reply.mode === 'direct_post'
     && (phase === 'request' || phase === 'verify')
     && !refreshUnavailable
     && !(isRefresh && refreshLookupPending)
@@ -335,6 +363,30 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
     return () => { cancelled = true; };
   }, [shouldPrepareVerificationHandshake, connectionRequest, handshakeRetryKey]);
+
+  // For same-device `redirect` requests, adopt the manifest verification started
+  // at deep-link priming (or start it here if not primed) so verified apps settle
+  // even if the user taps Deny right after unlocking.
+  useEffect(() => {
+    if (!isRedirectReply || !connectionRequest || phase !== 'request') return;
+    let cancelled = false;
+    setRedirectOriginVerified(false);
+    const primed = primedOriginVerificationRef.current;
+    primedOriginVerificationRef.current = undefined;
+
+    void (primed ?? verifyRedirectAppOrigin(connectionRequest)).then(
+      (result) => {
+        if (cancelled) return;
+        setRedirectOriginVerified(result?.verified === true);
+      },
+      () => {
+        if (cancelled) return;
+        setRedirectOriginVerified(false);
+      },
+    );
+
+    return () => { cancelled = true; };
+  }, [isRedirectReply, connectionRequest, phase]);
 
   // NOTE: useBlocker is not available with <BrowserRouter> — it requires
   // createBrowserRouter (data router). The beforeunload handler above is
@@ -441,13 +493,35 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
   // ── Connect flow ─────────────────────────────────────────────────
 
+  function performRedirectNavigation(returnUrl: string) {
+    // Release the beforeunload guard synchronously so the intentional redirect
+    // back to the app never triggers the browser's "Leave site?" prompt.
+    allowUnloadRef.current = true;
+    try {
+      navigateToRedirectReturn(returnUrl);
+    } catch (err) {
+      allowUnloadRef.current = false;
+      throw err;
+    }
+  }
+
   async function processConnectParams(requestUri: string, encryptionKey: Uint8Array) {
     try {
       const request = await fetchConnectRequest(requestUri, encryptionKey);
+      // Same-device `redirect` requests rely on the wallet returning directly
+      // to the requesting app's browser tab via a fragment secret rather than
+      // cross-device SAS verification. Never accept them via the QR scanner or
+      // uploaded screenshots, which would bypass cross-device SAS.
+      if (request.reply.mode !== 'direct_post') {
+        throw new Error('This connection code requires opening the link directly on the same device.');
+      }
       const preflight = preflightConnectRequest(request);
       await validateConnectPermissionSemantics(preflight);
+      allowUnloadRef.current = false;
       setVerificationHandshake(undefined);
       setHandshakeError(null);
+      setRedirectOriginVerified(false);
+      setRedirectReturnUrl(undefined);
       setPendingApprovalDid(undefined);
       setRelayConfirmed(false);
       setConnectionRequest(request);
@@ -492,9 +566,16 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     let cancelled = false;
     const adopt = (outcome: DeepLinkOutcome): void => {
       if (cancelled) return;
+      setIsDeepLinkCeremony(true);
       if ('request' in outcome) {
+        allowUnloadRef.current = false;
+        primedOriginVerificationRef.current = outcome.redirectOriginVerification;
+        setFailedReplyMode(undefined);
+        setRedirectReturnError(null);
         setVerificationHandshake(undefined);
         setHandshakeError(null);
+        setRedirectOriginVerified(false);
+        setRedirectReturnUrl(undefined);
         setPendingApprovalDid(undefined);
         setRelayConfirmed(false);
         setConnectionRequest(outcome.request);
@@ -503,6 +584,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
         );
         setPhase('request');
       } else {
+        setFailedReplyMode(outcome.replyMode);
         setErrorMessage(outcome.error);
         setPhase('error');
       }
@@ -519,6 +601,149 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
 
     return () => { cancelled = true; };
   }, []);
+
+  function handleApproveAction(overrideDid?: string) {
+    if (connectionRequest?.reply.mode === 'redirect') {
+      void handleRedirectApprove(overrideDid);
+      return;
+    }
+    handleBeginVerification(overrideDid);
+  }
+
+  async function runRelayApproval(
+    params:
+      | { mode: 'redirect'; candidateDid: string }
+      | { mode: 'direct_post'; candidateDid: string; handshakeKey: Jwk },
+  ) {
+    // Read the agent from the store, not the render closure — the
+    // create-wallet-and-connect path calls this right after onboarding,
+    // before this component re-renders with the fresh agent.
+    const candidateAgent = useAuthStore.getState().agent;
+
+    setPhase('authorizing');
+    try {
+      const {
+        agent: liveAgent,
+        request: activeRequest,
+        selectedDid: approveAsDid,
+      } = requireConnectApprovalContext(candidateAgent, connectionRequest, params.candidateDid);
+
+      if (!isDidSupportedByRequest(approveAsDid, activeRequest.supportedDidMethods)) {
+        throw new Error('This profile uses an ID type the app does not support.');
+      }
+
+      setStatusMessage(
+        activeRequest.requestType === 'authenticate' ? 'Confirming sign-in...' : 'Authorizing...',
+      );
+      const overrides = overrideAcknowledged ? overridableModules : [];
+      const approvalOptions: ConnectApprovalOptions = {
+        onProgress: ({ phase: approvalPhase }) => {
+          setStatusMessage(formatConnectApprovalPhase(approvalPhase));
+        },
+      };
+
+      // The agent ceremony owns module preparation end to end: install,
+      // explicitly approved definition replacement, encryption upgrades, and
+      // fail-closed remote verification across reachable owner endpoints. It
+      // then creates and delivers the grants, grant keys, and session
+      // revocation grants, and posts the sealed response to the relay callback.
+      let completedRequest: ConnectRequest;
+      let returnUrl: string | undefined;
+      if (params.mode === 'redirect') {
+        const result = await approveRedirectConnectRequest(
+          approveAsDid,
+          activeRequest,
+          sessionDurationSeconds,
+          liveAgent,
+          overrides,
+          approvalOptions,
+        );
+        completedRequest = result.request;
+        returnUrl = result.returnUrl;
+      } else {
+        completedRequest = await approveConnectRequest(
+          approveAsDid,
+          activeRequest,
+          params.handshakeKey,
+          sessionDurationSeconds,
+          liveAgent,
+          overrides,
+          approvalOptions,
+        );
+      }
+
+      // Permission-query freshness is secondary to a completed approval. The
+      // same event is emitted by the popup flow, while local DWN subscriptions
+      // remain an additional best-effort invalidation path.
+      try {
+        if (completedRequest.requestType !== 'authenticate') {
+          void queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(approveAsDid) });
+          void queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(approveAsDid) });
+          void runEnboxPromise(publishWalletEvent({
+            _tag         : 'connect.approved',
+            origin       : (params.mode === 'redirect' ? redirectTargetOrigin : undefined)
+              ?? completedRequest.clientMetadata?.origin
+              ?? completedRequest.appName,
+            connectedDid : approveAsDid,
+          })).catch((err: unknown) => console.warn('Relay connect approval event failed:', err));
+        }
+      } catch (err) {
+        console.warn('Relay connect approval event failed:', err);
+      }
+
+      clearDeepLinkSession();
+      if (!mountedRef.current) return;
+      setConnectionRequest(completedRequest);
+      if (returnUrl !== undefined) {
+        setRedirectReturnUrl(returnUrl);
+        setPhase('connected');
+        try {
+          performRedirectNavigation(returnUrl);
+        } catch {
+          // Keep the manual Return button visible if automatic navigation is blocked.
+        }
+        return;
+      }
+
+      setRelayConfirmed(false);
+      setPhase('connected');
+
+      // Poll the relay's observational completion marker in the background so
+      // the Connected screen updates once the app opens the response.
+      const completionId = ++relayCompletionIdRef.current;
+      try {
+        void waitForRelayCompletion(completedRequest).then((completed) => {
+          if (
+            !completed
+            || !mountedRef.current
+            || relayCompletionIdRef.current !== completionId
+          ) return;
+          setRelayConfirmed(true);
+        }).catch(() => {
+          // Unsupported/older relays and transient polling failures keep the
+          // completed screen intact.
+        });
+      } catch {
+        // Ignore synchronous helper failures.
+      }
+    } catch (err) {
+      console.error('Authorization error:', err);
+      clearDeepLinkSession();
+      if (!mountedRef.current) return;
+      setVerificationHandshake(undefined);
+      setPendingApprovalDid(undefined);
+      setErrorMessage(getConnectErrorMessage(err, 'Failed to authorize connection.'));
+      setPhase('error');
+    }
+  }
+
+  async function handleRedirectApprove(overrideDid?: string) {
+    if (!claimConnectDecision(decisionStartedRef)) return;
+    await runRelayApproval({
+      mode: 'redirect',
+      candidateDid: overrideDid ?? approvalDid,
+    });
+  }
 
   function handleBeginVerification(overrideDid?: string) {
     // Read the agent from the store, not the render closure — the
@@ -579,98 +804,11 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       return;
     }
 
-    await executeVerifiedApproval(verificationHandshake.walletEpk);
-  }
-
-  async function executeVerifiedApproval(handshakeKey: Jwk) {
-    const candidateAgent = useAuthStore.getState().agent;
-    const candidateDid = pendingApprovalDid ?? approvalDid;
-
-    setPhase('authorizing');
-    try {
-      const {
-        agent: liveAgent,
-        request: activeRequest,
-        selectedDid: approveAsDid,
-      } = requireConnectApprovalContext(candidateAgent, connectionRequest, candidateDid);
-
-      if (!isDidSupportedByRequest(approveAsDid, activeRequest.supportedDidMethods)) {
-        throw new Error('This profile uses an ID type the app does not support.');
-      }
-
-      setStatusMessage(
-        activeRequest.requestType === 'authenticate' ? 'Confirming sign-in...' : 'Authorizing...',
-      );
-      // The agent ceremony owns module preparation end to end:
-      // install, explicitly approved definition replacement, encryption
-      // upgrades, and fail-closed remote verification across reachable owner
-      // endpoints. It then creates and delivers the grants, grant keys, and
-      // session revocation grants, and the sealed response is posted to the
-      // relay callback with `handshakeKey` bound in the JWE `apv` header.
-      const completedRequest = await approveConnectRequest(
-        approveAsDid,
-        activeRequest,
-        handshakeKey,
-        sessionDurationSeconds,
-        liveAgent,
-        overrideAcknowledged ? overridableModules : [],
-        {
-          onProgress: ({ phase: approvalPhase }) => {
-            setStatusMessage(formatConnectApprovalPhase(approvalPhase));
-          },
-        },
-      );
-
-      // Permission-query freshness is secondary to a completed approval. The
-      // same event is emitted by the popup flow, while local DWN subscriptions
-      // remain an additional best-effort invalidation path.
-      try {
-        if (completedRequest.requestType !== 'authenticate') {
-          void queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissions(approveAsDid) });
-          void queryClient.invalidateQueries({ queryKey: queryKeys.identities.permissionHistory(approveAsDid) });
-          void runEnboxPromise(publishWalletEvent({
-            _tag         : 'connect.approved',
-            origin       : completedRequest.clientMetadata?.origin ?? completedRequest.appName,
-            connectedDid : approveAsDid,
-          })).catch((err: unknown) => console.warn('Relay connect approval event failed:', err));
-        }
-      } catch (err) {
-        console.warn('Relay connect approval event failed:', err);
-      }
-
-      clearDeepLinkSession();
-      if (!mountedRef.current) return;
-      setConnectionRequest(completedRequest);
-      setRelayConfirmed(false);
-      setPhase('connected');
-
-      // Poll the relay's observational completion marker in the background so
-      // the Connected screen updates once the app opens the response.
-      const completionId = ++relayCompletionIdRef.current;
-      try {
-        void waitForRelayCompletion(completedRequest).then((completed) => {
-          if (
-            !completed
-            || !mountedRef.current
-            || relayCompletionIdRef.current !== completionId
-          ) return;
-          setRelayConfirmed(true);
-        }).catch(() => {
-          // Unsupported/older relays and transient polling failures keep the
-          // completed screen intact.
-        });
-      } catch {
-        // Ignore synchronous helper failures.
-      }
-    } catch (err) {
-      console.error('Authorization error:', err);
-      clearDeepLinkSession();
-      if (!mountedRef.current) return;
-      setVerificationHandshake(undefined);
-      setPendingApprovalDid(undefined);
-      setErrorMessage(getConnectErrorMessage(err, 'Failed to authorize connection.'));
-      setPhase('error');
-    }
+    await runRelayApproval({
+      mode: 'direct_post',
+      candidateDid: pendingApprovalDid ?? approvalDid,
+      handshakeKey: verificationHandshake.walletEpk,
+    });
   }
 
   // ── Inline onboarding: create wallet, profile, then approve ──
@@ -714,6 +852,10 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     void queryClient.invalidateQueries({ queryKey: queryKeys.identities.all });
     setSelectedDid(approvalDid);
 
+    if (connectionRequest?.reply.mode === 'redirect') {
+      await handleRedirectApprove(approvalDid);
+      return;
+    }
     handleBeginVerification(approvalDid);
   }
 
@@ -785,13 +927,27 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
     }
     relayCompletionIdRef.current += 1;
     clearDeepLinkSession();
-    navigate('/');
+    // Only auto-redirect back on denial when the return origin verified its
+    // `/.well-known/enbox-app` manifest; otherwise stay in the wallet so an
+    // untrusted requester cannot abuse Deny/Close as an open redirector.
+    if (connectionRequest?.reply.mode === 'redirect' && redirectOriginVerified) {
+      try {
+        const denialUrl = buildRedirectDenialUrl(connectionRequest);
+        if (denialUrl !== undefined) {
+          performRedirectNavigation(denialUrl);
+          return;
+        }
+      } catch {
+        // Fall back to home if redirect URI validation or navigation fails.
+      }
+    }
+    navigate('/', { replace: true });
   }
 
   function finishRelayCeremony() {
     relayCompletionIdRef.current += 1;
     clearDeepLinkSession();
-    navigate('/');
+    navigate('/', { replace: true });
   }
 
   function handleCameraSwitch() {
@@ -993,26 +1149,54 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
       {phase === 'error' && (
         <div className={`animate-[fadeIn_0.3s_ease-out] px-6 py-8 lg:px-0 space-y-4 max-w-lg mx-auto w-full ${standalone ? 'flex-1 flex flex-col justify-center pb-24' : ''}`}>
           <ErrorAlert message={errorMessage} />
-          <Button
-            variant="secondary"
-            className="w-full min-h-[44px]"
-            onClick={() => {
-              relayCompletionIdRef.current += 1;
-              clearDeepLinkSession();
-              resetConnectDecision(decisionStartedRef);
-              setConnectionRequest(undefined);
-              setVerificationHandshake(undefined);
-              setHandshakeError(null);
-              setPendingApprovalDid(undefined);
-              setRelayConfirmed(false);
-              setOverrideAcknowledged(false);
-              setShowOverrideConfirm(false);
-              setPhase('scanning');
-              setErrorMessage('');
-            }}
-          >
-            Try Again
-          </Button>
+          {isRedirectReply || failedReplyMode === 'redirect' || standalone ? (
+            <Button
+              variant="secondary"
+              className="w-full min-h-[44px]"
+              onClick={finishRelayCeremony}
+            >
+              Done
+            </Button>
+          ) : (
+            <div className="flex gap-3">
+              {isDeepLinkCeremony && (
+                <Button
+                  variant="secondary"
+                  className="min-w-0 flex-1 min-h-[44px]"
+                  onClick={finishRelayCeremony}
+                >
+                  Done
+                </Button>
+              )}
+              <Button
+                variant="secondary"
+                className="min-w-0 flex-1 min-h-[44px]"
+                onClick={() => {
+                  allowUnloadRef.current = false;
+                  primedOriginVerificationRef.current = undefined;
+                  relayCompletionIdRef.current += 1;
+                  clearDeepLinkSession();
+                  resetConnectDecision(decisionStartedRef);
+                  setIsDeepLinkCeremony(false);
+                  setFailedReplyMode(undefined);
+                  setRedirectReturnError(null);
+                  setConnectionRequest(undefined);
+                  setVerificationHandshake(undefined);
+                  setHandshakeError(null);
+                  setRedirectOriginVerified(false);
+                  setRedirectReturnUrl(undefined);
+                  setPendingApprovalDid(undefined);
+                  setRelayConfirmed(false);
+                  setOverrideAcknowledged(false);
+                  setShowOverrideConfirm(false);
+                  setPhase('scanning');
+                  setErrorMessage('');
+                }}
+              >
+                Try Again
+              </Button>
+            </div>
+          )}
         </div>
       )}
 
@@ -1050,12 +1234,37 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             <ConsentRequester
               title={requesterTitle}
               titleHint={connectionRequest.clientDid}
-              seed={connectionRequest.clientMetadata?.origin ?? connectionRequest.appName ?? connectionRequest.clientDid}
-              trust="reported"
-              trustLabel="Unverified app"
+              identifier={isRedirectReply ? redirectOriginDisplay : undefined}
+              iconOrigin={
+                isRedirectReply && redirectOriginVerified && redirectTargetOrigin?.startsWith('https://')
+                  ? redirectTargetOrigin
+                  : undefined
+              }
+              seed={redirectTargetOrigin ?? connectionRequest.clientMetadata?.origin ?? connectionRequest.appName ?? connectionRequest.clientDid}
+              trust={
+                isRedirectReply && redirectOriginVerified && redirectTargetOrigin?.startsWith('https://')
+                  ? 'verified-origin'
+                  : isRedirectReply && redirectOriginVerified
+                    ? 'local-origin'
+                    : 'reported'
+              }
+              trustLabel={
+                isRedirectReply && redirectOriginVerified && redirectTargetOrigin?.startsWith('https://')
+                  ? 'Returns to verified app'
+                  : isRedirectReply && redirectOriginVerified
+                    ? 'Local development'
+                    : isRedirectReply
+                      ? 'Unverified return target'
+                      : 'Unverified app'
+              }
+              trustTitle={
+                isRedirectReply && redirectOriginVerified && redirectTargetOrigin?.startsWith('https://') && redirectOriginDisplay
+                  ? `${redirectOriginDisplay} confirmed via /.well-known/enbox-app that it accepts ${authenticationOnly ? 'Enbox sign-in returns' : 'Enbox connection returns'} at this address. The app name is self-reported.`
+                  : undefined
+              }
               details={(
                 <p className="break-all">
-                  {reportedOrigin && (
+                  {!isRedirectReply && reportedOrigin && (
                     <>Says it&apos;s <span className="font-mono">{reportedOrigin}</span> · </>
                   )}
                   Signed by <span className="font-mono" title={connectionRequest.clientDid}>{requesterLabel}</span>
@@ -1137,7 +1346,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   modules={overridableModules}
                   onConfirm={() => {
                     setShowOverrideConfirm(false);
-                    handleBeginVerification();
+                    handleApproveAction();
                   }}
                   onCancel={() => setShowOverrideConfirm(false)}
                 />
@@ -1186,7 +1395,7 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
                   onClick={() =>
                     overridableModules.length > 0 && !isRefresh
                       ? setShowOverrideConfirm(true)
-                      : handleBeginVerification()
+                      : handleApproveAction()
                   }
                   disabled={!approvalDid || !moduleSetupReady || (isRefresh && !refreshReady)}
                 >
@@ -1266,11 +1475,43 @@ export default function AppConnectPage({ standalone = false }: { standalone?: bo
             icon={<Check />}
             title={authenticationOnly ? 'Signed in!' : 'Connected!'}
             message={
-              relayConfirmed
-                ? 'The requesting application confirmed the connection.'
-                : `You can return to ${displayAppName ?? 'the app'} now.`
+              redirectReturnUrl
+                ? `Returning to ${displayAppName ?? redirectOriginDisplay ?? 'the app'}...`
+                : relayConfirmed
+                  ? 'The requesting application confirmed the connection.'
+                  : `You can return to ${displayAppName ?? 'the app'} now.`
             }
-            action={(
+            action={redirectReturnUrl ? (
+              <div className="w-full space-y-2.5">
+                {redirectReturnError && (
+                  <p className="text-center text-sm text-error" role="alert">
+                    {redirectReturnError}
+                  </p>
+                )}
+                <Button
+                  className="w-full"
+                  onClick={() => {
+                    try {
+                      setRedirectReturnError(null);
+                      performRedirectNavigation(redirectReturnUrl);
+                    } catch {
+                      setRedirectReturnError(
+                        `Could not open ${redirectOriginDisplay ?? 'the app'} automatically. Switch back to the app tab or tap Done.`,
+                      );
+                    }
+                  }}
+                >
+                  Return to {displayAppName ?? redirectOriginDisplay ?? 'the app'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="w-full"
+                  onClick={finishRelayCeremony}
+                >
+                  Done
+                </Button>
+              </div>
+            ) : (
               <Button className="w-full" onClick={finishRelayCeremony}>
                 Done
               </Button>

@@ -73,6 +73,8 @@ interface ConsentRequesterProps {
    */
   trust: 'verified-origin' | 'local-origin' | 'reported';
   trustLabel: string;
+  /** Optional custom tooltip for the trust badge (overrides default browser-origin copy). */
+  trustTitle?: string;
   /** Supplementary self-reported facts, rendered quietly under the trust line. */
   details?: React.ReactNode;
   /** One-line purpose, e.g. "wants to connect to your profile". */
@@ -94,6 +96,7 @@ export function ConsentRequester({
   seed,
   trust,
   trustLabel,
+  trustTitle,
   details,
   summary,
   footnote,
@@ -116,14 +119,17 @@ export function ConsentRequester({
           are stripped of symbols and emoji, so nothing else on this screen
           can imitate it. */}
       <div className="mt-2 flex max-w-full flex-wrap items-center justify-center gap-x-2 gap-y-1">
-        {trust !== 'reported' && identifier && (
+        {identifier && (
           <span className="break-all text-sm font-medium text-text-primary">{identifier}</span>
         )}
         {trust === 'verified-origin' && (
           <Badge
             tone="success"
             icon={<ShieldCheck />}
-            title={`Your browser confirmed this request comes from ${identifier ?? 'this website'}. The name and icon are provided by the app.`}
+            title={
+              trustTitle
+              ?? `Your browser confirmed this request comes from ${identifier ?? 'this website'}. The name and icon are provided by the app.`
+            }
           >
             {trustLabel}
           </Badge>

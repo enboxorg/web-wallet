@@ -2,10 +2,15 @@ import { Effect } from 'effect';
 import type { ExecuteConnectApprovalParams } from '@enbox/agent';
 import { executeConnectApproval, executeConnectAuthentication } from '@enbox/agent';
 import {
+  assertValidRedirectUri,
   assertX25519PublicJwk,
+  buildRedirectReturnUri,
   CONNECT_DENIED_TOKEN,
   ConnectProvider,
   createConnectVerificationHandshake,
+  fetchConnectAppManifest,
+  generateRedirectResponseSecret,
+  isRedirectUriVerifiedInManifest,
   pollRelayComplete,
   postRelayHandshake,
   postRelayResponse,
@@ -53,9 +58,10 @@ function captureApprovalInput<T>(operation: string, capture: () => T) {
 }
 
 /** Approve and seal one captured request; only callback delivery may be retried. */
-async function approveAndSeal({ handshakeKey, ...params }: ExecuteConnectApprovalParams & {
+async function approveAndSeal({ handshakeKey, responseSecret, ...params }: ExecuteConnectApprovalParams & {
   request: ConnectRequest;
   handshakeKey?: Jwk;
+  responseSecret?: Uint8Array;
 }): Promise<string> {
   const { agent, providerDid, request, verifiedRequesterOrigin } = params;
   if (request.requestType === 'authenticate') {
@@ -64,12 +70,12 @@ async function approveAndSeal({ handshakeKey, ...params }: ExecuteConnectApprova
     }
     const approval = await executeConnectAuthentication({ agent, providerDid, request, verifiedRequesterOrigin });
     return ConnectProvider.sealAuthenticationResponse({
-      request, providerDid, approval, signer: approval.responseSigner, handshakeKey,
+      request, providerDid, approval, signer: approval.responseSigner, handshakeKey, responseSecret,
     });
   }
   const approval = await executeConnectApproval(params);
   return ConnectProvider.sealApprovedResponse({
-    request, providerDid, approval, signer: approval.responseSigner, handshakeKey,
+    request, providerDid, approval, signer: approval.responseSigner, handshakeKey, responseSecret,
   });
 }
 
@@ -81,6 +87,12 @@ export function getRelayAuthenticationOrigin(request: ConnectRequest): string | 
     throw new Error('Sign-in requires a fresh request from the authentication service.');
   }
   assertConnectAuthenticationOrigin(request, origin);
+  if (request.reply.mode === 'redirect') {
+    const redirectOrigin = new URL(request.reply.redirectUri).origin;
+    if (redirectOrigin !== origin) {
+      throw new Error('The sign-in redirect destination does not match the requesting origin.');
+    }
+  }
   return origin;
 }
 
@@ -145,15 +157,97 @@ async function readBoundedResponseText(response: Response): Promise<string> {
 
 /**
  * Returns the relay callback URL from an opened connect request, enforcing
- * the wallet's URL policy. Relay requests must use the `direct_post` reply
- * mode — a popup (`post_message`) request cannot arrive through the relay.
+ * the wallet's URL policy. Both cross-device (`direct_post`) and same-device
+ * hybrid (`redirect`) requests post their sealed response to `callbackUrl`;
+ * popup (`post_message`) requests cannot arrive through the relay.
  */
 export function getRelayCallbackUrl(request: ConnectRequest): string {
-  if (request.reply.mode !== 'direct_post') {
+  if (request.reply.mode !== 'direct_post' && request.reply.mode !== 'redirect') {
     throw new Error('The connection request does not use the relay reply mode.');
   }
   parseConnectUrl(request.reply.callbackUrl, 'Connect callback URL');
+  if (request.reply.mode === 'redirect') {
+    getRedirectReturnTarget(request);
+  }
   return request.reply.callbackUrl;
+}
+
+/**
+ * Returns the validated `redirectUri` when a request uses `reply.mode = 'redirect'`,
+ * enforcing protocol-level redirect URI rules (no query string, no credentials,
+ * no fragment) and the wallet's trusted origin policy (HTTPS or loopback localhost).
+ */
+export function getRedirectReturnTarget(request: ConnectRequest): string | undefined {
+  if (request.reply.mode !== 'redirect') {
+    return undefined;
+  }
+  assertValidRedirectUri(request.reply.redirectUri);
+  const parsed = new URL(request.reply.redirectUri);
+  if (!isTrustedDappOrigin(parsed.origin)) {
+    throw new Error('Connect redirect URI must use HTTPS or a local development origin.');
+  }
+  return request.reply.redirectUri;
+}
+
+/**
+ * Checks whether a `redirect` request's `redirectUri` is explicitly allowlisted
+ * in `https://<origin>/.well-known/enbox-app` (fetched with `redirect: 'error'`).
+ * Never throws: absent, unreachable, redirected, or malformed manifests simply
+ * report `verified: false` so the consent UI displays a neutral return target.
+ */
+export async function verifyRedirectAppOrigin(
+  request: ConnectRequest,
+): Promise<{ origin: string; verified: boolean } | undefined> {
+  let redirectUri: string | undefined;
+  try {
+    redirectUri = getRedirectReturnTarget(request);
+  } catch {
+    return undefined;
+  }
+  if (redirectUri === undefined) {
+    return undefined;
+  }
+  const origin = new URL(redirectUri).origin;
+  try {
+    const manifest = await fetchConnectAppManifest(origin);
+    return {
+      origin,
+      verified: isRedirectUriVerifiedInManifest(redirectUri, manifest),
+    };
+  } catch {
+    return { origin, verified: false };
+  }
+}
+
+/**
+ * Builds the redirect return URL signalling user denial (`#enbox_state=...&enbox_error=denied`).
+ */
+export function buildRedirectDenialUrl(request: ConnectRequest): string | undefined {
+  const redirectUri = getRedirectReturnTarget(request);
+  if (redirectUri === undefined) {
+    return undefined;
+  }
+  return buildRedirectReturnUri({
+    redirectUri,
+    state : request.state,
+    error : 'denied',
+  });
+}
+
+/**
+ * Navigates the current browsing context to a validated redirect return URL.
+ * Validates the pre-hash URL as defense-in-depth and uses `location.replace`
+ * so `/connect/app` is not stranded in mobile browser Back history.
+ */
+export function navigateToRedirectReturn(returnUrl: string): void {
+  const hashIndex = returnUrl.indexOf('#');
+  const baseUrl = hashIndex === -1 ? returnUrl : returnUrl.slice(0, hashIndex);
+  assertValidRedirectUri(baseUrl);
+  const parsed = new URL(baseUrl);
+  if (!isTrustedDappOrigin(parsed.origin)) {
+    throw new Error('Connect redirect return URL must use HTTPS or a local development origin.');
+  }
+  window.location.replace(returnUrl);
 }
 
 /**
@@ -225,6 +319,9 @@ export function fetchConnectRequest(
  */
 export function startRelayVerificationHandshakeEffect(request: ConnectRequest) {
   const prepared = captureApprovalInput('connect.handshake', () => {
+    if (request.reply.mode !== 'direct_post') {
+      throw new Error('SAS verification handshake is only used for direct_post relay requests.');
+    }
     const requestJwe = relayRequestJwes.get(request);
     if (requestJwe === undefined) {
       throw new Error('Verification requires a fresh relayed connection request.');
@@ -296,6 +393,64 @@ export function clearRelayVerificationHandshake(request: ConnectRequest): void {
   relayHandshakePublishes.delete(request);
 }
 
+/** Shared non-idempotent approval + retry-safe callback POST for `direct_post` and `redirect`. */
+function executeAndPostRelayApprovalEffect({
+  channel,
+  callbackUrl,
+  handshakeKey,
+  responseSecret,
+  ...captured
+}: Omit<ExecuteConnectApprovalParams, 'agent' | 'transport'> & {
+  channel: 'relay' | 'redirect';
+  callbackUrl: string;
+  request: ConnectRequest;
+  handshakeKey?: Jwk;
+  responseSecret?: Uint8Array;
+}) {
+  return Effect.gen(function* () {
+    const { request } = captured;
+    const agent = yield* CurrentAgent;
+    const totalStart = nowMs();
+    const idToken = yield* Effect.tryPromise({
+      try: async () => {
+        const sealStart = nowMs();
+        const sealed = await approveAndSeal({
+          ...captured,
+          agent,
+          transport: 'relay',
+          ...(handshakeKey === undefined ? {} : { handshakeKey }),
+          ...(responseSecret === undefined ? {} : { responseSecret }),
+        });
+        console.debug(
+          `[connect.perf] ${channel}.approveAndSeal ok in ${(nowMs() - sealStart).toFixed(1)}ms`,
+        );
+        return sealed;
+      },
+      catch: sdkError('connect.submitConnectResponse'),
+    });
+
+    const postStart = nowMs();
+    yield* withNetworkPolicy(
+      'connect.submitConnectResponse',
+      Effect.tryPromise({
+        try: async (signal) => postRelayResponse({
+          callbackUrl,
+          state: request.state,
+          idToken,
+          fetchFn: (input, init) => fetchWithEffectSignal(signal, input, init),
+        }),
+        catch: sdkError('connect.submitConnectResponse'),
+      }),
+      () => sdkTimeout('connect.submitConnectResponse'),
+    );
+    console.debug(
+      `[connect.perf] ${channel}.postResponse ok in ${(nowMs() - postStart).toFixed(1)}ms `
+      + `(total=${(nowMs() - totalStart).toFixed(1)}ms)`,
+    );
+    return request;
+  });
+}
+
 /**
  * Runs the agent's connect approval ceremony for a relayed request and posts
  * the sealed response to the request's callback: delegate mint (or
@@ -343,48 +498,9 @@ export function approveConnectRequestEffect(
       ...(options?.onProgress === undefined ? {} : { onProgress: options.onProgress }),
     };
   });
-  return Effect.gen(function* () {
-    const { callbackUrl, handshakeKey: capturedHandshakeKey, ...captured } = yield* prepared;
-    const { request } = captured;
-    const agent = yield* CurrentAgent;
-    const totalStart = nowMs();
-    const idToken = yield* Effect.tryPromise({
-      try: async () => {
-        const sealStart = nowMs();
-        const sealed = await approveAndSeal({
-          ...captured,
-          agent,
-          transport: 'relay',
-          handshakeKey: capturedHandshakeKey,
-        });
-        console.debug(
-          `[connect.perf] relay.approveAndSeal ok in ${(nowMs() - sealStart).toFixed(1)}ms`,
-        );
-        return sealed;
-      },
-      catch: sdkError('connect.submitConnectResponse'),
-    });
-
-    const postStart = nowMs();
-    yield* withNetworkPolicy(
-      'connect.submitConnectResponse',
-      Effect.tryPromise({
-        try: async (signal) => postRelayResponse({
-          callbackUrl,
-          state: request.state,
-          idToken,
-          fetchFn: (input, init) => fetchWithEffectSignal(signal, input, init),
-        }),
-        catch: sdkError('connect.submitConnectResponse'),
-      }),
-      () => sdkTimeout('connect.submitConnectResponse'),
-    );
-    console.debug(
-      `[connect.perf] relay.postResponse ok in ${(nowMs() - postStart).toFixed(1)}ms `
-      + `(total=${(nowMs() - totalStart).toFixed(1)}ms)`,
-    );
-    return request;
-  });
+  return Effect.flatMap(prepared, (captured) =>
+    executeAndPostRelayApprovalEffect({ ...captured, channel: 'relay' }),
+  );
 }
 
 export function approveConnectRequest(
@@ -401,6 +517,88 @@ export function approveConnectRequest(
       selectedDid,
       request,
       handshakeKey,
+      approvedSessionTtlSeconds,
+      approvedModuleOverrides,
+      options,
+    ).pipe(
+      Effect.provide(currentAgentLayer(agent)),
+    ),
+  );
+}
+
+/**
+ * Runs the approval ceremony for a same-device hybrid `redirect` request:
+ * generates a fresh 256-bit `responseSecret`, seals the response JWE under
+ * BOTH `request.responseKey` and `responseSecret`, posts it to `callbackUrl`,
+ * and returns the fragment-bearing `returnUrl` (`#enbox_state=...&enbox_key=...`)
+ * for the wallet to navigate back to the requesting app.
+ */
+export function approveRedirectConnectRequestEffect(
+  selectedDid: string,
+  request: ConnectRequest,
+  approvedSessionTtlSeconds: number,
+  approvedModuleOverrides: readonly string[] = [],
+  options?: ConnectApprovalOptions,
+) {
+  const prepared = captureApprovalInput('connect.submitConnectResponse', () => {
+    if (request.reply.mode !== 'redirect') {
+      throw new Error('The connection request does not use the redirect reply mode.');
+    }
+    if (typeof request.state !== 'string' || request.state.length === 0) {
+      throw new Error('The connection request is missing a valid state parameter.');
+    }
+    if (request.delegateDid !== undefined && request.requestType !== 'refresh') {
+      throw new Error('Redirect connection requests cannot supply a pre-existing delegate DID.');
+    }
+    const verifiedRequesterOrigin = getRelayAuthenticationOrigin(request);
+    const capturedRequest = structuredClone(request);
+    const callbackUrl = getRelayCallbackUrl(capturedRequest);
+    const redirectUri = getRedirectReturnTarget(capturedRequest)!;
+    if (verifiedRequesterOrigin !== undefined) {
+      assertConnectAuthenticationOrigin(capturedRequest, verifiedRequesterOrigin);
+    }
+    const responseSecret = generateRedirectResponseSecret();
+    const returnUrl = buildRedirectReturnUri({
+      redirectUri,
+      state: capturedRequest.state,
+      responseSecret,
+    });
+    return {
+      request: capturedRequest,
+      ...(verifiedRequesterOrigin === undefined ? {} : { verifiedRequesterOrigin }),
+      callbackUrl,
+      responseSecret,
+      returnUrl,
+      approvedModuleOverrides: [...approvedModuleOverrides],
+      providerDid: selectedDid,
+      approvedSessionTtlSeconds,
+      ...(options?.onProgress === undefined ? {} : { onProgress: options.onProgress }),
+    };
+  });
+
+  return Effect.gen(function* () {
+    const { returnUrl, responseSecret, ...captured } = yield* prepared;
+    const completedRequest = yield* executeAndPostRelayApprovalEffect({
+      ...captured,
+      channel: 'redirect',
+      responseSecret,
+    });
+    return { request: completedRequest, returnUrl };
+  });
+}
+
+export function approveRedirectConnectRequest(
+  selectedDid: string,
+  request: ConnectRequest,
+  approvedSessionTtlSeconds: number,
+  agent: EnboxAgent,
+  approvedModuleOverrides: readonly string[] = [],
+  options?: ConnectApprovalOptions,
+): Promise<{ request: ConnectRequest; returnUrl: string }> {
+  return runEnboxPromise(
+    approveRedirectConnectRequestEffect(
+      selectedDid,
+      request,
       approvedSessionTtlSeconds,
       approvedModuleOverrides,
       options,
