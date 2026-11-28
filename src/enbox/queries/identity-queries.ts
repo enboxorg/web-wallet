@@ -145,24 +145,32 @@ export function fetchModulesEffect(did: string) {
 // ── Permissions ────────────────────────────────────────────────────
 
 /** Permission grants stored in the DWN for the given DID. */
-export async function fetchPermissions(agent: EnboxAgent, did: string) {
+export async function fetchPermissions(
+  agent: EnboxAgent,
+  did: string,
+  options: { activeOnly?: boolean } = {},
+) {
   return runEnboxPromise(
-    fetchPermissionsEffect(did).pipe(
+    fetchPermissionsEffect(did, options).pipe(
       Effect.provide(currentAgentLayer(agent)),
     ),
   );
 }
 
-export function fetchPermissionsEffect(did: string) {
+export function fetchPermissionsEffect(did: string, options: { activeOnly?: boolean } = {}) {
   return Effect.gen(function* () {
     const agent = yield* CurrentAgent;
     return yield* Effect.tryPromise({
       try: async () => {
-        const entries = await agent.permissions.fetchGrants({
+        const params = {
           author       : did,
           target       : did,
           checkRevoked : true,
-        });
+          ...(options.activeOnly ? { activeOnly: true } : {}),
+        };
+        const entries = await agent.permissions.fetchGrants(
+          params as Parameters<EnboxAgent['permissions']['fetchGrants']>[0],
+        );
         return entries
           .map(({ grant }) => grant)
           .filter((grant) => !isSessionRevocationGrant(grant));

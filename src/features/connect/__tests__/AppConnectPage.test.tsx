@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderWithProviders } from '@/test-utils';
 import AppConnectPage from '../AppConnectPage';
 import { __resetDeepLinkSessionForTests, primeConnectDeepLink } from '../connect-deep-link';
+import { SLOW_APPROVAL_HINT } from '../connect-progress';
 import { useAuthStore } from '@/stores/auth-store';
 import { queryKeys } from '@/enbox/queries/query-keys';
 
@@ -289,6 +290,7 @@ describe('AppConnectPage', () => {
     fireEvent.click(approve);
     await waitFor(() => expect(mocks.approveConnectRequest).toHaveBeenCalledWith(
       'did:dht:bob', request, '1234', expect.any(Number), mocks.agent, [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
   });
 
@@ -394,6 +396,7 @@ describe('AppConnectPage', () => {
       DEFAULT_APPROVAL_SECONDS,
       mocks.agent,
       [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     );
     expect(mocks.publishWalletEvent).toHaveBeenCalledWith({
       _tag         : 'connect.approved',
@@ -611,6 +614,7 @@ describe('AppConnectPage', () => {
       9 * 60,
       mocks.agent,
       [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
   });
 
@@ -639,6 +643,7 @@ describe('AppConnectPage', () => {
       seconds,
       mocks.agent,
       [],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     ));
   });
 
@@ -716,6 +721,7 @@ describe('AppConnectPage', () => {
         DEFAULT_APPROVAL_SECONDS,
         mocks.agent,
         [],
+        expect.objectContaining({ onProgress: expect.any(Function) }),
       );
     });
   });
@@ -889,6 +895,7 @@ describe('AppConnectPage', () => {
       expect.any(Number),
       mocks.agent,
       [connectRequest.permissionRequests[0].moduleDefinition.module],
+      expect.objectContaining({ onProgress: expect.any(Function) }),
     );
     expect(await screen.findByText('1234')).toBeInTheDocument();
   });
@@ -1072,6 +1079,7 @@ describe('AppConnectPage', () => {
           DEFAULT_APPROVAL_SECONDS,
           mocks.agent,
           [],
+          expect.objectContaining({ onProgress: expect.any(Function) }),
         );
       });
       expect(queryClient.getQueryData(queryKeys.identities.all)).toEqual([
@@ -1115,5 +1123,69 @@ describe('AppConnectPage', () => {
       await screen.findByText(/None of your profiles are supported/i);
       expect(screen.queryByRole('button', { name: /create wallet & connect/i })).not.toBeInTheDocument();
     });
+  });
+
+  it('updates authorizing progress copy from onProgress callbacks', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    let reportProgress: ((progress: { phase: string }) => void) | undefined;
+    let releaseApproval: (request: typeof connectRequest) => void = () => undefined;
+    mocks.approveConnectRequest.mockImplementation(
+      (_did, _req, _pin, _ttl, _agent, _overrides, options) => {
+        reportProgress = options?.onProgress;
+        return new Promise<typeof connectRequest>((resolve) => { releaseApproval = resolve; });
+      },
+    );
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+    fireEvent.click(approve);
+
+    await waitFor(() => expect(reportProgress).toBeTypeOf('function'));
+    expect(screen.getByText('Authorizing...')).toBeInTheDocument();
+
+    act(() => { reportProgress?.({ phase: 'modules' }); });
+    expect(screen.getByText('Setting up app data types...')).toBeInTheDocument();
+
+    act(() => { reportProgress?.({ phase: 'permission-grants' }); });
+    expect(screen.getByText('Creating permissions...')).toBeInTheDocument();
+
+    act(() => { reportProgress?.({ phase: 'revocations' }); });
+    expect(screen.getByText('Finalizing permissions...')).toBeInTheDocument();
+
+    releaseApproval(connectRequest);
+    expect(await screen.findByText('1234')).toBeInTheDocument();
+  });
+
+  it('shows a slow-storage hint when relay authorization takes longer than 5 seconds', async () => {
+    setPageUrl(DEEP_LINK_FRAGMENT);
+    mocks.fetchConnectRequest.mockResolvedValue(connectRequest);
+    mocks.generatePin.mockResolvedValue('1234');
+    let releaseApproval: (request: typeof connectRequest) => void = () => undefined;
+    mocks.approveConnectRequest.mockImplementation(
+      () => new Promise<typeof connectRequest>((resolve) => { releaseApproval = resolve; }),
+    );
+
+    renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+    const approve = await screen.findByRole('button', { name: 'Approve' });
+    await waitFor(() => expect(approve).toBeEnabled());
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(approve);
+      expect(screen.queryByText(SLOW_APPROVAL_HINT)).not.toBeInTheDocument();
+
+      await act(async () => {
+        vi.advanceTimersByTime(5_000);
+      });
+      expect(screen.getByText(SLOW_APPROVAL_HINT)).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+
+    releaseApproval(connectRequest);
+    expect(await screen.findByText('1234')).toBeInTheDocument();
   });
 });

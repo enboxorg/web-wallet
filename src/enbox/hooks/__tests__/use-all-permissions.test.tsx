@@ -96,4 +96,45 @@ describe('useAllPermissions', () => {
     expect(mocks.fetchPermissions).not.toHaveBeenCalled();
     expect(mocks.fetchPermissionHistory).not.toHaveBeenCalled();
   });
+
+  it('skips revocation queries when includeRevocations is false', async () => {
+    mocks.fetchPermissionHistory.mockImplementation(async (_agent, ownerDid: string) => [{
+      id: `grant-${ownerDid}`,
+    }]);
+
+    const { result } = renderHook(
+      () => useAllPermissions(['did:dht:alice', 'did:dht:bob'], true, { includeRevocations: false }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isPending).toBe(false));
+    expect(result.current.isError).toBe(false);
+    expect(mocks.fetchPermissions).not.toHaveBeenCalled();
+    expect(mocks.fetchPermissionHistory).toHaveBeenCalledTimes(2);
+    expect(result.current.data).toEqual([
+      {
+        ownerDid        : 'did:dht:alice',
+        permissions     : [{ id: 'grant-did:dht:alice' }],
+        revokedGrantIds : [],
+      },
+      {
+        ownerDid        : 'did:dht:bob',
+        permissions     : [{ id: 'grant-did:dht:bob' }],
+        revokedGrantIds : [],
+      },
+    ]);
+  });
+
+  it('surfaces history query failure when includeRevocations is false', async () => {
+    mocks.fetchPermissionHistory.mockRejectedValue(new Error('history query failed'));
+
+    const { result } = renderHook(
+      () => useAllPermissions(['did:dht:alice'], true, { includeRevocations: false }),
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.isPending).toBe(false);
+    expect(mocks.fetchPermissions).not.toHaveBeenCalled();
+  });
 });

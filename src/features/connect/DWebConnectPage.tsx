@@ -64,6 +64,11 @@ import {
 } from './use-module-setup-statuses';
 import { claimConnectDecision, requireConnectApprovalContext } from './connect-decision';
 import { getConnectErrorMessage } from './connect-error';
+import {
+  formatConnectApprovalPhase,
+  SLOW_APPROVAL_HINT,
+  useSlowOperationHint,
+} from './connect-progress';
 
 type Phase = 'waiting' | 'request' | 'connecting' | 'done' | 'error' | 'not-popup';
 
@@ -123,22 +128,35 @@ export default function DWebConnectPage() {
   const expectedAuthenticationDid = authentication !== undefined && !isRefresh
     ? connectRequest?.expectedProviderDid : undefined;
 
+  const needsOnboarding = firstTime && !agent;
+
   // Build identity options, limited to DID methods the requester supports.
-  const identityOptions: Array<{ value: string; label: string }> = (identities ?? [])
-    .filter((identity: any) => expectedAuthenticationDid === undefined
-      || (identity.did.uri === expectedAuthenticationDid && identity.metadata?.connectedDid === undefined))
-    .filter((id: any) =>
-      connectRequest === undefined
-      || isDidSupportedByRequest(id.did.uri, connectRequest.supportedDidMethods)
-    )
-    .map((id: any) => ({
-      value: id.did.uri as string,
-      label: id.metadata?.name ?? truncateDid(id.did.uri),
-    }));
-  const ownerDids = (identities ?? []).map((identity: any) => identity.did.uri as string);
-  // Refresh detection needs every profile's grant history; so does telling a
-  // first-time site apart from one this wallet has connected to before.
-  const allPermissions = useAllPermissions(ownerDids, true);
+  const identityOptions = useMemo<Array<{ value: string; label: string }>>(() =>
+    (identities ?? [])
+      .filter((identity: any) => expectedAuthenticationDid === undefined
+        || (identity.did.uri === expectedAuthenticationDid && identity.metadata?.connectedDid === undefined))
+      .filter((id: any) =>
+        connectRequest === undefined
+        || isDidSupportedByRequest(id.did.uri, connectRequest.supportedDidMethods)
+      )
+      .map((id: any) => ({
+        value: id.did.uri as string,
+        label: id.metadata?.name ?? truncateDid(id.did.uri),
+      })),
+  [identities, expectedAuthenticationDid, connectRequest]);
+  const ownerDids = useMemo<string[]>(() =>
+    (identities ?? []).map((identity: any) => identity.did.uri as string),
+  [identities]);
+  // Refresh detection needs active + history grants for revocation diffing
+  // (and stays enabled even without an agent so refreshes fail closed);
+  // non-refresh requests only check whether this origin has connected before,
+  // which needs grant history alone and avoids N+1 revocation RecordsRead calls.
+  const shouldInspectAllPermissions = connectRequest !== undefined && (isRefresh || !needsOnboarding);
+  const allPermissions = useAllPermissions(
+    ownerDids,
+    shouldInspectAllPermissions,
+    { includeRevocations: isRefresh },
+  );
   const refreshDetection = detectConnectRefresh(connectRequest, allPermissions.data);
   // A refresh is only a renewal for scopes this delegate actually held; the
   // request's own claim decides nothing about its contents.
@@ -171,7 +189,10 @@ export default function DWebConnectPage() {
   const approvalDid = isRefresh
     ? (refreshReady ? refreshDetection.pinnedOwnerDid ?? '' : '')
     : nonRefreshApprovalDid;
-  const { data: selectedPermissions } = usePermissions(isRefresh || authenticationOnly ? '' : nonRefreshApprovalDid);
+  const { data: selectedPermissions } = usePermissions(
+    connectRequest === undefined || isRefresh || authenticationOnly ? '' : nonRefreshApprovalDid,
+    { activeOnly: true },
+  );
 
   // Auto-select first identity
   useEffect(() => {
@@ -285,14 +306,15 @@ export default function DWebConnectPage() {
         throw new Error('This profile uses an ID type the app does not support.');
       }
 
-      setStatusMessage('Getting your profile ready...');
       // The agent ceremony owns module preparation end to end:
       // install, explicitly approved definition replacement, encryption
       // upgrades, and fail-closed remote verification across reachable owner
       // endpoints. It then creates and delivers the grants, grant keys, and
       // session revocation grants, and returns the sealed response for the
       // transport to post back.
-      setStatusMessage(activeRequest.requestType === 'authenticate' ? 'Confirming sign-in...' : 'Creating grants...');
+      setStatusMessage(
+        activeRequest.requestType === 'authenticate' ? 'Confirming sign-in...' : 'Authorizing...',
+      );
       const idToken = await approvePopupConnectRequest(
         approveAsDid,
         activeRequest,
@@ -300,6 +322,11 @@ export default function DWebConnectPage() {
         sessionDurationSeconds,
         liveAgent,
         overrideAcknowledged ? overridableModules : [],
+        {
+          onProgress: ({ phase: approvalPhase }) => {
+            setStatusMessage(formatConnectApprovalPhase(approvalPhase));
+          },
+        },
       );
 
       setStatusMessage(activeRequest.requestType === 'authenticate' ? 'Returning sign-in confirmation...' : 'Returning grants...');
@@ -471,7 +498,7 @@ export default function DWebConnectPage() {
   const existingSessions = useMemo(() =>
     findMatchingActiveConnectSessions(selectedPermissions, { origin, appName }),
   [selectedPermissions, origin, appName]);
-  const needsOnboarding = firstTime && !agent;
+  const slowConnectHint = useSlowOperationHint(phase === 'connecting');
   // Auto-created identities are did:dht — only offer inline onboarding
   // when the requester accepts that method.
   const onboardingSupported = !isRefresh
@@ -514,6 +541,7 @@ export default function DWebConnectPage() {
   // lookup is wrong it errs towards "first time", which only adds caution.
   const firstConnection = !isRefresh
     && origin !== ''
+    && (needsOnboarding || (!identitiesPending && !identitiesError))
     && !allPermissions.isPending
     && !allPermissions.isError
     && !hasConnectedBefore(allPermissions.data, origin);
@@ -550,7 +578,13 @@ export default function DWebConnectPage() {
       {phase === 'waiting' && <Loader message="Waiting for connection request..." className="flex-1" />}
 
       {/* Connecting */}
-      {phase === 'connecting' && <Loader message={statusMessage} className="flex-1" />}
+      {phase === 'connecting' && (
+        <Loader
+          message={statusMessage}
+          detail={slowConnectHint ? SLOW_APPROVAL_HINT : undefined}
+          className="flex-1"
+        />
+      )}
 
       {/* Done */}
       {phase === 'done' && (

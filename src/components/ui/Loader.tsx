@@ -3,12 +3,14 @@ import { cn } from '@/lib/utils';
 
 interface LoaderProps {
   message?: string;
+  /** Optional calm secondary hint shown below the primary status message. */
+  detail?: string;
   className?: string;
   /** Fill the entire viewport (used for top-level loading states). */
   fullScreen?: boolean;
 }
 
-export function Loader({ message, className, fullScreen }: LoaderProps) {
+export function Loader({ message, detail, className, fullScreen }: LoaderProps) {
   return (
     <div
       className={cn(
@@ -38,6 +40,9 @@ export function Loader({ message, className, fullScreen }: LoaderProps) {
       )}
       {message && (
         <p className="text-sm text-text-secondary">{message}</p>
+      )}
+      {detail && (
+        <p className="max-w-xs text-center text-xs leading-relaxed text-text-tertiary">{detail}</p>
       )}
     </div>
   );
