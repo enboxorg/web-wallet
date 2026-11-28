@@ -61,12 +61,16 @@ const mocks = vi.hoisted(() => ({
     identity: { getDwnEndpoints: vi.fn() },
   },
   approveConnectRequest: vi.fn(),
+  approveRedirectConnectRequest: vi.fn(),
   denyConnectRequest: vi.fn(),
   fetchConnectRequest: vi.fn(),
+  navigateToRedirectReturn: vi.fn(),
   startRelayVerificationHandshake: vi.fn(),
+  verifyRedirectAppOrigin: vi.fn(),
   waitForRelayCompletion: vi.fn(),
   queryModuleSetupStatus: vi.fn(),
   scannerHasCamera: vi.fn(),
+  scannerScanImage: vi.fn(),
   authState: { firstTime: false as boolean },
   connectVault: vi.fn(),
   autoCreateIdentity: vi.fn(),
@@ -151,9 +155,12 @@ vi.mock('@/enbox/effect/wallet-events', async (importOriginal) => ({
 vi.mock('../connect-kernel', async (importOriginal) => ({
   ...await importOriginal<typeof import('../connect-kernel')>(),
   approveConnectRequest: mocks.approveConnectRequest,
+  approveRedirectConnectRequest: mocks.approveRedirectConnectRequest,
   denyConnectRequest: mocks.denyConnectRequest,
   fetchConnectRequest: mocks.fetchConnectRequest,
+  navigateToRedirectReturn: mocks.navigateToRedirectReturn,
   startRelayVerificationHandshake: mocks.startRelayVerificationHandshake,
+  verifyRedirectAppOrigin: mocks.verifyRedirectAppOrigin,
   waitForRelayCompletion: mocks.waitForRelayCompletion,
 }));
 
@@ -166,7 +173,7 @@ vi.mock('qr-scanner', () => ({
   default: class MockScanner {
     static hasCamera = (...args: unknown[]) => mocks.scannerHasCamera(...args);
     static listCameras = vi.fn(async () => []);
-    static scanImage = vi.fn();
+    static scanImage = (...args: unknown[]) => mocks.scannerScanImage(...args);
     destroy() {}
     pause() {}
     async start() {}
@@ -254,6 +261,7 @@ describe('AppConnectPage', () => {
     mocks.queryModuleSetupStatus.mockResolvedValue('install');
     mocks.publishWalletEvent.mockReturnValue(Effect.void);
     mocks.startRelayVerificationHandshake.mockResolvedValue(makeVerificationHandshake());
+    mocks.verifyRedirectAppOrigin.mockResolvedValue({ origin: 'https://app.example', verified: false });
     mocks.waitForRelayCompletion.mockResolvedValue(false);
     mocks.allPermissions = [];
     mocks.allPermissionsPending = false;
@@ -1316,5 +1324,221 @@ describe('AppConnectPage', () => {
 
     releaseApproval(connectRequest);
     expect(await screen.findByText('Connected!')).toBeInTheDocument();
+  });
+
+  describe('same-device mobile redirect connect flow', () => {
+    const redirectRequest = {
+      ...connectRequest,
+      appName: 'Notes Mobile',
+      delegateDid: undefined,
+      reply: {
+        mode: 'redirect' as const,
+        callbackUrl: 'https://relay.example/connect/callback',
+        redirectUri: 'https://notes.example/connect-callback',
+      },
+    };
+
+    it('shows a neutral return target when unverified, skips SAS, approves, and redirects without triggering beforeunload', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      mocks.fetchConnectRequest.mockResolvedValue(redirectRequest);
+      mocks.verifyRedirectAppOrigin.mockResolvedValue({ origin: 'https://notes.example', verified: false });
+      mocks.approveRedirectConnectRequest.mockResolvedValue({
+        request: redirectRequest,
+        returnUrl: 'https://notes.example/connect-callback#enbox_state=state-1&enbox_key=secret-key',
+      });
+      let beforeUnloadBlocked: boolean | undefined;
+      mocks.navigateToRedirectReturn.mockImplementation(() => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        beforeUnloadBlocked = event.defaultPrevented;
+      });
+
+      renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+      const approve = await screen.findByRole('button', { name: 'Approve' });
+      expect(screen.getByText('notes.example')).toBeInTheDocument();
+      expect(screen.getByText('Unverified return target')).toBeInTheDocument();
+      expect(screen.queryByText('Returns to verified app')).not.toBeInTheDocument();
+      expect(mocks.startRelayVerificationHandshake).not.toHaveBeenCalled();
+
+      await waitFor(() => expect(approve).toBeEnabled());
+      fireEvent.click(approve);
+
+      // Redirect mode approves directly without rendering the cross-device SAS grid.
+      await waitFor(() => expect(mocks.approveRedirectConnectRequest).toHaveBeenCalledWith(
+        'did:dht:alice',
+        redirectRequest,
+        DEFAULT_APPROVAL_SECONDS,
+        mocks.agent,
+        [],
+        expect.objectContaining({ onProgress: expect.any(Function) }),
+      ));
+      expect(mocks.approveConnectRequest).not.toHaveBeenCalled();
+      expect(mocks.navigateToRedirectReturn).toHaveBeenCalledWith(
+        'https://notes.example/connect-callback#enbox_state=state-1&enbox_key=secret-key',
+      );
+      expect(beforeUnloadBlocked).toBe(false);
+      expect(await screen.findByRole('button', { name: 'Return to Notes Mobile' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    });
+
+    it('shows a manifest-verified return badge and tooltip only when /.well-known/enbox-app allowlists redirectUri', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      mocks.fetchConnectRequest.mockResolvedValue(redirectRequest);
+      mocks.verifyRedirectAppOrigin.mockResolvedValue({ origin: 'https://notes.example', verified: true });
+
+      renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+      const badge = await screen.findByText('Returns to verified app');
+      expect(badge).toBeInTheDocument();
+      expect(badge).toHaveAttribute('title', expect.stringContaining('/.well-known/enbox-app'));
+      expect(badge).toHaveAttribute('title', expect.stringContaining('Enbox connection returns'));
+      expect(badge.getAttribute('title')).not.toContain('Your browser confirmed');
+      expect(screen.getByText('notes.example')).toBeInTheDocument();
+    });
+
+    it('does not auto-redirect on deny when the redirect origin is unverified', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      mocks.fetchConnectRequest.mockResolvedValue(redirectRequest);
+      mocks.verifyRedirectAppOrigin.mockResolvedValue({ origin: 'https://notes.example', verified: false });
+      mocks.denyConnectRequest.mockResolvedValue(undefined);
+
+      renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Deny' }));
+      expect(mocks.denyConnectRequest).toHaveBeenCalledWith(
+        'https://relay.example/connect/callback',
+        'state-1',
+      );
+      expect(mocks.navigateToRedirectReturn).not.toHaveBeenCalled();
+    });
+
+    it('redirects back with enbox_error=denied without triggering beforeunload when the user denies a verified redirect request', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      mocks.fetchConnectRequest.mockResolvedValue(redirectRequest);
+      mocks.verifyRedirectAppOrigin.mockResolvedValue({ origin: 'https://notes.example', verified: true });
+      mocks.denyConnectRequest.mockResolvedValue(undefined);
+      let beforeUnloadBlocked: boolean | undefined;
+      mocks.navigateToRedirectReturn.mockImplementation(() => {
+        const event = new Event('beforeunload', { cancelable: true });
+        window.dispatchEvent(event);
+        beforeUnloadBlocked = event.defaultPrevented;
+      });
+
+      renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+      expect(await screen.findByText('Returns to verified app')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Deny' }));
+      expect(mocks.denyConnectRequest).toHaveBeenCalledWith(
+        'https://relay.example/connect/callback',
+        'state-1',
+      );
+      expect(mocks.navigateToRedirectReturn).toHaveBeenCalledWith(
+        'https://notes.example/connect-callback#enbox_state=state-1&enbox_error=denied',
+      );
+      expect(beforeUnloadBlocked).toBe(false);
+    });
+
+    it('rejects redirect-mode requests scanned via QR code so cross-device SAS cannot be bypassed', async () => {
+      mocks.scannerScanImage.mockResolvedValue({
+        data: `enbox://connect${DEEP_LINK_FRAGMENT}`,
+      });
+      mocks.fetchConnectRequest.mockResolvedValue(redirectRequest);
+
+      const { container } = renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+      expect(await screen.findByText(/No camera found/i)).toBeInTheDocument();
+
+      const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+      const file = new File(['qr-bytes'], 'qr.png', { type: 'image/png' });
+      fireEvent.change(input, { target: { files: [file] } });
+
+      expect(await screen.findByText(/opening the link directly on the same device/i)).toBeInTheDocument();
+      expect(mocks.approveRedirectConnectRequest).not.toHaveBeenCalled();
+    });
+
+    it('shows Done instead of Try Again when a standalone or redirect ceremony fails', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      mocks.fetchConnectRequest.mockRejectedValue(new Error('Request expired'));
+
+      renderWithProviders(<AppConnectPage standalone />, { initialRoute: '/connect/app' });
+
+      expect(await screen.findByText('Request expired')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
+    });
+
+    it('rejects a brand-new redirect request that supplies a pre-existing delegateDid and renders Done (not Try Again) even for returning wallets', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      mocks.fetchConnectRequest.mockResolvedValue({
+        ...redirectRequest,
+        delegateDid: 'did:jwk:attacker-delegate',
+      });
+
+      renderWithProviders(<AppConnectPage />, { initialRoute: '/connect/app' });
+
+      expect(await screen.findByText(/pre-existing delegate DID/i)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Try Again' })).not.toBeInTheDocument();
+      expect(mocks.approveRedirectConnectRequest).not.toHaveBeenCalled();
+    });
+
+    it('surfaces an inline alert and keeps Done available when manual redirect return throws', async () => {
+      setPageUrl(DEEP_LINK_FRAGMENT);
+      mocks.fetchConnectRequest.mockResolvedValue(redirectRequest);
+      mocks.approveRedirectConnectRequest.mockResolvedValue({
+        request: redirectRequest,
+        returnUrl: 'https://notes.example/connect-callback#enbox_state=state-1&enbox_key=secret-key',
+      });
+      mocks.navigateToRedirectReturn.mockImplementation(() => {
+        throw new Error('Navigation blocked');
+      });
+
+      renderWithProviders(<AppConnectPage standalone />, { initialRoute: '/connect/app' });
+
+      const approve = await screen.findByRole('button', { name: 'Approve' });
+      await waitFor(() => expect(approve).toBeEnabled());
+      fireEvent.click(approve);
+
+      const manualReturn = await screen.findByRole('button', { name: 'Return to Notes Mobile' });
+      fireEvent.click(manualReturn);
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/Could not open notes\.example automatically/i);
+      expect(screen.getByRole('button', { name: 'Done' })).toBeInTheDocument();
+    });
+
+    it('supports inline onboarding for a same-device redirect request without SAS', async () => {
+      mocks.createPasskeyVault.mockImplementation(
+        async (activate) => activate('wrapped-vault-password'),
+      );
+      mocks.authState.firstTime = true;
+      useAuthStore.setState({ initialized: true, firstTime: true, agent: null });
+      mocks.connectVault.mockImplementation(async () => {
+        useAuthStore.setState({ agent: mocks.agent as never, firstTime: false });
+        return 'recovery phrase words';
+      });
+      mocks.autoCreateIdentity.mockResolvedValue({ did: { uri: 'did:dht:fresh-redirect' } });
+      mocks.fetchConnectRequest.mockResolvedValue(redirectRequest);
+      mocks.approveRedirectConnectRequest.mockResolvedValue({
+        request: redirectRequest,
+        returnUrl: 'https://notes.example/connect-callback#enbox_state=state-1&enbox_key=secret-key',
+      });
+      setPageUrl(DEEP_LINK_FRAGMENT);
+
+      renderWithProviders(<AppConnectPage standalone />, { initialRoute: `/connect/app${DEEP_LINK_FRAGMENT}` });
+
+      fireEvent.click(await screen.findByRole('button', { name: /create wallet & connect/i }));
+
+      await waitFor(() => expect(mocks.approveRedirectConnectRequest).toHaveBeenCalledWith(
+        'did:dht:fresh-redirect',
+        redirectRequest,
+        DEFAULT_APPROVAL_SECONDS,
+        mocks.agent,
+        [],
+        expect.objectContaining({ onProgress: expect.any(Function) }),
+      ));
+      expect(mocks.navigateToRedirectReturn).toHaveBeenCalledWith(
+        'https://notes.example/connect-callback#enbox_state=state-1&enbox_key=secret-key',
+      );
+    });
   });
 });

@@ -222,10 +222,12 @@ export default function DWebConnectPage() {
   }, [isPopup]);
 
   // Create the wallet transport and await the sealed request. The transport
-  // pins the dapp origin (from an option or `document.referrer`, never `'*'`),
-  // emits the `loaded` beacon, and opens the request via the kernel — ECDH-ES
-  // decryption against its ephemeral key, `apv` origin binding value-checked
-  // against this wallet's origin, JWT verification, and shape assertion.
+  // pins the dapp origin (from an option, `document.referrer`, or a verified
+  // `enbox-connect-hello` handshake when `Referrer-Policy: no-referrer` strips
+  // `document.referrer` — never `'*'`), emits the `loaded` beacon, and opens
+  // the request via the kernel — ECDH-ES decryption against its ephemeral key,
+  // `apv` origin binding value-checked against this wallet's origin, JWT
+  // verification, and shape assertion.
   //
   // The ref guards against React strict mode's double-invoked effects: the
   // transport (and its beacon) is created once per popup lifetime, so the
@@ -567,7 +569,8 @@ export default function DWebConnectPage() {
             <>
               <p>This page handles connection requests from apps.</p>
               <p className="mt-1 text-xs text-text-tertiary">
-                It should be opened automatically when an app requests access.
+                It should be opened automatically when an app requests access. If your browser
+                opened this tab without keeping a link to the app, return to the app tab and try again.
               </p>
             </>
           )}

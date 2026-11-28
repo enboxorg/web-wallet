@@ -5,13 +5,18 @@ import {
   approveConnectRequest,
   approveConnectRequestEffect,
   approvePopupConnectRequest,
+  approveRedirectConnectRequest,
+  buildRedirectDenialUrl,
   denyConnectRequest,
   fetchConnectRequest,
   fetchConnectRequestEffect,
+  getRedirectReturnTarget,
   getRelayCallbackUrl,
   isTrustedDappOrigin,
+  navigateToRedirectReturn,
   startRelayVerificationHandshake,
   startRelayVerificationHandshakeEffect,
+  verifyRedirectAppOrigin,
   waitForRelayCompletion,
 } from '../connect-kernel';
 import { NetworkPolicy, makeNetworkPolicy } from '@/enbox/effect/network-policy';
@@ -24,7 +29,12 @@ const mocks = vi.hoisted(() => ({
   openRequest: vi.fn(),
   sealApprovedResponse: vi.fn(),
   sealAuthenticationResponse: vi.fn(),
+  assertValidRedirectUri: vi.fn(),
+  buildRedirectReturnUri: vi.fn(),
   createConnectVerificationHandshake: vi.fn(),
+  fetchConnectAppManifest: vi.fn(),
+  generateRedirectResponseSecret: vi.fn(),
+  isRedirectUriVerifiedInManifest: vi.fn(),
   pollRelayComplete: vi.fn(),
   postRelayHandshake: vi.fn(),
   postRelayResponse: vi.fn(),
@@ -53,7 +63,12 @@ vi.mock('@enbox/connect', () => ({
     sealApprovedResponse: mocks.sealApprovedResponse,
     sealAuthenticationResponse: mocks.sealAuthenticationResponse,
   },
+  assertValidRedirectUri: mocks.assertValidRedirectUri,
+  buildRedirectReturnUri: mocks.buildRedirectReturnUri,
   createConnectVerificationHandshake: mocks.createConnectVerificationHandshake,
+  fetchConnectAppManifest: mocks.fetchConnectAppManifest,
+  generateRedirectResponseSecret: mocks.generateRedirectResponseSecret,
+  isRedirectUriVerifiedInManifest: mocks.isRedirectUriVerifiedInManifest,
   pollRelayComplete: mocks.pollRelayComplete,
   postRelayHandshake: mocks.postRelayHandshake,
   postRelayResponse: mocks.postRelayResponse,
@@ -61,6 +76,7 @@ vi.mock('@enbox/connect', () => ({
 
 const REQUEST_KEY = new Uint8Array(32);
 const HANDSHAKE_KEY = { kty: 'OKP', crv: 'X25519', x: 'wallet-epk' } as const;
+const REDIRECT_SECRET = new Uint8Array(32).fill(7);
 
 function connectRequest(overrides: Record<string, unknown> = {}) {
   return {
@@ -106,6 +122,26 @@ describe('connect-kernel', () => {
       grid: [],
       verifySelection: () => true,
     });
+    mocks.assertValidRedirectUri.mockImplementation((uri: string): void => {
+      const parsed = new URL(uri);
+      if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        throw new Error('redirectUri must use HTTPS or localhost HTTP');
+      }
+      if (parsed.search !== '') throw new Error('redirectUri must not contain query parameters');
+      if (parsed.hash !== '') throw new Error('redirectUri must not contain a fragment');
+      if (parsed.username !== '' || parsed.password !== '') {
+        throw new Error('redirectUri must not contain credentials');
+      }
+    });
+    mocks.generateRedirectResponseSecret.mockReturnValue(REDIRECT_SECRET);
+    mocks.buildRedirectReturnUri.mockImplementation(
+      ({ redirectUri, state, error }: { redirectUri: string; state: string; error?: string }) =>
+        error
+          ? `${redirectUri}#enbox_state=${state}&enbox_error=${error}`
+          : `${redirectUri}#enbox_state=${state}&enbox_key=secret-b64u`,
+    );
+    mocks.fetchConnectAppManifest.mockResolvedValue(undefined);
+    mocks.isRedirectUriVerifiedInManifest.mockReturnValue(false);
     mocks.pollRelayComplete.mockResolvedValue(false);
     mocks.postRelayHandshake.mockResolvedValue(undefined);
     mocks.postRelayResponse.mockResolvedValue(undefined);
@@ -278,13 +314,194 @@ describe('connect-kernel', () => {
   });
 
   describe('getRelayCallbackUrl', () => {
-    it('returns the validated callback for direct_post replies', () => {
+    it('returns the validated callback for direct_post and redirect replies', () => {
       expect(getRelayCallbackUrl(connectRequest())).toBe('https://relay.example/connect/callback');
+      expect(getRelayCallbackUrl(connectRequest({
+        reply: {
+          mode: 'redirect',
+          callbackUrl: 'https://relay.example/connect/callback',
+          redirectUri: 'https://app.example/callback',
+        },
+      }))).toBe('https://relay.example/connect/callback');
+    });
+
+    it('rejects redirect replies with invalid redirect URIs', () => {
+      expect(() => getRelayCallbackUrl(connectRequest({
+        reply: {
+          mode: 'redirect',
+          callbackUrl: 'https://relay.example/connect/callback',
+          redirectUri: 'https://app.example/callback?foo=bar',
+        },
+      }))).toThrow(/query/i);
     });
 
     it('throws for post_message replies', () => {
       expect(() => getRelayCallbackUrl(connectRequest({ reply: { mode: 'post_message' } })))
         .toThrow('does not use the relay reply mode');
+    });
+  });
+
+  describe('redirect helpers and approveRedirectConnectRequest', () => {
+    function redirectRequest(overrides: Record<string, unknown> = {}) {
+      return connectRequest({
+        reply: {
+          mode: 'redirect',
+          callbackUrl: 'https://relay.example/connect/callback',
+          redirectUri: 'https://app.example/callback',
+        },
+        ...overrides,
+      });
+    }
+
+    it('returns the redirect return target and denial URL only for redirect requests', () => {
+      expect(getRedirectReturnTarget(connectRequest())).toBeUndefined();
+      expect(buildRedirectDenialUrl(connectRequest())).toBeUndefined();
+
+      const req = redirectRequest();
+      expect(getRedirectReturnTarget(req)).toBe('https://app.example/callback');
+      expect(buildRedirectDenialUrl(req)).toBe('https://app.example/callback#enbox_state=state-1&enbox_error=denied');
+    });
+
+    it('verifies redirect origin via /.well-known/enbox-app without throwing on lookup errors', async () => {
+      const req = redirectRequest();
+      mocks.fetchConnectAppManifest.mockResolvedValueOnce({ redirectUris: ['https://app.example/callback'] });
+      mocks.isRedirectUriVerifiedInManifest.mockReturnValueOnce(true);
+
+      await expect(verifyRedirectAppOrigin(req)).resolves.toEqual({
+        origin: 'https://app.example',
+        verified: true,
+      });
+      expect(mocks.fetchConnectAppManifest).toHaveBeenCalledWith('https://app.example');
+
+      mocks.fetchConnectAppManifest.mockRejectedValueOnce(new Error('network error'));
+      await expect(verifyRedirectAppOrigin(req)).resolves.toEqual({
+        origin: 'https://app.example',
+        verified: false,
+      });
+    });
+
+    it('rejects authenticated redirect requests whose redirectUri origin differs from request_uri', async () => {
+      mocks.openRequest.mockResolvedValue(redirectRequest({
+        requestType: 'authenticate',
+        authentication: { version: 1, audience: 'https://auth.example/', challenge: 'c'.repeat(32) },
+        reply: {
+          mode: 'redirect',
+          callbackUrl: 'https://auth.example/connect/callback',
+          redirectUri: 'https://other.example/callback',
+        },
+      }));
+
+      await expect(fetchConnectRequest('https://auth.example/request', REQUEST_KEY))
+        .rejects.toThrow('redirect destination does not match');
+    });
+
+    it('refuses SAS verification handshake for redirect requests', async () => {
+      mocks.openRequest.mockResolvedValue(redirectRequest());
+      const fetched = await fetchConnectRequest('https://relay.example/request', REQUEST_KEY);
+      await expect(startRelayVerificationHandshake(fetched))
+        .rejects.toThrow('only used for direct_post');
+    });
+
+    it('approves, seals with a 256-bit responseSecret, posts to callback, and builds the fragment returnUrl', async () => {
+      const agent = { id: 'agent-1' } as any;
+      const req = redirectRequest();
+      const result = await approveRedirectConnectRequest('did:dht:alice', req, 3_600, agent);
+
+      expect(result.request).toEqual(req);
+      expect(result.returnUrl).toBe('https://app.example/callback#enbox_state=state-1&enbox_key=secret-b64u');
+      expect(mocks.sealApprovedResponse).toHaveBeenCalledWith(expect.objectContaining({
+        request: req,
+        providerDid: 'did:dht:alice',
+        responseSecret: REDIRECT_SECRET,
+      }));
+      expect(mocks.sealApprovedResponse.mock.calls[0][0].handshakeKey).toBeUndefined();
+      expect(mocks.postRelayResponse).toHaveBeenCalledWith(expect.objectContaining({
+        callbackUrl: 'https://relay.example/connect/callback',
+        state: 'state-1',
+        idToken: 'sealed-response-jwe',
+      }));
+    });
+
+    it('rejects brand-new pre-supplied delegateDid on redirect approval while allowing refresh', async () => {
+      const agent = { id: 'agent-1' } as any;
+      await expect(
+        approveRedirectConnectRequest(
+          'did:dht:alice',
+          redirectRequest({ delegateDid: 'did:jwk:pre-supplied' }),
+          3_600,
+          agent,
+        ),
+      ).rejects.toThrow('pre-existing delegate DID');
+      expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
+
+      await expect(
+        approveRedirectConnectRequest(
+          'did:dht:alice',
+          redirectRequest({ requestType: 'refresh', delegateDid: 'did:jwk:existing' }),
+          3_600,
+          agent,
+        ),
+      ).resolves.toMatchObject({ returnUrl: expect.stringContaining('#enbox_state=state-1') });
+    });
+
+    it('refuses redirect requests in direct_post approveConnectRequest before running mutations', async () => {
+      await expect(
+        approveConnectRequest(
+          'did:dht:alice',
+          redirectRequest(),
+          { ...HANDSHAKE_KEY },
+          3_600,
+          { id: 'agent-1' } as any,
+        ),
+      ).rejects.toThrow('direct_post');
+      expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
+
+      await expect(
+        approveRedirectConnectRequest(
+          'did:dht:alice',
+          redirectRequest({ state: '' }),
+          3_600,
+          { id: 'agent-1' } as any,
+        ),
+      ).rejects.toThrow('state');
+      expect(mocks.executeConnectApproval).not.toHaveBeenCalled();
+    });
+
+    it('returns undefined instead of throwing when verifyRedirectAppOrigin receives an invalid redirect URI', async () => {
+      await expect(verifyRedirectAppOrigin(redirectRequest({
+        reply: {
+          mode: 'redirect',
+          callbackUrl: 'https://relay.example/connect/callback',
+          redirectUri: 'https://app.example/callback?bad=query',
+        },
+      }))).resolves.toBeUndefined();
+      expect(mocks.fetchConnectAppManifest).not.toHaveBeenCalled();
+    });
+
+    it('navigates with window.location.replace for trusted return URLs and rejects unsafe schemes or queries', () => {
+      const replace = vi.fn();
+      const originalLocation = window.location;
+      Object.defineProperty(window, 'location', {
+        configurable: true,
+        value: { ...originalLocation, replace },
+      });
+      try {
+        navigateToRedirectReturn('https://app.example/callback#enbox_state=state-1&enbox_key=secret');
+        expect(replace).toHaveBeenCalledWith('https://app.example/callback#enbox_state=state-1&enbox_key=secret');
+
+        navigateToRedirectReturn('http://localhost:5173/callback#enbox_state=state-1&enbox_error=denied');
+        expect(replace).toHaveBeenCalledWith('http://localhost:5173/callback#enbox_state=state-1&enbox_error=denied');
+
+        expect(() => navigateToRedirectReturn('javascript:alert(1)#enbox_state=1')).toThrow();
+        expect(() => navigateToRedirectReturn('http://remote.example/callback#enbox_state=1')).toThrow(/HTTPS/i);
+        expect(() => navigateToRedirectReturn('https://app.example/callback?foo=bar#enbox_state=1')).toThrow(/query/i);
+        expect(replace).toHaveBeenCalledTimes(2);
+      } finally {
+        Object.defineProperty(window, 'location', {
+          configurable: true,
+          value: originalLocation,
+        });
+      }
     });
   });
 
@@ -748,6 +965,7 @@ describe('connect-kernel', () => {
       expect(isTrustedDappOrigin('https://app.example')).toBe(true);
       expect(isTrustedDappOrigin('http://localhost:5173')).toBe(true);
       expect(isTrustedDappOrigin('http://127.0.0.1:8080')).toBe(true);
+      expect(isTrustedDappOrigin('http://[::1]:5173')).toBe(true);
     });
 
     it('rejects everything else', () => {

@@ -198,6 +198,38 @@ describe('connect request preflight', () => {
       .toHaveLength(1);
   });
 
+  it('validates redirectUri and rejects pre-supplied delegateDid on new redirect requests', () => {
+    const validRedirect = {
+      ...relayRequest(),
+      reply: {
+        mode: 'redirect' as const,
+        callbackUrl: 'https://relay.example/connect/callback',
+        redirectUri: 'https://app.example/callback',
+      },
+    };
+    expect(preflightConnectRequest(validRedirect).scopes).toHaveLength(1);
+
+    expect(() => preflightConnectRequest({
+      ...validRedirect,
+      reply: {
+        ...validRedirect.reply,
+        redirectUri: 'https://app.example/callback?leak=1',
+      },
+    })).toThrow(/query/i);
+
+    expect(() => preflightConnectRequest({
+      ...validRedirect,
+      delegateDid: 'did:jwk:pre-supplied',
+    })).toThrow(/pre-existing delegate DID/i);
+
+    // Refresh requests may supply their existing delegate DID on redirect.
+    expect(preflightConnectRequest({
+      ...validRedirect,
+      requestType: 'refresh',
+      delegateDid: 'did:jwk:existing-delegate',
+    }).scopes).toHaveLength(1);
+  });
+
   it('matches selected identities to the request DID-method set', () => {
     expect(isDidSupportedByRequest('did:dht:abc', ['did:dht'])).toBe(true);
     expect(isDidSupportedByRequest('did:jwk:abc', ['did:dht'])).toBe(false);

@@ -6,7 +6,11 @@ import type {
   ConnectPermissionRequest,
   ConnectRequest,
 } from '@enbox/connect';
-import { assertConnectAuthenticationParams, assertConnectAuthenticationRequest } from '@enbox/connect';
+import {
+  assertConnectAuthenticationParams,
+  assertConnectAuthenticationRequest,
+  assertValidRedirectUri,
+} from '@enbox/connect';
 import type {
   MessageSigner,
 } from '@enbox/dwn-sdk-js';
@@ -233,9 +237,16 @@ export function preflightConnectRequest(request: ConnectRequest): ConnectPermiss
   }
 
   requireString(request.appName, 'Connect app name');
+  requireString(request.state, 'Connect state');
 
   if (request.delegateDid !== undefined && parseCanonicalDid(request.delegateDid) === undefined) {
     throw new Error('The connection request has an invalid delegate DID.');
+  }
+  if (request.reply?.mode === 'redirect') {
+    assertValidRedirectUri(request.reply.redirectUri);
+    if (request.delegateDid !== undefined && request.requestType !== 'refresh') {
+      throw new Error('Redirect connection requests cannot supply a pre-existing delegate DID.');
+    }
   }
   if (
     !Array.isArray(request.supportedDidMethods)
